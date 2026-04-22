@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isLeader(divisionId) {
+      return isAuth() &&
+        get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderId == request.auth.uid;
+    }
+
+    function isMatchParticipant(matchData) {
+      return isAuth() && (
+        request.auth.uid == matchData.player1Id ||
+        request.auth.uid == matchData.player2Id
+      );
+    }
+
+    function isChannelParticipant(channelData) {
+      return isAuth() && request.auth.uid in channelData.participantIds;
+    }
+
+    // ---------- Users ----------
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isUser(userId);
+      allow update: if isUser(userId) || getUserData().role == 'admin';
+      allow delete: if getUserData().role == 'admin';
+    }
+
+    // ---------- Divisions ----------
+    match /divisions/{divisionId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && getUserData().role in ['admin', 'division_leader'];
+      allow update: if isLeader(divisionId) || getUserData().role == 'admin';
+      allow delete: if getUserData().role == 'admin';
+
+      // Rankings sub-collection (written by Cloud Functions)
+      match /rankings/{userId} {
+        allow read: if isAuth();
+        allow write: if false; // Cloud Functions only
+      }
+    }
+
+    // ---------- Matches ----------
+    match /matches/{matchId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isMatchParticipant(resource.data) || isLeader(resource.data.divisionId);
+      allow delete: if getUserData().role == 'admin';
+
+      // Score actions sub-collection
+      match /actions/{actionId} {
+        allow read: if isAuth();
+        allow create: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
+        allow update: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
+        allow delete: if false;
+      }
+    }
+
+    // ---------- Head-to-head ----------
+    match /headToHead/{h2hId} {
+      allow read: if isAuth();
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ---------- Channels ----------
+    match /channels/{channelId} {
+      allow read: if isChannelParticipant(resource.data);
+      allow create: if isAuth() && request.auth.uid in request.resource.data.participantIds;
+      allow update: if isChannelParticipant(resource.data);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data);
+        allow create: if isAuth() &&
+          isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data) &&
+          request.resource.data.senderId == request.auth.uid;
+        allow update: if isAuth() && resource.data.senderId == request.auth.uid;
+        allow delete: if false;
+      }
+    }
+  }
+}

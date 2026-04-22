@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Tennis League",
+    "slug": "tennis-league",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a472a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tennisleague.app",
+      "buildNumber": "1"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a472a"
+      },
+      "package": "com.tennisleague.app",
+      "versionCode": 1
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      ["expo-secure-store", { "faceIDPermission": "Allow Tennis League to use Face ID" }]
+    ],
+    "scheme": "tennisleague",
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@tennis/shared": ["../../packages/shared/src/index.ts"],
+      "@tennis/firebase-client": ["../../packages/firebase-client/src/index.ts"]
+    }
+  }
+}

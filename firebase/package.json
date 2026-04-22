@@ -1,0 +1,27 @@
+{
+  "name": "@tennis/firebase-functions",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "serve": "firebase emulators:start --only functions,firestore,auth,storage",
+    "deploy": "firebase deploy --only functions",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "@tennis/shared": "workspace:*",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
