@@ -1,6 +1,9 @@
 export type TennisPoint = '0' | '15' | '30' | '40' | 'Ad';
 export type MatchFormat = 'best-of-3' | 'best-of-5' | 'pro-set';
-export type MatchStatus = 'scheduled' | 'in_progress' | 'completed' | 'disputed';
+// pending_report: game over, waiting for a player to submit the report
+// completed: report confirmed by both players — rankings are updated from this state only
+// disputed: the non-submitting player rejected the report — awaits division leader resolution
+export type MatchStatus = 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed';
 export type ServiceSide = 'deuce' | 'advantage';
 export type Player = 'player1' | 'player2';
 
@@ -59,16 +62,17 @@ export interface ScoreAction {
   createdAt: number;
 }
 
-export type ConflictResolution = 'consensus' | 'leader' | 'timeout';
+export type ReportSubmissionStatus = 'pending_confirmation' | 'confirmed' | 'disputed';
 
-export interface ConflictState {
-  triggeredAt: number;
-  triggeredBy: string;
-  votes: Record<string, string>; // userId → JSON.stringify(LiveScore)
-  resolvedAt?: number;
-  resolvedBy?: ConflictResolution;
-  resolution?: LiveScore;
-  leaderNotifiedAt?: number;
+export interface ReportSubmission {
+  submittedBy: string;          // userId of the player who filed the report
+  submittedAt: number;
+  status: ReportSubmissionStatus;
+  confirmedBy?: string;         // userId of the player who confirmed
+  confirmedAt?: number;
+  disputedBy?: string;          // userId of the player who disputed
+  disputedAt?: number;
+  leaderNotifiedAt?: number;    // set when escalated to division leader
 }
 
 export interface PlayerMatchStats {
@@ -107,7 +111,7 @@ export interface Match {
   status: MatchStatus;
   liveScore: LiveScore;
   stats: MatchStats;
-  conflictState?: ConflictState;
+  reportSubmission?: ReportSubmission;
   winner?: Player;
   reportUrl?: string;
   tipsEnabled: boolean;

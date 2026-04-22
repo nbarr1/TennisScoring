@@ -3,28 +3,26 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, Modal,
   ActivityIndicator, ScrollView, Switch, Animated
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import {
-  useMatch, scorePoint, startMatch, triggerConflict, submitConflictVote,
-  updateUserProfile
+  useMatch, scorePoint, startMatch,
+  submitMatchReport, confirmMatchReport, disputeMatchReport,
 } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore, getTipsForTriggers } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
-import type { LiveScore } from '@tennis/shared';
 
 function TipOverlay({ tip, onDismiss }: { tip: { title: string; body: string } | null; onDismiss: () => void }) {
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (tip) {
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.delay(4000),
-        Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
-      ]).start(() => onDismiss());
-    }
+    if (!tip) return;
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.delay(4000),
+      Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start(() => onDismiss());
   }, [tip]);
 
   if (!tip) return null;
@@ -36,31 +34,28 @@ function TipOverlay({ tip, onDismiss }: { tip: { title: string; body: string } |
   );
 }
 
-function ConflictModal({
-  visible, match, onVote, onClose
+function DisputeModal({
+  visible,
+  onConfirm,
+  onCancel,
 }: {
   visible: boolean;
-  match: ReturnType<typeof useMatch>['match'];
-  onVote: (score: LiveScore) => void;
-  onClose: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
 }) {
-  if (!match) return null;
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.conflictOverlay}>
-        <View style={styles.conflictCard}>
-          <Text style={styles.conflictTitle}>⚠ Score Dispute</Text>
-          <Text style={styles.conflictBody}>
-            A score disagreement has been flagged. Both players must confirm the current score.
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Dispute Match Report?</Text>
+          <Text style={styles.modalBody}>
+            Disputing will notify your division leader to review the final score and resolve the disagreement.
           </Text>
-          <Text style={styles.conflictQuestion}>What is the current set score?</Text>
-          {/* Show the current score as the consensus option */}
-          <TouchableOpacity style={styles.conflictOption} onPress={() => onVote(match.liveScore)}>
-            <Text style={styles.conflictOptionText}>{formatScoreDisplay(match.liveScore)}</Text>
-            <Text style={styles.conflictOptionSub}>(current recorded score)</Text>
+          <TouchableOpacity style={styles.disputeBtn} onPress={onConfirm}>
+            <Text style={styles.disputeBtnText}>Yes, Dispute Report</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.conflictCancel} onPress={onClose}>
-            <Text style={styles.conflictCancelText}>Escalate to Division Leader</Text>
+          <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -72,18 +67,19 @@ export default function MatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { match, loading } = useMatch(id ?? null);
   const { user } = useAppStore();
-  const router = useRouter();
   const [currentTip, setCurrentTip] = useState<{ title: string; body: string } | null>(null);
-  const [showConflict, setShowConflict] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
 
-  const isParticipant = user && match && (match.player1Id === user.id || match.player2Id === user.id);
+  const isParticipant = !!(user && match && (match.player1Id === user.id || match.player2Id === user.id));
   const myPlayerKey = user && match ? (match.player1Id === user.id ? 'player1' : 'player2') : null;
 
-  useEffect(() => {
-    if (match?.status === 'disputed') setShowConflict(true);
-    else setShowConflict(false);
-  }, [match?.status]);
+  // Derived report-submission state
+  const submission = match?.reportSubmission;
+  const iSubmitted = !!(submission && submission.submittedBy === user?.id);
+  const opponentSubmitted = !!(submission && submission.submittedBy !== user?.id);
+  const isPendingMyReview = opponentSubmitted && submission?.status === 'pending_confirmation';
 
   async function handlePoint(player: 'player1' | 'player2') {
     if (!match || !id || scoring) return;
@@ -91,39 +87,85 @@ export default function MatchScreen() {
     try {
       const result = await scorePoint(id, match, player);
       if (result.matchWinner) {
-        Alert.alert('Match Complete!', `${result.matchWinner === 'player1' ? 'Player 1' : 'Player 2'} wins!`);
+        Alert.alert(
+          'Match Over!',
+          `${result.matchWinner === 'player1' ? 'Player 1' : 'Player 2'} wins!\n\nEither player can now submit the match report.`
+        );
       }
     } finally {
       setScoring(false);
     }
   }
 
-  async function handleDispute() {
+  async function handleSubmitReport() {
     if (!match || !id || !user) return;
-    await triggerConflict(id, user.id, match.liveScore);
+    Alert.alert(
+      'Submit Match Report?',
+      `Submit the final score (${formatScoreDisplay(match.liveScore)}) for confirmation by your opponent?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Submit',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await submitMatchReport(id, user.id);
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
   }
 
-  async function handleVote(score: LiveScore) {
+  async function handleConfirmReport() {
     if (!match || !id || !user) return;
-    await submitConflictVote(id, user.id, score);
-    setShowConflict(false);
+    Alert.alert(
+      'Confirm Match Report?',
+      'Confirming will finalise the score, update rankings, and generate the match report.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await confirmMatchReport(id, user.id);
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleDisputeReport() {
+    setShowDisputeConfirm(true);
+  }
+
+  async function confirmDispute() {
+    if (!match || !id || !user) return;
+    setShowDisputeConfirm(false);
+    setSubmitting(true);
+    try {
+      await disputeMatchReport(id, user.id);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleShareReport() {
     if (!match?.reportUrl) {
-      Alert.alert('Report Not Ready', 'The match report is still being generated.');
+      Alert.alert('Report Not Ready', 'The match report is being generated. Try again in a moment.');
       return;
     }
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(match.reportUrl);
     } else {
-      await Linking.openURL(match.reportUrl);
+      Linking.openURL(match.reportUrl);
     }
-  }
-
-  async function handleStartMatch() {
-    if (!id) return;
-    await startMatch(id);
   }
 
   async function toggleTips() {
@@ -152,8 +194,12 @@ export default function MatchScreen() {
         </View>
         <Text style={styles.scoreMain}>{scoreDisplay}</Text>
         <Text style={styles.gameScore}>{gameDisplay}</Text>
-        <Text style={styles.serverLabel}>{serverLabel}</Text>
-        <Text style={styles.serviceSide}>{match.liveScore.serviceSide} court</Text>
+        {match.status === 'in_progress' && (
+          <>
+            <Text style={styles.serverLabel}>{serverLabel}</Text>
+            <Text style={styles.serviceSide}>{match.liveScore.serviceSide} court</Text>
+          </>
+        )}
       </View>
 
       {/* Status badge */}
@@ -163,38 +209,32 @@ export default function MatchScreen() {
         </View>
       )}
 
-      {/* Score buttons — only for participants */}
+      {/* Start button */}
       {isParticipant && match.status === 'scheduled' && (
-        <TouchableOpacity style={styles.startBtn} onPress={handleStartMatch}>
+        <TouchableOpacity style={styles.startBtn} onPress={() => startMatch(id!)}>
           <Text style={styles.startBtnText}>Start Match</Text>
         </TouchableOpacity>
       )}
 
+      {/* Score input buttons */}
       {isParticipant && match.status === 'in_progress' && (
-        <View style={styles.scoreButtons}>
-          <TouchableOpacity
-            style={[styles.pointBtn, styles.pointBtnP1, scoring && styles.pointBtnDisabled]}
-            onPress={() => handlePoint('player1')}
-            disabled={scoring}
-          >
-            <Text style={styles.pointBtnText}>Player 1{'\n'}Point</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.pointBtn, styles.pointBtnP2, scoring && styles.pointBtnDisabled]}
-            onPress={() => handlePoint('player2')}
-            disabled={scoring}
-          >
-            <Text style={styles.pointBtnText}>Player 2{'\n'}Point</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Controls */}
-      {isParticipant && match.status === 'in_progress' && (
-        <View style={styles.controls}>
-          <TouchableOpacity style={styles.controlBtn} onPress={handleDispute}>
-            <Text style={styles.controlBtnText}>⚠ Dispute Score</Text>
-          </TouchableOpacity>
+        <>
+          <View style={styles.scoreButtons}>
+            <TouchableOpacity
+              style={[styles.pointBtn, styles.pointBtnP1, scoring && styles.pointBtnDisabled]}
+              onPress={() => handlePoint('player1')}
+              disabled={scoring}
+            >
+              <Text style={styles.pointBtnText}>Player 1{'\n'}Point</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.pointBtn, styles.pointBtnP2, scoring && styles.pointBtnDisabled]}
+              onPress={() => handlePoint('player2')}
+              disabled={scoring}
+            >
+              <Text style={styles.pointBtnText}>Player 2{'\n'}Point</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.tipsRow}>
             <Text style={styles.tipsLabel}>Live Tips</Text>
             <Switch
@@ -203,31 +243,106 @@ export default function MatchScreen() {
               trackColor={{ true: '#1a472a', false: '#ccc' }}
             />
           </View>
+        </>
+      )}
+
+      {/* ── POST-MATCH REPORT FLOW ── */}
+
+      {/* Game over, no report submitted yet */}
+      {isParticipant && match.status === 'pending_report' && !submission && (
+        <View style={styles.reportSection}>
+          <Text style={styles.reportTitle}>
+            {match.winner === 'player1' ? 'Player 1' : 'Player 2'} wins!
+          </Text>
+          <Text style={styles.reportScore}>{scoreDisplay}</Text>
+          <Text style={styles.reportHint}>
+            Either player can submit the final score report. Your opponent will be notified to confirm.
+          </Text>
+          <TouchableOpacity
+            style={[styles.submitBtn, submitting && styles.btnDisabled]}
+            onPress={handleSubmitReport}
+            disabled={submitting}
+          >
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitBtnText}>📋 Submit Match Report</Text>}
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Completed match actions */}
+      {/* I submitted — waiting for opponent */}
+      {isParticipant && match.status === 'pending_report' && iSubmitted && submission?.status === 'pending_confirmation' && (
+        <View style={styles.reportSection}>
+          <Text style={styles.reportTitle}>Report Submitted</Text>
+          <Text style={styles.reportScore}>{scoreDisplay}</Text>
+          <View style={styles.waitingBadge}>
+            <Text style={styles.waitingText}>⏳ Waiting for opponent to confirm</Text>
+          </View>
+          <Text style={styles.reportHint}>
+            Your opponent has been notified. Once they confirm, the report will be finalised and rankings updated.
+          </Text>
+        </View>
+      )}
+
+      {/* Opponent submitted — I need to review */}
+      {isParticipant && isPendingMyReview && (
+        <View style={styles.reportSection}>
+          <Text style={styles.reportTitle}>Review Match Report</Text>
+          <Text style={styles.reportScore}>{scoreDisplay}</Text>
+          <Text style={styles.reportHint}>
+            Your opponent submitted the final score above. Confirm if it's correct, or dispute to escalate to your division leader.
+          </Text>
+          <TouchableOpacity
+            style={[styles.confirmBtn, submitting && styles.btnDisabled]}
+            onPress={handleConfirmReport}
+            disabled={submitting}
+          >
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.confirmBtnText}>✓ Confirm Score</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.disputeReportBtn}
+            onPress={handleDisputeReport}
+            disabled={submitting}
+          >
+            <Text style={styles.disputeReportBtnText}>⚠ Dispute Score</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Disputed — awaiting leader */}
+      {match.status === 'disputed' && (
+        <View style={styles.disputedSection}>
+          <Text style={styles.disputedTitle}>⚠ Score Disputed</Text>
+          <Text style={styles.disputedBody}>
+            The match score has been escalated to your division leader for resolution. You'll be notified once it's resolved.
+          </Text>
+        </View>
+      )}
+
+      {/* Confirmed / completed */}
       {match.status === 'completed' && (
-        <View style={styles.completedSection}>
-          <Text style={styles.completedTitle}>
+        <View style={styles.reportSection}>
+          <Text style={styles.reportTitle}>
             {match.winner === 'player1' ? 'Player 1' : 'Player 2'} wins!
           </Text>
-          <Text style={styles.completedScore}>{scoreDisplay}</Text>
+          <Text style={styles.reportScore}>{scoreDisplay}</Text>
+          <View style={styles.confirmedBadge}>
+            <Text style={styles.confirmedText}>✓ Score confirmed · Rankings updated</Text>
+          </View>
           <TouchableOpacity style={styles.shareBtn} onPress={handleShareReport}>
             <Text style={styles.shareBtnText}>📊 Share Match Report</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Tip overlay */}
       <TipOverlay tip={currentTip} onDismiss={() => setCurrentTip(null)} />
 
-      {/* Conflict modal */}
-      <ConflictModal
-        visible={showConflict}
-        match={match}
-        onVote={handleVote}
-        onClose={() => setShowConflict(false)}
+      <DisputeModal
+        visible={showDisputeConfirm}
+        onConfirm={confirmDispute}
+        onCancel={() => setShowDisputeConfirm(false)}
       />
     </ScrollView>
   );
@@ -235,7 +350,7 @@ export default function MatchScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1a472a' },
-  content: { padding: 24 },
+  content: { padding: 24, paddingBottom: 48 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scoreBoard: { alignItems: 'center', paddingVertical: 32 },
   setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
@@ -247,35 +362,53 @@ const styles = StyleSheet.create({
   serviceSide: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 },
   liveBadge: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, alignSelf: 'center', marginBottom: 20 },
   liveBadgeText: { color: '#ff6b6b', fontWeight: '700', fontSize: 13 },
-  scoreButtons: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  startBtn: { backgroundColor: '#ffdc60', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 20 },
+  startBtnText: { color: '#1a472a', fontWeight: '800', fontSize: 17 },
+  scoreButtons: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   pointBtn: { flex: 1, paddingVertical: 28, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   pointBtnP1: { backgroundColor: '#2d6a4f' },
   pointBtnP2: { backgroundColor: '#1b4332' },
   pointBtnDisabled: { opacity: 0.5 },
   pointBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  startBtn: { backgroundColor: '#ffdc60', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 20 },
-  startBtnText: { color: '#1a472a', fontWeight: '800', fontSize: 17 },
-  controls: { gap: 12 },
-  controlBtn: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  controlBtnText: { color: '#ffa500', fontWeight: '600', fontSize: 14 },
   tipsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12 },
   tipsLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  completedSection: { alignItems: 'center', gap: 12 },
-  completedTitle: { color: '#ffdc60', fontSize: 24, fontWeight: '800' },
-  completedScore: { color: '#fff', fontSize: 18, fontWeight: '600' },
-  shareBtn: { backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14, marginTop: 8 },
+
+  // Post-match report section
+  reportSection: { backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 },
+  reportTitle: { color: '#ffdc60', fontSize: 24, fontWeight: '800' },
+  reportScore: { color: '#fff', fontSize: 20, fontWeight: '600', letterSpacing: 1 },
+  reportHint: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  submitBtn: { backgroundColor: '#ffdc60', borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14, marginTop: 4, width: '100%', alignItems: 'center' },
+  submitBtnText: { color: '#1a472a', fontWeight: '800', fontSize: 16 },
+  confirmBtn: { backgroundColor: '#27ae60', borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14, width: '100%', alignItems: 'center' },
+  confirmBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  disputeReportBtn: { paddingVertical: 12, alignItems: 'center', width: '100%' },
+  disputeReportBtnText: { color: '#ffa500', fontWeight: '600', fontSize: 14 },
+  waitingBadge: { backgroundColor: 'rgba(255,220,96,0.2)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  waitingText: { color: '#ffdc60', fontWeight: '600', fontSize: 13 },
+  confirmedBadge: { backgroundColor: 'rgba(39,174,96,0.3)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  confirmedText: { color: '#a8d5a2', fontWeight: '600', fontSize: 13 },
+  shareBtn: { backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14, marginTop: 4, width: '100%', alignItems: 'center' },
   shareBtnText: { color: '#1a472a', fontWeight: '700', fontSize: 15 },
+  btnDisabled: { opacity: 0.5 },
+
+  // Disputed state
+  disputedSection: { backgroundColor: 'rgba(192,57,43,0.2)', borderRadius: 16, padding: 24, gap: 10 },
+  disputedTitle: { color: '#ffa500', fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  disputedBody: { color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+
+  // Tip overlay
   tipOverlay: { position: 'absolute', bottom: 20, left: 0, right: 0, margin: 16, backgroundColor: '#ffdc60', borderRadius: 14, padding: 16 },
   tipTitle: { color: '#1a472a', fontWeight: '800', fontSize: 15, marginBottom: 4 },
   tipBody: { color: '#1a472a', fontSize: 13 },
-  conflictOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
-  conflictCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24 },
-  conflictTitle: { fontSize: 20, fontWeight: '800', color: '#c0392b', marginBottom: 12 },
-  conflictBody: { fontSize: 14, color: '#555', marginBottom: 20 },
-  conflictQuestion: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 12 },
-  conflictOption: { backgroundColor: '#f0f9f0', borderWidth: 2, borderColor: '#1a472a', borderRadius: 12, padding: 16, marginBottom: 8 },
-  conflictOptionText: { fontSize: 18, fontWeight: '700', color: '#1a472a', textAlign: 'center' },
-  conflictOptionSub: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 4 },
-  conflictCancel: { paddingVertical: 14, alignItems: 'center' },
-  conflictCancelText: { color: '#888', fontSize: 14 },
+
+  // Dispute confirm modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, gap: 12 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#c0392b' },
+  modalBody: { fontSize: 14, color: '#555', lineHeight: 20 },
+  disputeBtn: { backgroundColor: '#c0392b', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  disputeBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  cancelBtn: { paddingVertical: 12, alignItems: 'center' },
+  cancelBtnText: { color: '#888', fontSize: 14 },
 });

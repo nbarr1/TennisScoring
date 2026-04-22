@@ -1,13 +1,16 @@
 'use client';
 
-import { use } from 'react';
-import { useMatch } from '@tennis/firebase-client';
+import { use, useState } from 'react';
+import { useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import Link from 'next/link';
 
 export default function MatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { match, loading } = useMatch(id);
+  const { firebaseUser } = useAuthUser();
+  const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -17,13 +20,36 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
     return <div style={styles.center}>Match not found. <Link href="/matches">Back to matches</Link></div>;
   }
 
+  const uid = firebaseUser?.uid;
+  const isParticipant = uid === match.player1Id || uid === match.player2Id;
+  const submission = match.reportSubmission;
+
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
   const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
   const statusLabel = match.status === 'in_progress' ? '● LIVE'
     : match.status === 'completed' ? 'Final'
+    : match.status === 'pending_report' ? 'Pending Report'
     : match.status === 'disputed' ? '⚠ Disputed'
     : 'Scheduled';
+
+  async function handleSubmit() {
+    if (!uid) return;
+    setActionLoading(true);
+    try { await submitMatchReport(id, uid); } finally { setActionLoading(false); }
+  }
+
+  async function handleConfirm() {
+    if (!uid) return;
+    setActionLoading(true);
+    try { await confirmMatchReport(id, uid); } finally { setActionLoading(false); }
+  }
+
+  async function handleDispute() {
+    if (!uid) return;
+    setActionLoading(true);
+    try { await disputeMatchReport(id, uid); } finally { setShowDisputeConfirm(false); setActionLoading(false); }
+  }
 
   return (
     <div style={styles.page}>
@@ -47,6 +73,64 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
             {match.liveScore.server === 'player1' ? '● Player 1' : '● Player 2'} serves · {match.liveScore.serviceSide} side
           </div>
         </div>
+
+        {/* Report actions */}
+        {isParticipant && match.status === 'pending_report' && !submission && (
+          <div style={styles.reportSection}>
+            <p style={styles.reportHint}>Match over — submit the final score report for your opponent to confirm.</p>
+            <button style={styles.primaryBtn} onClick={handleSubmit} disabled={actionLoading}>
+              {actionLoading ? 'Submitting…' : 'Submit Match Report'}
+            </button>
+          </div>
+        )}
+
+        {isParticipant && match.status === 'pending_report' && submission?.submittedBy === uid && (
+          <div style={styles.reportSection}>
+            <span style={styles.waitingBadge}>⏳ Waiting for opponent to confirm the report</span>
+          </div>
+        )}
+
+        {isParticipant && match.status === 'pending_report' && submission && submission.submittedBy !== uid && (
+          <div style={styles.reportSection}>
+            <p style={styles.reportHint}>Your opponent has submitted the match report. Please review the score above and confirm or dispute.</p>
+            <div style={styles.reportBtns}>
+              <button style={styles.confirmBtn} onClick={handleConfirm} disabled={actionLoading}>
+                {actionLoading ? '…' : '✓ Confirm Score'}
+              </button>
+              <button style={styles.disputeBtn} onClick={() => setShowDisputeConfirm(true)} disabled={actionLoading}>
+                ⚠ Dispute Score
+              </button>
+            </div>
+          </div>
+        )}
+
+        {match.status === 'disputed' && (
+          <div style={styles.reportSection}>
+            <span style={styles.disputedBadge}>⚠ Score disputed — awaiting division leader resolution</span>
+          </div>
+        )}
+
+        {match.status === 'completed' && (
+          <div style={styles.reportSection}>
+            <span style={styles.confirmedBadge}>✓ Score confirmed · Rankings updated</span>
+          </div>
+        )}
+
+        {/* Dispute confirmation modal */}
+        {showDisputeConfirm && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modal}>
+              <h3 style={styles.modalTitle}>Dispute this report?</h3>
+              <p style={styles.modalBody}>This will escalate to your division leader to resolve. Only dispute if the score shown is incorrect.</p>
+              <div style={styles.modalBtns}>
+                <button style={styles.modalCancel} onClick={() => setShowDisputeConfirm(false)}>Cancel</button>
+                <button style={styles.modalConfirm} onClick={handleDispute} disabled={actionLoading}>
+                  {actionLoading ? '…' : 'Yes, Dispute'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Set breakdown */}
         <div style={styles.section}>
@@ -131,4 +215,20 @@ const styles: Record<string, React.CSSProperties> = {
   statLabel: { color: '#666', fontSize: 14 },
   statVal: { textAlign: 'center' as const, fontSize: 14, fontWeight: 500 },
   reportBtn: { display: 'inline-block', marginTop: 16, background: '#1a472a', color: '#fff', borderRadius: 10, padding: '12px 20px', fontWeight: 600, fontSize: 14 },
+  reportSection: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16, textAlign: 'center' as const },
+  reportHint: { color: '#555', fontSize: 14, marginBottom: 16 },
+  reportBtns: { display: 'flex', gap: 12, justifyContent: 'center' },
+  primaryBtn: { background: '#1a472a', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 28px', fontWeight: 700, fontSize: 15, cursor: 'pointer' },
+  confirmBtn: { background: '#2d6a4f', color: '#fff', border: 'none', borderRadius: 10, padding: '14px 24px', fontWeight: 700, fontSize: 15, cursor: 'pointer' },
+  disputeBtn: { background: '#fff', color: '#c0392b', border: '2px solid #c0392b', borderRadius: 10, padding: '14px 24px', fontWeight: 700, fontSize: 15, cursor: 'pointer' },
+  waitingBadge: { background: '#f0f0e8', color: '#666', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
+  confirmedBadge: { background: '#e8f5e9', color: '#2d6a4f', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
+  disputedBadge: { background: '#fff3e0', color: '#e65100', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
+  modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
+  modal: { background: '#fff', borderRadius: 16, padding: 32, maxWidth: 380, width: '90%' },
+  modalTitle: { fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 },
+  modalBody: { fontSize: 14, color: '#555', marginBottom: 24, lineHeight: 1.5 },
+  modalBtns: { display: 'flex', gap: 12, justifyContent: 'flex-end' },
+  modalCancel: { background: '#f0f0f0', color: '#333', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
+  modalConfirm: { background: '#c0392b', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
 };

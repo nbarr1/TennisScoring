@@ -83,7 +83,9 @@ export async function scorePoint(
   };
 
   if (result.matchWinner) {
-    updates.status = 'completed';
+    // Game over — move to pending_report so either player can submit the report.
+    // Status transitions to 'completed' only after the opponent confirms the report.
+    updates.status = 'pending_report';
     updates.winner = result.matchWinner;
     updates.completedAt = Date.now();
   }
@@ -92,35 +94,54 @@ export async function scorePoint(
   return { matchWinner: result.matchWinner };
 }
 
-export async function triggerConflict(
-  matchId: string,
-  triggeredBy: string,
-  currentScore: LiveScore
-): Promise<void> {
+/**
+ * Either player submits the end-of-match report.
+ * The opponent receives a push notification to review and confirm or dispute.
+ */
+export async function submitMatchReport(matchId: string, submittedBy: string): Promise<void> {
   await updateDoc(matchDoc(matchId), {
-    status: 'disputed',
-    conflictState: {
-      triggeredAt: Date.now(),
-      triggeredBy,
-      votes: {},
+    reportSubmission: {
+      submittedBy,
+      submittedAt: Date.now(),
+      status: 'pending_confirmation',
     },
   });
 }
 
-export async function submitConflictVote(
-  matchId: string,
-  userId: string,
-  score: LiveScore
-): Promise<void> {
+/**
+ * The non-submitting player confirms the report is accurate.
+ * Triggers ranking recalculation and PDF generation via Cloud Function.
+ */
+export async function confirmMatchReport(matchId: string, confirmedBy: string): Promise<void> {
   await updateDoc(matchDoc(matchId), {
-    [`conflictState.votes.${userId}`]: JSON.stringify(score),
+    status: 'completed',
+    'reportSubmission.status': 'confirmed',
+    'reportSubmission.confirmedBy': confirmedBy,
+    'reportSubmission.confirmedAt': Date.now(),
   });
 }
 
-export async function completeMatch(matchId: string, winner: 'player1' | 'player2'): Promise<void> {
+/**
+ * The non-submitting player disputes the report.
+ * Escalates to the division leader via Cloud Function notification.
+ */
+export async function disputeMatchReport(matchId: string, disputedBy: string): Promise<void> {
+  await updateDoc(matchDoc(matchId), {
+    status: 'disputed',
+    'reportSubmission.status': 'disputed',
+    'reportSubmission.disputedBy': disputedBy,
+    'reportSubmission.disputedAt': Date.now(),
+  });
+}
+
+/**
+ * Division leader resolves a disputed report and forces it to confirmed.
+ */
+export async function resolveDisputedReport(matchId: string, resolvedBy: string): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'completed',
-    winner,
-    completedAt: Date.now(),
+    'reportSubmission.status': 'confirmed',
+    'reportSubmission.confirmedBy': resolvedBy,
+    'reportSubmission.confirmedAt': Date.now(),
   });
 }
