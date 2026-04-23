@@ -24,7 +24,7 @@
       },
       "package": "com.tennisleague.app",
       "versionCode": 1,
-      "googleServicesFile": "$GOOGLE_SERVICES_JSON"
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-router",
