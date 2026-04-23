@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next';
-
-const config: NextConfig = {
+/** @type {import('next').NextConfig} */
+const config = {
   transpilePackages: ['@tennis/shared', '@tennis/firebase-client'],
   experimental: {
     serverComponentsExternalPackages: ['firebase-admin'],
