@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, SectionList, StyleSheet, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator
+  Modal, TextInput, Alert, ActivityIndicator, FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onSnapshot } from 'firebase/firestore';
-import { divisionMatchesQuery, createMatch } from '@tennis/firebase-client';
+import { divisionMatchesQuery, createMatch, searchDivisionPlayers } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
-import type { Match } from '@tennis/shared';
+import type { Match, User } from '@tennis/shared';
 
 const STATUS_COLOR: Record<string, string> = {
   in_progress: '#27ae60',
@@ -76,11 +76,14 @@ export default function MatchesScreen() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [opponent, setOpponent] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   const router = useRouter();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!divisionId) return;
     setLoading(true);
     const q = divisionMatchesQuery(divisionId);
@@ -91,18 +94,43 @@ export default function MatchesScreen() {
     return unsub;
   }, [divisionId]);
 
+  useEffect(() => {
+    if (!divisionId || !searchText.trim() || selectedOpponent) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchDivisionPlayers(divisionId, searchText);
+        setSearchResults(results.filter((u) => u.id !== user?.id));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText, divisionId, selectedOpponent]);
+
+  function resetCreateModal() {
+    setShowCreate(false);
+    setSearchText('');
+    setSearchResults([]);
+    setSelectedOpponent(null);
+  }
+
   async function handleCreateMatch() {
-    if (!user || !divisionId || !opponent.trim()) return;
+    if (!user || !divisionId || !selectedOpponent) return;
     setCreating(true);
     try {
       const matchId = await createMatch({
         player1Id: user.id,
-        player2Id: opponent.trim(),
+        player2Id: selectedOpponent.id,
         divisionId,
         createdBy: user.id,
       });
-      setShowCreate(false);
-      setOpponent('');
+      resetCreateModal();
       router.push(`/match/${matchId}`);
     } catch {
       Alert.alert('Error', 'Could not create match. Please try again.');
@@ -157,22 +185,62 @@ export default function MatchesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Create Match</Text>
-            <Text style={styles.modalLabel}>Opponent's User ID</Text>
-            <TextInput
-              style={styles.input}
-              value={opponent}
-              onChangeText={setOpponent}
-              placeholder="Enter opponent's ID"
-              autoCapitalize="none"
-            />
+
+            {selectedOpponent ? (
+              <View style={styles.selectedPlayer}>
+                <View style={styles.playerChip}>
+                  <Text style={styles.playerChipName}>{selectedOpponent.displayName}</Text>
+                  <Text style={styles.playerChipEmail}>{selectedOpponent.email}</Text>
+                </View>
+                <TouchableOpacity onPress={() => { setSelectedOpponent(null); setSearchText(''); }}>
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalLabel}>Search for opponent</Text>
+                <View style={styles.searchRow}>
+                  <TextInput
+                    style={[styles.input, styles.searchInput]}
+                    value={searchText}
+                    onChangeText={setSearchText}
+                    placeholder="Name or email..."
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {searching && <ActivityIndicator style={styles.searchSpinner} color="#1a472a" />}
+                </View>
+                {searchResults.length > 0 && (
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(u) => u.id}
+                    style={styles.resultsList}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={styles.resultRow}
+                        onPress={() => { setSelectedOpponent(item); setSearchResults([]); }}
+                      >
+                        <Text style={styles.resultName}>{item.displayName}</Text>
+                        <Text style={styles.resultEmail}>{item.email}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+                {searchText.trim().length > 0 && !searching && searchResults.length === 0 && (
+                  <Text style={styles.noResults}>No players found.</Text>
+                )}
+              </>
+            )}
+
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowCreate(false)}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={resetCreateModal}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.createBtn, creating && styles.createBtnDisabled]}
+                style={[styles.createBtn, (!selectedOpponent || creating) && styles.createBtnDisabled]}
                 onPress={handleCreateMatch}
-                disabled={creating}
+                disabled={!selectedOpponent || creating}
               >
                 {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.createText}>Create</Text>}
               </TouchableOpacity>
@@ -215,11 +283,24 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 8 },
   emptyBody: { fontSize: 14, color: '#666', textAlign: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: '80%' },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#1a472a', marginBottom: 20 },
   modalLabel: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, marginBottom: 20 },
-  modalActions: { flexDirection: 'row', gap: 12 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, marginBottom: 12 },
+  searchRow: { flexDirection: 'row', alignItems: 'center' },
+  searchInput: { flex: 1, marginBottom: 0 },
+  searchSpinner: { marginLeft: 10 },
+  resultsList: { maxHeight: 200, marginTop: 8, marginBottom: 12 },
+  resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  resultName: { fontSize: 15, fontWeight: '600', color: '#222' },
+  resultEmail: { fontSize: 13, color: '#888', marginTop: 2 },
+  noResults: { fontSize: 14, color: '#999', textAlign: 'center', marginVertical: 12 },
+  selectedPlayer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  playerChip: { flex: 1 },
+  playerChipName: { fontSize: 16, fontWeight: '700', color: '#1a472a' },
+  playerChipEmail: { fontSize: 13, color: '#666', marginTop: 2 },
+  changeText: { fontSize: 14, color: '#1a472a', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
   cancelText: { color: '#333', fontWeight: '600' },
   createBtn: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#1a472a', alignItems: 'center' },
