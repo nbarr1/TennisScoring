@@ -13,7 +13,6 @@ out/
 .env
 .env.local
 .env.*.local
-google-services.json
 GoogleService-Info.plist
 
 # Expo
