@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { matchDoc, matchesCol } from '../collections';
-import type { Match, LiveScore, DEFAULT_FORMAT } from '@tennis/shared';
+import type { Match, LiveScore } from '@tennis/shared';
 import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore } from '@tennis/shared';
 
 export function useMatch(matchId: string | null) {

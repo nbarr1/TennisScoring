@@ -9,7 +9,8 @@
     "outDir": "lib",
     "rootDir": "src",
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node"]
   },
   "compileOnSave": true,
   "include": ["src"],
