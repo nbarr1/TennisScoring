@@ -23,7 +23,8 @@
         "backgroundColor": "#1a472a"
       },
       "package": "com.tennisleague.app",
-      "versionCode": 1
+      "versionCode": 1,
+      "googleServicesFile": "$GOOGLE_SERVICES_JSON"
     },
     "plugins": [
       "expo-router",
