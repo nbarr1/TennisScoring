@@ -1,3 +1,4 @@
 {
-  "installCommand": "npm install -g pnpm@9.15.4 && cd ../.. && pnpm install"
+  "installCommand": "cd ../.. && npx --yes pnpm@9.15.4 install --no-frozen-lockfile",
+  "buildCommand": "cd ../.. && npx --yes pnpm@9.15.4 --filter @tennis/shared build && npx --yes pnpm@9.15.4 --filter @tennis/firebase-client build && npx --yes pnpm@9.15.4 --filter @tennis/web build"
 }

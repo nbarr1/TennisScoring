@@ -17,7 +17,7 @@ export function useMessages(channelId: string | null) {
     const unsub = onSnapshot(
       channelMessagesQuery(channelId),
       (snap) => {
-        setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Message));
+        setMessages(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Message, 'id'>) })));
         setLoading(false);
       },
       (err) => {
@@ -44,7 +44,7 @@ export function useChannels(userId: string | null) {
     const unsub = onSnapshot(
       userChannelsQuery(userId),
       (snap) => {
-        setChannels(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Channel));
+        setChannels(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Channel, 'id'>) })));
         setLoading(false);
       }
     );

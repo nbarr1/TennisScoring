@@ -156,7 +156,7 @@ export function useLiveMatches(divisionId: string | null) {
   useEffect(() => {
     if (!divisionId) { setLoading(false); return; }
     const unsub = onSnapshot(liveMatchesQuery(divisionId), (snap) => {
-      setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Match));
+      setMatches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) })));
       setLoading(false);
     });
     return unsub;
