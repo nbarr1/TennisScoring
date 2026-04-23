@@ -1,37 +1,22 @@
 name: EAS Build (Android Preview)
-
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+      - uses: expo/expo-github-action@v8
         with:
-          version: 9
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Setup Expo + EAS
-        uses: expo/expo-github-action@v8
-        with:
+          expo-version: latest
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Build APK with EAS
-        working-directory: apps/mobile
+      - run: npm install -g pnpm && pnpm install
+      - working-directory: apps/mobile
         run: eas build --platform android --profile preview --non-interactive
         env:
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
