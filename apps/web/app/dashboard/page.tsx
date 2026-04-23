@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
 import { useRankings } from '@tennis/firebase-client';
 import type { PlayerRanking } from '@tennis/shared';
 
 const DIVISION_ID = process.env.NEXT_PUBLIC_DIVISION_ID ?? 'default';
 
-export default function DashboardPage() {
+export default function DashboardPage(): React.JSX.Element {
   const { rankings, loading } = useRankings(DIVISION_ID);
 
   return (

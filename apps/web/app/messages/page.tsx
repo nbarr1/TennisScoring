@@ -1,11 +1,13 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuthUser, useChannels, useMessages, sendMessage } from '@tennis/firebase-client';
 import type { Channel, Message } from '@tennis/shared';
 
-export default function MessagesPage() {
+export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const { channels } = useChannels(firebaseUser?.uid ?? null);
   const [active, setActive] = useState<Channel | null>(null);

@@ -15,11 +15,21 @@ const firebaseConfig = {
   measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-export const auth = getAuth(app);
-export const storage = getStorage(app);
-export const functions = getFunctions(app);
+// Firebase services are only initialized in browser environments.
+// During Next.js SSR/prerendering the module is evaluated in Node.js where there
+// is no window — skipping initialization prevents auth/invalid-api-key crashes
+// at build time. All actual Firebase calls happen inside useEffect hooks which
+// only run on the client, so the null values are never used server-side.
+const isBrowser = typeof (globalThis as Record<string, unknown>)['window'] !== 'undefined';
+
+export const app = isBrowser
+  ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
+  : (null as unknown as ReturnType<typeof getApp>);
+
+export const db = isBrowser ? getFirestore(app) : (null as unknown as ReturnType<typeof getFirestore>);
+export const auth = isBrowser ? getAuth(app) : (null as unknown as ReturnType<typeof getAuth>);
+export const storage = isBrowser ? getStorage(app) : (null as unknown as ReturnType<typeof getStorage>);
+export const functions = isBrowser ? getFunctions(app) : (null as unknown as ReturnType<typeof getFunctions>);
 
 export async function getMessagingIfSupported() {
   const supported = await isSupported();

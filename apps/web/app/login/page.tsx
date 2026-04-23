@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,7 +13,7 @@ import { auth } from '@tennis/firebase-client';
 
 type Mode = 'signin' | 'signup';
 
-export default function LoginPage() {
+export default function LoginPage(): React.JSX.Element {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('signin');
   const [displayName, setDisplayName] = useState('');

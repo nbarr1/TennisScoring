@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { onSnapshot } from 'firebase/firestore';
@@ -64,14 +66,14 @@ function MatchCard({ m }: { m: Match }) {
   );
 }
 
-export default function MatchesPage() {
+export default function MatchesPage(): React.JSX.Element {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const q = divisionMatchesQuery(DIVISION_ID);
     return onSnapshot(q, (snap) => {
-      setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Match));
+      setMatches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) })));
       setLoading(false);
     });
   }, []);

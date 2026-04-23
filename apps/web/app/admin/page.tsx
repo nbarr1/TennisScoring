@@ -1,14 +1,16 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
-import { divisionsCol, divisionDoc, usersCol, userDoc, db } from '@tennis/firebase-client';
+import { divisionsCol, divisionDoc, channelsCol, usersCol, userDoc } from '@tennis/firebase-client';
 import { useAuthUser } from '@tennis/firebase-client';
-import type { Division, User } from '@tennis/shared';
+import type { Division, User, Channel } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
-export default function AdminPage() {
+export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
@@ -24,12 +26,12 @@ export default function AdminPage() {
     const q = query(divisionsCol(), where('leaderId', '==', firebaseUser.uid));
     return onSnapshot(q, async (snap) => {
       if (!snap.empty) {
-        const div = { id: snap.docs[0].id, ...snap.docs[0].data() } as Division;
+        const div = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<Division, 'id'>) };
         setDivision(div);
         // Load player profiles
         if (div.playerIds.length > 0) {
           const profiles = await Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))));
-          setPlayers(profiles.filter((d) => d.exists()).map((d) => ({ id: d.id, ...d.data() }) as User));
+          setPlayers(profiles.filter((d) => d.exists()).map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })));
         }
       }
       setLoading(false);
@@ -46,13 +48,13 @@ export default function AdminPage() {
       createdAt: Date.now(),
     } as Division);
     // Create a division-wide channel
-    await addDoc(db.collection ? (db as any).collection('channels') : ({} as any), {
+    await addDoc(channelsCol(), {
       type: 'division',
       name: `${newDivisionName.trim()} Chat`,
       divisionId: ref.id,
       participantIds: [firebaseUser.uid],
       createdAt: Date.now(),
-    });
+    } as Channel);
     setNewDivisionName('');
   }
 

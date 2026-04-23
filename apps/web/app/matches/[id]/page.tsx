@@ -1,12 +1,14 @@
 'use client';
 
-import { use, useState } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useState } from 'react';
 import { useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import Link from 'next/link';
 
-export default function MatchPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
+  const { id } = params;
   const { match, loading } = useMatch(id);
   const { firebaseUser } = useAuthUser();
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
@@ -206,7 +208,7 @@ const styles: Record<string, React.CSSProperties> = {
   server: { color: '#ffdc60', fontSize: 13, fontWeight: 600 },
   section: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
-  setRow: { display: 'flex', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottom: '1px solid #f0f0f0' },
+  setRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #f0f0f0' },
   setLabel: { color: '#666', fontSize: 14, width: 48 },
   setScore: { fontSize: 18, color: '#333', width: 32, textAlign: 'center' as const },
   setDash: { color: '#999' },
