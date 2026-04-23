@@ -17,7 +17,6 @@ export interface User {
   role: UserRole;
   fcmTokens: string[];
   tipsEnabled: boolean;
-  ssoProvider?: 'google' | 'microsoft' | 'pingid' | 'saml';
   createdAt: number; // Unix ms timestamp
   updatedAt: number;
 }

@@ -1,21 +1,64 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
+import { auth } from '@tennis/firebase-client';
+
+type Mode = 'signin' | 'signup';
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>('signin');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSSOLogin() {
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
     setLoading(true);
-    // Redirect to PingID OIDC authorization endpoint
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: process.env.NEXT_PUBLIC_PINGID_CLIENT_ID ?? '',
-      redirect_uri: `${window.location.origin}/api/auth/callback`,
-      scope: 'openid profile email',
-      state: crypto.randomUUID(),
-    });
-    window.location.href = `${process.env.NEXT_PUBLIC_PINGID_ISSUER_URL}/as/authorization.oauth2?${params}`;
+    try {
+      let user;
+      if (mode === 'signup') {
+        const credential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(credential.user, { displayName: displayName.trim() });
+        user = credential.user;
+      } else {
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        user = credential.user;
+      }
+
+      // Exchange the Firebase ID token for a server-side session cookie via the middleware's loginPath
+      const idToken = await user.getIdToken();
+      await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      router.replace('/dashboard');
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setError('Incorrect email or password.');
+      } else if (code === 'auth/email-already-in-use') {
+        setError('An account with this email already exists.');
+      } else if (code === 'auth/weak-password') {
+        setError('Password must be at least 6 characters.');
+      } else if (code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -25,11 +68,58 @@ export default function LoginPage() {
         <h1 style={styles.title}>Tennis League</h1>
         <p style={styles.subtitle}>Work Tennis Scoring & Rankings</p>
 
-        <button style={styles.button} onClick={handleSSOLogin} disabled={loading}>
-          {loading ? 'Redirecting…' : 'Sign in with Company SSO'}
-        </button>
+        <form onSubmit={handleSubmit} style={styles.form}>
+          {mode === 'signup' && (
+            <div style={styles.field}>
+              <label style={styles.label}>Display Name</label>
+              <input
+                style={styles.input}
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your name"
+                required
+                autoComplete="name"
+              />
+            </div>
+          )}
 
-        <p style={styles.footnote}>Secured by PingID</p>
+          <div style={styles.field}>
+            <label style={styles.label}>Email</label>
+            <input
+              style={styles.input}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+            />
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>Password</label>
+            <input
+              style={styles.input}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            />
+          </div>
+
+          {error && <p style={styles.error}>{error}</p>}
+
+          <button style={{ ...styles.button, ...(loading ? styles.buttonDisabled : {}) }} type="submit" disabled={loading}>
+            {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+
+        <button style={styles.toggleBtn} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>
+          {mode === 'signin' ? "Don't have an account? Create one" : 'Already have an account? Sign in'}
+        </button>
       </div>
     </main>
   );
@@ -37,10 +127,16 @@ export default function LoginPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   main: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' },
-  card: { background: 'white', borderRadius: 20, padding: 48, maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' },
-  logo: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 28, fontWeight: 700, color: 'var(--green-dark)', marginBottom: 8 },
-  subtitle: { fontSize: 16, color: 'var(--muted)', marginBottom: 40 },
-  button: { width: '100%', background: 'var(--green-dark)', color: 'white', border: 'none', borderRadius: 12, padding: '16px 24px', fontSize: 17, fontWeight: 600, cursor: 'pointer' },
-  footnote: { marginTop: 24, fontSize: 12, color: '#aaa' },
+  card: { background: 'white', borderRadius: 20, padding: 48, maxWidth: 420, width: '100%', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' },
+  logo: { fontSize: 56, textAlign: 'center' as const, marginBottom: 12 },
+  title: { fontSize: 26, fontWeight: 700, color: 'var(--green-dark)', textAlign: 'center' as const, marginBottom: 6 },
+  subtitle: { fontSize: 15, color: 'var(--muted)', textAlign: 'center' as const, marginBottom: 32 },
+  form: { display: 'flex', flexDirection: 'column' as const, gap: 16 },
+  field: { display: 'flex', flexDirection: 'column' as const, gap: 6 },
+  label: { fontSize: 13, fontWeight: 600, color: '#444' },
+  input: { border: '1px solid #ddd', borderRadius: 10, padding: '12px 14px', fontSize: 15, color: '#111', outline: 'none' },
+  error: { fontSize: 13, color: '#c0392b', textAlign: 'center' as const },
+  button: { background: 'var(--green-dark)', color: 'white', border: 'none', borderRadius: 12, padding: '15px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginTop: 8 },
+  buttonDisabled: { opacity: 0.6, cursor: 'not-allowed' },
+  toggleBtn: { marginTop: 20, background: 'none', border: 'none', color: 'var(--green-dark)', fontSize: 14, fontWeight: 500, cursor: 'pointer', width: '100%' },
 };

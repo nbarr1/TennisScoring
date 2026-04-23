@@ -3,7 +3,7 @@ import { authMiddleware } from 'next-firebase-auth-edge';
 
 export async function middleware(request: NextRequest) {
   return authMiddleware(request, {
-    loginPath: '/login',
+    loginPath: '/api/auth/login',
     logoutPath: '/api/auth/logout',
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
     cookieName: 'tennis-auth',
@@ -27,5 +27,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|api/auth|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
+  // Excludes: login page, the logout endpoint, Next.js internals, and static assets.
+  // /api/auth/login is intentionally NOT excluded so authMiddleware can set the session cookie.
+  matcher: ['/((?!login|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
 };
