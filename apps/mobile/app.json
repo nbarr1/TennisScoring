@@ -30,6 +30,11 @@
       "expo-notifications",
       ["expo-secure-store", { "faceIDPermission": "Allow Tennis League to use Face ID" }]
     ],
-    "scheme": "tennisleague"
+    "scheme": "tennisleague",
+    "extra": {
+      "eas": {
+        "projectId": "02b81764-55e6-4425-853d-d88185341097"
+      }
+    }
   }
 }
