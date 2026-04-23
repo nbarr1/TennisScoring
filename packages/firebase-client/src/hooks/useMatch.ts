@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
-import { matchDoc, matchesCol } from '../collections';
-import type { Match, LiveScore } from '@tennis/shared';
+import { onSnapshot, updateDoc, addDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
+import { functions } from '../config';
+import type { Match, DEFAULT_FORMAT } from '@tennis/shared';
 import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore } from '@tennis/shared';
 
 export function useMatch(matchId: string | null) {
@@ -135,13 +137,30 @@ export async function disputeMatchReport(matchId: string, disputedBy: string): P
 }
 
 /**
- * Division leader resolves a disputed report and forces it to confirmed.
+ * Division leader resolves a disputed report via a server-side callable
+ * that enforces the leader authorization check.
  */
-export async function resolveDisputedReport(matchId: string, resolvedBy: string): Promise<void> {
-  await updateDoc(matchDoc(matchId), {
-    status: 'completed',
-    'reportSubmission.status': 'confirmed',
-    'reportSubmission.confirmedBy': resolvedBy,
-    'reportSubmission.confirmedAt': Date.now(),
-  });
+export async function resolveDisputedReport(matchId: string): Promise<void> {
+  const callable = httpsCallable(functions, 'resolveDisputedReport');
+  await callable({ matchId });
+}
+
+/**
+ * Subscribes to all in-progress matches for a division in real time.
+ * Useful for spectator views and live-match dashboards.
+ */
+export function useLiveMatches(divisionId: string | null) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId) { setLoading(false); return; }
+    const unsub = onSnapshot(liveMatchesQuery(divisionId), (snap) => {
+      setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Match));
+      setLoading(false);
+    });
+    return unsub;
+  }, [divisionId]);
+
+  return { matches, loading };
 }

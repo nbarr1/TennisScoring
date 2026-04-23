@@ -33,22 +33,25 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
     : match.status === 'disputed' ? '⚠ Disputed'
     : 'Scheduled';
 
+  async function withLoading(fn: () => Promise<void>) {
+    setActionLoading(true);
+    try { await fn(); } finally { setActionLoading(false); }
+  }
+
   async function handleSubmit() {
     if (!uid) return;
-    setActionLoading(true);
-    try { await submitMatchReport(id, uid); } finally { setActionLoading(false); }
+    await withLoading(() => submitMatchReport(id, uid));
   }
 
   async function handleConfirm() {
     if (!uid) return;
-    setActionLoading(true);
-    try { await confirmMatchReport(id, uid); } finally { setActionLoading(false); }
+    await withLoading(() => confirmMatchReport(id, uid));
   }
 
   async function handleDispute() {
     if (!uid) return;
-    setActionLoading(true);
-    try { await disputeMatchReport(id, uid); } finally { setShowDisputeConfirm(false); setActionLoading(false); }
+    setShowDisputeConfirm(false);
+    await withLoading(() => disputeMatchReport(id, uid));
   }
 
   return (
