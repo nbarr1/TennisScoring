@@ -37,6 +37,9 @@ export const h2hCol = () => collection(db, 'headToHead') as CollectionReference<
 export const divisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
   query(matchesCol(), where('divisionId', '==', divisionId), orderBy('createdAt', 'desc'), ...extra);
 
+export const liveMatchesQuery = (divisionId: string) =>
+  query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'in_progress'));
+
 export const playerMatchesQuery = (playerId: string) =>
   query(
     matchesCol(),

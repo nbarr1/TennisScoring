@@ -24,7 +24,6 @@ export const onUserCreated = functions.auth.beforeUserCreated(async (event) => {
     role: 'player',
     fcmTokens: [],
     tipsEnabled: true,
-    ssoProvider: user.providerData?.[0]?.providerId ?? null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });

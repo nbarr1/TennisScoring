@@ -2,7 +2,7 @@
   "name": "tennis-scoring",
   "private": true,
   "version": "0.0.1",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
@@ -19,5 +19,12 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "prettier": "^3.2.0"
+  },
+  "pnpm": {
+    "neverBuiltDependencies": [
+      "react-native-screens",
+      "react-native-reanimated",
+      "react-native-gesture-handler"
+    ]
   }
 }

@@ -1,108 +1,147 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import { signInWithCustomToken } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { auth, app } from '@tennis/firebase-client';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView
+} from 'react-native';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '@tennis/firebase-client';
 
-WebBrowser.maybeCompleteAuthSession();
-
-const PING_ID_DISCOVERY = {
-  authorizationEndpoint: `${process.env.EXPO_PUBLIC_PINGID_ISSUER_URL}/as/authorization.oauth2`,
-  tokenEndpoint: `${process.env.EXPO_PUBLIC_PINGID_ISSUER_URL}/as/token.oauth2`,
-};
+type Mode = 'signin' | 'signup';
 
 export default function LoginScreen() {
+  const [mode, setMode] = useState<Mode>('signin');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
-  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'tennisleague' });
-
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: process.env.EXPO_PUBLIC_PINGID_CLIENT_ID ?? '',
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri,
-      usePKCE: true,
-    },
-    PING_ID_DISCOVERY
-  );
-
-  React.useEffect(() => {
-    if (response?.type === 'success' && response.params?.code) {
-      handlePingCallback(response.params.code, request?.codeVerifier ?? '');
-    } else if (response?.type === 'error') {
-      Alert.alert('Login Failed', 'Could not sign in with PingID. Please try again.');
+  async function handleSubmit() {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Missing fields', 'Please enter your email and password.');
+      return;
     }
-  }, [response]);
-
-  async function handlePingCallback(code: string, codeVerifier: string) {
+    if (mode === 'signup' && !displayName.trim()) {
+      Alert.alert('Missing name', 'Please enter your display name.');
+      return;
+    }
     setLoading(true);
     try {
-      // Exchange code for tokens at PingID
-      const tokenResponse = await AuthSession.exchangeCodeAsync(
-        {
-          clientId: process.env.EXPO_PUBLIC_PINGID_CLIENT_ID ?? '',
-          code,
-          redirectUri,
-          extraParams: { code_verifier: codeVerifier },
-        },
-        { tokenEndpoint: PING_ID_DISCOVERY.tokenEndpoint }
-      );
-
-      // Exchange PingID ID token for Firebase custom token
-      const functions = getFunctions(app);
-      const exchangeToken = httpsCallable<{ idToken: string }, { customToken: string }>(
-        functions,
-        'exchangePingIdToken'
-      );
-      const { data } = await exchangeToken({ idToken: tokenResponse.idToken ?? '' });
-
-      // Sign in to Firebase
-      await signInWithCustomToken(auth, data.customToken);
-      router.replace('/(tabs)');
-    } catch (err) {
-      Alert.alert('Login Error', 'Authentication failed. Please try again.');
+      if (mode === 'signup') {
+        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        await updateProfile(credential.user, { displayName: displayName.trim() });
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+      }
+      // Auth state change in _layout.tsx handles redirect automatically
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        Alert.alert('Sign In Failed', 'Incorrect email or password.');
+      } else if (code === 'auth/email-already-in-use') {
+        Alert.alert('Email Taken', 'An account with this email already exists.');
+      } else if (code === 'auth/weak-password') {
+        Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+      } else if (code === 'auth/invalid-email') {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      } else {
+        Alert.alert('Error', 'Something went wrong. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>🎾</Text>
-        <Text style={styles.title}>Tennis League</Text>
-        <Text style={styles.subtitle}>Work Tennis Scoring & Rankings</Text>
-      </View>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
+        <View style={styles.header}>
+          <Text style={styles.logo}>🎾</Text>
+          <Text style={styles.title}>Tennis League</Text>
+          <Text style={styles.subtitle}>Work Tennis Scoring & Rankings</Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#1a472a" />
-      ) : (
-        <TouchableOpacity
-          style={[styles.button, !request && styles.buttonDisabled]}
-          onPress={() => promptAsync()}
-          disabled={!request}
-        >
-          <Text style={styles.buttonText}>Sign in with Company SSO</Text>
-        </TouchableOpacity>
-      )}
+        <View style={styles.form}>
+          {mode === 'signup' && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Display Name</Text>
+              <TextInput
+                style={styles.input}
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Your name"
+                autoCapitalize="words"
+                returnKeyType="next"
+              />
+            </View>
+          )}
 
-      <Text style={styles.footnote}>Secured by PingID · Tennis League v1.0</Text>
-    </View>
+          <View style={styles.field}>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="next"
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Password</Text>
+            <TextInput
+              style={styles.input}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleSubmit}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.buttonText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.toggleBtn}
+            onPress={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); }}
+          >
+            <Text style={styles.toggleText}>
+              {mode === 'signin'
+                ? "Don't have an account? Create one"
+                : 'Already have an account? Sign in'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f0', justifyContent: 'center', alignItems: 'center', padding: 32 },
-  header: { alignItems: 'center', marginBottom: 48 },
-  logo: { fontSize: 64, marginBottom: 16 },
-  title: { fontSize: 32, fontWeight: '700', color: '#1a472a', marginBottom: 8 },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center' },
-  button: { backgroundColor: '#1a472a', paddingHorizontal: 32, paddingVertical: 16, borderRadius: 12, width: '100%', alignItems: 'center' },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  footnote: { position: 'absolute', bottom: 40, color: '#999', fontSize: 12 },
+  container: { flex: 1, backgroundColor: '#f5f5f0' },
+  inner: { flexGrow: 1, justifyContent: 'center', padding: 32 },
+  header: { alignItems: 'center', marginBottom: 40 },
+  logo: { fontSize: 56, marginBottom: 12 },
+  title: { fontSize: 28, fontWeight: '700', color: '#1a472a', marginBottom: 6 },
+  subtitle: { fontSize: 15, color: '#666', textAlign: 'center' },
+  form: { gap: 16 },
+  field: { gap: 6 },
+  label: { fontSize: 14, fontWeight: '600', color: '#444' },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 15, color: '#111' },
+  button: { backgroundColor: '#1a472a', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  buttonDisabled: { opacity: 0.6 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  toggleBtn: { alignItems: 'center', paddingVertical: 12 },
+  toggleText: { color: '#1a472a', fontSize: 14, fontWeight: '500' },
 });

@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: 'Work Tennis League Scoring & Rankings',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
       <body>{children}</body>
