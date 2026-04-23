@@ -73,8 +73,10 @@ export default function LoginPage(): React.JSX.Element {
         <form onSubmit={handleSubmit} style={styles.form}>
           {mode === 'signup' && (
             <div style={styles.field}>
-              <label style={styles.label}>Display Name</label>
+              <label htmlFor="displayName" style={styles.label}>Display Name</label>
               <input
+                id="displayName"
+                name="displayName"
                 style={styles.input}
                 type="text"
                 value={displayName}
@@ -87,8 +89,10 @@ export default function LoginPage(): React.JSX.Element {
           )}
 
           <div style={styles.field}>
-            <label style={styles.label}>Email</label>
+            <label htmlFor="email" style={styles.label}>Email</label>
             <input
+              id="email"
+              name="email"
               style={styles.input}
               type="email"
               value={email}
@@ -100,8 +104,10 @@ export default function LoginPage(): React.JSX.Element {
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>Password</label>
+            <label htmlFor="password" style={styles.label}>Password</label>
             <input
+              id="password"
+              name="password"
               style={styles.input}
               type="password"
               value={password}
