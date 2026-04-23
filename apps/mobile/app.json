@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Tennis League",
-    "slug": "tennis-league",
+    "slug": "tennis-scoring",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
