@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,7 +51,8 @@ fun parseScore(json: String): WatchScoreState {
 }
 
 @Composable
-fun ScoreScreen(service: DataLayerService) {
+fun ScoreScreen() {
+  val context = LocalContext.current
   val rawJson by DataLayerService.scoreJson.collectAsState()
   val score = remember(rawJson) { if (rawJson.isNotEmpty()) parseScore(rawJson) else WatchScoreState() }
 
@@ -86,14 +88,14 @@ fun ScoreScreen(service: DataLayerService) {
       Spacer(modifier = Modifier.height(8.dp))
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
-          onClick = { service.sendPointToPhone("player1") },
+          onClick = { DataLayerService.sendPointToPhone(context, "player1") },
           colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF2d6a4f)),
           modifier = Modifier.size(56.dp),
         ) {
           Text("P1", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         Button(
-          onClick = { service.sendPointToPhone("player2") },
+          onClick = { DataLayerService.sendPointToPhone(context, "player2") },
           colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF1b4332)),
           modifier = Modifier.size(56.dp),
         ) {

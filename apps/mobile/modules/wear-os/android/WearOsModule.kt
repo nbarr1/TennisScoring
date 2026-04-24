@@ -22,13 +22,17 @@ class WearOsModule : Module(), MessageClient.OnMessageReceivedListener {
     Events("onWearScoreInput", "onWearConnected")
 
     OnCreate {
-      val context = appContext.reactContext ?: return@OnCreate
-      Wearable.getMessageClient(context).addListener(this@WearOsModule)
+      try {
+        val context = appContext.reactContext ?: return@OnCreate
+        Wearable.getMessageClient(context).addListener(this@WearOsModule)
+      } catch (_: Exception) {}
     }
 
     OnDestroy {
-      val context = appContext.reactContext ?: return@OnDestroy
-      Wearable.getMessageClient(context).removeListener(this@WearOsModule)
+      try {
+        val context = appContext.reactContext ?: return@OnDestroy
+        Wearable.getMessageClient(context).removeListener(this@WearOsModule)
+      } catch (_: Exception) {}
     }
 
     // Send score JSON to all connected Wear OS nodes
@@ -44,9 +48,8 @@ class WearOsModule : Module(), MessageClient.OnMessageReceivedListener {
     }
 
     Function("isWearOsAvailable") {
-      appContext.reactContext?.packageManager?.let {
-        it.hasSystemFeature("android.hardware.type.watch").not()
-      } ?: false
+      appContext.reactContext?.packageManager
+        ?.hasSystemFeature("android.software.companion_device_setup") ?: false
     }
   }
 

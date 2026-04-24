@@ -1,6 +1,6 @@
 package com.tennisleague.wear
 
-import com.google.android.gms.wearable.MessageClient
+import android.content.Context
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
@@ -12,20 +12,19 @@ class DataLayerService : WearableListenerService() {
     val scoreJson = MutableStateFlow("")
     const val SCORE_PATH = "/tennis/score"
     const val POINT_PATH = "/tennis/point"
+
+    fun sendPointToPhone(context: Context, player: String) {
+      Wearable.getNodeClient(context).connectedNodes.addOnSuccessListener { nodes ->
+        for (node in nodes) {
+          Wearable.getMessageClient(context).sendMessage(node.id, POINT_PATH, player.toByteArray())
+        }
+      }
+    }
   }
 
   override fun onMessageReceived(event: MessageEvent) {
     if (event.path == SCORE_PATH) {
       scoreJson.value = String(event.data)
-    }
-  }
-
-  // Called by ScoreScreen when a point is scored on the watch
-  fun sendPointToPhone(player: String) {
-    Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
-      for (node in nodes) {
-        Wearable.getMessageClient(this).sendMessage(node.id, POINT_PATH, player.toByteArray())
-      }
     }
   }
 }

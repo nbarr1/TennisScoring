@@ -2,7 +2,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
-import { getMessaging, isSupported } from 'firebase/messaging';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
@@ -33,6 +32,7 @@ export const storage = isBrowser ? getStorage(app) : (null as unknown as ReturnT
 export const functions = isBrowser ? getFunctions(app) : (null as unknown as ReturnType<typeof getFunctions>);
 
 export async function getMessagingIfSupported() {
+  const { getMessaging, isSupported } = await import('firebase/messaging');
   const supported = await isSupported();
   return supported ? getMessaging(app) : null;
 }
