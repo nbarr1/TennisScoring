@@ -109,6 +109,8 @@ export interface Match {
   player2Id: string;
   player1Name?: string;
   player2Name?: string;
+  player2IsGuest?: boolean;
+  playerIds: string[];
   format: MatchFormat_Config;
   status: MatchStatus;
   liveScore: LiveScore;

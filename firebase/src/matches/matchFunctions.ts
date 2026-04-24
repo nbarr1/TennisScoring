@@ -65,6 +65,9 @@ async function notifyOpponentOfSubmission(
   const opponentId =
     submission.submittedBy === match.player1Id ? match.player2Id : match.player1Id;
 
+  // No notification for guest opponents
+  if (!opponentId || opponentId === 'guest') return;
+
   const opponentSnap = await db.collection('users').doc(opponentId).get();
   const opponent = opponentSnap.data();
   if (!opponent?.fcmTokens?.length) return;
@@ -134,6 +137,7 @@ async function recalculateRankings(divisionId: string) {
 
   for (const match of matches) {
     if (!match.winner) continue;
+    if (match.player2IsGuest) continue; // skip unlinked guest matches
 
     const { player1Id, player2Id, liveScore, winner } = match;
 

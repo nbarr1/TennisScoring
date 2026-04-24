@@ -3,7 +3,7 @@ import { onSnapshot, updateDoc, addDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
 import { functions } from '../config';
-import type { Match, DEFAULT_FORMAT, Player, TipTrigger, LiveScore, SetScore, MatchFormat_Config } from '@tennis/shared';
+import type { Match, Player, TipTrigger, LiveScore, SetScore } from '@tennis/shared';
 import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore, EMPTY_STATS } from '@tennis/shared';
 
 export function useMatch(matchId: string | null) {
@@ -39,11 +39,12 @@ export async function createMatch(params: {
   player2Id: string;
   player1Name?: string;
   player2Name?: string;
+  player2IsGuest?: boolean;
   divisionId: string;
   createdBy: string;
   scheduledAt?: number;
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, scheduledAt } = params;
+  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, scheduledAt } = params;
 
   const matchData: Omit<Match, 'id'> = {
     divisionId,
@@ -51,6 +52,8 @@ export async function createMatch(params: {
     player2Id,
     ...(player1Name && { player1Name }),
     ...(player2Name && { player2Name }),
+    player2IsGuest: player2IsGuest ?? false,
+    playerIds: player2IsGuest ? [player1Id] : [player1Id, player2Id],
     format: defaultFormat,
     status: 'scheduled',
     liveScore: createInitialScore(defaultFormat),
@@ -95,21 +98,26 @@ export async function recordHistoricMatch(params: {
   player2Id: string;
   player1Name?: string;
   player2Name?: string;
+  player2IsGuest?: boolean;
   divisionId: string;
   createdBy: string;
   sets: { p1: number; p2: number }[];
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, sets } = params;
+  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, sets } = params;
   const { score, winner } = buildHistoricScore(sets);
   const now = Date.now();
+
+  const isGuest = player2IsGuest ?? false;
   const matchData: Omit<Match, 'id'> = {
     divisionId,
     player1Id,
     player2Id,
     ...(player1Name && { player1Name }),
     ...(player2Name && { player2Name }),
+    player2IsGuest: isGuest,
+    playerIds: isGuest ? [player1Id] : [player1Id, player2Id],
     format: defaultFormat,
-    status: 'pending_report',
+    status: isGuest ? 'completed' : 'pending_report',
     liveScore: score,
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     winner,
@@ -121,11 +129,48 @@ export async function recordHistoricMatch(params: {
     reportSubmission: {
       submittedBy: createdBy,
       submittedAt: now,
-      status: 'pending_confirmation',
+      status: isGuest ? 'confirmed' : 'pending_confirmation',
+      ...(isGuest && { confirmedBy: createdBy, confirmedAt: now }),
     },
   };
   const ref = await addDoc(matchesCol(), matchData as Match);
   return ref.id;
+}
+
+/**
+ * For guest matches: submitting auto-confirms since there's no opponent to review.
+ */
+export async function submitGuestReport(matchId: string, submittedBy: string): Promise<void> {
+  const now = Date.now();
+  await updateDoc(matchDoc(matchId), {
+    status: 'completed',
+    completedAt: now,
+    reportSubmission: {
+      submittedBy,
+      submittedAt: now,
+      status: 'confirmed',
+      confirmedBy: submittedBy,
+      confirmedAt: now,
+    },
+  });
+}
+
+/**
+ * Links a real player account to a match that was originally recorded against a guest.
+ * Updates playerIds so the match appears in both players' match histories.
+ */
+export async function linkGuestOpponent(
+  matchId: string,
+  player2Id: string,
+  player2Name: string,
+  currentPlayerIds: string[],
+): Promise<void> {
+  await updateDoc(matchDoc(matchId), {
+    player2Id,
+    player2Name,
+    player2IsGuest: false,
+    playerIds: [...new Set([...currentPlayerIds, player2Id])],
+  });
 }
 
 export async function startMatch(matchId: string): Promise<void> {

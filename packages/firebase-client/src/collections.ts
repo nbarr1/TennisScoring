@@ -41,11 +41,7 @@ export const liveMatchesQuery = (divisionId: string) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'in_progress'));
 
 export const playerMatchesQuery = (playerId: string) =>
-  query(
-    matchesCol(),
-    where('player1Id', '==', playerId),
-    orderBy('createdAt', 'desc')
-  );
+  query(matchesCol(), where('playerIds', 'array-contains', playerId), orderBy('createdAt', 'desc'));
 
 export const rankingsQuery = (divisionId: string) =>
   query(rankingsCol(divisionId), orderBy('rank', 'asc'));

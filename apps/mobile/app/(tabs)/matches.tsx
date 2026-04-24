@@ -38,7 +38,9 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
         </Text>
         {match.winner && (
           <Text style={styles.winnerBadge}>
-            {match.winner === 'player1' ? 'P1 wins' : 'P2 wins'}
+            {match.winner === 'player1'
+              ? (match.player1Name ?? 'P1') + ' wins'
+              : (match.player2Name ?? 'P2') + ' wins'}
           </Text>
         )}
       </View>
@@ -57,9 +59,12 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
           {match.player1Name ?? 'Player 1'}
         </Text>
         <Text style={styles.vs}>vs</Text>
-        <Text style={[styles.playerName, match.winner === 'player2' && styles.winner]}>
-          {match.player2Name ?? 'Player 2'}
-        </Text>
+        <View style={styles.playerRight}>
+          <Text style={[styles.playerName, match.winner === 'player2' && styles.winner]}>
+            {match.player2Name ?? 'Player 2'}
+          </Text>
+          {match.player2IsGuest && <Text style={styles.guestBadge}>Guest</Text>}
+        </View>
       </View>
 
       {isLive && (
@@ -77,6 +82,8 @@ export default function MatchesScreen() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<'live' | 'historic'>('live');
+  const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>('search');
+  const [guestName, setGuestName] = useState('');
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
@@ -119,6 +126,8 @@ export default function MatchesScreen() {
   function resetCreateModal() {
     setShowCreate(false);
     setCreateMode('live');
+    setOpponentMode('search');
+    setGuestName('');
     setSearchText('');
     setSearchResults([]);
     setSelectedOpponent(null);
@@ -126,17 +135,31 @@ export default function MatchesScreen() {
   }
 
   async function handleCreateMatch() {
-    if (!user || !divisionId || !selectedOpponent) return;
+    if (!user || !divisionId) return;
+    if (opponentMode === 'search' && !selectedOpponent) return;
+    if (opponentMode === 'guest' && !guestName.trim()) return;
     setCreating(true);
     try {
-      const matchId = await createMatch({
-        player1Id: user.id,
-        player2Id: selectedOpponent.id,
-        player1Name: user.displayName,
-        player2Name: selectedOpponent.displayName,
-        divisionId,
-        createdBy: user.id,
-      });
+      const matchId = await createMatch(
+        opponentMode === 'guest'
+          ? {
+              player1Id: user.id,
+              player2Id: 'guest',
+              player1Name: user.displayName,
+              player2Name: guestName.trim(),
+              player2IsGuest: true,
+              divisionId,
+              createdBy: user.id,
+            }
+          : {
+              player1Id: user.id,
+              player2Id: selectedOpponent!.id,
+              player1Name: user.displayName,
+              player2Name: selectedOpponent!.displayName,
+              divisionId,
+              createdBy: user.id,
+            }
+      );
       resetCreateModal();
       router.push(`/match/${matchId}`);
     } catch {
@@ -147,7 +170,10 @@ export default function MatchesScreen() {
   }
 
   async function handleRecordHistoric() {
-    if (!user || !divisionId || !selectedOpponent) return;
+    if (!user || !divisionId) return;
+    if (opponentMode === 'search' && !selectedOpponent) return;
+    if (opponentMode === 'guest' && !guestName.trim()) return;
+
     const parsed = historicSets.map((s) => ({ p1: parseInt(s.p1, 10), p2: parseInt(s.p2, 10) }));
     const invalid = parsed.some((s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0);
     if (invalid || parsed.length === 0) {
@@ -162,17 +188,36 @@ export default function MatchesScreen() {
     }
     setCreating(true);
     try {
-      await recordHistoricMatch({
-        player1Id: user.id,
-        player2Id: selectedOpponent.id,
-        player1Name: user.displayName,
-        player2Name: selectedOpponent.displayName,
-        divisionId,
-        createdBy: user.id,
-        sets: parsed,
-      });
+      const isGuest = opponentMode === 'guest';
+      await recordHistoricMatch(
+        isGuest
+          ? {
+              player1Id: user.id,
+              player2Id: 'guest',
+              player1Name: user.displayName,
+              player2Name: guestName.trim(),
+              player2IsGuest: true,
+              divisionId,
+              createdBy: user.id,
+              sets: parsed,
+            }
+          : {
+              player1Id: user.id,
+              player2Id: selectedOpponent!.id,
+              player1Name: user.displayName,
+              player2Name: selectedOpponent!.displayName,
+              divisionId,
+              createdBy: user.id,
+              sets: parsed,
+            }
+      );
       resetCreateModal();
-      Alert.alert('Match Recorded', 'Your opponent will be notified to confirm the score.');
+      Alert.alert(
+        'Match Recorded',
+        isGuest
+          ? 'Match saved. You can link your opponent to their account later.'
+          : 'Your opponent will be notified to confirm the score.',
+      );
     } catch {
       Alert.alert('Error', 'Could not record match. Please try again.');
     } finally {
@@ -234,8 +279,37 @@ export default function MatchesScreen() {
               {createMode === 'historic' ? 'Record Past Match' : 'New Live Match'}
             </Text>
 
-            {/* Opponent picker — shared by both modes */}
-            {selectedOpponent ? (
+            {/* Opponent mode toggle */}
+            <View style={styles.modeToggle}>
+              <TouchableOpacity
+                style={[styles.modeBtn, opponentMode === 'search' && styles.modeBtnActive]}
+                onPress={() => { setOpponentMode('search'); setGuestName(''); }}
+              >
+                <Text style={[styles.modeBtnText, opponentMode === 'search' && styles.modeBtnTextActive]}>
+                  Search Player
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeBtn, opponentMode === 'guest' && styles.modeBtnActive]}
+                onPress={() => { setOpponentMode('guest'); setSelectedOpponent(null); setSearchText(''); setSearchResults([]); }}
+              >
+                <Text style={[styles.modeBtnText, opponentMode === 'guest' && styles.modeBtnTextActive]}>
+                  Guest / No Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Opponent picker */}
+            {opponentMode === 'guest' ? (
+              <TextInput
+                style={styles.input}
+                value={guestName}
+                onChangeText={setGuestName}
+                placeholder="Guest name..."
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+            ) : selectedOpponent ? (
               <View style={styles.selectedPlayer}>
                 <View style={styles.playerChip}>
                   <Text style={styles.playerChipName}>{selectedOpponent.displayName}</Text>
@@ -334,9 +408,9 @@ export default function MatchesScreen() {
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.createBtn, (!selectedOpponent || creating) && styles.createBtnDisabled]}
+                style={[styles.createBtn, (creating || (opponentMode === 'search' ? !selectedOpponent : !guestName.trim())) && styles.createBtnDisabled]}
                 onPress={createMode === 'historic' ? handleRecordHistoric : handleCreateMatch}
-                disabled={!selectedOpponent || creating}
+                disabled={creating || (opponentMode === 'search' ? !selectedOpponent : !guestName.trim())}
               >
                 {creating
                   ? <ActivityIndicator color="#fff" />
@@ -372,8 +446,10 @@ const styles = StyleSheet.create({
 
   players: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   playerName: { fontSize: 15, fontWeight: '600', color: '#333', flex: 1 },
+  playerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' },
   winner: { color: '#1a472a' },
   vs: { fontSize: 13, color: '#999', marginHorizontal: 12 },
+  guestBadge: { fontSize: 10, fontWeight: '700', color: '#e67e22', backgroundColor: '#fff3e0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
   serverLine: { fontSize: 12, color: '#888', marginTop: 6 },
 
   fabGroup: { position: 'absolute', bottom: 24, right: 16, flexDirection: 'row', gap: 10 },
@@ -408,6 +484,11 @@ const styles = StyleSheet.create({
   playerChipName: { fontSize: 16, fontWeight: '700', color: '#1a472a' },
   playerChipEmail: { fontSize: 13, color: '#666', marginTop: 2 },
   changeText: { fontSize: 14, color: '#1a472a', fontWeight: '600' },
+  modeToggle: { flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: '#ddd', overflow: 'hidden', marginBottom: 16 },
+  modeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: '#f9f9f9' },
+  modeBtnActive: { backgroundColor: '#1a472a' },
+  modeBtnText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  modeBtnTextActive: { color: '#fff' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   cancelBtn: { flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
   cancelText: { color: '#333', fontWeight: '600' },

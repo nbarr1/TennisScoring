@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, Modal,
-  ActivityIndicator, ScrollView, Switch, Animated
+  ActivityIndicator, ScrollView, Switch, Animated, TextInput, FlatList,
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -9,9 +9,11 @@ import * as Linking from 'expo-linking';
 import {
   useMatch, scorePoint, startMatch,
   submitMatchReport, confirmMatchReport, disputeMatchReport,
+  submitGuestReport, linkGuestOpponent, searchDivisionPlayers,
 } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore, getTipsForTriggers } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
+import type { User } from '@tennis/shared';
 
 function TipOverlay({ tip, onDismiss }: { tip: { title: string; body: string } | null; onDismiss: () => void }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -66,11 +68,17 @@ function DisputeModal({
 export default function MatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { match, loading } = useMatch(id ?? null);
-  const { user } = useAppStore();
+  const { user, divisionId } = useAppStore();
   const [currentTip, setCurrentTip] = useState<{ title: string; body: string } | null>(null);
   const [scoring, setScoring] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
+  // Link opponent modal state
+  const [showLinkOpponent, setShowLinkOpponent] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkResults, setLinkResults] = useState<User[]>([]);
+  const [linkSearching, setLinkSearching] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   const isParticipant = !!(user && match && (match.player1Id === user.id || match.player2Id === user.id));
   const myPlayerKey = user && match ? (match.player1Id === user.id ? 'player1' : 'player2') : null;
@@ -162,6 +170,58 @@ export default function MatchScreen() {
     }
   }
 
+  async function handleSubmitGuestReport() {
+    if (!match || !id || !user) return;
+    Alert.alert(
+      'Finalize Match Result?',
+      `Save the final score (${formatScoreDisplay(match.liveScore)})? Rankings will update immediately.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Finalize',
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await submitGuestReport(id, user.id);
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handleLinkSearch(text: string) {
+    setLinkSearch(text);
+    if (!divisionId || !text.trim()) { setLinkResults([]); return; }
+    setLinkSearching(true);
+    try {
+      const results = await searchDivisionPlayers(divisionId, text);
+      setLinkResults(results.filter((u) => u.id !== user?.id));
+    } catch {
+      setLinkResults([]);
+    } finally {
+      setLinkSearching(false);
+    }
+  }
+
+  async function handleLinkOpponent(opponent: User) {
+    if (!match || !id) return;
+    setLinking(true);
+    try {
+      await linkGuestOpponent(id, opponent.id, opponent.displayName ?? opponent.email ?? '', match.playerIds ?? [match.player1Id]);
+      setShowLinkOpponent(false);
+      setLinkSearch('');
+      setLinkResults([]);
+      Alert.alert('Opponent Linked!', `${opponent.displayName ?? 'Player'} has been added to this match. Rankings will update after the next match is completed.`);
+    } catch {
+      Alert.alert('Error', 'Could not link opponent. Please try again.');
+    } finally {
+      setLinking(false);
+    }
+  }
+
   async function handleShareReport() {
     if (!match?.reportUrl) {
       Alert.alert('Report Not Ready', 'The match report is being generated. Try again in a moment.');
@@ -210,6 +270,16 @@ export default function MatchScreen() {
         )}
       </View>
 
+      {/* Player names row */}
+      <View style={styles.playerNamesRow}>
+        <Text style={styles.playerNameLabel}>{p1Name}</Text>
+        <Text style={styles.playerVsLabel}>vs</Text>
+        <View style={styles.playerNameRight}>
+          <Text style={styles.playerNameLabel}>{p2Name}</Text>
+          {match.player2IsGuest && <Text style={styles.guestBadge}>Guest</Text>}
+        </View>
+      </View>
+
       {/* Status badge */}
       {match.status === 'in_progress' && (
         <View style={styles.liveBadge}>
@@ -254,10 +324,44 @@ export default function MatchScreen() {
         </>
       )}
 
+      {/* Link opponent section — guest matches only */}
+      {match.player2IsGuest && isParticipant && (
+        <View style={styles.linkSection}>
+          <Text style={styles.linkHint}>
+            👤 Playing against a guest? Link their account once they join the app.
+          </Text>
+          <TouchableOpacity style={styles.linkBtn} onPress={() => setShowLinkOpponent(true)}>
+            <Text style={styles.linkBtnText}>Link Opponent Account</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── POST-MATCH REPORT FLOW ── */}
 
+      {/* Guest match: one-tap finalize (no opponent confirmation needed) */}
+      {isParticipant && match.status === 'pending_report' && match.player2IsGuest && !submission && (
+        <View style={styles.reportSection}>
+          <Text style={styles.reportTitle}>
+            {match.winner === 'player1' ? p1Name : p2Name} wins!
+          </Text>
+          <Text style={styles.reportScore}>{scoreDisplay}</Text>
+          <Text style={styles.reportHint}>
+            No opponent account — tap below to finalize the result instantly.
+          </Text>
+          <TouchableOpacity
+            style={[styles.submitBtn, submitting && styles.btnDisabled]}
+            onPress={handleSubmitGuestReport}
+            disabled={submitting}
+          >
+            {submitting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.submitBtnText}>✓ Finalize Result</Text>}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Game over, no report submitted yet */}
-      {isParticipant && match.status === 'pending_report' && !submission && (
+      {isParticipant && match.status === 'pending_report' && !match.player2IsGuest && !submission && (
         <View style={styles.reportSection}>
           <Text style={styles.reportTitle}>
             {match.winner === 'player1' ? p1Name : p2Name} wins!
@@ -352,6 +456,54 @@ export default function MatchScreen() {
         onConfirm={confirmDispute}
         onCancel={() => setShowDisputeConfirm(false)}
       />
+
+      {/* Link Opponent Modal */}
+      <Modal visible={showLinkOpponent} transparent animationType="slide">
+        <View style={styles.linkModalOverlay}>
+          <View style={styles.linkModalCard}>
+            <Text style={styles.linkModalTitle}>Link Opponent Account</Text>
+            <Text style={styles.linkModalHint}>
+              Search for your opponent in the division and link them to this match.
+            </Text>
+            <View style={styles.linkSearchRow}>
+              <TextInput
+                style={styles.linkSearchInput}
+                value={linkSearch}
+                onChangeText={handleLinkSearch}
+                placeholder="Search by name or email..."
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+              />
+              {linkSearching && <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />}
+            </View>
+            {linking && <ActivityIndicator color="#1a472a" style={{ marginVertical: 8 }} />}
+            <FlatList
+              data={linkResults}
+              keyExtractor={(u) => u.id}
+              style={{ maxHeight: 240 }}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.linkResultRow} onPress={() => handleLinkOpponent(item)} disabled={linking}>
+                  <Text style={styles.linkResultName}>{item.displayName}</Text>
+                  <Text style={styles.linkResultEmail}>{item.email}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                linkSearch.trim().length > 0 && !linkSearching
+                  ? <Text style={styles.linkNoResults}>No players found.</Text>
+                  : null
+              }
+            />
+            <TouchableOpacity
+              style={styles.linkCancelBtn}
+              onPress={() => { setShowLinkOpponent(false); setLinkSearch(''); setLinkResults([]); }}
+            >
+              <Text style={styles.linkCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -405,10 +557,37 @@ const styles = StyleSheet.create({
   disputedTitle: { color: '#ffa500', fontSize: 20, fontWeight: '800', textAlign: 'center' },
   disputedBody: { color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
+  // Player names row
+  playerNamesRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 },
+  playerNameLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '600' },
+  playerVsLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+  playerNameRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  guestBadge: { fontSize: 10, fontWeight: '700', color: '#ffdc60', backgroundColor: 'rgba(255,220,96,0.2)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
+
+  // Link opponent section
+  linkSection: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, padding: 16, marginBottom: 16, gap: 10 },
+  linkHint: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center' },
+  linkBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  linkBtnText: { color: '#ffdc60', fontWeight: '700', fontSize: 14 },
+
   // Tip overlay
   tipOverlay: { position: 'absolute', bottom: 20, left: 0, right: 0, margin: 16, backgroundColor: '#ffdc60', borderRadius: 14, padding: 16 },
   tipTitle: { color: '#1a472a', fontWeight: '800', fontSize: 15, marginBottom: 4 },
   tipBody: { color: '#1a472a', fontSize: 13 },
+
+  // Link opponent modal
+  linkModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  linkModalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: '75%' },
+  linkModalTitle: { fontSize: 20, fontWeight: '700', color: '#1a472a', marginBottom: 8 },
+  linkModalHint: { fontSize: 13, color: '#666', marginBottom: 16 },
+  linkSearchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  linkSearchInput: { flex: 1, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15 },
+  linkResultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  linkResultName: { fontSize: 15, fontWeight: '600', color: '#222' },
+  linkResultEmail: { fontSize: 13, color: '#888', marginTop: 2 },
+  linkNoResults: { fontSize: 14, color: '#999', textAlign: 'center', marginVertical: 12 },
+  linkCancelBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 8 },
+  linkCancelText: { color: '#888', fontSize: 15 },
 
   // Dispute confirm modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 24 },

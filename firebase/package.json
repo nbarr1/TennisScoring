@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --external:firebase-admin --external:firebase-admin/app --external:firebase-admin/firestore --external:firebase-admin/messaging --external:firebase-functions --external:firebase-functions/v2 --external:pdf-lib --outfile=lib/index.js --format=cjs",
     "dev": "tsc --watch",
     "serve": "firebase emulators:start --only functions,firestore,auth,storage",
     "deploy": "firebase deploy --only functions",
@@ -12,12 +12,11 @@
   },
   "main": "lib/index.js",
   "engines": {
-    "node": ">=20"
+    "node": "20"
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",
     "firebase-functions": "^5.0.0",
-    "@tennis/shared": "workspace:*",
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {

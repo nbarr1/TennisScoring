@@ -61,8 +61,10 @@ service cloud.firestore {
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
-      let isNotSubmitter = request.auth.uid != existing.reportSubmission.submittedBy;
-      return isParticipant && (!isConfirmOrDispute || isNotSubmitter);
+      let hasSubmission = 'reportSubmission' in existing;
+      let isNotSubmitter = !hasSubmission || request.auth.uid != existing.reportSubmission.submittedBy;
+      let isGuestMatch = existing.get('player2IsGuest', false) == true;
+      return isParticipant && (!isConfirmOrDispute || isNotSubmitter || isGuestMatch);
     }
 
     match /matches/{matchId} {
