@@ -15,12 +15,13 @@ const firebaseConfig = {
   measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID ?? process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Firebase services are only initialized in browser environments.
+// Firebase services are only initialized in browser or React Native environments.
 // During Next.js SSR/prerendering the module is evaluated in Node.js where there
 // is no window — skipping initialization prevents auth/invalid-api-key crashes
-// at build time. All actual Firebase calls happen inside useEffect hooks which
-// only run on the client, so the null values are never used server-side.
-const isBrowser = typeof (globalThis as Record<string, unknown>)['window'] !== 'undefined';
+// at build time. React Native also lacks window but needs Firebase, so it is
+// detected separately via navigator.product.
+const isReactNative = (globalThis as any).navigator?.product === 'ReactNative';
+const isBrowser = typeof (globalThis as Record<string, unknown>)['window'] !== 'undefined' || isReactNative;
 
 export const app = isBrowser
   ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
