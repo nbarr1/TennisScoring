@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getMessaging, isSupported } from 'firebase/messaging';
 import { getFunctions } from 'firebase/functions';
@@ -28,7 +28,19 @@ export const app = isBrowser
   : (null as unknown as ReturnType<typeof getApp>);
 
 export const db = isBrowser ? getFirestore(app) : (null as unknown as ReturnType<typeof getFirestore>);
-export const auth = isBrowser ? getAuth(app) : (null as unknown as ReturnType<typeof getAuth>);
+
+function createAuth() {
+  if (!isBrowser) return null as unknown as ReturnType<typeof getAuth>;
+  if (isReactNative) {
+    // Avoid importing AsyncStorage at the module level so Next.js SSR doesn't break.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
+  }
+  return getAuth(app);
+}
+
+export const auth = createAuth();
 export const storage = isBrowser ? getStorage(app) : (null as unknown as ReturnType<typeof getStorage>);
 export const functions = isBrowser ? getFunctions(app) : (null as unknown as ReturnType<typeof getFunctions>);
 
