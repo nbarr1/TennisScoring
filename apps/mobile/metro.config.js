@@ -15,13 +15,19 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 
-// Force a single copy of React and React Native across all workspace packages.
-// Without this, pnpm's isolated node_modules causes each package to bundle
-// its own React, triggering "Invalid hook call" / useState-of-null crashes.
-config.resolver.extraNodeModules = {
-  react: path.resolve(projectRoot, 'node_modules/react'),
-  'react-native': path.resolve(projectRoot, 'node_modules/react-native'),
-  'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
+// Force every 'react' import (wherever it originates in the bundle) to resolve
+// from the mobile app's own node_modules. Without this, react-dom@18.3.1
+// (installed for the web app) brings in a nested react@18.3.1 that conflicts
+// with the app's react@18.2.0 and causes "Cannot read property useRef of null".
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'react' || moduleName === 'react/jsx-runtime' || moduleName === 'react/jsx-dev-runtime') {
+    return context.resolveRequest(
+      { ...context, originModulePath: path.join(projectRoot, 'package.json') },
+      moduleName,
+      platform,
+    );
+  }
+  return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;

@@ -26,7 +26,10 @@ export default function DivisionOnboardingScreen() {
     if (!firebaseUser) return;
     setLoading(true);
     try {
-      const divId = await createDivision(divisionName.trim(), firebaseUser.uid);
+      const divId = await createDivision(divisionName.trim(), firebaseUser.uid, {
+        displayName: firebaseUser.displayName ?? undefined,
+        email: firebaseUser.email ?? undefined,
+      });
       const division = await getDivision(divId);
       setDivisionId(divId);
       Alert.alert(

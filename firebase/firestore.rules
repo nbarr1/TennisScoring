@@ -17,7 +17,7 @@ service cloud.firestore {
 
     function isLeader(divisionId) {
       return isAuth() &&
-        get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderId == request.auth.uid;
+        request.auth.uid in get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderIds;
     }
 
     function isMatchParticipant(matchData) {
@@ -42,7 +42,7 @@ service cloud.firestore {
     // ---------- Divisions ----------
     match /divisions/{divisionId} {
       allow read: if isAuth();
-      allow create: if isAuth() && getUserData().role in ['admin', 'division_leader'];
+      allow create: if isAuth();
       allow update: if isLeader(divisionId) || getUserData().role == 'admin';
       allow delete: if getUserData().role == 'admin';
 

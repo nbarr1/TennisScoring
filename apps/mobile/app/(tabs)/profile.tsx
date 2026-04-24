@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Switch,
   ScrollView, Alert, Linking
@@ -14,11 +14,20 @@ export default function ProfileScreen() {
   const { setUser } = useAppStore();
 
   const [editing, setEditing] = useState(false);
-  const [phone, setPhone] = useState(profile?.phone ?? '');
-  const [allowEmail, setAllowEmail] = useState(profile?.contactPreferences.allowEmail ?? true);
-  const [allowSMS, setAllowSMS] = useState(profile?.contactPreferences.allowSMS ?? false);
-  const [allowInApp, setAllowInApp] = useState(profile?.contactPreferences.allowInApp ?? true);
-  const [tipsEnabled, setTipsEnabled] = useState(profile?.tipsEnabled ?? true);
+  const [phone, setPhone] = useState('');
+  const [allowEmail, setAllowEmail] = useState(true);
+  const [allowSMS, setAllowSMS] = useState(false);
+  const [allowInApp, setAllowInApp] = useState(true);
+  const [tipsEnabled, setTipsEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!profile) return;
+    setPhone(profile.phone ?? '');
+    setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
+    setAllowSMS(profile.contactPreferences?.allowSMS ?? false);
+    setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
+    setTipsEnabled(profile.tipsEnabled ?? true);
+  }, [profile]);
 
   async function handleSave() {
     if (!firebaseUser) return;
@@ -51,10 +60,12 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{profile.displayName[0].toUpperCase()}</Text>
+        <Text style={styles.avatarText}>
+          {(profile.displayName || firebaseUser?.displayName || '?')[0].toUpperCase()}
+        </Text>
       </View>
-      <Text style={styles.name}>{profile.displayName}</Text>
-      <Text style={styles.email}>{profile.email}</Text>
+      <Text style={styles.name}>{profile.displayName || firebaseUser?.displayName || 'Unknown'}</Text>
+      <Text style={styles.email}>{profile.email || firebaseUser?.email || ''}</Text>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Contact Information</Text>

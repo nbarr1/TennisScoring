@@ -4,7 +4,8 @@ import {
   Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView
 } from 'react-native';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '@tennis/firebase-client';
+import { auth, db } from '@tennis/firebase-client';
+import { doc, setDoc } from 'firebase/firestore';
 
 type Mode = 'signin' | 'signup';
 
@@ -29,6 +30,16 @@ export default function LoginScreen() {
       if (mode === 'signup') {
         const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(credential.user, { displayName: displayName.trim() });
+        const now = Date.now();
+        await setDoc(doc(db, 'users', credential.user.uid), {
+          id: credential.user.uid,
+          displayName: displayName.trim(),
+          email: email.trim().toLowerCase(),
+          role: 'player',
+          divisionId: null,
+          createdAt: now,
+          updatedAt: now,
+        });
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       }

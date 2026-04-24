@@ -1,6 +1,7 @@
 import {
   addDoc,
   updateDoc,
+  setDoc,
   getDoc,
   getDocs,
   query,
@@ -14,7 +15,11 @@ function randomInviteCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-export async function createDivision(name: string, creatorId: string): Promise<string> {
+export async function createDivision(
+  name: string,
+  creatorId: string,
+  creatorProfile?: { displayName?: string; email?: string },
+): Promise<string> {
   const inviteCode = randomInviteCode();
   const now = Date.now();
   const divData: Omit<Division, 'id'> = {
@@ -26,11 +31,13 @@ export async function createDivision(name: string, creatorId: string): Promise<s
     updatedAt: now,
   };
   const ref = await addDoc(divisionsCol(), divData as Division);
-  await updateDoc(userDoc(creatorId), {
+  await setDoc(userDoc(creatorId), {
+    ...(creatorProfile?.displayName && { displayName: creatorProfile.displayName }),
+    ...(creatorProfile?.email && { email: creatorProfile.email }),
     divisionId: ref.id,
     role: 'division_leader',
     updatedAt: now,
-  });
+  }, { merge: true });
   return ref.id;
 }
 
