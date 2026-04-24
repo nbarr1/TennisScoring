@@ -3,11 +3,12 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert, Modal,
   ActivityIndicator, ScrollView, Switch, Animated, TextInput, FlatList,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import {
-  useMatch, scorePoint, startMatch,
+  useMatch, scorePoint, startMatch, undoLastPoint,
+  cancelMatch, deleteMatch, postponeMatch,
   submitMatchReport, confirmMatchReport, disputeMatchReport,
   submitGuestReport, linkGuestOpponent, searchDivisionPlayers,
 } from '@tennis/firebase-client';
@@ -67,12 +68,16 @@ function DisputeModal({
 
 export default function MatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const { match, loading } = useMatch(id ?? null);
   const { user, divisionId } = useAppStore();
   const [currentTip, setCurrentTip] = useState<{ title: string; body: string } | null>(null);
   const [scoring, setScoring] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
+  const [showManage, setShowManage] = useState(false);
+  const [showPostponeOptions, setShowPostponeOptions] = useState(false);
+  const [managing, setManaging] = useState(false);
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -88,6 +93,16 @@ export default function MatchScreen() {
   const iSubmitted = !!(submission && submission.submittedBy === user?.id);
   const opponentSubmitted = !!(submission && submission.submittedBy !== user?.id);
   const isPendingMyReview = opponentSubmitted && submission?.status === 'pending_confirmation';
+
+  async function handleUndo() {
+    if (!match || !id || scoring) return;
+    setScoring(true);
+    try {
+      await undoLastPoint(id, match);
+    } finally {
+      setScoring(false);
+    }
+  }
 
   async function handlePoint(player: 'player1' | 'player2') {
     if (!match || !id || scoring) return;
@@ -109,6 +124,63 @@ export default function MatchScreen() {
     } finally {
       setScoring(false);
     }
+  }
+
+  function openManage() {
+    setShowPostponeOptions(false);
+    setShowManage(true);
+  }
+
+  async function handleCancelMatch() {
+    if (!id) return;
+    Alert.alert('Cancel Match?', 'This match will be marked as cancelled.', [
+      { text: 'Keep Playing', style: 'cancel' },
+      {
+        text: 'Cancel Match', style: 'destructive', onPress: async () => {
+          setManaging(true);
+          try { await cancelMatch(id); setShowManage(false); }
+          finally { setManaging(false); }
+        },
+      },
+    ]);
+  }
+
+  async function handleDeleteMatch() {
+    if (!id || !match) return;
+    const isCompleted = match.status === 'completed';
+    Alert.alert(
+      'Delete Match?',
+      isCompleted
+        ? 'Deleting a completed match will not automatically reverse its effect on rankings. Continue?'
+        : 'This match and all its data will be permanently deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            setManaging(true);
+            try { await deleteMatch(id); setShowManage(false); router.back(); }
+            finally { setManaging(false); }
+          },
+        },
+      ]
+    );
+  }
+
+  async function handlePostponeBy(ms: number) {
+    if (!id || !match) return;
+    const base = match.scheduledAt ?? Date.now();
+    const newTime = base + ms;
+    const label = new Date(newTime).toLocaleString();
+    Alert.alert('Postpone Match?', `Reschedule to ${label}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Postpone', onPress: async () => {
+          setManaging(true);
+          try { await postponeMatch(id, newTime); setShowManage(false); }
+          finally { setManaging(false); }
+        },
+      },
+    ]);
   }
 
   async function handleSubmitReport() {
@@ -280,6 +352,13 @@ export default function MatchScreen() {
         </View>
       </View>
 
+      {/* Match management */}
+      {isParticipant && match.status !== 'cancelled' && (
+        <TouchableOpacity style={styles.manageBtn} onPress={openManage}>
+          <Text style={styles.manageBtnText}>⋯  Options</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Status badge */}
       {match.status === 'in_progress' && (
         <View style={styles.liveBadge}>
@@ -287,11 +366,19 @@ export default function MatchScreen() {
         </View>
       )}
 
-      {/* Start button */}
+      {/* Server selection — shown before match starts */}
       {isParticipant && match.status === 'scheduled' && (
-        <TouchableOpacity style={styles.startBtn} onPress={() => startMatch(id!)}>
-          <Text style={styles.startBtnText}>Start Match</Text>
-        </TouchableOpacity>
+        <View style={styles.serverSelectSection}>
+          <Text style={styles.serverSelectTitle}>Who is serving first?</Text>
+          <View style={styles.serverSelectBtns}>
+            <TouchableOpacity style={styles.serverSelectBtn} onPress={() => startMatch(id!, 'player1')}>
+              <Text style={styles.serverSelectBtnText}>{p1Name}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.serverSelectBtn} onPress={() => startMatch(id!, 'player2')}>
+              <Text style={styles.serverSelectBtnText}>{p2Name}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       {/* Score input buttons */}
@@ -313,6 +400,14 @@ export default function MatchScreen() {
               <Text style={styles.pointBtnText}>{p2Name}{'\n'}Point</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[styles.undoBtn, (!match.undoSnapshot || scoring) && styles.undoBtnDisabled]}
+            onPress={handleUndo}
+            disabled={!match.undoSnapshot || scoring}
+          >
+            <Text style={styles.undoBtnText}>↩  Undo Last Point</Text>
+          </TouchableOpacity>
+
           <View style={styles.tipsRow}>
             <Text style={styles.tipsLabel}>Live Tips</Text>
             <Switch
@@ -449,6 +544,59 @@ export default function MatchScreen() {
         </View>
       )}
 
+      {/* Manage Match Modal */}
+      <Modal visible={showManage} transparent animationType="slide">
+        <TouchableOpacity style={styles.manageOverlay} activeOpacity={1} onPress={() => setShowManage(false)}>
+          <View style={styles.manageCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.manageTitle}>
+              {showPostponeOptions ? 'Postpone by…' : 'Manage Match'}
+            </Text>
+
+            {managing && <ActivityIndicator color="#1a472a" style={{ marginVertical: 8 }} />}
+
+            {!managing && !showPostponeOptions && (
+              <>
+                {match.status === 'scheduled' && (
+                  <TouchableOpacity style={styles.manageOption} onPress={() => setShowPostponeOptions(true)}>
+                    <Text style={styles.manageOptionText}>📅  Postpone</Text>
+                  </TouchableOpacity>
+                )}
+                {(match.status === 'scheduled' || match.status === 'in_progress') && (
+                  <TouchableOpacity style={styles.manageOption} onPress={handleCancelMatch}>
+                    <Text style={styles.manageOptionText}>✕  Cancel Match</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={[styles.manageOption, styles.manageOptionDanger]} onPress={handleDeleteMatch}>
+                  <Text style={[styles.manageOptionText, styles.manageOptionDangerText]}>🗑  Delete Match</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {!managing && showPostponeOptions && (
+              <>
+                {[
+                  { label: '30 minutes', ms: 30 * 60 * 1000 },
+                  { label: '1 hour',     ms: 60 * 60 * 1000 },
+                  { label: '2 hours',    ms: 2 * 60 * 60 * 1000 },
+                  { label: '1 day',      ms: 24 * 60 * 60 * 1000 },
+                ].map(({ label, ms }) => (
+                  <TouchableOpacity key={label} style={styles.manageOption} onPress={() => handlePostponeBy(ms)}>
+                    <Text style={styles.manageOptionText}>+{label}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={styles.manageBack} onPress={() => setShowPostponeOptions(false)}>
+                  <Text style={styles.manageBackText}>← Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity style={styles.manageCloseBtn} onPress={() => setShowManage(false)}>
+              <Text style={styles.manageCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <TipOverlay tip={currentTip} onDismiss={() => setCurrentTip(null)} />
 
       <DisputeModal
@@ -522,14 +670,20 @@ const styles = StyleSheet.create({
   serviceSide: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 },
   liveBadge: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, alignSelf: 'center', marginBottom: 20 },
   liveBadgeText: { color: '#ff6b6b', fontWeight: '700', fontSize: 13 },
-  startBtn: { backgroundColor: '#ffdc60', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 20 },
-  startBtnText: { color: '#1a472a', fontWeight: '800', fontSize: 17 },
+  serverSelectSection: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 14, padding: 20, marginBottom: 20, alignItems: 'center', gap: 14 },
+  serverSelectTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  serverSelectBtns: { flexDirection: 'row', gap: 12, width: '100%' },
+  serverSelectBtn: { flex: 1, backgroundColor: '#ffdc60', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  serverSelectBtnText: { color: '#1a472a', fontWeight: '800', fontSize: 15 },
   scoreButtons: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   pointBtn: { flex: 1, paddingVertical: 28, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   pointBtnP1: { backgroundColor: '#2d6a4f' },
   pointBtnP2: { backgroundColor: '#1b4332' },
   pointBtnDisabled: { opacity: 0.5 },
   pointBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  undoBtn: { alignItems: 'center', paddingVertical: 10, marginBottom: 4 },
+  undoBtnDisabled: { opacity: 0.3 },
+  undoBtnText: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '600' },
   tipsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12 },
   tipsLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
 
@@ -569,6 +723,21 @@ const styles = StyleSheet.create({
   linkHint: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center' },
   linkBtn: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   linkBtnText: { color: '#ffdc60', fontWeight: '700', fontSize: 14 },
+
+  // Manage match
+  manageBtn: { alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 7, marginBottom: 12, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20 },
+  manageBtnText: { color: 'rgba(255,255,255,0.65)', fontSize: 13, fontWeight: '600' },
+  manageOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  manageCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, gap: 4 },
+  manageTitle: { fontSize: 18, fontWeight: '700', color: '#1a472a', marginBottom: 8 },
+  manageOption: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  manageOptionText: { fontSize: 16, color: '#222', fontWeight: '500' },
+  manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
+  manageOptionDangerText: { color: '#c0392b' },
+  manageBack: { paddingVertical: 12 },
+  manageBackText: { fontSize: 14, color: '#888' },
+  manageCloseBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  manageCloseBtnText: { color: '#888', fontSize: 15 },
 
   // Tip overlay
   tipOverlay: { position: 'absolute', bottom: 20, left: 0, right: 0, margin: 16, backgroundColor: '#ffdc60', borderRadius: 14, padding: 16 },

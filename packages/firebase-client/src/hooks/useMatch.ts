@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot, updateDoc, addDoc } from 'firebase/firestore';
+import { onSnapshot, updateDoc, addDoc, deleteField, deleteDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
 import { functions } from '../config';
@@ -61,7 +61,7 @@ export async function createMatch(params: {
     tipsEnabled: true,
     source: 'live',
     createdBy,
-    scheduledAt,
+    ...(scheduledAt !== undefined && { scheduledAt }),
     createdAt: Date.now(),
   };
 
@@ -173,10 +173,23 @@ export async function linkGuestOpponent(
   });
 }
 
-export async function startMatch(matchId: string): Promise<void> {
+export async function cancelMatch(matchId: string): Promise<void> {
+  await updateDoc(matchDoc(matchId), { status: 'cancelled' });
+}
+
+export async function deleteMatch(matchId: string): Promise<void> {
+  await deleteDoc(matchDoc(matchId));
+}
+
+export async function postponeMatch(matchId: string, newScheduledAt: number): Promise<void> {
+  await updateDoc(matchDoc(matchId), { scheduledAt: newScheduledAt });
+}
+
+export async function startMatch(matchId: string, server: 'player1' | 'player2'): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'in_progress',
     startedAt: Date.now(),
+    'liveScore.server': server,
   });
 }
 
@@ -187,7 +200,14 @@ export async function scorePoint(
 ): Promise<{ matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }> {
   const result = applyPoint(match.liveScore, scorer, match.format);
 
-  const updates: Partial<Match> = { liveScore: result.nextScore };
+  const updates: Record<string, unknown> = {
+    liveScore: result.nextScore,
+    undoSnapshot: {
+      liveScore: match.liveScore,
+      status: match.status,
+      ...(match.winner !== undefined && { winner: match.winner }),
+    },
+  };
 
   if (result.matchWinner) {
     updates.status = 'pending_report';
@@ -195,8 +215,20 @@ export async function scorePoint(
     updates.completedAt = Date.now();
   }
 
-  await updateDoc(matchDoc(matchId), updates as Record<string, unknown>);
+  await updateDoc(matchDoc(matchId), updates);
   return { matchWinner: result.matchWinner, tips: result.tips };
+}
+
+export async function undoLastPoint(matchId: string, match: Match): Promise<void> {
+  const snapshot = match.undoSnapshot;
+  if (!snapshot) return;
+  await updateDoc(matchDoc(matchId), {
+    liveScore: snapshot.liveScore,
+    status: snapshot.status,
+    winner: deleteField(),
+    completedAt: deleteField(),
+    undoSnapshot: deleteField(),
+  });
 }
 
 /**

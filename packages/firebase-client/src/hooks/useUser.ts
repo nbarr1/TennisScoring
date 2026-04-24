@@ -33,7 +33,7 @@ export function useUserProfile(uid: string | null) {
     const unsub = onSnapshot(
       userDoc(uid),
       (snap) => {
-        setProfile(snap.exists() ? (snap.data() as User) : null);
+        setProfile(snap.exists() ? { ...(snap.data() as User), id: snap.id } : null);
         setLoading(false);
       }
     );

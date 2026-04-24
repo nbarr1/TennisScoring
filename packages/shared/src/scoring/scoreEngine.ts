@@ -161,34 +161,44 @@ export function applyPoint(
   const game = next.currentGame;
 
   // Advance score
+  let gameWinner: Player | undefined;
+
   if (scorer === 'player1') {
-    if (game.player1 === '40' && game.player2 === 'Ad') {
-      // Opponent had advantage, back to deuce
+    if (game.player1 === 'Ad') {
+      // Had advantage — wins game
+      gameWinner = 'player1';
+    } else if (game.player1 === '40' && game.player2 === 'Ad') {
+      // Opponent had advantage — back to deuce
       game.player2 = '40';
       tips.push('deuce');
       return { nextScore: next, tips };
-    }
-    if (game.player1 === '40' && game.player2 === '40') {
+    } else if (game.player1 === '40' && game.player2 === '40') {
       game.player1 = 'Ad';
       tips.push('advantage');
       return { nextScore: next, tips };
+    } else {
+      const wasAtForty = game.player1 === '40';
+      game.player1 = nextPoint(game.player1);
+      if (wasAtForty) gameWinner = 'player1';
     }
-    game.player1 = nextPoint(game.player1);
   } else {
-    if (game.player2 === '40' && game.player1 === 'Ad') {
+    if (game.player2 === 'Ad') {
+      gameWinner = 'player2';
+    } else if (game.player2 === '40' && game.player1 === 'Ad') {
       game.player1 = '40';
       tips.push('deuce');
       return { nextScore: next, tips };
-    }
-    if (game.player2 === '40' && game.player1 === '40') {
+    } else if (game.player2 === '40' && game.player1 === '40') {
       game.player2 = 'Ad';
       tips.push('advantage');
       return { nextScore: next, tips };
+    } else {
+      const wasAtForty = game.player2 === '40';
+      game.player2 = nextPoint(game.player2);
+      if (wasAtForty) gameWinner = 'player2';
     }
-    game.player2 = nextPoint(game.player2);
   }
 
-  const gameWinner = resolveGameWinner(game.player1, game.player2);
   if (!gameWinner) {
     if (game.player1 === '40' && game.player2 === '40') {
       tips.push('deuce');
@@ -299,7 +309,10 @@ export function formatGameScore(score: LiveScore): string {
   }
   const { player1, player2 } = score.currentGame;
   if (player1 === '40' && player2 === '40') return 'Deuce';
-  if (player1 === 'Ad') return 'Ad In';
-  if (player2 === 'Ad') return 'Ad Out';
-  return `${player1}-${player2}`;
+  if (player1 === 'Ad') return score.server === 'player1' ? 'Ad-In' : 'Ad-Out';
+  if (player2 === 'Ad') return score.server === 'player2' ? 'Ad-In' : 'Ad-Out';
+  if (player1 === '0' && player2 === '0') return 'Love-all';
+  if (player1 === player2) return `${player1}-all`;
+  const fmt = (p: TennisPoint) => (p === '0' ? 'Love' : p);
+  return `${fmt(player1)} – ${fmt(player2)}`;
 }

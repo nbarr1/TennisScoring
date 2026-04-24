@@ -58,20 +58,27 @@ service cloud.firestore {
     // Confirming or disputing a report is only allowed for the non-submitting player.
     function canUpdateMatch(existing, incoming) {
       let isParticipant = isMatchParticipant(existing);
+      let isCancellation = incoming.status == 'cancelled' &&
+        (existing.status == 'scheduled' || existing.status == 'in_progress');
+      let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled';
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
       let hasSubmission = 'reportSubmission' in existing;
       let isNotSubmitter = !hasSubmission || request.auth.uid != existing.reportSubmission.submittedBy;
       let isGuestMatch = existing.get('player2IsGuest', false) == true;
-      return isParticipant && (!isConfirmOrDispute || isNotSubmitter || isGuestMatch);
+      return isParticipant && (
+        isCancellation ||
+        isPostpone ||
+        (!isConfirmOrDispute || isNotSubmitter || isGuestMatch)
+      );
     }
 
     match /matches/{matchId} {
       allow read: if isAuth();
       allow create: if isAuth();
       allow update: if isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
-      allow delete: if getUserData().role == 'admin';
+      allow delete: if getUserData().role == 'admin' || isMatchParticipant(resource.data) || isLeader(resource.data.divisionId);
 
       // Score actions sub-collection
       match /actions/{actionId} {

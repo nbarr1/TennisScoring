@@ -16,6 +16,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: '#555',
   disputed: '#c0392b',
   scheduled: '#aaa',
+  cancelled: '#bbb',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -24,6 +25,7 @@ const STATUS_LABEL: Record<string, string> = {
   completed: 'Final',
   disputed: '⚠ Dispute',
   scheduled: 'Scheduled',
+  cancelled: 'Cancelled',
 };
 
 function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
@@ -162,7 +164,8 @@ export default function MatchesScreen() {
       );
       resetCreateModal();
       router.push(`/match/${matchId}`);
-    } catch {
+    } catch (e) {
+      console.error('[createMatch]', e);
       Alert.alert('Error', 'Could not create match. Please try again.');
     } finally {
       setCreating(false);
@@ -357,7 +360,7 @@ export default function MatchesScreen() {
             )}
 
             {/* Historic set-score entry */}
-            {createMode === 'historic' && selectedOpponent && (
+            {createMode === 'historic' && (opponentMode === 'guest' ? guestName.trim() : selectedOpponent) && (
               <View style={styles.setsContainer}>
                 <Text style={styles.modalLabel}>Enter set scores (your games first)</Text>
                 {historicSets.map((s, i) => (
