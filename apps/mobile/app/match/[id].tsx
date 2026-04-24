@@ -86,10 +86,16 @@ export default function MatchScreen() {
     setScoring(true);
     try {
       const result = await scorePoint(id, match, player);
+      if (match.tipsEnabled && result.tips.length > 0) {
+        const tips = getTipsForTriggers(result.tips);
+        if (tips.length > 0) setCurrentTip(tips[0]);
+      }
       if (result.matchWinner) {
+        const p1 = match.player1Name ?? 'Player 1';
+        const p2 = match.player2Name ?? 'Player 2';
         Alert.alert(
           'Match Over!',
-          `${result.matchWinner === 'player1' ? 'Player 1' : 'Player 2'} wins!\n\nEither player can now submit the match report.`
+          `${result.matchWinner === 'player1' ? p1 : p2} wins!\n\nEither player can now submit the match report.`
         );
       }
     } finally {
@@ -182,7 +188,9 @@ export default function MatchScreen() {
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
   const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
-  const serverLabel = match.liveScore.server === 'player1' ? '● P1 Serves' : '● P2 Serves';
+  const p1Name = match.player1Name ?? 'Player 1';
+  const p2Name = match.player2Name ?? 'Player 2';
+  const serverLabel = match.liveScore.server === 'player1' ? `● ${p1Name} Serves` : `● ${p2Name} Serves`;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -225,14 +233,14 @@ export default function MatchScreen() {
               onPress={() => handlePoint('player1')}
               disabled={scoring}
             >
-              <Text style={styles.pointBtnText}>Player 1{'\n'}Point</Text>
+              <Text style={styles.pointBtnText}>{p1Name}{'\n'}Point</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.pointBtn, styles.pointBtnP2, scoring && styles.pointBtnDisabled]}
               onPress={() => handlePoint('player2')}
               disabled={scoring}
             >
-              <Text style={styles.pointBtnText}>Player 2{'\n'}Point</Text>
+              <Text style={styles.pointBtnText}>{p2Name}{'\n'}Point</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.tipsRow}>
@@ -252,7 +260,7 @@ export default function MatchScreen() {
       {isParticipant && match.status === 'pending_report' && !submission && (
         <View style={styles.reportSection}>
           <Text style={styles.reportTitle}>
-            {match.winner === 'player1' ? 'Player 1' : 'Player 2'} wins!
+            {match.winner === 'player1' ? p1Name : p2Name} wins!
           </Text>
           <Text style={styles.reportScore}>{scoreDisplay}</Text>
           <Text style={styles.reportHint}>
@@ -325,7 +333,7 @@ export default function MatchScreen() {
       {match.status === 'completed' && (
         <View style={styles.reportSection}>
           <Text style={styles.reportTitle}>
-            {match.winner === 'player1' ? 'Player 1' : 'Player 2'} wins!
+            {match.winner === 'player1' ? p1Name : p2Name} wins!
           </Text>
           <Text style={styles.reportScore}>{scoreDisplay}</Text>
           <View style={styles.confirmedBadge}>

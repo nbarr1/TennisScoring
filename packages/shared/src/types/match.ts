@@ -107,6 +107,8 @@ export interface Match {
   divisionId: string;
   player1Id: string;
   player2Id: string;
+  player1Name?: string;
+  player2Name?: string;
   format: MatchFormat_Config;
   status: MatchStatus;
   liveScore: LiveScore;
@@ -115,6 +117,7 @@ export interface Match {
   winner?: Player;
   reportUrl?: string;
   tipsEnabled: boolean;
+  source?: 'live' | 'manual';
   createdBy: string;
   scheduledAt?: number;
   startedAt?: number;

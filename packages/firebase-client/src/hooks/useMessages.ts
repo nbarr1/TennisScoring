@@ -74,16 +74,19 @@ export async function sendMessage(params: {
   } as Message);
 }
 
-export async function getOrCreateDM(user1Id: string, user2Id: string): Promise<string> {
-  const threadId = [user1Id, user2Id].sort().join('_');
-  const q = query(channelsCol(), where('type', '==', 'direct'), where('participantIds', '==', [user1Id, user2Id].sort()));
+export async function getOrCreateDM(user1Id: string, user2Id: string): Promise<Channel> {
+  const sorted = [user1Id, user2Id].sort();
+  const q = query(channelsCol(), where('type', '==', 'direct'), where('participantIds', '==', sorted));
   const snap = await getDocs(q);
-  if (!snap.empty) return snap.docs[0].id;
-
-  const ref = await addDoc(channelsCol(), {
+  if (!snap.empty) {
+    const d = snap.docs[0];
+    return { id: d.id, ...(d.data() as Omit<Channel, 'id'>) };
+  }
+  const data: Omit<Channel, 'id'> = {
     type: 'direct',
-    participantIds: [user1Id, user2Id].sort(),
+    participantIds: sorted,
     createdAt: Date.now(),
-  } as Channel);
-  return ref.id;
+  };
+  const ref = await addDoc(channelsCol(), data as Channel);
+  return { id: ref.id, ...data };
 }

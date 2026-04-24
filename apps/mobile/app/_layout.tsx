@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthUser, useUserProfile } from '@tennis/firebase-client';
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
+import { useNotifications } from '../hooks/useNotifications';
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { firebaseUser, loading: authLoading } = useAuthUser();
@@ -12,6 +13,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const { setUser } = useAppStore();
+
+  useNotifications(firebaseUser?.uid);
 
   useEffect(() => {
     if (authLoading || (firebaseUser && profileLoading)) return;

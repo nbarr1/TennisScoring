@@ -3,8 +3,8 @@ import { onSnapshot, updateDoc, addDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
 import { functions } from '../config';
-import type { Match, DEFAULT_FORMAT } from '@tennis/shared';
-import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore } from '@tennis/shared';
+import type { Match, DEFAULT_FORMAT, Player, TipTrigger, LiveScore, SetScore, MatchFormat_Config } from '@tennis/shared';
+import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore, EMPTY_STATS } from '@tennis/shared';
 
 export function useMatch(matchId: string | null) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -37,31 +37,93 @@ export function useMatch(matchId: string | null) {
 export async function createMatch(params: {
   player1Id: string;
   player2Id: string;
+  player1Name?: string;
+  player2Name?: string;
   divisionId: string;
   createdBy: string;
   scheduledAt?: number;
 }): Promise<string> {
-  const { player1Id, player2Id, divisionId, createdBy, scheduledAt } = params;
-
-  const initialScore = createInitialScore(defaultFormat);
+  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, scheduledAt } = params;
 
   const matchData: Omit<Match, 'id'> = {
     divisionId,
     player1Id,
     player2Id,
+    ...(player1Name && { player1Name }),
+    ...(player2Name && { player2Name }),
     format: defaultFormat,
     status: 'scheduled',
-    liveScore: initialScore,
-    stats: {
-      player1: { aces: 0, doubleFaults: 0, firstServeIn: 0, firstServeTotal: 0, winners: 0, unforcedErrors: 0, breakPointsWon: 0, breakPointsFaced: 0 },
-      player2: { aces: 0, doubleFaults: 0, firstServeIn: 0, firstServeTotal: 0, winners: 0, unforcedErrors: 0, breakPointsWon: 0, breakPointsFaced: 0 },
-    },
+    liveScore: createInitialScore(defaultFormat),
+    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
+    source: 'live',
     createdBy,
     scheduledAt,
     createdAt: Date.now(),
   };
 
+  const ref = await addDoc(matchesCol(), matchData as Match);
+  return ref.id;
+}
+
+function buildHistoricScore(
+  sets: { p1: number; p2: number }[],
+): { score: LiveScore; winner: Player } {
+  let p1Sets = 0;
+  let p2Sets = 0;
+  const builtSets: SetScore[] = sets.map((s, i) => {
+    const setWinner: Player = s.p1 > s.p2 ? 'player1' : 'player2';
+    if (setWinner === 'player1') p1Sets++; else p2Sets++;
+    return { setNumber: i + 1, player1Games: s.p1, player2Games: s.p2, winner: setWinner };
+  });
+  const winner: Player = p1Sets >= p2Sets ? 'player1' : 'player2';
+  const score: LiveScore = {
+    sets: builtSets,
+    currentSet: sets.length - 1,
+    currentGame: { player1: '0', player2: '0' },
+    isTiebreak: false,
+    server: 'player1',
+    serviceSide: 'deuce',
+    player1SetsWon: p1Sets,
+    player2SetsWon: p2Sets,
+  };
+  return { score, winner };
+}
+
+export async function recordHistoricMatch(params: {
+  player1Id: string;
+  player2Id: string;
+  player1Name?: string;
+  player2Name?: string;
+  divisionId: string;
+  createdBy: string;
+  sets: { p1: number; p2: number }[];
+}): Promise<string> {
+  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, sets } = params;
+  const { score, winner } = buildHistoricScore(sets);
+  const now = Date.now();
+  const matchData: Omit<Match, 'id'> = {
+    divisionId,
+    player1Id,
+    player2Id,
+    ...(player1Name && { player1Name }),
+    ...(player2Name && { player2Name }),
+    format: defaultFormat,
+    status: 'pending_report',
+    liveScore: score,
+    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    winner,
+    tipsEnabled: false,
+    source: 'manual',
+    createdBy,
+    completedAt: now,
+    createdAt: now,
+    reportSubmission: {
+      submittedBy: createdBy,
+      submittedAt: now,
+      status: 'pending_confirmation',
+    },
+  };
   const ref = await addDoc(matchesCol(), matchData as Match);
   return ref.id;
 }
@@ -77,23 +139,19 @@ export async function scorePoint(
   matchId: string,
   match: Match,
   scorer: 'player1' | 'player2'
-): Promise<{ matchWinner?: 'player1' | 'player2' }> {
+): Promise<{ matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }> {
   const result = applyPoint(match.liveScore, scorer, match.format);
 
-  const updates: Partial<Match> = {
-    liveScore: result.nextScore,
-  };
+  const updates: Partial<Match> = { liveScore: result.nextScore };
 
   if (result.matchWinner) {
-    // Game over — move to pending_report so either player can submit the report.
-    // Status transitions to 'completed' only after the opponent confirms the report.
     updates.status = 'pending_report';
     updates.winner = result.matchWinner;
     updates.completedAt = Date.now();
   }
 
   await updateDoc(matchDoc(matchId), updates as Record<string, unknown>);
-  return { matchWinner: result.matchWinner };
+  return { matchWinner: result.matchWinner, tips: result.tips };
 }
 
 /**

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onSnapshot } from 'firebase/firestore';
-import { divisionMatchesQuery, createMatch, searchDivisionPlayers } from '@tennis/firebase-client';
+import { divisionMatchesQuery, createMatch, recordHistoricMatch, searchDivisionPlayers } from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 import type { Match, User } from '@tennis/shared';
@@ -54,11 +54,11 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
 
       <View style={styles.players}>
         <Text style={[styles.playerName, match.winner === 'player1' && styles.winner]}>
-          Player 1
+          {match.player1Name ?? 'Player 1'}
         </Text>
         <Text style={styles.vs}>vs</Text>
         <Text style={[styles.playerName, match.winner === 'player2' && styles.winner]}>
-          Player 2
+          {match.player2Name ?? 'Player 2'}
         </Text>
       </View>
 
@@ -76,11 +76,14 @@ export default function MatchesScreen() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [createMode, setCreateMode] = useState<'live' | 'historic'>('live');
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Historic match set scores: array of { p1, p2 } per set
+  const [historicSets, setHistoricSets] = useState([{ p1: '', p2: '' }]);
   const router = useRouter();
 
   useEffect(() => {
@@ -115,9 +118,11 @@ export default function MatchesScreen() {
 
   function resetCreateModal() {
     setShowCreate(false);
+    setCreateMode('live');
     setSearchText('');
     setSearchResults([]);
     setSelectedOpponent(null);
+    setHistoricSets([{ p1: '', p2: '' }]);
   }
 
   async function handleCreateMatch() {
@@ -127,6 +132,8 @@ export default function MatchesScreen() {
       const matchId = await createMatch({
         player1Id: user.id,
         player2Id: selectedOpponent.id,
+        player1Name: user.displayName,
+        player2Name: selectedOpponent.displayName,
         divisionId,
         createdBy: user.id,
       });
@@ -134,6 +141,40 @@ export default function MatchesScreen() {
       router.push(`/match/${matchId}`);
     } catch {
       Alert.alert('Error', 'Could not create match. Please try again.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRecordHistoric() {
+    if (!user || !divisionId || !selectedOpponent) return;
+    const parsed = historicSets.map((s) => ({ p1: parseInt(s.p1, 10), p2: parseInt(s.p2, 10) }));
+    const invalid = parsed.some((s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0);
+    if (invalid || parsed.length === 0) {
+      Alert.alert('Invalid Score', 'Please enter a valid number of games for each set.');
+      return;
+    }
+    const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
+    const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
+    if (p1Sets === p2Sets) {
+      Alert.alert('Invalid Score', 'The match must have a clear winner. Check the set scores.');
+      return;
+    }
+    setCreating(true);
+    try {
+      await recordHistoricMatch({
+        player1Id: user.id,
+        player2Id: selectedOpponent.id,
+        player1Name: user.displayName,
+        player2Name: selectedOpponent.displayName,
+        divisionId,
+        createdBy: user.id,
+        sets: parsed,
+      });
+      resetCreateModal();
+      Alert.alert('Match Recorded', 'Your opponent will be notified to confirm the score.');
+    } catch {
+      Alert.alert('Error', 'Could not record match. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -177,15 +218,23 @@ export default function MatchesScreen() {
         />
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
-        <Text style={styles.fabText}>+ New Match</Text>
-      </TouchableOpacity>
+      <View style={styles.fabGroup}>
+        <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => { setCreateMode('historic'); setShowCreate(true); }}>
+          <Text style={styles.fabSecondaryText}>📋 Record Past</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.fab} onPress={() => { setCreateMode('live'); setShowCreate(true); }}>
+          <Text style={styles.fabText}>+ Live Match</Text>
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={showCreate} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Create Match</Text>
+            <Text style={styles.modalTitle}>
+              {createMode === 'historic' ? 'Record Past Match' : 'New Live Match'}
+            </Text>
 
+            {/* Opponent picker — shared by both modes */}
             {selectedOpponent ? (
               <View style={styles.selectedPlayer}>
                 <View style={styles.playerChip}>
@@ -233,16 +282,65 @@ export default function MatchesScreen() {
               </>
             )}
 
+            {/* Historic set-score entry */}
+            {createMode === 'historic' && selectedOpponent && (
+              <View style={styles.setsContainer}>
+                <Text style={styles.modalLabel}>Enter set scores (your games first)</Text>
+                {historicSets.map((s, i) => (
+                  <View key={i} style={styles.setRow}>
+                    <Text style={styles.setLabel}>Set {i + 1}</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      value={s.p1}
+                      onChangeText={(v) => {
+                        const next = [...historicSets];
+                        next[i] = { ...next[i], p1: v };
+                        setHistoricSets(next);
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      placeholder="You"
+                    />
+                    <Text style={styles.setDash}>–</Text>
+                    <TextInput
+                      style={styles.setInput}
+                      value={s.p2}
+                      onChangeText={(v) => {
+                        const next = [...historicSets];
+                        next[i] = { ...next[i], p2: v };
+                        setHistoricSets(next);
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      placeholder="Opp"
+                    />
+                    {historicSets.length > 1 && (
+                      <TouchableOpacity onPress={() => setHistoricSets(historicSets.filter((_, j) => j !== i))}>
+                        <Text style={styles.removeSet}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                {historicSets.length < 5 && (
+                  <TouchableOpacity onPress={() => setHistoricSets([...historicSets, { p1: '', p2: '' }])}>
+                    <Text style={styles.addSet}>+ Add Set</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={resetCreateModal}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.createBtn, (!selectedOpponent || creating) && styles.createBtnDisabled]}
-                onPress={handleCreateMatch}
+                onPress={createMode === 'historic' ? handleRecordHistoric : handleCreateMatch}
                 disabled={!selectedOpponent || creating}
               >
-                {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.createText}>Create</Text>}
+                {creating
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.createText}>{createMode === 'historic' ? 'Record' : 'Create'}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -278,8 +376,18 @@ const styles = StyleSheet.create({
   vs: { fontSize: 13, color: '#999', marginHorizontal: 12 },
   serverLine: { fontSize: 12, color: '#888', marginTop: 6 },
 
-  fab: { position: 'absolute', bottom: 24, right: 24, backgroundColor: '#1a472a', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 28, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
+  fabGroup: { position: 'absolute', bottom: 24, right: 16, flexDirection: 'row', gap: 10 },
+  fab: { backgroundColor: '#1a472a', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 28, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   fabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  fabSecondary: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#1a472a' },
+  fabSecondaryText: { color: '#1a472a', fontWeight: '700', fontSize: 15 },
+  setsContainer: { marginBottom: 4, gap: 8 },
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  setLabel: { fontSize: 13, color: '#666', width: 40 },
+  setInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 16, fontWeight: '700', textAlign: 'center', width: 56, color: '#1a472a' },
+  setDash: { fontSize: 18, color: '#888', fontWeight: '600' },
+  removeSet: { fontSize: 18, color: '#c0392b', paddingHorizontal: 6 },
+  addSet: { color: '#1a472a', fontWeight: '600', fontSize: 14, paddingVertical: 4 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 8 },
   emptyBody: { fontSize: 14, color: '#666', textAlign: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
