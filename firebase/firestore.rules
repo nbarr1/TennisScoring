@@ -57,13 +57,12 @@ service cloud.firestore {
     // Returns true when a participant is performing a valid match update.
     // Confirming or disputing a report is only allowed for the non-submitting player.
     function canUpdateMatch(existing, incoming) {
-      if (!isMatchParticipant(existing)) return false;
+      let isParticipant = isMatchParticipant(existing);
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
-      if (toCompleted || toDisputed) {
-        return request.auth.uid != existing.reportSubmission.submittedBy;
-      }
-      return true;
+      let isConfirmOrDispute = toCompleted || toDisputed;
+      let isNotSubmitter = request.auth.uid != existing.reportSubmission.submittedBy;
+      return isParticipant && (!isConfirmOrDispute || isNotSubmitter);
     }
 
     match /matches/{matchId} {
