@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@react-native/gradle-plugin": "~0.74.0",
     "@types/react": "~18.2.0",
     "typescript": "^6.0.0"
   }
