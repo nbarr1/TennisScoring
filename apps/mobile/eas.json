@@ -22,6 +22,9 @@
     },
     "production": {
       "autoIncrement": true,
+      "ios": {
+        "autoIncrement": "buildNumber"
+      },
       "env": {
         "APP_ENV": "production",
         "NODE_VERSION": "20.19.0",

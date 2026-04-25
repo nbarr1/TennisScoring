@@ -4,10 +4,9 @@ import {
   Dimensions, Animated, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth, updateUserProfile } from '@tennis/firebase-client';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-export const TUTORIAL_KEY = '@tutorial_done';
 
 const SLIDES = [
   {
@@ -56,12 +55,9 @@ const SLIDES = [
 ] as const;
 
 export async function markTutorialDone() {
-  await AsyncStorage.setItem(TUTORIAL_KEY, '1');
-}
-
-export async function isTutorialDone(): Promise<boolean> {
-  const val = await AsyncStorage.getItem(TUTORIAL_KEY);
-  return val === '1';
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  await updateUserProfile(uid, { tutorialDone: true });
 }
 
 export default function TutorialScreen() {

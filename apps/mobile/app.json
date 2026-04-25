@@ -15,7 +15,11 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.tennisleague.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +32,10 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      ["expo-notifications", {
+        "icon": "./assets/adaptive-icon.png",
+        "color": "#1a472a"
+      }],
       ["expo-secure-store", { "faceIDPermission": "Allow Tennis League to use Face ID" }]
     ],
     "scheme": "tennisleague",

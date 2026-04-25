@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { getAuth, initializeAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getMessaging, isSupported } from 'firebase/messaging';
 import { getFunctions } from 'firebase/functions';
@@ -32,10 +32,14 @@ export const db = isBrowser ? getFirestore(app) : (null as unknown as ReturnType
 function createAuth() {
   if (!isBrowser) return null as unknown as ReturnType<typeof getAuth>;
   if (isReactNative) {
-    // Avoid importing AsyncStorage at the module level so Next.js SSR doesn't break.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // getReactNativePersistence only ships in the React Native entry of firebase/auth,
+    // so it's loaded via require() to keep it out of the web bundle.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
+    const { getReactNativePersistence } = require('firebase/auth') as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) } as any);
   }
   return getAuth(app);
 }

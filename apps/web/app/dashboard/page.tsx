@@ -2,14 +2,27 @@
 
 export const dynamic = 'force-dynamic';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
-import { useRankings } from '@tennis/firebase-client';
+import { useRouter } from 'next/navigation';
+import { useRankings, useAuthUser, useUserProfile } from '@tennis/firebase-client';
 import type { PlayerRanking } from '@tennis/shared';
 
-const DIVISION_ID = process.env.NEXT_PUBLIC_DIVISION_ID ?? 'default';
+const FALLBACK_DIVISION_ID = process.env.NEXT_PUBLIC_DIVISION_ID ?? 'default';
 
 export default function DashboardPage(): React.JSX.Element {
-  const { rankings, loading } = useRankings(DIVISION_ID);
+  const router = useRouter();
+  const { firebaseUser } = useAuthUser();
+  const { profile, loading: profileLoading } = useUserProfile(firebaseUser?.uid ?? null);
+  const divisionId = profile?.divisionId ?? FALLBACK_DIVISION_ID;
+  const { rankings, loading } = useRankings(divisionId);
+
+  useEffect(() => {
+    if (profileLoading || !profile) return;
+    if (profile.divisionId && !profile.tutorialDone) {
+      router.replace('/onboarding/tutorial');
+    }
+  }, [profileLoading, profile, router]);
 
   return (
     <div style={styles.page}>
@@ -19,6 +32,7 @@ export default function DashboardPage(): React.JSX.Element {
           <Link href="/dashboard" style={styles.navLink}>Rankings</Link>
           <Link href="/matches" style={styles.navLink}>Matches</Link>
           <Link href="/messages" style={styles.navLink}>Messages</Link>
+          <Link href="/profile" style={styles.navLink}>Profile</Link>
           <Link href="/admin" style={styles.navLink}>Admin</Link>
         </div>
       </nav>
