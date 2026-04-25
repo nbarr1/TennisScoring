@@ -23,12 +23,3 @@ export interface HeadToHead {
   player1Wins: number;
   player2Wins: number;
 }
-
-export interface Division {
-  id: string;
-  name: string;
-  leaderId: string;
-  playerIds: string[];
-  season: string;
-  createdAt: number;
-}

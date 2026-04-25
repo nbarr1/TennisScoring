@@ -5,8 +5,10 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
-import { divisionsCol, divisionDoc, channelsCol, usersCol, userDoc } from '@tennis/firebase-client';
-import { useAuthUser } from '@tennis/firebase-client';
+import {
+  divisionsCol, divisionDoc, channelsCol, usersCol, userDoc,
+  createDivision as createDivisionShared, useAuthUser,
+} from '@tennis/firebase-client';
 import type { Division, User, Channel } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
@@ -23,7 +25,7 @@ export default function AdminPage(): React.JSX.Element {
   // Find the division this user leads
   useEffect(() => {
     if (!firebaseUser) return;
-    const q = query(divisionsCol(), where('leaderId', '==', firebaseUser.uid));
+    const q = query(divisionsCol(), where('leaderIds', 'array-contains', firebaseUser.uid));
     return onSnapshot(q, async (snap) => {
       if (!snap.empty) {
         const div = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<Division, 'id'>) };
@@ -40,18 +42,15 @@ export default function AdminPage(): React.JSX.Element {
 
   async function createDivision() {
     if (!firebaseUser || !newDivisionName.trim()) return;
-    const ref = await addDoc(divisionsCol(), {
-      name: newDivisionName.trim(),
-      leaderId: firebaseUser.uid,
-      playerIds: [firebaseUser.uid],
-      season: new Date().getFullYear().toString(),
-      createdAt: Date.now(),
-    } as Division);
-    // Create a division-wide channel
+    const divisionId = await createDivisionShared(
+      newDivisionName.trim(),
+      firebaseUser.uid,
+      { displayName: firebaseUser.displayName ?? undefined, email: firebaseUser.email ?? undefined },
+    );
     await addDoc(channelsCol(), {
       type: 'division',
       name: `${newDivisionName.trim()} Chat`,
-      divisionId: ref.id,
+      divisionId,
       participantIds: [firebaseUser.uid],
       createdAt: Date.now(),
     } as Channel);
@@ -88,6 +87,7 @@ export default function AdminPage(): React.JSX.Element {
           <Link href="/dashboard" style={styles.navLink}>Rankings</Link>
           <Link href="/matches" style={styles.navLink}>Matches</Link>
           <Link href="/messages" style={styles.navLink}>Messages</Link>
+          <Link href="/profile" style={styles.navLink}>Profile</Link>
           <Link href="/admin" style={{ ...styles.navLink, ...styles.navLinkActive }}>Admin</Link>
         </div>
       </nav>
@@ -118,7 +118,7 @@ export default function AdminPage(): React.JSX.Element {
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>
                 {division.name}
-                <span style={styles.badge}>Season {division.season}</span>
+                <span style={styles.badge}>Code {division.inviteCode}</span>
               </h2>
               <p style={styles.hint}>{players.length} player{players.length !== 1 ? 's' : ''} enrolled</p>
 
@@ -167,8 +167,8 @@ export default function AdminPage(): React.JSX.Element {
                           ) : '—'}
                         </td>
                         <td style={styles.td}>
-                          <span style={p.id === division.leaderId ? styles.leaderBadge : styles.playerBadge}>
-                            {p.id === division.leaderId ? 'Leader' : 'Player'}
+                          <span style={division.leaderIds.includes(p.id) ? styles.leaderBadge : styles.playerBadge}>
+                            {division.leaderIds.includes(p.id) ? 'Leader' : 'Player'}
                           </span>
                         </td>
                       </tr>

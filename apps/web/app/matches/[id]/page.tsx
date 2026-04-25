@@ -3,16 +3,23 @@
 export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
-import { useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport } from '@tennis/firebase-client';
+import { useRouter } from 'next/navigation';
+import {
+  useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
+  cancelMatch, postponeMatch, deleteMatch,
+} from '@tennis/firebase-client';
 import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import Link from 'next/link';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
+  const router = useRouter();
   const { match, loading } = useMatch(id);
   const { firebaseUser } = useAuthUser();
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showManage, setShowManage] = useState(false);
+  const [showPostponeOptions, setShowPostponeOptions] = useState(false);
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -25,6 +32,9 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const uid = firebaseUser?.uid;
   const isParticipant = uid === match.player1Id || uid === match.player2Id;
   const submission = match.reportSubmission;
+  const p1Name = match.player1Name ?? 'Player 1';
+  const p2Name = match.player2Name ?? 'Player 2';
+  const isHistoric = match.source === 'manual';
 
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
@@ -33,6 +43,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     : match.status === 'completed' ? 'Final'
     : match.status === 'pending_report' ? 'Pending Report'
     : match.status === 'disputed' ? '⚠ Disputed'
+    : match.status === 'cancelled' ? 'Cancelled'
     : 'Scheduled';
 
   async function withLoading(fn: () => Promise<void>) {
@@ -56,6 +67,37 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     await withLoading(() => disputeMatchReport(id, uid));
   }
 
+  async function handleCancel() {
+    if (!confirm('Cancel this match? It will be marked as cancelled.')) return;
+    await withLoading(() => cancelMatch(id));
+    setShowManage(false);
+  }
+
+  async function handlePostponeBy(ms: number) {
+    if (!match) return;
+    const base = match.scheduledAt ?? Date.now();
+    const newTime = base + ms;
+    if (!confirm(`Postpone to ${new Date(newTime).toLocaleString()}?`)) return;
+    await withLoading(() => postponeMatch(id, newTime));
+    setShowManage(false);
+    setShowPostponeOptions(false);
+  }
+
+  async function handleDelete() {
+    if (!match) return;
+    const msg = match.status === 'completed'
+      ? 'Deleting a completed match will not reverse its effect on rankings. Continue?'
+      : 'This match and all its data will be permanently deleted.';
+    if (!confirm(msg)) return;
+    await withLoading(() => deleteMatch(id));
+    router.push('/matches');
+  }
+
+  const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
+  const canPostpone = match.status === 'scheduled';
+  const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
+  const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
+
   return (
     <div style={styles.page}>
       <nav style={styles.nav}>
@@ -65,19 +107,39 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
       <main style={styles.main}>
         <div style={styles.scoreboard}>
-          <span style={{ ...styles.statusBadge, color: match.status === 'in_progress' ? '#ff6b6b' : '#999' }}>
-            {statusLabel}
-          </span>
+          <div style={styles.badgeRow}>
+            <span style={{ ...styles.statusBadge, color: match.status === 'in_progress' ? '#ff6b6b' : '#a8d5a2' }}>
+              {statusLabel}
+            </span>
+            {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
+          </div>
           <div style={styles.setsRow}>
             <span style={styles.setsLabel}>Sets</span>
             <span style={styles.setsScore}>{setsDisplay}</span>
           </div>
           <div style={styles.score}>{scoreDisplay}</div>
-          <div style={styles.gameScore}>{gameDisplay}</div>
-          <div style={styles.server}>
-            {match.liveScore.server === 'player1' ? '● Player 1' : '● Player 2'} serves · {match.liveScore.serviceSide} side
+          {match.status === 'in_progress' && <div style={styles.gameScore}>{gameDisplay}</div>}
+          {match.status === 'in_progress' && (
+            <div style={styles.server}>
+              {match.liveScore.server === 'player1' ? `● ${p1Name}` : `● ${p2Name}`} serves · {match.liveScore.serviceSide} side
+            </div>
+          )}
+          <div style={styles.playerNamesRow}>
+            <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player1' ? styles.playerNameWinner : {}) }}>{p1Name}</span>
+            <span style={styles.playerVsLabel}>vs</span>
+            <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player2' ? styles.playerNameWinner : {}) }}>
+              {p2Name}{match.player2IsGuest ? ' (Guest)' : ''}
+            </span>
           </div>
         </div>
+
+        {canManage && (
+          <div style={styles.manageWrap}>
+            <button style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
+              ⋯ Options
+            </button>
+          </div>
+        )}
 
         {/* Report actions */}
         {isParticipant && match.status === 'pending_report' && !submission && (
@@ -157,11 +219,11 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         </div>
 
         {/* Stats */}
-        {match.status === 'completed' && (
+        {match.status === 'completed' && !isHistoric && (
           <div style={styles.section}>
             <h2 style={styles.sectionTitle}>Match Statistics</h2>
             <div style={styles.statsTable}>
-              <StatRow label="" v1="Player 1" v2="Player 2" header />
+              <StatRow label="" v1={p1Name} v2={p2Name} header />
               <StatRow label="Aces" v1={String(match.stats.player1.aces)} v2={String(match.stats.player2.aces)} />
               <StatRow label="Double Faults" v1={String(match.stats.player1.doubleFaults)} v2={String(match.stats.player2.doubleFaults)} />
               <StatRow label="Winners" v1={String(match.stats.player1.winners)} v2={String(match.stats.player2.winners)} />
@@ -169,11 +231,53 @@ export default function MatchPage({ params }: { params: { id: string } }): React
               <StatRow label="Break Points Won" v1={String(match.stats.player1.breakPointsWon)} v2={String(match.stats.player2.breakPointsWon)} />
             </div>
 
-            {match.reportUrl && (
-              <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
-                📊 Download Match Report (PDF)
-              </a>
-            )}
+          </div>
+        )}
+
+        {match.status === 'completed' && match.reportUrl && (
+          <div style={styles.section}>
+            <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
+              📊 Download Match Report (PDF)
+            </a>
+          </div>
+        )}
+
+        {showManage && (
+          <div style={styles.modalOverlay} onClick={() => setShowManage(false)}>
+            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+              <h3 style={styles.modalTitle}>{showPostponeOptions ? 'Postpone by…' : 'Manage Match'}</h3>
+              {actionLoading && <p style={styles.modalBody}>Working…</p>}
+              {!actionLoading && !showPostponeOptions && (
+                <div style={styles.manageOptions}>
+                  {canPostpone && (
+                    <button style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
+                  )}
+                  {canCancel && (
+                    <button style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
+                  )}
+                  {canDelete && (
+                    <button style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
+                  )}
+                  {!canPostpone && !canCancel && !canDelete && (
+                    <p style={styles.modalBody}>No actions available for this match status.</p>
+                  )}
+                </div>
+              )}
+              {!actionLoading && showPostponeOptions && (
+                <div style={styles.manageOptions}>
+                  {[
+                    { label: '+30 minutes', ms: 30 * 60 * 1000 },
+                    { label: '+1 hour',     ms: 60 * 60 * 1000 },
+                    { label: '+2 hours',    ms: 2 * 60 * 60 * 1000 },
+                    { label: '+1 day',      ms: 24 * 60 * 60 * 1000 },
+                  ].map(({ label, ms }) => (
+                    <button key={label} style={styles.manageOption} onClick={() => handlePostponeBy(ms)}>{label}</button>
+                  ))}
+                  <button style={styles.manageOptionGhost} onClick={() => setShowPostponeOptions(false)}>← Back</button>
+                </div>
+              )}
+              <button style={styles.manageOptionGhost} onClick={() => setShowManage(false)}>Close</button>
+            </div>
           </div>
         )}
       </main>
@@ -199,7 +303,19 @@ const styles: Record<string, React.CSSProperties> = {
   navBrand: { color: '#fff', fontWeight: 700, fontSize: 18 },
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
-  statusBadge: { fontWeight: 700, fontSize: 13, display: 'block', marginBottom: 16 },
+  badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
+  statusBadge: { fontWeight: 700, fontSize: 13 },
+  historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
+  playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
+  playerNameLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 600 },
+  playerNameWinner: { color: '#ffdc60' },
+  playerVsLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
+  manageWrap: { display: 'flex', justifyContent: 'center', marginBottom: 12 },
+  manageBtn: { background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: 20, padding: '6px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  manageOptions: { display: 'flex', flexDirection: 'column' as const, gap: 4, marginBottom: 12 },
+  manageOption: { textAlign: 'left' as const, padding: '14px 12px', background: 'transparent', border: 'none', borderBottom: '1px solid #f0f0f0', fontSize: 15, color: '#222', fontWeight: 500, cursor: 'pointer' },
+  manageOptionDanger: { color: '#c0392b' },
+  manageOptionGhost: { background: 'transparent', border: 'none', color: '#888', padding: '12px 0', fontSize: 14, cursor: 'pointer', textAlign: 'center' as const },
   setsRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8 },
   setsLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 16 },
   setsScore: { color: '#fff', fontSize: 28, fontWeight: 700 },

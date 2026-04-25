@@ -50,7 +50,7 @@ export async function joinDivisionByCode(
   if (snap.empty) throw new Error('Invalid invite code.');
 
   const divSnap = snap.docs[0];
-  const division = { id: divSnap.id, ...divSnap.data() } as Division;
+  const division: Division = { ...divSnap.data(), id: divSnap.id };
 
   if (division.playerIds.includes(userId)) {
     return { divisionId: division.id, divisionName: division.name };
@@ -70,7 +70,8 @@ export async function joinDivisionByCode(
 
 export async function getDivision(divisionId: string): Promise<Division | null> {
   const snap = await getDoc(divisionDoc(divisionId));
-  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Division) : null;
+  if (!snap.exists()) return null;
+  return { ...snap.data(), id: snap.id };
 }
 
 export async function searchDivisionPlayers(
@@ -81,7 +82,7 @@ export async function searchDivisionPlayers(
   const snap = await getDocs(q);
   const lower = searchText.toLowerCase().trim();
   return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }) as User)
+    .map((d): User => ({ ...d.data(), id: d.id }))
     .filter(
       (u) =>
         u.displayName.toLowerCase().includes(lower) ||

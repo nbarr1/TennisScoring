@@ -17,6 +17,7 @@ export interface User {
   role: UserRole;
   fcmTokens: string[];
   tipsEnabled: boolean;
+  tutorialDone?: boolean;
   createdAt: number; // Unix ms timestamp
   updatedAt: number;
 }
