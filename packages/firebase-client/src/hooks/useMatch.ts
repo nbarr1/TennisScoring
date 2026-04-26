@@ -280,6 +280,21 @@ export async function resolveDisputedReport(matchId: string): Promise<void> {
   await callable({ matchId });
 }
 
+export async function editMatchScore(
+  matchId: string,
+  sets: { p1: number; p2: number }[],
+): Promise<void> {
+  const { score, winner } = buildHistoricScore(sets);
+  await updateDoc(matchDoc(matchId), {
+    liveScore: score,
+    winner,
+    status: 'pending_report',
+    completedAt: deleteField(),
+    reportSubmission: deleteField(),
+    undoSnapshot: deleteField(),
+  });
+}
+
 export async function recalculateDivisionRankings(divisionId: string): Promise<void> {
   const callable = httpsCallable(functions, 'recalculateDivisionRankings');
   await callable({ divisionId });

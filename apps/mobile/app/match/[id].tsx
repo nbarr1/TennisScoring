@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import {
   useMatch, scorePoint, startMatch, undoLastPoint,
-  cancelMatch, deleteMatch, postponeMatch,
+  cancelMatch, deleteMatch, postponeMatch, editMatchScore,
   submitMatchReport, confirmMatchReport, disputeMatchReport,
   submitGuestReport, linkGuestOpponent, searchDivisionPlayers,
 } from '@tennis/firebase-client';
@@ -66,6 +66,88 @@ function DisputeModal({
   );
 }
 
+function EditScoreModal({
+  visible, sets, onChangeSets, onSave, onCancel, saving, isCompleted, p1Name, p2Name,
+}: {
+  visible: boolean;
+  sets: { p1: string; p2: string }[];
+  onChangeSets: (s: { p1: string; p2: string }[]) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  isCompleted: boolean;
+  p1Name: string;
+  p2Name: string;
+}) {
+  function updateSet(i: number, side: 'p1' | 'p2', val: string) {
+    onChangeSets(sets.map((s, idx) => idx === i ? { ...s, [side]: val.replace(/[^0-9]/g, '') } : s));
+  }
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.linkModalOverlay}>
+        <ScrollView contentContainerStyle={styles.linkModalCard} keyboardShouldPersistTaps="handled">
+          <Text style={styles.linkModalTitle}>Edit Score</Text>
+          {isCompleted && (
+            <Text style={[styles.linkModalHint, { color: '#e67e22', marginBottom: 12 }]}>
+              Editing a confirmed match resets the score for re-confirmation by both players.
+            </Text>
+          )}
+          <View style={editScoreStyles.headerRow}>
+            <Text style={editScoreStyles.headerSet}>Set</Text>
+            <Text style={editScoreStyles.headerName} numberOfLines={1}>{p1Name}</Text>
+            <Text style={editScoreStyles.headerName} numberOfLines={1}>{p2Name}</Text>
+          </View>
+          {sets.map((s, i) => (
+            <View key={i} style={editScoreStyles.setRow}>
+              <Text style={editScoreStyles.setLabel}>Set {i + 1}</Text>
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p1}
+                onChangeText={(v) => updateSet(i, 'p1', v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+              />
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p2}
+                onChangeText={(v) => updateSet(i, 'p2', v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+              />
+            </View>
+          ))}
+          <View style={editScoreStyles.setActionRow}>
+            {sets.length < 5 && (
+              <TouchableOpacity onPress={() => onChangeSets([...sets, { p1: '', p2: '' }])}>
+                <Text style={editScoreStyles.addSetText}>+ Add Set</Text>
+              </TouchableOpacity>
+            )}
+            {sets.length > 1 && (
+              <TouchableOpacity onPress={() => onChangeSets(sets.slice(0, -1))}>
+                <Text style={editScoreStyles.removeSetText}>− Remove Set</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <TouchableOpacity
+            style={[styles.confirmBtn, { marginTop: 16 }, saving && styles.btnDisabled]}
+            onPress={onSave}
+            disabled={saving}
+          >
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmBtnText}>Save Score</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.linkCancelBtn} onPress={onCancel}>
+            <Text style={styles.linkCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 export default function MatchScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -78,6 +160,9 @@ export default function MatchScreen() {
   const [showManage, setShowManage] = useState(false);
   const [showPostponeOptions, setShowPostponeOptions] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [showEditScore, setShowEditScore] = useState(false);
+  const [editSets, setEditSets] = useState<{ p1: string; p2: string }[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -87,6 +172,8 @@ export default function MatchScreen() {
 
   const isParticipant = !!(user && match && (match.player1Id === user.id || match.player2Id === user.id));
   const myPlayerKey = user && match ? (match.player1Id === user.id ? 'player1' : 'player2') : null;
+  const isAdminOrLeader = user?.role === 'division_leader' || user?.role === 'admin';
+  const canManage = isParticipant || isAdminOrLeader;
 
   // Derived report-submission state
   const submission = match?.reportSubmission;
@@ -181,6 +268,34 @@ export default function MatchScreen() {
         },
       },
     ]);
+  }
+
+  function handleOpenEditScore() {
+    const existing = (match?.liveScore.sets ?? []).map((s) => ({
+      p1: String(s.player1Games),
+      p2: String(s.player2Games),
+    }));
+    setEditSets(existing.length > 0 ? existing : [{ p1: '', p2: '' }]);
+    setShowManage(false);
+    setShowEditScore(true);
+  }
+
+  async function handleSaveEditScore() {
+    const parsed = editSets.map((s) => ({ p1: parseInt(s.p1, 10), p2: parseInt(s.p2, 10) }));
+    if (parsed.some((s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0)) {
+      Alert.alert('Invalid Score', 'Please enter a valid number of games for each set.');
+      return;
+    }
+    if (!id) return;
+    setEditSaving(true);
+    try {
+      await editMatchScore(id, parsed);
+      setShowEditScore(false);
+    } catch {
+      Alert.alert('Error', 'Could not save score. Please try again.');
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function handleSubmitReport() {
@@ -322,6 +437,7 @@ export default function MatchScreen() {
   const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
   const p1Name = match.player1Name ?? 'Player 1';
   const p2Name = match.player2Name ?? 'Player 2';
+  const canEditScore = canManage && (match.status === 'pending_report' || match.status === 'completed');
   const serverLabel = match.liveScore.server === 'player1' ? `● ${p1Name} Serves` : `● ${p2Name} Serves`;
 
   return (
@@ -353,7 +469,7 @@ export default function MatchScreen() {
       </View>
 
       {/* Match management */}
-      {isParticipant && match.status !== 'cancelled' && (
+      {canManage && match.status !== 'cancelled' && (
         <TouchableOpacity style={styles.manageBtn} onPress={openManage}>
           <Text style={styles.manageBtnText}>⋯  Options</Text>
         </TouchableOpacity>
@@ -556,12 +672,17 @@ export default function MatchScreen() {
 
             {!managing && !showPostponeOptions && (
               <>
-                {match.status === 'scheduled' && (
+                {canEditScore && (
+                  <TouchableOpacity style={styles.manageOption} onPress={handleOpenEditScore}>
+                    <Text style={styles.manageOptionText}>✏  Edit Score</Text>
+                  </TouchableOpacity>
+                )}
+                {isParticipant && match.status === 'scheduled' && (
                   <TouchableOpacity style={styles.manageOption} onPress={() => setShowPostponeOptions(true)}>
                     <Text style={styles.manageOptionText}>📅  Postpone</Text>
                   </TouchableOpacity>
                 )}
-                {(match.status === 'scheduled' || match.status === 'in_progress') && (
+                {isParticipant && (match.status === 'scheduled' || match.status === 'in_progress') && (
                   <TouchableOpacity style={styles.manageOption} onPress={handleCancelMatch}>
                     <Text style={styles.manageOptionText}>✕  Cancel Match</Text>
                   </TouchableOpacity>
@@ -596,6 +717,18 @@ export default function MatchScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <EditScoreModal
+        visible={showEditScore}
+        sets={editSets}
+        onChangeSets={setEditSets}
+        onSave={handleSaveEditScore}
+        onCancel={() => setShowEditScore(false)}
+        saving={editSaving}
+        isCompleted={match.status === 'completed'}
+        p1Name={p1Name}
+        p2Name={p2Name}
+      />
 
       <TipOverlay tip={currentTip} onDismiss={() => setCurrentTip(null)} />
 
@@ -767,4 +900,16 @@ const styles = StyleSheet.create({
   disputeBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancelBtn: { paddingVertical: 12, alignItems: 'center' },
   cancelBtnText: { color: '#888', fontSize: 14 },
+});
+
+const editScoreStyles = StyleSheet.create({
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
+  headerSet: { flex: 1.5, fontSize: 13, fontWeight: '700', color: '#888' },
+  headerName: { flex: 2, fontSize: 13, fontWeight: '700', color: '#1a472a', textAlign: 'center' },
+  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  setLabel: { flex: 1.5, fontSize: 15, fontWeight: '600', color: '#333' },
+  setInput: { flex: 2, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, fontSize: 18, fontWeight: '700', textAlign: 'center', color: '#222' },
+  setActionRow: { flexDirection: 'row', gap: 20, marginTop: 4, marginBottom: 8 },
+  addSetText: { fontSize: 14, color: '#1a472a', fontWeight: '600' },
+  removeSetText: { fontSize: 14, color: '#c0392b', fontWeight: '600' },
 });
