@@ -257,7 +257,7 @@ function completeSet(
   const next = deepCloneScore(score);
   next.sets[next.currentSet].winner = setWinner;
   next.isTiebreak = false;
-  next.tiebreakScore = undefined;
+  delete next.tiebreakScore;
 
   if (setWinner === 'player1') {
     next.player1SetsWon++;

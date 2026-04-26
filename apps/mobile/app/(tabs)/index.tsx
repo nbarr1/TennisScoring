@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useRankings } from '@tennis/firebase-client';
+import { useRankings, recalculateDivisionRankings } from '@tennis/firebase-client';
 import { useAppStore } from '../../store/appStore';
 import type { PlayerRanking } from '@tennis/shared';
 
@@ -21,9 +21,25 @@ function RankingRow({ item, index }: { item: PlayerRanking; index: number }) {
 }
 
 export default function RankingsScreen() {
-  const { divisionId } = useAppStore();
+  const { divisionId, user } = useAppStore();
   const { rankings, loading } = useRankings(divisionId);
   const router = useRouter();
+  const [recalculating, setRecalculating] = useState(false);
+
+  const canRecalculate = user?.role === 'division_leader' || user?.role === 'admin';
+
+  async function handleRecalculate() {
+    if (!divisionId) return;
+    setRecalculating(true);
+    try {
+      await recalculateDivisionRankings(divisionId);
+      Alert.alert('Done', 'Rankings have been recalculated.');
+    } catch {
+      Alert.alert('Error', 'Could not recalculate rankings. Please try again.');
+    } finally {
+      setRecalculating(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -42,6 +58,17 @@ export default function RankingsScreen() {
           <TouchableOpacity style={styles.ctaButton} onPress={() => router.push('/(tabs)/matches')}>
             <Text style={styles.ctaText}>Start a Match</Text>
           </TouchableOpacity>
+          {canRecalculate && (
+            <TouchableOpacity
+              style={[styles.recalcBtn, recalculating && styles.recalcBtnDisabled]}
+              onPress={handleRecalculate}
+              disabled={recalculating}
+            >
+              {recalculating
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.recalcBtnText}>↺  Recalculate Rankings</Text>}
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <FlatList
@@ -52,6 +79,17 @@ export default function RankingsScreen() {
             <View style={styles.tableHeader}>
               <Text style={styles.tableHeaderText}>Division Standings</Text>
               <Text style={styles.tableSubHeader}>Sorted: W · Sets · Games · Diff · H2H</Text>
+              {canRecalculate && (
+                <TouchableOpacity
+                  style={[styles.recalcBtn, recalculating && styles.recalcBtnDisabled]}
+                  onPress={handleRecalculate}
+                  disabled={recalculating}
+                >
+                  {recalculating
+                    ? <ActivityIndicator color="#1a472a" size="small" />
+                    : <Text style={styles.recalcBtnText}>↺  Recalculate Rankings</Text>}
+                </TouchableOpacity>
+              )}
             </View>
           }
           contentContainerStyle={styles.list}
@@ -78,4 +116,7 @@ const styles = StyleSheet.create({
   emptyBody: { fontSize: 14, color: '#666', marginBottom: 24, textAlign: 'center' },
   ctaButton: { backgroundColor: '#1a472a', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
   ctaText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  recalcBtn: { marginTop: 14, backgroundColor: '#1a472a', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, alignSelf: 'flex-start' },
+  recalcBtnDisabled: { opacity: 0.5 },
+  recalcBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
 });

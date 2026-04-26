@@ -280,6 +280,11 @@ export async function resolveDisputedReport(matchId: string): Promise<void> {
   await callable({ matchId });
 }
 
+export async function recalculateDivisionRankings(divisionId: string): Promise<void> {
+  const callable = httpsCallable(functions, 'recalculateDivisionRankings');
+  await callable({ divisionId });
+}
+
 /**
  * Subscribes to all in-progress matches for a division in real time.
  * Useful for spectator views and live-match dashboards.

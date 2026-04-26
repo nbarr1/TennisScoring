@@ -29,6 +29,14 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     const matchId = event.params.matchId;
     const db = getFirestore();
 
+    // Document deleted — recalculate rankings if a completed match was removed
+    if (!after) {
+      if (before?.status === 'completed' && !before?.player2IsGuest) {
+        await recalculateRankings(before.divisionId);
+      }
+      return;
+    }
+
     const prevSubmission = before?.reportSubmission;
     const curSubmission = after.reportSubmission;
 
@@ -243,5 +251,38 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
 async function checkIsLeader(uid: string, divisionId: string): Promise<boolean> {
   const db = getFirestore();
   const divSnap = await db.collection('divisions').doc(divisionId).get();
-  return divSnap.data()?.leaderId === uid;
+  const data = divSnap.data();
+  return (data?.leaderIds ?? []).includes(uid) || data?.leaderId === uid;
 }
+
+/**
+ * HTTPS callable: manually trigger a full rankings recalculation for a division.
+ * Restricted to division leaders and admins.
+ */
+export const recalculateDivisionRankings = functions.https.onCall(async (request) => {
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+
+  const { divisionId } = request.data as { divisionId: string };
+  if (!divisionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'divisionId is required');
+  }
+
+  const db = getFirestore();
+  const [userSnap, divSnap] = await Promise.all([
+    db.collection('users').doc(request.auth.uid).get(),
+    db.collection('divisions').doc(divisionId).get(),
+  ]);
+
+  const isAdmin = userSnap.data()?.role === 'admin';
+  const divData = divSnap.data();
+  const isLeader = (divData?.leaderIds ?? []).includes(request.auth.uid) || divData?.leaderId === request.auth.uid;
+
+  if (!isAdmin && !isLeader) {
+    throw new functions.https.HttpsError('permission-denied', 'Only division leaders can recalculate rankings');
+  }
+
+  await recalculateRankings(divisionId);
+  return { success: true };
+});
