@@ -5,6 +5,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": { "simulator": true },
+      "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "development",
         "NODE_VERSION": "20.19.0",
@@ -14,6 +15,7 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
+      "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "preview",
         "NODE_VERSION": "20.19.0",
@@ -25,6 +27,7 @@
       "ios": {
         "autoIncrement": "buildNumber"
       },
+      "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "production",
         "NODE_VERSION": "20.19.0",
