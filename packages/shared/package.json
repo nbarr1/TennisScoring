@@ -11,8 +11,8 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "build": "node \"$(pnpm root -w)/tsup/dist/cli-default.js\" src/index.ts --format esm,cjs --dts",
+    "dev": "node \"$(pnpm root -w)/tsup/dist/cli-default.js\" src/index.ts --format esm,cjs --dts --watch",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint src --ext .ts"
