@@ -4,11 +4,11 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node \"$(pnpm root -w)/next/dist/bin/next\" dev",
+    "build": "node \"$(pnpm root -w)/next/dist/bin/next\" build",
+    "start": "node \"$(pnpm root -w)/next/dist/bin/next\" start",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint"
+    "lint": "node \"$(pnpm root -w)/next/dist/bin/next\" lint"
   },
   "dependencies": {
     "@tennis/shared": "workspace:*",
