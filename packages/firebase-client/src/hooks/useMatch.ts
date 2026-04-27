@@ -200,7 +200,7 @@ export async function scorePoint(
 ): Promise<{ matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }> {
   const result = applyPoint(match.liveScore, scorer, match.format);
 
-  const updates: Record<string, unknown> = {
+  const updates: Partial<Match> = {
     liveScore: result.nextScore,
     undoSnapshot: {
       liveScore: match.liveScore,
@@ -215,7 +215,7 @@ export async function scorePoint(
     updates.completedAt = Date.now();
   }
 
-  await updateDoc(matchDoc(matchId), updates);
+  await updateDoc(matchDoc(matchId), updates as Partial<Match>);
   return { matchWinner: result.matchWinner, tips: result.tips };
 }
 

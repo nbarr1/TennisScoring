@@ -37,7 +37,7 @@ export function useNotifications(userId: string | null | undefined) {
       }
 
       const token = await Notifications.getDevicePushTokenAsync();
-      await registerFcmToken(userId, token.data as string);
+      await registerFcmToken(userId!, token.data as string);
     }
 
     setup().catch(() => {});

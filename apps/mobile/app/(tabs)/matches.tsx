@@ -100,7 +100,7 @@ export default function MatchesScreen() {
     setLoading(true);
     const q = divisionMatchesQuery(divisionId);
     const unsub = onSnapshot(q, (snap) => {
-      setMatches(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Match));
+      setMatches(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Match));
       setLoading(false);
     });
     return unsub;

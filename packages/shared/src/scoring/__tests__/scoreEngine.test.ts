@@ -101,10 +101,12 @@ describe('scoreEngine', () => {
 
     it('triggers tiebreak at 6-6', () => {
       let score = createInitialScore(DEFAULT_FORMAT);
-      score = winGames(score, 'player1', 6);
-      score = winGames(score, 'player2', 6);
-      // After p2 wins 6th game at 6-6, tiebreak should start
-      // (re-apply last game to trigger it)
+      for (let i = 0; i < 5; i++) {
+        score = winGames(score, 'player1', 1);
+        score = winGames(score, 'player2', 1);
+      }
+      score = winGames(score, 'player1', 1); // 6-5
+      score = winGames(score, 'player2', 1); // 6-6 → tiebreak
       expect(score.isTiebreak).toBe(true);
     });
   });
@@ -112,17 +114,20 @@ describe('scoreEngine', () => {
   describe('tiebreak', () => {
     function reachTiebreak() {
       let score = createInitialScore(DEFAULT_FORMAT);
-      const winGames = (s: typeof score, p: 'player1' | 'player2', n: number) => {
-        for (let i = 0; i < n; i++) {
-          for (let j = 0; j < 4; j++) {
-            s = applyPoint(s, p, DEFAULT_FORMAT).nextScore;
-            if (s.isTiebreak) return s;
-          }
+      const winOneGame = (s: typeof score, p: 'player1' | 'player2') => {
+        for (let j = 0; j < 4; j++) {
+          const r = applyPoint(s, p, DEFAULT_FORMAT);
+          s = r.nextScore;
+          if (r.gameCompleted || r.setCompleted || s.isTiebreak) break;
         }
         return s;
       };
-      score = winGames(score, 'player1', 6);
-      score = winGames(score, 'player2', 6);
+      for (let i = 0; i < 5; i++) {
+        score = winOneGame(score, 'player1');
+        score = winOneGame(score, 'player2');
+      }
+      score = winOneGame(score, 'player1'); // 6-5
+      score = winOneGame(score, 'player2'); // 6-6 → tiebreak
       return score;
     }
 
