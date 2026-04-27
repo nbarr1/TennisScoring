@@ -7,10 +7,11 @@ import Link from 'next/link';
 import { onSnapshot } from 'firebase/firestore';
 import {
   divisionMatchesQuery, recordHistoricMatch, searchDivisionPlayers,
+  proposeMatch, acceptMatchProposal, declineMatchProposal,
   useAuthUser, useUserProfile,
 } from '@tennis/firebase-client';
-import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
-import type { Match, User } from '@tennis/shared';
+import { formatScoreDisplay, formatGameScore, DAY_LABELS } from '@tennis/shared';
+import type { Match, User, Availability } from '@tennis/shared';
 
 const FALLBACK_DIVISION_ID = process.env.NEXT_PUBLIC_DIVISION_ID ?? 'default';
 
@@ -19,7 +20,9 @@ const STATUS_COLOR: Record<string, string> = {
   pending_report: '#e67e22',
   completed: '#555',
   disputed: '#c0392b',
-  scheduled: '#aaa',
+  scheduled: '#1a472a',
+  proposed: '#8e44ad',
+  cancelled: '#999',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -28,11 +31,20 @@ const STATUS_LABEL: Record<string, string> = {
   completed: 'Final',
   disputed: '⚠ Disputed',
   scheduled: 'Scheduled',
+  proposed: 'Proposed',
+  cancelled: 'Cancelled',
 };
 
-function MatchCard({ m }: { m: Match }) {
+function formatScheduledAt(ts?: number): string {
+  if (!ts) return 'Time TBD';
+  const d = new Date(ts);
+  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
   const isLive = m.status === 'in_progress';
   const isHistoric = m.source === 'manual';
+  const isUpcoming = m.status === 'scheduled' || m.status === 'proposed';
   const p1 = m.player1Name ?? 'Player 1';
   const p2 = m.player2Name ?? 'Player 2';
   return (
@@ -51,7 +63,13 @@ function MatchCard({ m }: { m: Match }) {
         </div>
       </div>
 
-      {m.status !== 'scheduled' && (
+      {isUpcoming && (
+        <div style={styles.scheduledLine}>
+          🗓 {formatScheduledAt(m.scheduledAt)}
+        </div>
+      )}
+
+      {!isUpcoming && (
         <div style={styles.scoreBlock}>
           <span style={styles.setScore}>{formatScoreDisplay(m.liveScore)}</span>
           {isLive && (
@@ -73,8 +91,18 @@ function MatchCard({ m }: { m: Match }) {
           {m.liveScore.server === 'player1' ? p1 : p2} serves · {m.liveScore.serviceSide} side
         </div>
       )}
+
+      {actions && <div style={styles.actionsRow}>{actions}</div>}
     </Link>
   );
+}
+
+function stop(handler: () => void) {
+  return (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handler();
+  };
 }
 
 export default function MatchesPage(): React.JSX.Element {
@@ -84,6 +112,7 @@ export default function MatchesPage(): React.JSX.Element {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRecord, setShowRecord] = useState(false);
+  const [showPropose, setShowPropose] = useState(false);
 
   useEffect(() => {
     if (!divisionId) return;
@@ -94,8 +123,19 @@ export default function MatchesPage(): React.JSX.Element {
     });
   }, [divisionId]);
 
+  const uid = firebaseUser?.uid;
   const liveMatches = matches.filter((m) => m.status === 'in_progress');
-  const otherMatches = matches.filter((m) => m.status !== 'in_progress');
+  const pendingInvites = matches
+    .filter((m) => m.status === 'proposed' && m.player2Id === uid)
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
+  const awaitingOpponent = matches
+    .filter((m) => m.status === 'proposed' && m.player1Id === uid)
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
+  const upcomingMatches = matches
+    .filter((m) => m.status === 'scheduled')
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
+  const otherStatuses = new Set(['in_progress', 'proposed', 'scheduled']);
+  const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
 
   return (
     <div style={styles.page}>
@@ -114,9 +154,14 @@ export default function MatchesPage(): React.JSX.Element {
         <div style={styles.titleRow}>
           <h1 style={styles.pageTitle}>Matches</h1>
           {profile?.divisionId && firebaseUser && (
-            <button style={styles.recordBtn} onClick={() => setShowRecord(true)}>
-              📋 Record Past Match
-            </button>
+            <div style={styles.titleActions}>
+              <button style={styles.proposeBtn} onClick={() => setShowPropose(true)}>
+                📅 Propose Match
+              </button>
+              <button style={styles.recordBtn} onClick={() => setShowRecord(true)}>
+                📋 Record Past Match
+              </button>
+            </div>
           )}
         </div>
 
@@ -138,9 +183,61 @@ export default function MatchesPage(): React.JSX.Element {
               </section>
             )}
 
+            {pendingInvites.length > 0 && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>Pending Invitations</h2>
+                <div style={styles.grid}>
+                  {pendingInvites.map((m) => (
+                    <MatchCard
+                      key={m.id}
+                      m={m}
+                      actions={
+                        <>
+                          <button style={styles.acceptBtn} onClick={stop(() => acceptMatchProposal(m.id))}>
+                            ✓ Accept
+                          </button>
+                          <button style={styles.declineBtn} onClick={stop(() => declineMatchProposal(m.id))}>
+                            ✕ Decline
+                          </button>
+                        </>
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {awaitingOpponent.length > 0 && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>Awaiting Opponent</h2>
+                <div style={styles.grid}>
+                  {awaitingOpponent.map((m) => (
+                    <MatchCard
+                      key={m.id}
+                      m={m}
+                      actions={
+                        <button style={styles.declineBtn} onClick={stop(() => declineMatchProposal(m.id))}>
+                          Cancel proposal
+                        </button>
+                      }
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {upcomingMatches.length > 0 && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>Upcoming</h2>
+                <div style={styles.grid}>
+                  {upcomingMatches.map((m) => <MatchCard key={m.id} m={m} />)}
+                </div>
+              </section>
+            )}
+
             {otherMatches.length > 0 && (
               <section>
-                {liveMatches.length > 0 && <h2 style={styles.sectionTitle}>All Matches</h2>}
+                <h2 style={styles.sectionTitle}>All Matches</h2>
                 <div style={styles.grid}>
                   {otherMatches.map((m) => <MatchCard key={m.id} m={m} />)}
                 </div>
@@ -154,6 +251,14 @@ export default function MatchesPage(): React.JSX.Element {
             currentUser={profile}
             divisionId={profile.divisionId}
             onClose={() => setShowRecord(false)}
+          />
+        )}
+
+        {showPropose && firebaseUser && profile?.divisionId && (
+          <ProposeMatchModal
+            currentUser={profile}
+            divisionId={profile.divisionId}
+            onClose={() => setShowPropose(false)}
           />
         )}
       </main>
@@ -363,6 +468,164 @@ function RecordPastMatchModal({
   );
 }
 
+function AvailabilityHint({ availability }: { availability?: Availability }) {
+  if (!availability || (availability.slots.length === 0 && !availability.note)) {
+    return <div style={modalStyles.muted}>Opponent hasn&apos;t set their preferred play times.</div>;
+  }
+  return (
+    <div style={modalStyles.availability}>
+      <div style={modalStyles.availabilityTitle}>Their preferred times</div>
+      {availability.slots.map((s, i) => (
+        <div key={i} style={modalStyles.availabilityRow}>
+          <span style={modalStyles.availabilityDay}>{DAY_LABELS[s.day]}</span>
+          <span style={modalStyles.availabilityTime}>{s.from}–{s.to}</span>
+        </div>
+      ))}
+      {availability.note && <div style={modalStyles.availabilityNote}>{availability.note}</div>}
+    </div>
+  );
+}
+
+function ProposeMatchModal({
+  currentUser,
+  divisionId,
+  onClose,
+}: {
+  currentUser: User;
+  divisionId: string;
+  onClose: () => void;
+}) {
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!searchText.trim() || selectedOpponent) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchDivisionPlayers(divisionId, searchText);
+        setSearchResults(results.filter((u) => u.id !== currentUser.id));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchText, divisionId, selectedOpponent, currentUser.id]);
+
+  async function handleSubmit() {
+    setError('');
+    if (!selectedOpponent) {
+      setError('Select an opponent.');
+      return;
+    }
+    const ts = Date.parse(scheduledAt);
+    if (!ts || Number.isNaN(ts)) {
+      setError('Pick a valid date and time.');
+      return;
+    }
+    if (ts < Date.now()) {
+      setError('Pick a time in the future.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await proposeMatch({
+        player1Id: currentUser.id,
+        player2Id: selectedOpponent.id,
+        player1Name: currentUser.displayName,
+        player2Name: selectedOpponent.displayName,
+        divisionId,
+        createdBy: currentUser.id,
+        scheduledAt: ts,
+      });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send the proposal.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
+        <h2 style={modalStyles.title}>Propose a Match</h2>
+
+        {selectedOpponent ? (
+          <>
+            <div style={modalStyles.selectedRow}>
+              <div>
+                <div style={modalStyles.selectedName}>{selectedOpponent.displayName}</div>
+                <div style={modalStyles.selectedEmail}>{selectedOpponent.email}</div>
+              </div>
+              <button style={modalStyles.changeBtn} onClick={() => { setSelectedOpponent(null); setSearchText(''); }}>Change</button>
+            </div>
+            <AvailabilityHint availability={selectedOpponent.availability} />
+          </>
+        ) : (
+          <>
+            <input
+              style={modalStyles.input}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search opponent by name or email…"
+            />
+            {searching && <div style={modalStyles.muted}>Searching…</div>}
+            {searchResults.length > 0 && (
+              <div style={modalStyles.results}>
+                {searchResults.map((u) => (
+                  <button key={u.id} style={modalStyles.resultRow} onClick={() => { setSelectedOpponent(u); setSearchResults([]); }}>
+                    <div style={modalStyles.resultName}>{u.displayName}</div>
+                    <div style={modalStyles.resultEmail}>{u.email}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchText.trim().length > 0 && !searching && searchResults.length === 0 && (
+              <div style={modalStyles.muted}>No players found.</div>
+            )}
+          </>
+        )}
+
+        {selectedOpponent && (
+          <div style={{ marginTop: 14 }}>
+            <div style={modalStyles.label}>When?</div>
+            <input
+              style={modalStyles.input}
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+            />
+          </div>
+        )}
+
+        {error && <div style={modalStyles.error}>{error}</div>}
+
+        <div style={modalStyles.actions}>
+          <button style={modalStyles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button
+            style={{ ...modalStyles.submitBtn, ...(!selectedOpponent || !scheduledAt || submitting ? modalStyles.btnDisabled : {}) }}
+            onClick={handleSubmit}
+            disabled={!selectedOpponent || !scheduledAt || submitting}
+          >
+            {submitting ? 'Sending…' : 'Send Proposal'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const modalStyles: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 },
   card: { background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', maxHeight: '90vh', overflowY: 'auto' as const },
@@ -393,6 +656,12 @@ const modalStyles: Record<string, React.CSSProperties> = {
   btnDisabled: { opacity: 0.5, cursor: 'not-allowed' as const },
   error: { color: '#c0392b', fontSize: 13, marginBottom: 12 },
   muted: { color: '#999', fontSize: 13, marginBottom: 12 },
+  availability: { background: '#f7f7f0', borderRadius: 10, padding: 12, marginBottom: 12 },
+  availabilityTitle: { fontSize: 12, fontWeight: 700, color: '#1a472a', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  availabilityRow: { display: 'flex', gap: 10, alignItems: 'center', fontSize: 13, color: '#333', padding: '2px 0' },
+  availabilityDay: { fontWeight: 600, color: '#1a472a', minWidth: 32 },
+  availabilityTime: { color: '#444' },
+  availabilityNote: { fontSize: 12, color: '#666', fontStyle: 'italic' as const, marginTop: 6, paddingTop: 6, borderTop: '1px solid #e7e7d8' },
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -434,4 +703,11 @@ const styles: Record<string, React.CSSProperties> = {
   winnerName: { fontSize: 15, fontWeight: 700, color: 'var(--green-dark)' },
   vs: { fontSize: 12, color: '#bbb' },
   serverLine: { fontSize: 12, color: '#888', marginTop: 8 },
+  scheduledLine: { fontSize: 13, fontWeight: 600, color: '#1a472a', marginBottom: 8 },
+  section: { marginBottom: 28 },
+  titleActions: { display: 'flex', gap: 10, flexWrap: 'wrap' as const },
+  proposeBtn: { background: 'var(--green-dark)', border: 'none', color: '#fff', borderRadius: 10, padding: '10px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer' },
+  actionsRow: { display: 'flex', gap: 8, marginTop: 12 },
+  acceptBtn: { flex: 1, padding: '8px 12px', background: '#1a472a', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' },
+  declineBtn: { flex: 1, padding: '8px 12px', background: '#fff', color: '#c0392b', border: '1px solid #c0392b', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' },
 };
