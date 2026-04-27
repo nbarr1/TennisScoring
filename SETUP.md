@@ -127,6 +127,24 @@ cd apps/web && pnpm build
 firebase deploy --only hosting
 ```
 
+
+## Branch Cleanup (Repository Maintenance)
+
+To identify and remove stale local branches that are already merged:
+
+```bash
+# Preview merged branches (dry run)
+./scripts/cleanup-branches.sh --default-branch work
+
+# Delete merged branches
+./scripts/cleanup-branches.sh --default-branch work --delete
+
+# Optional: prune stale remote-tracking refs first
+./scripts/cleanup-branches.sh --default-branch work --remote --delete
+```
+
+> Tip: change `--default-branch` to `main`/`master` if your local default branch name differs.
+
 ## Architecture Overview
 
 ```
