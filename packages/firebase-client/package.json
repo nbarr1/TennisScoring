@@ -11,8 +11,8 @@
     }
   },
   "scripts": {
-    "build": "pnpm exec tsup src/index.ts --format esm,cjs --dts",
-    "dev": "pnpm exec tsup src/index.ts --format esm,cjs --dts --watch",
+    "build": "node ./scripts/tsup-build.mjs",
+    "dev": "node ./scripts/tsup-build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx"
   },
