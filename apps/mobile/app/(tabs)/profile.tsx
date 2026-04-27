@@ -6,7 +6,10 @@ import {
 import { signOut } from 'firebase/auth';
 import { auth } from '@tennis/firebase-client';
 import { useAuthUser, useUserProfile, updateUserProfile } from '@tennis/firebase-client';
+import { DAYS_OF_WEEK, DAY_LABELS, type AvailabilitySlot, type DayOfWeek } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
@@ -19,6 +22,8 @@ export default function ProfileScreen() {
   const [allowSMS, setAllowSMS] = useState(false);
   const [allowInApp, setAllowInApp] = useState(true);
   const [tipsEnabled, setTipsEnabled] = useState(true);
+  const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([]);
+  const [availabilityNote, setAvailabilityNote] = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -27,14 +32,47 @@ export default function ProfileScreen() {
     setAllowSMS(profile.contactPreferences?.allowSMS ?? false);
     setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
     setTipsEnabled(profile.tipsEnabled ?? true);
+    setAvailabilitySlots(profile.availability?.slots ?? []);
+    setAvailabilityNote(profile.availability?.note ?? '');
   }, [profile]);
+
+  function addSlot() {
+    setAvailabilitySlots((s) => [...s, { day: 'mon', from: '18:00', to: '21:00' }]);
+  }
+  function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
+    setAvailabilitySlots((slots) => slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+  function removeSlot(idx: number) {
+    setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
+  }
+  function cycleDay(idx: number) {
+    setAvailabilitySlots((slots) => slots.map((s, i) => {
+      if (i !== idx) return s;
+      const next = DAYS_OF_WEEK[(DAYS_OF_WEEK.indexOf(s.day) + 1) % DAYS_OF_WEEK.length];
+      return { ...s, day: next };
+    }));
+  }
 
   async function handleSave() {
     if (!firebaseUser) return;
+    for (const slot of availabilitySlots) {
+      if (!TIME_RE.test(slot.from) || !TIME_RE.test(slot.to)) {
+        Alert.alert('Invalid time', 'Times must be in HH:MM 24-hour format.');
+        return;
+      }
+      if (slot.from >= slot.to) {
+        Alert.alert('Invalid slot', 'Each slot must end after it starts.');
+        return;
+      }
+    }
     await updateUserProfile(firebaseUser.uid, {
       phone: phone.trim() || undefined,
       contactPreferences: { allowEmail, allowSMS, allowInApp },
       tipsEnabled,
+      availability: {
+        slots: availabilitySlots,
+        ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
+      },
     });
     setEditing(false);
   }
@@ -120,6 +158,67 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Preferred Play Times</Text>
+        <Text style={styles.sectionSubtitle}>Weekly windows when you&apos;re typically free</Text>
+
+        {availabilitySlots.length === 0 && !editing && (
+          <Text style={styles.emptyHint}>No availability set yet.</Text>
+        )}
+        {availabilitySlots.map((slot, idx) => (
+          <View key={idx} style={styles.slotRow}>
+            <TouchableOpacity
+              style={[styles.slotDay, !editing && styles.slotDisabled]}
+              disabled={!editing}
+              onPress={() => cycleDay(idx)}
+            >
+              <Text style={styles.slotDayText}>{DAY_LABELS[slot.day]}</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.slotTime, !editing && styles.slotDisabled]}
+              value={slot.from}
+              onChangeText={(t) => updateSlot(idx, { from: t })}
+              editable={editing}
+              placeholder="HH:MM"
+              maxLength={5}
+            />
+            <Text style={styles.slotDash}>–</Text>
+            <TextInput
+              style={[styles.slotTime, !editing && styles.slotDisabled]}
+              value={slot.to}
+              onChangeText={(t) => updateSlot(idx, { to: t })}
+              editable={editing}
+              placeholder="HH:MM"
+              maxLength={5}
+            />
+            {editing && (
+              <TouchableOpacity onPress={() => removeSlot(idx)} style={styles.slotRemove}>
+                <Text style={styles.slotRemoveText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+        {editing && (
+          <TouchableOpacity style={styles.addSlotBtn} onPress={addSlot}>
+            <Text style={styles.addSlotBtnText}>+ Add slot</Text>
+          </TouchableOpacity>
+        )}
+
+        {editing ? (
+          <TextInput
+            style={[styles.input, { marginTop: 12, minHeight: 56 }]}
+            value={availabilityNote}
+            onChangeText={setAvailabilityNote}
+            placeholder="Optional note, e.g. Flexible weekends"
+            multiline
+          />
+        ) : (
+          availabilityNote ? (
+            <Text style={styles.noteText}>{availabilityNote}</Text>
+          ) : null
+        )}
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>Match Settings</Text>
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Live tips during matches</Text>
@@ -181,4 +280,16 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: '#555', fontWeight: '600', fontSize: 15 },
   signOutBtn: { padding: 16, borderRadius: 12, alignItems: 'center' },
   signOutBtnText: { color: '#c0392b', fontWeight: '600', fontSize: 15 },
+  slotRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  slotDay: { backgroundColor: '#1a472a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, minWidth: 56, alignItems: 'center' },
+  slotDayText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  slotTime: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 14, width: 70, textAlign: 'center' },
+  slotDash: { color: '#888', fontSize: 14 },
+  slotDisabled: { opacity: 0.6 },
+  slotRemove: { padding: 6 },
+  slotRemoveText: { color: '#c0392b', fontSize: 16, fontWeight: '700' },
+  addSlotBtn: { borderWidth: 1, borderStyle: 'dashed', borderColor: '#1a472a', borderRadius: 8, padding: 10, alignItems: 'center', marginTop: 4 },
+  addSlotBtnText: { color: '#1a472a', fontWeight: '700', fontSize: 13 },
+  emptyHint: { color: '#999', fontSize: 13, paddingVertical: 4 },
+  noteText: { color: '#444', fontSize: 13, marginTop: 8, fontStyle: 'italic' },
 });

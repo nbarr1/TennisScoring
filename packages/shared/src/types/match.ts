@@ -3,7 +3,7 @@ export type MatchFormat = 'best-of-3' | 'best-of-5' | 'pro-set';
 // pending_report: game over, waiting for a player to submit the report
 // completed: report confirmed by both players — rankings are updated from this state only
 // disputed: the non-submitting player rejected the report — awaits division leader resolution
-export type MatchStatus = 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled';
+export type MatchStatus = 'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled';
 export type ServiceSide = 'deuce' | 'advantage';
 export type Player = 'player1' | 'player2';
 

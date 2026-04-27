@@ -62,10 +62,17 @@ fi
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
-mapfile -t MERGED_BRANCHES < <(
-  git for-each-ref refs/heads --merged "$DEFAULT_BRANCH" --format='%(refname:short)' \
-    | grep -Ev "^(${DEFAULT_BRANCH}|${CURRENT_BRANCH})$" || true
+mapfile -t CANDIDATE_BRANCHES < <(
+  git for-each-ref refs/heads --merged "$DEFAULT_BRANCH" --format='%(refname:short)'
 )
+
+MERGED_BRANCHES=()
+for branch in "${CANDIDATE_BRANCHES[@]}"; do
+  if [[ "$branch" == "$DEFAULT_BRANCH" || "$branch" == "$CURRENT_BRANCH" ]]; then
+    continue
+  fi
+  MERGED_BRANCHES+=("$branch")
+done
 
 if [[ ${#MERGED_BRANCHES[@]} -eq 0 ]]; then
   echo "No merged local branches to clean up."
