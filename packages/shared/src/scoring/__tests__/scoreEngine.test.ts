@@ -219,6 +219,86 @@ describe('scoreEngine', () => {
     });
   });
 
+  describe('finalSetTiebreak config', () => {
+    const NO_FINAL_TB_FORMAT = { ...DEFAULT_FORMAT, finalSetTiebreak: false };
+
+    function winGames(
+      score: ReturnType<typeof createInitialScore>,
+      player: 'player1' | 'player2',
+      count: number,
+      fmt = DEFAULT_FORMAT
+    ) {
+      let s = score;
+      for (let g = 0; g < count; g++) {
+        for (let p = 0; p < 4; p++) {
+          const r = applyPoint(s, player, fmt);
+          s = r.nextScore;
+          if (r.setCompleted || r.matchWinner) break;
+        }
+      }
+      return s;
+    }
+
+    function winSet(
+      score: ReturnType<typeof createInitialScore>,
+      player: 'player1' | 'player2',
+      fmt = DEFAULT_FORMAT
+    ) {
+      return winGames(score, player, fmt.gamesPerSet, fmt);
+    }
+
+    it('does not trigger tiebreak at 6-6 in deciding set when finalSetTiebreak is false', () => {
+      let score = createInitialScore(NO_FINAL_TB_FORMAT);
+      score = winSet(score, 'player1', NO_FINAL_TB_FORMAT); // p1 wins set 1
+      score = winSet(score, 'player2', NO_FINAL_TB_FORMAT); // p2 wins set 2
+      // Bring deciding set to 6-6
+      for (let i = 0; i < 6; i++) {
+        score = winGames(score, 'player1', 1, NO_FINAL_TB_FORMAT);
+        score = winGames(score, 'player2', 1, NO_FINAL_TB_FORMAT);
+      }
+      expect(score.isTiebreak).toBe(false);
+      expect(score.sets[2].player1Games).toBe(6);
+      expect(score.sets[2].player2Games).toBe(6);
+    });
+
+    it('continues play past 6-6 in deciding set when finalSetTiebreak is false', () => {
+      let score = createInitialScore(NO_FINAL_TB_FORMAT);
+      score = winSet(score, 'player1', NO_FINAL_TB_FORMAT);
+      score = winSet(score, 'player2', NO_FINAL_TB_FORMAT);
+      for (let i = 0; i < 6; i++) {
+        score = winGames(score, 'player1', 1, NO_FINAL_TB_FORMAT);
+        score = winGames(score, 'player2', 1, NO_FINAL_TB_FORMAT);
+      }
+      // 6-6 in final set, no tiebreak — player1 wins two more games to take the set
+      score = winGames(score, 'player1', 1, NO_FINAL_TB_FORMAT); // 7-6
+      expect(score.sets[2].winner).toBeUndefined();
+      score = winGames(score, 'player1', 1, NO_FINAL_TB_FORMAT); // 8-6 — set won
+      expect(score.sets[2].winner).toBe('player1');
+      expect(score.player1SetsWon).toBe(2);
+    });
+
+    it('still triggers tiebreak at 6-6 in non-deciding sets when finalSetTiebreak is false', () => {
+      let score = createInitialScore(NO_FINAL_TB_FORMAT);
+      // Bring first set to 6-6
+      for (let i = 0; i < 6; i++) {
+        score = winGames(score, 'player1', 1, NO_FINAL_TB_FORMAT);
+        score = winGames(score, 'player2', 1, NO_FINAL_TB_FORMAT);
+      }
+      expect(score.isTiebreak).toBe(true);
+    });
+
+    it('triggers tiebreak at 6-6 in deciding set when finalSetTiebreak is true', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winSet(score, 'player1');
+      score = winSet(score, 'player2');
+      for (let i = 0; i < 6; i++) {
+        score = winGames(score, 'player1', 1);
+        score = winGames(score, 'player2', 1);
+      }
+      expect(score.isTiebreak).toBe(true);
+    });
+  });
+
   describe('formatScoreDisplay', () => {
     it('formats single set score', () => {
       let score = createInitialScore(DEFAULT_FORMAT);

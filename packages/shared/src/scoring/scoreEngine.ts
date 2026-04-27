@@ -229,10 +229,14 @@ export function applyPoint(
 
   const curSet = next.sets[next.currentSet];
 
-  // Check for tiebreak trigger
+  // Check for tiebreak trigger — skip in the deciding set when finalSetTiebreak is disabled
+  const isFinalSet =
+    next.player1SetsWon === format.setsToWin - 1 &&
+    next.player2SetsWon === format.setsToWin - 1;
   if (
     curSet.player1Games === format.tiebreakAt &&
-    curSet.player2Games === format.tiebreakAt
+    curSet.player2Games === format.tiebreakAt &&
+    (!isFinalSet || format.finalSetTiebreak)
   ) {
     next.isTiebreak = true;
     next.tiebreakScore = { player1Points: 0, player2Points: 0 };
