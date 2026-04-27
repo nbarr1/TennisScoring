@@ -309,8 +309,8 @@ export function formatGameScore(score: LiveScore): string {
   }
   const { player1, player2 } = score.currentGame;
   if (player1 === '40' && player2 === '40') return 'Deuce';
-  if (player1 === 'Ad') return score.server === 'player1' ? 'Ad-In' : 'Ad-Out';
-  if (player2 === 'Ad') return score.server === 'player2' ? 'Ad-In' : 'Ad-Out';
+  if (player1 === 'Ad') return score.server === 'player1' ? 'Ad In' : 'Ad Out';
+  if (player2 === 'Ad') return score.server === 'player2' ? 'Ad In' : 'Ad Out';
   if (player1 === '0' && player2 === '0') return 'Love-all';
   if (player1 === player2) return `${player1}-all`;
   const fmt = (p: TennisPoint) => (p === '0' ? 'Love' : p);

@@ -4,7 +4,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 
 if (!getApps().length) initializeApp();
 
-export const onUserCreated = functions.auth.beforeUserCreated(async (event) => {
+export const onUserCreated = functions.identity.beforeUserCreated(async (event) => {
   const db = getFirestore();
   const user = event.data;
   if (!user) return;
