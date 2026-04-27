@@ -219,7 +219,7 @@ export default function MatchesScreen() {
         'Match Recorded',
         isGuest
           ? 'Match saved. You can link your opponent to their account later.'
-          : 'Your opponent will be notified to confirm the score.',
+          : 'Match saved and standings will update automatically.',
       );
     } catch {
       Alert.alert('Error', 'Could not record match. Please try again.');
