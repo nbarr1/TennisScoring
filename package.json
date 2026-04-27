@@ -2,7 +2,7 @@
   "name": "tennis-scoring",
   "private": true,
   "version": "0.0.1",
-  "packageManager": "pnpm@9.15.4",
+  "packageManager": "pnpm@9.15.5",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
@@ -34,6 +34,6 @@
   },
   "engines": {
     "node": "20.x",
-    "pnpm": "9.15.4"
+    "pnpm": ">=9.15.4"
   }
 }

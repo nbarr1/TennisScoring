@@ -9,7 +9,7 @@
       "env": {
         "APP_ENV": "development",
         "NODE_VERSION": "20.19.0",
-        "PNPM_VERSION": "9.15.4"
+        "PNPM_VERSION": "9.15.5"
       }
     },
     "preview": {
@@ -19,7 +19,7 @@
       "env": {
         "APP_ENV": "preview",
         "NODE_VERSION": "20.19.0",
-        "PNPM_VERSION": "9.15.4"
+        "PNPM_VERSION": "9.15.5"
       }
     },
     "production": {
@@ -31,7 +31,7 @@
       "env": {
         "APP_ENV": "production",
         "NODE_VERSION": "20.19.0",
-        "PNPM_VERSION": "9.15.4"
+        "PNPM_VERSION": "9.15.5"
       }
     }
   }
