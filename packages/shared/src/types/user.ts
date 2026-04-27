@@ -18,6 +18,19 @@ export interface User {
   fcmTokens: string[];
   tipsEnabled: boolean;
   tutorialDone?: boolean;
+  rankingSummary?: {
+    divisionId: string;
+    rank: number;
+    matchesPlayed: number;
+    matchesWon: number;
+    matchesLost: number;
+    setsWon: number;
+    setsLost: number;
+    gamesWon: number;
+    gamesLost: number;
+    gameDifferential: number;
+    updatedAt: number;
+  };
   createdAt: number; // Unix ms timestamp
   updatedAt: number;
 }

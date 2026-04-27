@@ -117,7 +117,7 @@ export async function recordHistoricMatch(params: {
     player2IsGuest: isGuest,
     playerIds: isGuest ? [player1Id] : [player1Id, player2Id],
     format: defaultFormat,
-    status: isGuest ? 'completed' : 'pending_report',
+    status: 'completed',
     liveScore: score,
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     winner,
@@ -129,8 +129,9 @@ export async function recordHistoricMatch(params: {
     reportSubmission: {
       submittedBy: createdBy,
       submittedAt: now,
-      status: isGuest ? 'confirmed' : 'pending_confirmation',
-      ...(isGuest && { confirmedBy: createdBy, confirmedAt: now }),
+      status: 'confirmed',
+      confirmedBy: createdBy,
+      confirmedAt: now,
     },
   };
   const ref = await addDoc(matchesCol(), matchData as Match);

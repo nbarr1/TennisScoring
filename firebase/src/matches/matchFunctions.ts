@@ -207,6 +207,28 @@ async function recalculateRankings(divisionId: string) {
   for (const ranking of rankings) {
     const ref = db.collection('divisions').doc(divisionId).collection('rankings').doc(ranking.userId);
     batch.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
+
+    const userRef = db.collection('users').doc(ranking.userId);
+    batch.set(
+      userRef,
+      {
+        rankingSummary: {
+          divisionId: ranking.divisionId,
+          rank: ranking.rank,
+          matchesPlayed: ranking.matchesPlayed,
+          matchesWon: ranking.matchesWon,
+          matchesLost: ranking.matchesLost,
+          setsWon: ranking.setsWon,
+          setsLost: ranking.setsLost,
+          gamesWon: ranking.gamesWon,
+          gamesLost: ranking.gamesLost,
+          gameDifferential: ranking.gameDifferential,
+          updatedAt: Date.now(),
+        },
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
   }
   for (const h2h of h2hAccum.values()) {
     const ref = db.collection('headToHead').doc(h2h.id);
