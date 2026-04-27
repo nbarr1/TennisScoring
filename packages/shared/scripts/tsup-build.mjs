@@ -1,13 +1,29 @@
-import { build } from 'tsup';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-const watch = process.argv.includes('--watch');
+const cwd = process.cwd();
+const args = ['src/index.ts', '--format', 'esm,cjs', '--dts'];
+const cliCandidates = [
+  join(cwd, 'node_modules', 'tsup', 'dist', 'cli-default.js'),
+  join(cwd, '..', '..', 'node_modules', 'tsup', 'dist', 'cli-default.js')
+];
 
-await build({
-  entry: ['src/index.ts'],
-  format: ['esm', 'cjs'],
-  dts: true,
-  sourcemap: true,
-  clean: !watch,
-  watch,
-  target: 'es2020'
+const cliPath = cliCandidates.find((candidate) => existsSync(candidate));
+
+if (!cliPath) {
+  console.error('Unable to locate tsup CLI in package or workspace node_modules.');
+  process.exit(1);
+}
+
+const result = spawnSync(process.execPath, [cliPath, ...args], {
+  stdio: 'inherit',
+  env: process.env
 });
+
+if (result.error) {
+  console.error(result.error);
+  process.exit(1);
+}
+
+process.exit(result.status ?? 1);
