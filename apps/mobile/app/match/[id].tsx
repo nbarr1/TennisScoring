@@ -171,7 +171,6 @@ export default function MatchScreen() {
   const [linking, setLinking] = useState(false);
 
   const isParticipant = !!(user && match && (match.player1Id === user.id || match.player2Id === user.id));
-  const myPlayerKey = user && match ? (match.player1Id === user.id ? 'player1' : 'player2') : null;
   const isAdminOrLeader = user?.role === 'division_leader' || user?.role === 'admin';
   const canManage = isParticipant || isAdminOrLeader;
 
@@ -660,6 +659,31 @@ export default function MatchScreen() {
         </View>
       )}
 
+      {/* Match statistics — live-scored completed matches only */}
+      {match.status === 'completed' && match.source !== 'manual' && match.stats && (
+        <View style={statsStyles.section}>
+          <Text style={statsStyles.title}>Match Statistics</Text>
+          <View style={statsStyles.headerRow}>
+            <Text style={statsStyles.headerStat} />
+            <Text style={[statsStyles.headerPlayer, { textAlign: 'right' }]} numberOfLines={1}>{p1Name}</Text>
+            <Text style={[statsStyles.headerPlayer, { textAlign: 'right' }]} numberOfLines={1}>{p2Name}</Text>
+          </View>
+          {[
+            { label: 'Aces',            p1: match.stats.player1.aces,            p2: match.stats.player2.aces },
+            { label: 'Double Faults',   p1: match.stats.player1.doubleFaults,    p2: match.stats.player2.doubleFaults },
+            { label: 'Winners',         p1: match.stats.player1.winners,         p2: match.stats.player2.winners },
+            { label: 'Unforced Errors', p1: match.stats.player1.unforcedErrors,  p2: match.stats.player2.unforcedErrors },
+            { label: 'Break Pts Won',   p1: match.stats.player1.breakPointsWon,  p2: match.stats.player2.breakPointsWon },
+          ].map(({ label, p1, p2 }) => (
+            <View key={label} style={statsStyles.row}>
+              <Text style={statsStyles.label}>{label}</Text>
+              <Text style={[statsStyles.val, p1 > p2 && statsStyles.valBold]}>{p1}</Text>
+              <Text style={[statsStyles.val, p2 > p1 && statsStyles.valBold]}>{p2}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Manage Match Modal */}
       <Modal visible={showManage} transparent animationType="slide">
         <TouchableOpacity style={styles.manageOverlay} activeOpacity={1} onPress={() => setShowManage(false)}>
@@ -900,6 +924,24 @@ const styles = StyleSheet.create({
   disputeBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   cancelBtn: { paddingVertical: 12, alignItems: 'center' },
   cancelBtnText: { color: '#888', fontSize: 14 },
+});
+
+const statsStyles = StyleSheet.create({
+  section: {
+    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 16,
+    padding: 20, marginTop: 16,
+  },
+  title: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  headerRow: { flexDirection: 'row', marginBottom: 6 },
+  headerStat: { flex: 2.5, fontSize: 12, color: 'rgba(255,255,255,0.5)' },
+  headerPlayer: { flex: 1, fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.6)' },
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  label: { flex: 2.5, fontSize: 14, color: 'rgba(255,255,255,0.8)' },
+  val: { flex: 1, fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.75)', textAlign: 'right' },
+  valBold: { fontWeight: '800', color: '#ffdc60' },
 });
 
 const editScoreStyles = StyleSheet.create({

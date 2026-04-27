@@ -4,6 +4,14 @@ const config = {
   experimental: {
     serverComponentsExternalPackages: ['firebase-admin'],
   },
+  async rewrites() {
+    return [
+      {
+        source: '/firebase-messaging-sw.js',
+        destination: '/api/firebase-messaging-sw',
+      },
+    ];
+  },
 };
 
 export default config;

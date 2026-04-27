@@ -48,11 +48,16 @@ export function useNotifications(userId: string | null | undefined) {
         matchId?: string;
         channelId?: string;
       };
-      if (
-        (data.type === 'report_submitted' || data.type === 'report_disputed') &&
-        data.matchId
-      ) {
+      const goToMatch = data.matchId && (
+        data.type === 'report_submitted' ||
+        data.type === 'report_disputed' ||
+        data.type === 'match_accepted' ||
+        data.type === 'match_proposed'
+      );
+      if (goToMatch) {
         router.push(`/match/${data.matchId}` as never);
+      } else if (data.type === 'match_proposal_cancelled' || data.type === 'match_started') {
+        router.push('/(tabs)/matches' as never);
       } else if (data.type === 'message') {
         router.push('/(tabs)/messages' as never);
       }

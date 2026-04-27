@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { FcmProvider } from './FcmProvider';
 
 export const metadata: Metadata = {
   title: 'Tennis League',
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <FcmProvider />
+        {children}
+      </body>
     </html>
   );
 }
