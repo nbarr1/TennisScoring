@@ -59,8 +59,9 @@ service cloud.firestore {
     function canUpdateMatch(existing, incoming) {
       let isParticipant = isMatchParticipant(existing);
       let isCancellation = incoming.status == 'cancelled' &&
-        (existing.status == 'scheduled' || existing.status == 'in_progress');
+        (existing.status == 'proposed' || existing.status == 'scheduled' || existing.status == 'in_progress');
       let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled';
+      let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled';
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
@@ -70,6 +71,7 @@ service cloud.firestore {
       return isParticipant && (
         isCancellation ||
         isPostpone ||
+        isAcceptProposal ||
         (!isConfirmOrDispute || isNotSubmitter || isGuestMatch)
       );
     }

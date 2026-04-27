@@ -5,6 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthUser, useUserProfile, updateUserProfile } from '@tennis/firebase-client';
+import { DAYS_OF_WEEK, DAY_LABELS, type AvailabilitySlot, type DayOfWeek } from '@tennis/shared';
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export default function ProfilePage(): React.JSX.Element {
   const { firebaseUser, loading: authLoading } = useAuthUser();
@@ -16,6 +19,8 @@ export default function ProfilePage(): React.JSX.Element {
   const [allowSMS, setAllowSMS] = useState(true);
   const [allowInApp, setAllowInApp] = useState(true);
   const [tipsEnabled, setTipsEnabled] = useState(true);
+  const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([]);
+  const [availabilityNote, setAvailabilityNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState('');
@@ -28,10 +33,32 @@ export default function ProfilePage(): React.JSX.Element {
     setAllowSMS(profile.contactPreferences?.allowSMS ?? true);
     setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
     setTipsEnabled(profile.tipsEnabled ?? true);
+    setAvailabilitySlots(profile.availability?.slots ?? []);
+    setAvailabilityNote(profile.availability?.note ?? '');
   }, [profile]);
+
+  function addSlot() {
+    setAvailabilitySlots((s) => [...s, { day: 'mon', from: '18:00', to: '21:00' }]);
+  }
+  function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
+    setAvailabilitySlots((slots) => slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+  function removeSlot(idx: number) {
+    setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
+  }
 
   async function handleSave() {
     if (!firebaseUser || !profile) return;
+    for (const slot of availabilitySlots) {
+      if (!TIME_RE.test(slot.from) || !TIME_RE.test(slot.to)) {
+        setError('Times must be in HH:MM 24-hour format.');
+        return;
+      }
+      if (slot.from >= slot.to) {
+        setError('Each slot must end after it starts.');
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     try {
@@ -40,6 +67,10 @@ export default function ProfilePage(): React.JSX.Element {
         phone: phone.trim() || undefined,
         contactPreferences: { allowEmail, allowSMS, allowInApp },
         tipsEnabled,
+        availability: {
+          slots: availabilitySlots,
+          ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
+        },
       });
       setSavedAt(Date.now());
     } catch (e) {
@@ -98,6 +129,52 @@ export default function ProfilePage(): React.JSX.Element {
           <CheckboxRow checked={allowEmail} onChange={setAllowEmail} label="Allow email contact" />
           <CheckboxRow checked={allowSMS} onChange={setAllowSMS} label="Allow SMS / phone contact" />
           <CheckboxRow checked={allowInApp} onChange={setAllowInApp} label="Allow in-app messages" />
+        </div>
+
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Preferred play times</h2>
+          <p style={styles.helper}>Add weekly windows when you&apos;re typically free. Opponents see this when proposing a match.</p>
+          {availabilitySlots.length === 0 && (
+            <p style={styles.helper}>No availability set yet.</p>
+          )}
+          {availabilitySlots.map((slot, idx) => (
+            <div key={idx} style={styles.slotRow}>
+              <select
+                style={styles.slotDay}
+                value={slot.day}
+                onChange={(e) => updateSlot(idx, { day: e.target.value as DayOfWeek })}
+              >
+                {DAYS_OF_WEEK.map((d) => (
+                  <option key={d} value={d}>{DAY_LABELS[d]}</option>
+                ))}
+              </select>
+              <input
+                style={styles.slotTime}
+                type="time"
+                value={slot.from}
+                onChange={(e) => updateSlot(idx, { from: e.target.value })}
+              />
+              <span style={styles.slotDash}>–</span>
+              <input
+                style={styles.slotTime}
+                type="time"
+                value={slot.to}
+                onChange={(e) => updateSlot(idx, { to: e.target.value })}
+              />
+              <button type="button" style={styles.slotRemove} onClick={() => removeSlot(idx)}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button type="button" style={styles.addSlotBtn} onClick={addSlot}>+ Add slot</button>
+          <Field label="Note">
+            <textarea
+              style={{ ...styles.input, minHeight: 64, resize: 'vertical' }}
+              value={availabilityNote}
+              onChange={(e) => setAvailabilityNote(e.target.value)}
+              placeholder="Optional, e.g. Flexible weekends; usually busy Tues."
+            />
+          </Field>
         </div>
 
         <div style={styles.card}>
@@ -167,4 +244,10 @@ const styles: Record<string, React.CSSProperties> = {
   saved: { color: '#2d6a4f', fontSize: 13, fontWeight: 600 },
   error: { color: '#c0392b', fontSize: 13, marginBottom: 12 },
   placeholder: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', color: '#888' },
+  slotRow: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 },
+  slotDay: { border: '1px solid #ddd', borderRadius: 8, padding: '8px 10px', fontSize: 14, background: '#fff' },
+  slotTime: { border: '1px solid #ddd', borderRadius: 8, padding: '8px 10px', fontSize: 14, width: 110 },
+  slotDash: { color: '#888' },
+  slotRemove: { border: 'none', background: 'transparent', color: '#c0392b', cursor: 'pointer', fontSize: 16, padding: '4px 8px' },
+  addSlotBtn: { background: 'transparent', color: 'var(--green-dark)', border: '1px dashed var(--green-dark)', borderRadius: 8, padding: '8px 14px', fontWeight: 600, fontSize: 13, cursor: 'pointer', marginBottom: 12 },
 };

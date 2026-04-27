@@ -5,17 +5,33 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onSnapshot } from 'firebase/firestore';
-import { divisionMatchesQuery, createMatch, recordHistoricMatch, searchDivisionPlayers } from '@tennis/firebase-client';
-import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
+import {
+  divisionMatchesQuery, createMatch, recordHistoricMatch, searchDivisionPlayers,
+  proposeMatch, acceptMatchProposal, declineMatchProposal,
+} from '@tennis/firebase-client';
+import { formatScoreDisplay, formatGameScore, DAY_LABELS } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
-import type { Match, User } from '@tennis/shared';
+import type { Match, User, Availability } from '@tennis/shared';
+
+type ActionKind = 'pending' | 'awaiting' | null;
+type MatchItem = { id: string; match: Match; actionKind: ActionKind };
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function formatScheduledAt(ts?: number): string {
+  if (!ts) return 'Time TBD';
+  const d = new Date(ts);
+  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 
 const STATUS_COLOR: Record<string, string> = {
   in_progress: '#27ae60',
   pending_report: '#e67e22',
   completed: '#555',
   disputed: '#c0392b',
-  scheduled: '#aaa',
+  scheduled: '#1a472a',
+  proposed: '#8e44ad',
   cancelled: '#bbb',
 };
 
@@ -25,12 +41,22 @@ const STATUS_LABEL: Record<string, string> = {
   completed: 'Final',
   disputed: '⚠ Dispute',
   scheduled: 'Scheduled',
+  proposed: 'Proposed',
   cancelled: 'Cancelled',
 };
 
-function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
+function MatchCard({
+  match, onPress, actionKind, onAccept, onDecline, onWithdraw,
+}: {
+  match: Match;
+  onPress: () => void;
+  actionKind?: ActionKind;
+  onAccept?: () => void;
+  onDecline?: () => void;
+  onWithdraw?: () => void;
+}) {
   const isLive = match.status === 'in_progress';
-  const hasScore = match.status !== 'scheduled';
+  const isUpcoming = match.status === 'scheduled' || match.status === 'proposed';
 
   return (
     <TouchableOpacity style={[styles.card, isLive && styles.cardLive]} onPress={onPress}>
@@ -47,7 +73,11 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
         )}
       </View>
 
-      {hasScore && (
+      {isUpcoming && (
+        <Text style={styles.scheduledLine}>🗓 {formatScheduledAt(match.scheduledAt)}</Text>
+      )}
+
+      {!isUpcoming && (
         <View style={styles.scoreRow}>
           <Text style={styles.setScore}>{formatScoreDisplay(match.liveScore)}</Text>
           {isLive && (
@@ -74,6 +104,24 @@ function MatchCard({ match, onPress }: { match: Match; onPress: () => void }) {
           {match.liveScore.server === 'player1' ? 'P1' : 'P2'} serves · {match.liveScore.serviceSide} side
         </Text>
       )}
+
+      {actionKind === 'pending' && (
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.acceptBtn} onPress={onAccept}>
+            <Text style={styles.acceptBtnText}>✓ Accept</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.declineBtn} onPress={onDecline}>
+            <Text style={styles.declineBtnText}>✕ Decline</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {actionKind === 'awaiting' && (
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.declineBtn} onPress={onWithdraw}>
+            <Text style={styles.declineBtnText}>Cancel proposal</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -83,6 +131,7 @@ export default function MatchesScreen() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPropose, setShowPropose] = useState(false);
   const [createMode, setCreateMode] = useState<'live' | 'historic'>('live');
   const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>('search');
   const [guestName, setGuestName] = useState('');
@@ -232,12 +281,31 @@ export default function MatchesScreen() {
     return <View style={styles.center}><ActivityIndicator size="large" color="#1a472a" /></View>;
   }
 
-  const liveMatches = matches.filter((m) => m.status === 'in_progress');
-  const otherMatches = matches.filter((m) => m.status !== 'in_progress');
+  const uid = user?.id;
+  const toItem = (match: Match, actionKind: ActionKind = null): MatchItem => ({ id: match.id, match, actionKind });
 
-  const sections = [
+  const liveMatches = matches.filter((m) => m.status === 'in_progress').map((m) => toItem(m));
+  const pendingInvites = matches
+    .filter((m) => m.status === 'proposed' && m.player2Id === uid)
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
+    .map((m) => toItem(m, 'pending'));
+  const awaitingOpponent = matches
+    .filter((m) => m.status === 'proposed' && m.player1Id === uid)
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
+    .map((m) => toItem(m, 'awaiting'));
+  const upcomingMatches = matches
+    .filter((m) => m.status === 'scheduled')
+    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
+    .map((m) => toItem(m));
+  const otherStatuses = new Set(['in_progress', 'proposed', 'scheduled']);
+  const otherMatches = matches.filter((m) => !otherStatuses.has(m.status)).map((m) => toItem(m));
+
+  const sections: { title: string; data: MatchItem[] }[] = [
     ...(liveMatches.length > 0 ? [{ title: 'Now Live', data: liveMatches }] : []),
-    ...(otherMatches.length > 0 ? [{ title: liveMatches.length > 0 ? 'All Matches' : 'Matches', data: otherMatches }] : []),
+    ...(pendingInvites.length > 0 ? [{ title: 'Pending Invitations', data: pendingInvites }] : []),
+    ...(awaitingOpponent.length > 0 ? [{ title: 'Awaiting Opponent', data: awaitingOpponent }] : []),
+    ...(upcomingMatches.length > 0 ? [{ title: 'Upcoming', data: upcomingMatches }] : []),
+    ...(otherMatches.length > 0 ? [{ title: 'All Matches', data: otherMatches }] : []),
   ];
 
   return (
@@ -252,7 +320,14 @@ export default function MatchesScreen() {
           sections={sections}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <MatchCard match={item} onPress={() => router.push(`/match/${item.id}`)} />
+            <MatchCard
+              match={item.match}
+              onPress={() => router.push(`/match/${item.id}`)}
+              actionKind={item.actionKind}
+              onAccept={() => acceptMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not accept.'))}
+              onDecline={() => declineMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not decline.'))}
+              onWithdraw={() => declineMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not cancel.'))}
+            />
           )}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
@@ -268,12 +343,23 @@ export default function MatchesScreen() {
 
       <View style={styles.fabGroup}>
         <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => { setCreateMode('historic'); setShowCreate(true); }}>
-          <Text style={styles.fabSecondaryText}>📋 Record Past</Text>
+          <Text style={styles.fabSecondaryText}>📋 Past</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => setShowPropose(true)}>
+          <Text style={styles.fabSecondaryText}>📅 Propose</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.fab} onPress={() => { setCreateMode('live'); setShowCreate(true); }}>
-          <Text style={styles.fabText}>+ Live Match</Text>
+          <Text style={styles.fabText}>+ Live</Text>
         </TouchableOpacity>
       </View>
+
+      {showPropose && user && divisionId && (
+        <ProposeMatchModal
+          currentUser={user}
+          divisionId={divisionId}
+          onClose={() => setShowPropose(false)}
+        />
+      )}
 
       <Modal visible={showCreate} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -427,6 +513,193 @@ export default function MatchesScreen() {
   );
 }
 
+function ProposeMatchModal({
+  currentUser,
+  divisionId,
+  onClose,
+}: {
+  currentUser: { id: string; displayName: string };
+  divisionId: string;
+  onClose: () => void;
+}) {
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!searchText.trim() || selectedOpponent) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchDivisionPlayers(divisionId, searchText);
+        setSearchResults(results.filter((u) => u.id !== currentUser.id));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchText, divisionId, selectedOpponent, currentUser.id]);
+
+  async function handleSubmit() {
+    if (!selectedOpponent) return;
+    if (!DATE_RE.test(date)) {
+      Alert.alert('Invalid date', 'Please enter the date as YYYY-MM-DD.');
+      return;
+    }
+    if (!TIME_RE.test(time)) {
+      Alert.alert('Invalid time', 'Please enter the time as HH:MM (24-hour).');
+      return;
+    }
+    const ts = Date.parse(`${date}T${time}`);
+    if (!ts || Number.isNaN(ts)) {
+      Alert.alert('Invalid date/time', 'Could not parse that date and time.');
+      return;
+    }
+    if (ts < Date.now()) {
+      Alert.alert('Past time', 'Pick a date/time in the future.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await proposeMatch({
+        player1Id: currentUser.id,
+        player2Id: selectedOpponent.id,
+        player1Name: currentUser.displayName,
+        player2Name: selectedOpponent.displayName,
+        divisionId,
+        createdBy: currentUser.id,
+        scheduledAt: ts,
+      });
+      onClose();
+    } catch {
+      Alert.alert('Error', 'Could not send the proposal.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Propose a Match</Text>
+
+          {selectedOpponent ? (
+            <>
+              <View style={styles.selectedPlayer}>
+                <View style={styles.playerChip}>
+                  <Text style={styles.playerChipName}>{selectedOpponent.displayName}</Text>
+                  <Text style={styles.playerChipEmail}>{selectedOpponent.email}</Text>
+                </View>
+                <TouchableOpacity onPress={() => { setSelectedOpponent(null); setSearchText(''); }}>
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+              <AvailabilityHint availability={selectedOpponent.availability} />
+
+              <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
+              <TextInput
+                style={styles.input}
+                value={date}
+                onChangeText={setDate}
+                placeholder="2026-05-10"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={10}
+              />
+              <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
+              <TextInput
+                style={styles.input}
+                value={time}
+                onChangeText={setTime}
+                placeholder="18:30"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={5}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalLabel}>Search for opponent</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={[styles.input, styles.searchInput]}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholder="Name or email..."
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searching && <ActivityIndicator style={styles.searchSpinner} color="#1a472a" />}
+              </View>
+              {searchResults.length > 0 && (
+                <FlatList
+                  data={searchResults}
+                  keyExtractor={(u) => u.id}
+                  style={styles.resultsList}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.resultRow}
+                      onPress={() => { setSelectedOpponent(item); setSearchResults([]); }}
+                    >
+                      <Text style={styles.resultName}>{item.displayName}</Text>
+                      <Text style={styles.resultEmail}>{item.email}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              )}
+              {searchText.trim().length > 0 && !searching && searchResults.length === 0 && (
+                <Text style={styles.noResults}>No players found.</Text>
+              )}
+            </>
+          )}
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.createBtn, (submitting || !selectedOpponent || !date || !time) && styles.createBtnDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting || !selectedOpponent || !date || !time}
+            >
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.createText}>Send Proposal</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AvailabilityHint({ availability }: { availability?: Availability }) {
+  if (!availability || (availability.slots.length === 0 && !availability.note)) {
+    return <Text style={styles.availabilityEmpty}>Opponent hasn&apos;t set their preferred play times.</Text>;
+  }
+  return (
+    <View style={styles.availabilityBox}>
+      <Text style={styles.availabilityTitle}>Their preferred times</Text>
+      {availability.slots.map((s, i) => (
+        <View key={i} style={styles.availabilityRow}>
+          <Text style={styles.availabilityDay}>{DAY_LABELS[s.day]}</Text>
+          <Text style={styles.availabilityTime}>{s.from}–{s.to}</Text>
+        </View>
+      ))}
+      {availability.note && <Text style={styles.availabilityNote}>{availability.note}</Text>}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f0' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
@@ -498,4 +771,17 @@ const styles = StyleSheet.create({
   createBtn: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#1a472a', alignItems: 'center' },
   createBtnDisabled: { opacity: 0.6 },
   createText: { color: '#fff', fontWeight: '600' },
+  scheduledLine: { fontSize: 13, fontWeight: '600', color: '#1a472a', marginBottom: 8 },
+  cardActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  acceptBtn: { flex: 1, backgroundColor: '#1a472a', padding: 10, borderRadius: 8, alignItems: 'center' },
+  acceptBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  declineBtn: { flex: 1, backgroundColor: '#fff', padding: 10, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#c0392b' },
+  declineBtnText: { color: '#c0392b', fontWeight: '600', fontSize: 13 },
+  availabilityBox: { backgroundColor: '#f5f5ec', borderRadius: 10, padding: 12, marginBottom: 12 },
+  availabilityTitle: { fontSize: 11, fontWeight: '700', color: '#1a472a', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  availabilityRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 2 },
+  availabilityDay: { fontSize: 13, fontWeight: '700', color: '#1a472a', width: 32 },
+  availabilityTime: { fontSize: 13, color: '#444' },
+  availabilityNote: { fontSize: 12, color: '#666', fontStyle: 'italic', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#e7e7d8' },
+  availabilityEmpty: { color: '#999', fontSize: 13, fontStyle: 'italic', marginBottom: 12 },
 });

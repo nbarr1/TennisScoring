@@ -40,7 +40,25 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     const prevSubmission = before?.reportSubmission;
     const curSubmission = after.reportSubmission;
 
-    // 1. Report submitted — notify the other player
+    // 1. Match proposed (new doc) — notify the opponent
+    if (!before && after.status === 'proposed' && !after.player2IsGuest) {
+      await notifyMatchProposed(db, after, matchId);
+      return;
+    }
+
+    // 2. Proposal accepted — notify the proposer
+    if (before?.status === 'proposed' && after.status === 'scheduled') {
+      await notifyMatchAccepted(db, after, matchId);
+      return;
+    }
+
+    // 3. Proposal cancelled (declined or withdrawn) — notify the proposer
+    if (before?.status === 'proposed' && after.status === 'cancelled') {
+      await notifyMatchProposalCancelled(db, after, matchId);
+      return;
+    }
+
+    // 4. Report submitted — notify the other player
     if (
       curSubmission?.status === 'pending_confirmation' &&
       prevSubmission?.status !== 'pending_confirmation'
@@ -49,19 +67,89 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
       return;
     }
 
-    // 2. Report confirmed — update rankings (PDF is handled by generateReport trigger)
+    // 5. Report confirmed — update rankings (PDF is handled by generateReport trigger)
     if (after.status === 'completed' && before?.status !== 'completed') {
       await recalculateRankings(after.divisionId);
       return;
     }
 
-    // 3. Report disputed — notify division leader
+    // 6. Report disputed — notify division leader
     if (after.status === 'disputed' && before?.status !== 'disputed') {
       await notifyLeaderOfDispute(db, after, matchId);
       return;
     }
   }
 );
+
+async function notifyMatchProposed(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string
+) {
+  const opponentSnap = await db.collection('users').doc(match.player2Id).get();
+  const opponent = opponentSnap.data();
+  if (!opponent?.fcmTokens?.length) return;
+
+  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
+  const proposerName = proposerSnap.data()?.displayName ?? 'A player';
+
+  await getMessaging().sendEachForMulticast({
+    tokens: opponent.fcmTokens,
+    notification: {
+      title: 'New Match Proposal',
+      body: `${proposerName} proposed a match. Accept or decline.`,
+    },
+    data: { type: 'match_proposed', matchId },
+    android: { priority: 'high' },
+    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+  });
+}
+
+async function notifyMatchAccepted(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string
+) {
+  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
+  const proposer = proposerSnap.data();
+  if (!proposer?.fcmTokens?.length) return;
+
+  const opponentSnap = await db.collection('users').doc(match.player2Id).get();
+  const opponentName = opponentSnap.data()?.displayName ?? 'Your opponent';
+
+  await getMessaging().sendEachForMulticast({
+    tokens: proposer.fcmTokens,
+    notification: {
+      title: 'Match Accepted',
+      body: `${opponentName} accepted your match proposal.`,
+    },
+    data: { type: 'match_accepted', matchId },
+    android: { priority: 'high' },
+    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+  });
+}
+
+async function notifyMatchProposalCancelled(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string
+) {
+  // Notify the proposer. If the proposer themselves withdrew, the message is still informative.
+  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
+  const proposer = proposerSnap.data();
+  if (!proposer?.fcmTokens?.length) return;
+
+  await getMessaging().sendEachForMulticast({
+    tokens: proposer.fcmTokens,
+    notification: {
+      title: 'Match Proposal Cancelled',
+      body: 'Your match proposal was cancelled.',
+    },
+    data: { type: 'match_declined', matchId },
+    android: { priority: 'high' },
+    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+  });
+}
 
 async function notifyOpponentOfSubmission(
   db: ReturnType<typeof getFirestore>,

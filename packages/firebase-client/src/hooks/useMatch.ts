@@ -185,6 +185,52 @@ export async function postponeMatch(matchId: string, newScheduledAt: number): Pr
   await updateDoc(matchDoc(matchId), { scheduledAt: newScheduledAt });
 }
 
+/**
+ * Creates a match proposal that the opponent must accept before it becomes scheduled.
+ * Mirrors createMatch but writes status: 'proposed'. Guests can't be proposed to.
+ */
+export async function proposeMatch(params: {
+  player1Id: string;
+  player2Id: string;
+  player1Name?: string;
+  player2Name?: string;
+  divisionId: string;
+  createdBy: string;
+  scheduledAt: number;
+}): Promise<string> {
+  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, scheduledAt } = params;
+  const matchData: Omit<Match, 'id'> = {
+    divisionId,
+    player1Id,
+    player2Id,
+    ...(player1Name && { player1Name }),
+    ...(player2Name && { player2Name }),
+    player2IsGuest: false,
+    playerIds: [player1Id, player2Id],
+    format: defaultFormat,
+    status: 'proposed',
+    liveScore: createInitialScore(defaultFormat),
+    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    tipsEnabled: true,
+    source: 'live',
+    createdBy,
+    scheduledAt,
+    createdAt: Date.now(),
+  };
+  const ref = await addDoc(matchesCol(), matchData as Match);
+  return ref.id;
+}
+
+/** Opponent accepts a proposed match — moves it to 'scheduled'. */
+export async function acceptMatchProposal(matchId: string): Promise<void> {
+  await updateDoc(matchDoc(matchId), { status: 'scheduled' });
+}
+
+/** Opponent declines (or proposer withdraws) a proposed match — moves it to 'cancelled'. */
+export async function declineMatchProposal(matchId: string): Promise<void> {
+  await updateDoc(matchDoc(matchId), { status: 'cancelled' });
+}
+
 export async function startMatch(matchId: string, server: 'player1' | 'player2'): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'in_progress',
