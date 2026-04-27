@@ -40,6 +40,9 @@ export const divisionMatchesQuery = (divisionId: string, ...extra: QueryConstrai
 export const liveMatchesQuery = (divisionId: string) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'in_progress'));
 
+export const completedDivisionMatchesQuery = (divisionId: string) =>
+  query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'completed'));
+
 export const playerMatchesQuery = (playerId: string) =>
   query(matchesCol(), where('playerIds', 'array-contains', playerId), orderBy('createdAt', 'desc'));
 
