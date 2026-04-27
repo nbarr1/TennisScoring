@@ -26,6 +26,10 @@
       "react-native-screens",
       "react-native-reanimated",
       "react-native-gesture-handler"
-    ]
+    ],
+    "overrides": {
+      "react": "18.2.0",
+      "react-dom": "18.2.0"
+    }
   }
 }
