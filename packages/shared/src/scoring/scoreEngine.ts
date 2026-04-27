@@ -71,7 +71,11 @@ function isSetPoint(score: LiveScore, scorer: Player, format: MatchFormat_Config
   const currentSet = score.sets[score.currentSet];
   const scorerGames = scorer === 'player1' ? currentSet.player1Games : currentSet.player2Games;
   const opponentGames = scorer === 'player1' ? currentSet.player2Games : currentSet.player1Games;
-  return scorerGames >= format.gamesPerSet - 1 && scorerGames >= opponentGames;
+  const scorerGamesIfWinsCurrentGame = scorerGames + 1;
+  return (
+    scorerGamesIfWinsCurrentGame >= format.gamesPerSet &&
+    scorerGamesIfWinsCurrentGame - opponentGames >= 2
+  );
 }
 
 function completeTiebreak(

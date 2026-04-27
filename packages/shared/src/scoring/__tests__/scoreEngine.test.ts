@@ -181,6 +181,44 @@ describe('scoreEngine', () => {
     });
   });
 
+  describe('tip timing', () => {
+    function winGames(score: ReturnType<typeof createInitialScore>, player: 'player1' | 'player2', count: number) {
+      let s = score;
+      for (let g = 0; g < count; g++) {
+        for (let p = 0; p < 4; p++) {
+          const r = applyPoint(s, player, DEFAULT_FORMAT);
+          s = r.nextScore;
+          if (r.setCompleted || r.matchWinner) break;
+        }
+      }
+      return s;
+    }
+
+    it('does not show set point at 5-5', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winGames(score, 'player1', 5);
+      score = winGames(score, 'player2', 5);
+
+      // 5-5, player1 wins first point in game (15-0) — should not be set point yet
+      const result = applyPoint(score, 'player1', DEFAULT_FORMAT);
+      expect(result.tips).not.toContain('set_point');
+      expect(result.tips).not.toContain('match_point');
+    });
+
+    it('does not show match point at 5-5 in deciding set', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winGames(score, 'player1', 6); // player1 wins set 1
+      score = winGames(score, 'player2', 6); // player2 wins set 2
+      score = winGames(score, 'player1', 5);
+      score = winGames(score, 'player2', 5);
+
+      // Final set at 5-5: this is not match point yet
+      const result = applyPoint(score, 'player1', DEFAULT_FORMAT);
+      expect(result.tips).not.toContain('match_point');
+      expect(result.tips).not.toContain('set_point');
+    });
+  });
+
   describe('formatScoreDisplay', () => {
     it('formats single set score', () => {
       let score = createInitialScore(DEFAULT_FORMAT);
