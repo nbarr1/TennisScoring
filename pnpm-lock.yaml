@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  react: 18.2.0
+  react-dom: 18.2.0
+
 importers:
 
   .:
@@ -128,28 +132,28 @@ importers:
         version: link:../../packages/shared
       firebase:
         specifier: ^10.12.0
-        version: 10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1)))
+        version: 10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))
       firebase-admin:
         specifier: ^12.0.0
         version: 12.7.0(encoding@0.1.13)
       next:
         specifier: 14.2.0
-        version: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       next-auth:
         specifier: ^4.24.0
-        version: 4.24.14(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 4.24.14(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       next-firebase-auth-edge:
         specifier: ^1.0.0
-        version: 1.12.0(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))
+        version: 1.12.0(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))
       react:
-        specifier: ^18.3.0
-        version: 18.3.1
+        specifier: 18.2.0
+        version: 18.2.0
       react-dom:
-        specifier: ^18.3.0
-        version: 18.3.1(react@18.3.1)
+        specifier: 18.2.0
+        version: 18.2.0(react@18.2.0)
       zustand:
         specifier: ^4.5.0
-        version: 4.5.7(@types/react@18.3.28)(react@18.3.1)
+        version: 4.5.7(@types/react@18.3.28)(react@18.2.0)
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -199,10 +203,10 @@ importers:
         version: link:../shared
       firebase:
         specifier: ^10.12.0
-        version: 10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1)))
+        version: 10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))
       react:
-        specifier: '>=18.0.0'
-        version: 18.3.1
+        specifier: 18.2.0
+        version: 18.2.0
     devDependencies:
       '@types/react':
         specifier: ^18.0.0
@@ -1269,7 +1273,7 @@ packages:
     resolution: {integrity: sha512-7T09UE9h8QDTsUeMGymB4i+iqvtEeaO5VvUjryFB4tugDTG/bkzViWA74hm5pfjjDEhYMXWaX112mcvhccmIwQ==}
     peerDependencies:
       expo-font: '*'
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   '@expo/xcpretty@4.4.3':
@@ -1790,12 +1794,12 @@ packages:
   '@radix-ui/react-compose-refs@1.0.0':
     resolution: {integrity: sha512-0KaSv6sx787/hK3eF53iOkiSLwAGlFMx5lotrqD2pTjB18KbybKoEIgkNZTKC60YECDQTKGTRcDBILwZVqVKvA==}
     peerDependencies:
-      react: ^16.8 || ^17.0 || ^18.0
+      react: 18.2.0
 
   '@radix-ui/react-slot@1.0.1':
     resolution: {integrity: sha512-avutXAFL1ehGvAXtPquu0YK5oz6ctS474iM3vNGQIkswrVhdrS52e3uoMQBzZhNRAIE0jBnUyXWNmSjGHhCFcw==}
     peerDependencies:
-      react: ^16.8 || ^17.0 || ^18.0
+      react: 18.2.0
 
   '@react-native-async-storage/async-storage@1.23.1':
     resolution: {integrity: sha512-Qd2kQ3yi6Y3+AcUlrHxSLlnBvpdCEMVGFlVBneVOjaFaPU61g1huc38g339ysXspwY1QZA2aNhrk/KlHGO+ewA==}
@@ -1905,7 +1909,7 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       '@types/react': ^18.2.6
-      react: '*'
+      react: 18.2.0
       react-native: '*'
     peerDependenciesMeta:
       '@types/react':
@@ -1915,7 +1919,7 @@ packages:
     resolution: {integrity: sha512-ow6Z06iS4VqBO8d7FP+HsGjJLWt2xTWIvuWjpoCvsM/uQXzCRDIjBv9HaKcXbF0yTW7IMir0oDAbU5PFzEDdgA==}
     peerDependencies:
       '@react-navigation/native': ^6.0.0
-      react: '*'
+      react: 18.2.0
       react-native: '*'
       react-native-safe-area-context: '>= 3.0.0'
       react-native-screens: '>= 3.0.0'
@@ -1924,7 +1928,7 @@ packages:
     resolution: {integrity: sha512-9oD4cypEBjPuaMiu9tevWGiQ4w/d6l3HNhcJ1IjXZ24xvYDSs0mqjUcdt8SWUolCvRrYc/DmNBLlT83bk0bHTw==}
     peerDependencies:
       '@react-navigation/native': ^6.0.0
-      react: '*'
+      react: 18.2.0
       react-native: '*'
       react-native-safe-area-context: '>= 3.0.0'
       react-native-screens: '>= 3.0.0'
@@ -1932,13 +1936,13 @@ packages:
   '@react-navigation/core@6.4.17':
     resolution: {integrity: sha512-Nd76EpomzChWAosGqWOYE3ItayhDzIEzzZsT7PfGcRFDgW5miHV2t4MZcq9YIK4tzxZjVVpYbIynOOQQd1e0Cg==}
     peerDependencies:
-      react: '*'
+      react: 18.2.0
 
   '@react-navigation/elements@1.3.31':
     resolution: {integrity: sha512-bUzP4Awlljx5RKEExw8WYtif8EuQni2glDaieYROKTnaxsu9kEIA515sXQgUDZU4Ob12VoL7+z70uO3qrlfXcQ==}
     peerDependencies:
       '@react-navigation/native': ^6.0.0
-      react: '*'
+      react: 18.2.0
       react-native: '*'
       react-native-safe-area-context: '>= 3.0.0'
 
@@ -1946,7 +1950,7 @@ packages:
     resolution: {integrity: sha512-++dueQ+FDj2XkZ902DVrK79ub1vp19nSdAZWxKRgd6+Bc0Niiesua6rMCqymYOVaYh+dagwkA9r00bpt/U5WLw==}
     peerDependencies:
       '@react-navigation/native': ^6.0.0
-      react: '*'
+      react: 18.2.0
       react-native: '*'
       react-native-safe-area-context: '>= 3.0.0'
       react-native-screens: '>= 3.0.0'
@@ -1954,7 +1958,7 @@ packages:
   '@react-navigation/native@6.1.18':
     resolution: {integrity: sha512-mIT9MiL/vMm4eirLcmw2h6h/Nm5FICtnYSdohq4vTLA2FF/6PNhByM7s8ffqoVfE5L0uAa6Xda1B7oddolUiGg==}
     peerDependencies:
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   '@react-navigation/routers@6.1.9':
@@ -5162,8 +5166,8 @@ packages:
       '@auth/core': 0.34.3
       next: ^12.2.5 || ^13 || ^14 || ^15 || ^16
       nodemailer: ^7.0.7
-      react: ^17.0.2 || ^18 || ^19
-      react-dom: ^17.0.2 || ^18 || ^19
+      react: 18.2.0
+      react-dom: 18.2.0
     peerDependenciesMeta:
       '@auth/core':
         optional: true
@@ -5184,8 +5188,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.1.0
       '@playwright/test': ^1.41.2
-      react: ^18.2.0
-      react-dom: ^18.2.0
+      react: 18.2.0
+      react-dom: 18.2.0
       sass: ^1.3.0
     peerDependenciesMeta:
       '@opentelemetry/api':
@@ -5673,10 +5677,10 @@ packages:
   react-devtools-core@5.3.2:
     resolution: {integrity: sha512-crr9HkVrDiJ0A4zot89oS0Cgv0Oa4OG1Em4jit3P3ZxZSKPMYyMjfwMqgcJna9o625g8oN87rBm8SWWrSTBZxg==}
 
-  react-dom@18.3.1:
-    resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
+  react-dom@18.2.0:
+    resolution: {integrity: sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==}
     peerDependencies:
-      react: ^18.3.1
+      react: 18.2.0
 
   react-fast-compare@3.2.2:
     resolution: {integrity: sha512-nsO+KSNgo1SbJqJEYRE9ERzo7YtYbou/OqjSQKxV7jcKox7+usiUVZOAC+XnDOABXggQTno0Y1CpVnuWEc1boQ==}
@@ -5685,7 +5689,7 @@ packages:
     resolution: {integrity: sha512-r4F0Sec0BLxWicc7HEyo2x3/2icUTrRmDjaaRyzzn+7aDyFZliszMDOgLVwSnQnYENOlL1o569Ze2HZefk8clA==}
     engines: {node: '>=10'}
     peerDependencies:
-      react: '>=17.0.0'
+      react: 18.2.0
 
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
@@ -5699,31 +5703,31 @@ packages:
   react-native-gesture-handler@2.16.2:
     resolution: {integrity: sha512-vGFlrDKlmyI+BT+FemqVxmvO7nqxU33cgXVsn6IKAFishvlG3oV2Ds67D5nPkHMea8T+s1IcuMm0bF8ntZtAyg==}
     peerDependencies:
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   react-native-helmet-async@2.0.4:
     resolution: {integrity: sha512-m3CkXWss6B1dd6mCMleLpzDCJJGGaHOLQsUzZv8kAASJmMfmVT4d2fx375iXKTRWT25ThBfae3dECuX5cq/8hg==}
     peerDependencies:
-      react: ^16.6.0 || ^17.0.0 || ^18.0.0
+      react: 18.2.0
 
   react-native-reanimated@3.10.1:
     resolution: {integrity: sha512-sfxg6vYphrDc/g4jf/7iJ7NRi+26z2+BszPmvmk0Vnrz6FL7HYljJqTf531F1x6tFmsf+FEAmuCtTUIXFLVo9w==}
     peerDependencies:
       '@babel/core': ^7.0.0-0
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   react-native-safe-area-context@4.10.5:
     resolution: {integrity: sha512-Wyb0Nqw2XJ6oZxW/cK8k5q7/UAhg/wbEG6UVf89rQqecDZTDA5ic//P9J6VvJRVZerzGmxWQpVuM7f+PRYUM4g==}
     peerDependencies:
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   react-native-screens@3.31.1:
     resolution: {integrity: sha512-8fRW362pfZ9y4rS8KY5P3DFScrmwo/vu1RrRMMx0PNHbeC9TLq0Kw1ubD83591yz64gLNHFLTVkTJmWeWCXKtQ==}
     peerDependencies:
-      react: '*'
+      react: 18.2.0
       react-native: '*'
 
   react-native@0.74.5:
@@ -5744,7 +5748,7 @@ packages:
   react-shallow-renderer@16.15.0:
     resolution: {integrity: sha512-oScf2FqQ9LFVQgA73vr86xl2NaOIX73rh+YFqcOp68CWj56tSfgtGKrEbyhCj0rSijyG9M1CYprTh39fBi5hzA==}
     peerDependencies:
-      react: ^16.0.0 || ^17.0.0 || ^18.0.0
+      react: 18.2.0
 
   react@18.2.0:
     resolution: {integrity: sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==}
@@ -6238,7 +6242,7 @@ packages:
     peerDependencies:
       '@babel/core': '*'
       babel-plugin-macros: '*'
-      react: '>= 16.8.0 || 17.x.x || ^18.0.0-0'
+      react: 18.2.0
     peerDependenciesMeta:
       '@babel/core':
         optional: true
@@ -6603,12 +6607,12 @@ packages:
   use-latest-callback@0.2.6:
     resolution: {integrity: sha512-FvRG9i1HSo0wagmX63Vrm8SnlUU3LMM3WyZkQ76RnslpBrX694AdG4A0zQBx2B3ZifFA0yv/BaEHGBnEax5rZg==}
     peerDependencies:
-      react: '>=16.8'
+      react: 18.2.0
 
   use-sync-external-store@1.6.0:
     resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
     peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react: 18.2.0
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
@@ -6870,7 +6874,7 @@ packages:
     peerDependencies:
       '@types/react': '>=16.8'
       immer: '>=9.0.6'
-      react: '>=16.8'
+      react: 18.2.0
     peerDependenciesMeta:
       '@types/react':
         optional: true
@@ -8324,6 +8328,20 @@ snapshots:
       - '@firebase/app-types'
       - '@react-native-async-storage/async-storage'
 
+  '@firebase/auth-compat@0.5.14(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))':
+    dependencies:
+      '@firebase/app-compat': 0.2.43
+      '@firebase/auth': 1.7.9(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))
+      '@firebase/auth-types': 0.12.2(@firebase/app-types@0.9.2)(@firebase/util@1.10.0)
+      '@firebase/component': 0.6.9
+      '@firebase/util': 1.10.0
+      tslib: 2.8.1
+      undici: 6.19.7
+    transitivePeerDependencies:
+      - '@firebase/app'
+      - '@firebase/app-types'
+      - '@react-native-async-storage/async-storage'
+
   '@firebase/auth-compat@0.5.14(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1)))':
     dependencies:
       '@firebase/app-compat': 0.2.43
@@ -8355,6 +8373,17 @@ snapshots:
       undici: 6.19.7
     optionalDependencies:
       '@react-native-async-storage/async-storage': 1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.2.79)(encoding@0.1.13)(react@18.2.0))
+
+  '@firebase/auth@1.7.9(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))':
+    dependencies:
+      '@firebase/app': 0.10.13
+      '@firebase/component': 0.6.9
+      '@firebase/logger': 0.4.2
+      '@firebase/util': 1.10.0
+      tslib: 2.8.1
+      undici: 6.19.7
+    optionalDependencies:
+      '@react-native-async-storage/async-storage': 1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0))
 
   '@firebase/auth@1.7.9(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1)))':
     dependencies:
@@ -9035,6 +9064,12 @@ snapshots:
       merge-options: 3.0.4
       react-native: 0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.2.79)(encoding@0.1.13)(react@18.2.0)
 
+  '@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0))':
+    dependencies:
+      merge-options: 3.0.4
+      react-native: 0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)
+    optional: true
+
   '@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1))':
     dependencies:
       merge-options: 3.0.4
@@ -9353,6 +9388,16 @@ snapshots:
       react-native: 0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.2.79)(encoding@0.1.13)(react@18.2.0)
     optionalDependencies:
       '@types/react': 18.2.79
+
+  '@react-native/virtualized-lists@0.74.87(@types/react@18.3.28)(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0))(react@18.2.0)':
+    dependencies:
+      invariant: 2.2.4
+      nullthrows: 1.1.1
+      react: 18.2.0
+      react-native: 0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)
+    optionalDependencies:
+      '@types/react': 18.3.28
+    optional: true
 
   '@react-native/virtualized-lists@0.74.87(@types/react@18.3.28)(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1))(react@18.3.1)':
     dependencies:
@@ -11737,6 +11782,39 @@ snapshots:
     transitivePeerDependencies:
       - '@react-native-async-storage/async-storage'
 
+  firebase@10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0))):
+    dependencies:
+      '@firebase/analytics': 0.10.8(@firebase/app@0.10.13)
+      '@firebase/analytics-compat': 0.2.14(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/app': 0.10.13
+      '@firebase/app-check': 0.8.8(@firebase/app@0.10.13)
+      '@firebase/app-check-compat': 0.3.15(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/app-compat': 0.2.43
+      '@firebase/app-types': 0.9.2
+      '@firebase/auth': 1.7.9(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))
+      '@firebase/auth-compat': 0.5.14(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0)))
+      '@firebase/data-connect': 0.1.0(@firebase/app@0.10.13)
+      '@firebase/database': 1.0.8
+      '@firebase/database-compat': 1.0.8
+      '@firebase/firestore': 4.7.3(@firebase/app@0.10.13)
+      '@firebase/firestore-compat': 0.3.38(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)
+      '@firebase/functions': 0.11.8(@firebase/app@0.10.13)
+      '@firebase/functions-compat': 0.3.14(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/installations': 0.6.9(@firebase/app@0.10.13)
+      '@firebase/installations-compat': 0.2.9(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)
+      '@firebase/messaging': 0.12.12(@firebase/app@0.10.13)
+      '@firebase/messaging-compat': 0.2.12(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/performance': 0.6.9(@firebase/app@0.10.13)
+      '@firebase/performance-compat': 0.2.9(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/remote-config': 0.4.9(@firebase/app@0.10.13)
+      '@firebase/remote-config-compat': 0.2.9(@firebase/app-compat@0.2.43)(@firebase/app@0.10.13)
+      '@firebase/storage': 0.13.2(@firebase/app@0.10.13)
+      '@firebase/storage-compat': 0.3.12(@firebase/app-compat@0.2.43)(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)
+      '@firebase/util': 1.10.0
+      '@firebase/vertexai-preview': 0.0.4(@firebase/app-types@0.9.2)(@firebase/app@0.10.13)
+    transitivePeerDependencies:
+      - '@react-native-async-storage/async-storage'
+
   firebase@10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1))):
     dependencies:
       '@firebase/analytics': 0.10.8(@firebase/app@0.10.13)
@@ -13421,29 +13499,29 @@ snapshots:
 
   nested-error-stacks@2.0.1: {}
 
-  next-auth@4.24.14(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  next-auth@4.24.14(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(react-dom@18.2.0(react@18.2.0))(react@18.2.0):
     dependencies:
       '@babel/runtime': 7.29.2
       '@panva/hkdf': 1.2.1
       cookie: 0.7.2
       jose: 4.15.9
-      next: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      next: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       oauth: 0.9.15
       openid-client: 5.7.1
       preact: 10.29.1
       preact-render-to-string: 5.2.6(preact@10.29.1)
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
       uuid: 8.3.2
 
-  next-firebase-auth-edge@1.12.0(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)):
+  next-firebase-auth-edge@1.12.0(next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)):
     dependencies:
       cookie: 0.7.2
       encoding: 0.1.13
       jose: 5.10.0
-      next: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      next: 14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
 
-  next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  next@14.2.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(react-dom@18.2.0(react@18.2.0))(react@18.2.0):
     dependencies:
       '@next/env': 14.2.0
       '@swc/helpers': 0.5.5
@@ -13451,9 +13529,9 @@ snapshots:
       caniuse-lite: 1.0.30001790
       graceful-fs: 4.2.11
       postcss: 8.4.31
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      styled-jsx: 5.1.1(@babel/core@7.29.0)(react@18.3.1)
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+      styled-jsx: 5.1.1(@babel/core@7.29.0)(react@18.2.0)
     optionalDependencies:
       '@next/swc-darwin-arm64': 14.2.0
       '@next/swc-darwin-x64': 14.2.0
@@ -13956,10 +14034,10 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  react-dom@18.3.1(react@18.3.1):
+  react-dom@18.2.0(react@18.2.0):
     dependencies:
       loose-envify: 1.4.0
-      react: 18.3.1
+      react: 18.2.0
       scheduler: 0.23.2
 
   react-fast-compare@3.2.2: {}
@@ -14069,6 +14147,57 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0):
+    dependencies:
+      '@jest/create-cache-key-function': 29.7.0
+      '@react-native-community/cli': 13.6.9(encoding@0.1.13)
+      '@react-native-community/cli-platform-android': 13.6.9(encoding@0.1.13)
+      '@react-native-community/cli-platform-ios': 13.6.9(encoding@0.1.13)
+      '@react-native/assets-registry': 0.74.87
+      '@react-native/codegen': 0.74.87(@babel/preset-env@7.29.2(@babel/core@7.29.0))
+      '@react-native/community-cli-plugin': 0.74.87(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(encoding@0.1.13)
+      '@react-native/gradle-plugin': 0.74.87
+      '@react-native/js-polyfills': 0.74.87
+      '@react-native/normalize-colors': 0.74.87
+      '@react-native/virtualized-lists': 0.74.87(@types/react@18.3.28)(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.2.0))(react@18.2.0)
+      abort-controller: 3.0.0
+      anser: 1.4.10
+      ansi-regex: 5.0.1
+      base64-js: 1.5.1
+      chalk: 4.1.2
+      event-target-shim: 5.0.1
+      flow-enums-runtime: 0.0.6
+      invariant: 2.2.4
+      jest-environment-node: 29.7.0
+      jsc-android: 250231.0.0
+      memoize-one: 5.2.1
+      metro-runtime: 0.80.12
+      metro-source-map: 0.80.12
+      mkdirp: 0.5.6
+      nullthrows: 1.1.1
+      pretty-format: 26.6.2
+      promise: 8.3.0
+      react: 18.2.0
+      react-devtools-core: 5.3.2
+      react-refresh: 0.14.2
+      react-shallow-renderer: 16.15.0(react@18.2.0)
+      regenerator-runtime: 0.13.11
+      scheduler: 0.24.0-canary-efb381bbf-20230505
+      stacktrace-parser: 0.1.11
+      whatwg-fetch: 3.6.20
+      ws: 6.2.3
+      yargs: 17.7.2
+    optionalDependencies:
+      '@types/react': 18.3.28
+    transitivePeerDependencies:
+      - '@babel/core'
+      - '@babel/preset-env'
+      - bufferutil
+      - encoding
+      - supports-color
+      - utf-8-validate
+    optional: true
+
   react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1):
     dependencies:
       '@jest/create-cache-key-function': 29.7.0
@@ -14142,6 +14271,7 @@ snapshots:
   react@18.3.1:
     dependencies:
       loose-envify: 1.4.0
+    optional: true
 
   readable-stream@2.3.8:
     dependencies:
@@ -14709,10 +14839,10 @@ snapshots:
   stubs@3.0.0:
     optional: true
 
-  styled-jsx@5.1.1(@babel/core@7.29.0)(react@18.3.1):
+  styled-jsx@5.1.1(@babel/core@7.29.0)(react@18.2.0):
     dependencies:
       client-only: 0.0.1
-      react: 18.3.1
+      react: 18.2.0
     optionalDependencies:
       '@babel/core': 7.29.0
 
@@ -15110,10 +15240,6 @@ snapshots:
     dependencies:
       react: 18.2.0
 
-  use-sync-external-store@1.6.0(react@18.3.1):
-    dependencies:
-      react: 18.3.1
-
   util-deprecate@1.0.2: {}
 
   util@0.12.5:
@@ -15366,9 +15492,9 @@ snapshots:
       '@types/react': 18.2.79
       react: 18.2.0
 
-  zustand@4.5.7(@types/react@18.3.28)(react@18.3.1):
+  zustand@4.5.7(@types/react@18.3.28)(react@18.2.0):
     dependencies:
-      use-sync-external-store: 1.6.0(react@18.3.1)
+      use-sync-external-store: 1.6.0(react@18.2.0)
     optionalDependencies:
       '@types/react': 18.3.28
-      react: 18.3.1
+      react: 18.2.0
