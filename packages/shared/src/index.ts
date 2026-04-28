@@ -4,6 +4,7 @@ export * from './types/match';
 export * from './types/ranking';
 export * from './types/message';
 export * from './types/division';
+export * from './types/invite';
 
 // Score engine
 export * from './scoring/scoreEngine';

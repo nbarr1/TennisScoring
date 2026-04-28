@@ -1,9 +1,11 @@
 export interface Invite {
+  token: string;
   email: string;
   name: string;
-  invitedBy: string;     // userId of sender
-  invitedAt: string;     // ISO or Timestamp
+  invitedBy: string;
+  invitedAt: number | string;
   accepted: boolean;
-  acceptedAt?: string;
-  token: string;         // random string in invite link
+  acceptedAt?: number | string;
+  acceptedBy?: string;
+  divisionId?: string;
 }

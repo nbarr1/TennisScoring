@@ -97,6 +97,18 @@ service cloud.firestore {
       allow write: if false; // Cloud Functions only
     }
 
+
+
+    // ---------- Invites ----------
+    match /invites/{inviteId} {
+      allow read, write: if false; // Accessed only through Cloud Functions
+    }
+
+    // Optional Firebase Trigger Email extension queue
+    match /mail/{mailId} {
+      allow read, write: if false; // Cloud Functions / extension only
+    }
+
     // ---------- Channels ----------
     match /channels/{channelId} {
       allow read: if isChannelParticipant(resource.data);
