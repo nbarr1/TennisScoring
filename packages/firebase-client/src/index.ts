@@ -1,4 +1,4 @@
-export { app, db, auth, storage, getMessagingIfSupported } from './config';
+export { app, db, auth, storage, functions, getMessagingIfSupported } from './config';
 export * from './collections';
 export * from './divisions';
 export * from './hooks/useMatch';
