@@ -284,6 +284,7 @@ function RecordPastMatchModal({
   const [sets, setSets] = useState([{ p1: '', p2: '' }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [isDivisionMatch, setIsDivisionMatch] = useState(true);  // NEW: Track if division match
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -334,15 +335,18 @@ function RecordPastMatchModal({
               divisionId,
               createdBy: currentUser.id,
               sets: parsed,
+              isDivisionMatch,  // NEW: Pass the flag
             }
           : {
               player1Id: currentUser.id,
               player2Id: selectedOpponent!.id,
               player1Name: currentUser.displayName,
               player2Name: selectedOpponent!.displayName,
+              player2IsGuest: false,  // EXPLICIT: Real division player
               divisionId,
               createdBy: currentUser.id,
               sets: parsed,
+              isDivisionMatch,  // NEW: Pass the flag
             }
       );
       onClose();
@@ -409,6 +413,26 @@ function RecordPastMatchModal({
           </>
         )}
 
+        {/* NEW: Division match toggle */}
+        {opponentReady && (
+          <div style={modalStyles.toggleSection}>
+            <label style={modalStyles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={isDivisionMatch}
+                onChange={(e) => setIsDivisionMatch(e.target.checked)}
+                style={modalStyles.checkbox}
+              />
+              <span>Include in division rankings</span>
+            </label>
+            <div style={modalStyles.checkboxHint}>
+              {isDivisionMatch 
+                ? "This match will count toward the division standings."
+                : "This match will be recorded but won't affect rankings."}
+            </div>
+          </div>
+        )}
+
         {opponentReady && (
           <div style={modalStyles.setsBlock}>
             <div style={modalStyles.label}>Set scores (your games first)</div>
@@ -467,7 +491,6 @@ function RecordPastMatchModal({
     </div>
   );
 }
-
 function AvailabilityHint({ availability }: { availability?: Availability }) {
   if (!availability || (availability.slots.length === 0 && !availability.note)) {
     return <div style={modalStyles.muted}>Opponent hasn&apos;t set their preferred play times.</div>;
