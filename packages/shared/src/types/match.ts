@@ -127,6 +127,7 @@ export interface Match {
   tipsEnabled: boolean;
   undoSnapshot?: UndoSnapshot;
   source?: 'live' | 'manual';
+  isDivisionMatch?: boolean;  // NEW: Whether this match counts toward division rankings
   createdBy: string;
   scheduledAt?: number;
   startedAt?: number;
