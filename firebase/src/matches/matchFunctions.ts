@@ -247,7 +247,7 @@ async function recalculateRankings(divisionId: string) {
 
   for (const match of matches) {
     if (!match.winner) continue;
-    if (match.player2IsGuest) continue; // skip unlinked guest matches
+    if (match.isDivisionMatch === false) continue; // honor "include in rankings" toggle for all match types
 
     const { player1Id, player2Id, liveScore, winner } = match;
 
