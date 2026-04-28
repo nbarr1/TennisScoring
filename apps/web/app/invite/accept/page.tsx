@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
@@ -16,6 +16,25 @@ type InvitePreview = {
 };
 
 export default function AcceptInvitePage(): React.JSX.Element {
+  return (
+    <Suspense fallback={<InviteLoadingState />}>
+      <AcceptInviteContent />
+    </Suspense>
+  );
+}
+
+function InviteLoadingState() {
+  return (
+    <main style={styles.main}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>Join Tennis League</h1>
+        <p style={styles.muted}>Loading invite…</p>
+      </div>
+    </main>
+  );
+}
+
+function AcceptInviteContent(): React.JSX.Element {
   const router = useRouter();
   const params = useSearchParams();
   const { firebaseUser } = useAuthUser();
