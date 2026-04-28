@@ -8,6 +8,7 @@ import { onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from 'firebase/fire
 import {
   divisionsCol, divisionDoc, channelsCol, usersCol, userDoc,
   createDivision as createDivisionShared, useAuthUser,
+  recalculateDivisionRankings,
 } from '@tennis/firebase-client';
 import type { Division, User, Channel } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
@@ -20,6 +21,8 @@ export default function AdminPage(): React.JSX.Element {
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcMsg, setRecalcMsg] = useState('');
   const [error, setError] = useState('');
 
   // Find the division this user leads
@@ -55,6 +58,20 @@ export default function AdminPage(): React.JSX.Element {
       createdAt: Date.now(),
     } as Channel);
     setNewDivisionName('');
+  }
+
+  async function handleRecalculate() {
+    if (!division) return;
+    setRecalculating(true);
+    setRecalcMsg('');
+    try {
+      await recalculateDivisionRankings(division.id);
+      setRecalcMsg('Rankings recalculated successfully.');
+    } catch {
+      setRecalcMsg('Recalculation failed. Check that you are a division leader.');
+    } finally {
+      setRecalculating(false);
+    }
   }
 
   async function addPlayerByEmail() {
@@ -121,6 +138,28 @@ export default function AdminPage(): React.JSX.Element {
                 <span style={styles.badge}>Code {division.inviteCode}</span>
               </h2>
               <p style={styles.hint}>{players.length} player{players.length !== 1 ? 's' : ''} enrolled</p>
+              <p style={{ ...styles.hint, fontFamily: 'monospace', fontSize: 12 }}>
+                Division ID: {division.id}
+              </p>
+
+              <h3 style={styles.subTitle}>Recalculate Rankings</h3>
+              <p style={styles.hint}>
+                Run this after migrating match data or if standings appear out of date.
+              </p>
+              <div style={styles.row}>
+                <button
+                  style={{ ...styles.btn, background: '#2d6a4f' }}
+                  onClick={handleRecalculate}
+                  disabled={recalculating}
+                >
+                  {recalculating ? 'Recalculating…' : 'Recalculate Rankings'}
+                </button>
+              </div>
+              {recalcMsg && (
+                <p style={{ marginTop: 10, fontSize: 13, color: recalcMsg.includes('failed') ? '#c0392b' : '#2d6a4f' }}>
+                  {recalcMsg}
+                </p>
+              )}
 
               <h3 style={styles.subTitle}>Add Player by Email</h3>
               <div style={styles.row}>
