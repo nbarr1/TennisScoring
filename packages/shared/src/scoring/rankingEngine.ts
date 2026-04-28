@@ -89,6 +89,7 @@ export function updateRankingWithMatchResult(
 export function extractMatchTotals(sets: Array<{ player1Games: number; player2Games: number; winner?: string }>) {
   let p1Sets = 0, p2Sets = 0, p1Games = 0, p2Games = 0;
   for (const s of sets) {
+    if (!s.winner) continue; // Ignore open/incomplete sets completely
     p1Games += s.player1Games;
     p2Games += s.player2Games;
     if (s.winner === 'player1') p1Sets++;
