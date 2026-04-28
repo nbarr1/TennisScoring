@@ -19,6 +19,7 @@ function buildRankingsFromMatches(matches: Match[], divisionId: string): PlayerR
 
   for (const match of matches) {
     if (!match.winner || match.player2IsGuest) continue;
+    if (!match.liveScore?.sets?.length) continue;
 
     const { player1Id, player2Id, winner, liveScore } = match;
     const player1Name = match.player1Name ?? player1Id;
@@ -130,7 +131,16 @@ export function useRankings(divisionId: string | null) {
     let matchesReady = false;
 
     const syncRankings = () => {
-      const nextRankings = computedRankings.length > 0 ? computedRankings : firestoreRankings;
+      let nextRankings: PlayerRanking[];
+      if (computedRankings.length > 0) {
+        // Use locally-computed stats (always fresh) and add any division players
+        // who haven't played yet (their zero-stat entries come from Firestore).
+        const computedIds = new Set(computedRankings.map((r) => r.userId));
+        const unplayed = firestoreRankings.filter((r) => !computedIds.has(r.userId));
+        nextRankings = [...computedRankings, ...unplayed].sort((a, b) => a.rank - b.rank);
+      } else {
+        nextRankings = firestoreRankings;
+      }
       setRankings(nextRankings);
       if (rankingsReady && matchesReady) {
         setLoading(false);
@@ -154,8 +164,12 @@ export function useRankings(divisionId: string | null) {
     const unsubMatches = onSnapshot(
       completedDivisionMatchesQuery(divisionId),
       (snap) => {
-        const matches = snap.docs.map((d) => d.data() as Match);
-        computedRankings = buildRankingsFromMatches(matches, divisionId);
+        try {
+          const matches = snap.docs.map((d) => d.data() as Match);
+          computedRankings = buildRankingsFromMatches(matches, divisionId);
+        } catch {
+          computedRankings = [];
+        }
         matchesReady = true;
         syncRankings();
       },
