@@ -68,11 +68,20 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     }
 
     // 5. Report confirmed — update rankings (PDF is handled by generateReport trigger)
-    if (after.status === 'completed' && before?.status !== 'completed') {
-  // CLEANUP: Remove any open/incomplete sets before recalculating rankings
-  if (after.liveScore && Array.isArray(after.liveScore.sets)) {
-    const cleanedSets = after.liveScore.sets.filter(set => !!set.winner);
-    after.liveScore.sets = cleanedSets;
+   if (after.status === 'completed' && before?.status !== 'completed') {
+  // CLEANUP: Remove any open/incomplete sets and persist to Firestore
+    if (after.liveScore && Array.isArray(after.liveScore.sets)) {
+      const cleanedSets = after.liveScore.sets.filter(set => !!set.winner);
+      if (cleanedSets.length !== after.liveScore.sets.length) {
+        const db = getFirestore();
+        await db
+          .collection('matches')
+          .doc(event.params.matchId)
+          .update({
+            'liveScore.sets': cleanedSets,
+        });
+      after.liveScore.sets = cleanedSets;
+    }
   }
 
   await recalculateRankings(after.divisionId);
