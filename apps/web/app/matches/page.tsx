@@ -685,6 +685,32 @@ const modalStyles: Record<string, React.CSSProperties> = {
   availabilityDay: { fontWeight: 600, color: '#1a472a', minWidth: 32 },
   availabilityTime: { color: '#444' },
   availabilityNote: { fontSize: 12, color: '#666', fontStyle: 'italic' as const, marginTop: 6, paddingTop: 6, borderTop: '1px solid #e7e7d8' },
+  toggleSection: { 
+    marginBottom: 14,
+    background: '#f0f9f0',
+    borderRadius: 10,
+    padding: 12,
+  } as const,
+  checkboxLabel: { 
+    display: 'flex' as const,
+    alignItems: 'center',
+    gap: 10,
+    cursor: 'pointer',
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#1a472a',
+  } as const,
+  checkbox: { 
+    cursor: 'pointer' as const,
+    width: 18,
+    height: 18,
+  } as const,
+  checkboxHint: { 
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    fontStyle: 'italic' as const,
+  } as const,
 };
 
 const styles: Record<string, React.CSSProperties> = {
