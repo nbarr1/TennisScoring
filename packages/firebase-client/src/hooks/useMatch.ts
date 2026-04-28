@@ -43,8 +43,9 @@ export async function createMatch(params: {
   divisionId: string;
   createdBy: string;
   scheduledAt?: number;
+  isDivisionMatch?: boolean;  // NEW: Add this parameter
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, scheduledAt } = params;
+  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, scheduledAt, isDivisionMatch } = params;
 
   const matchData: Omit<Match, 'id'> = {
     divisionId,
@@ -60,6 +61,7 @@ export async function createMatch(params: {
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
     source: 'live',
+    isDivisionMatch: isDivisionMatch ?? true,  // NEW: Default to true
     createdBy,
     ...(scheduledAt !== undefined && { scheduledAt }),
     createdAt: Date.now(),
@@ -102,8 +104,9 @@ export async function recordHistoricMatch(params: {
   divisionId: string;
   createdBy: string;
   sets: { p1: number; p2: number }[];
+  isDivisionMatch?: boolean;  // NEW: Add this parameter
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, sets } = params;
+  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, sets, isDivisionMatch } = params;
   const { score, winner } = buildHistoricScore(sets);
   const now = Date.now();
 
@@ -123,6 +126,7 @@ export async function recordHistoricMatch(params: {
     winner,
     tipsEnabled: false,
     source: 'manual',
+    isDivisionMatch: isDivisionMatch ?? true,  // NEW: Default to true (counts toward rankings)
     createdBy,
     completedAt: now,
     createdAt: now,
@@ -214,6 +218,7 @@ export async function proposeMatch(params: {
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
     source: 'live',
+    isDivisionMatch: true,  // NEW: Proposals are always division matches
     createdBy,
     scheduledAt,
     createdAt: Date.now(),
