@@ -29,6 +29,10 @@ pnpm --filter @tennis/shared test          # Run shared package tests
 pnpm --filter @tennis/shared build         # Build shared package only
 pnpm --filter @tennis/web dev              # Next.js dev server (port 3000)
 pnpm --filter @tennis/mobile start         # Expo dev server
+pnpm --filter @tennis/mobile android       # Run on Android device/emulator
+pnpm --filter @tennis/mobile ios           # Run on iOS simulator
+pnpm --filter @tennis/mobile build:android # EAS cloud build (Android)
+pnpm --filter @tennis/mobile build:ios     # EAS cloud build (iOS)
 ```
 
 ### Single test file
@@ -40,13 +44,14 @@ cd packages/shared && pnpm test -- --testPathPattern="scoreEngine"
 ### Firebase local emulation
 
 ```bash
-cd firebase && firebase emulators:start    # Firestore :8080, Auth :9099, Functions :5001, Storage :9199, UI :4000
+cd firebase && pnpm serve                  # Firestore :8080, Auth :9099, Functions :5001, Storage :9199, UI :4000
 ```
 
 ### Firebase deployment
 
 ```bash
 firebase deploy --only functions,firestore,storage,hosting
+pnpm --filter @tennis/firebase-functions deploy   # Functions only
 ```
 
 ### Branch cleanup
@@ -80,6 +85,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - `formatScoreDisplay(score: LiveScore): string` and `formatGameScore(score: LiveScore): string` — display helpers.
 - Handles 0-15-30-40-Ad-Deuce, tiebreaks (7-point win-by-2), set completion, match completion.
 - When `format.finalSetTiebreak` is `false`, the deciding set skips the tiebreak at 6-6 and plays advantage-set style (win by 2 games).
+- `ScoreResult` shape: `{ nextScore: LiveScore, tips: TipTrigger[], matchWinner?: Player, setCompleted?: boolean, gameCompleted?: boolean }`.
 - `ScoreResult.tips` is a `TipTrigger[]` — values: `'service_change' | 'tiebreak_start' | 'deuce' | 'advantage' | 'game_point' | 'set_point' | 'match_point' | 'new_set' | 'match_complete'`.
 - All live score state flows through here — never mutate `LiveScore` directly.
 
@@ -117,6 +123,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - `useRankings` — division rankings subscription. Falls back to recomputing rankings directly from completed matches (via `completedDivisionMatchesQuery` + `computeRankings`) when Firestore rankings are absent or stale.
 - `useMessages` — channel/message subscription.
 - `useUser` — user profile subscription.
+- `useNotifications` — Firebase Cloud Messaging setup and FCM token registration.
 
 All Firestore reads go through these hooks; all writes go through operations exported from `collections.ts` and `divisions.ts`. Never call Firestore directly from apps.
 
@@ -251,3 +258,5 @@ See `.env.example` at the root for the full list.
 Defined in `.github/workflows/ci.yml`. Triggers: push to `main`/`claude/**`, PRs to `main`. Node 20, pnpm 9.
 
 Pipeline: install (`--frozen-lockfile`) → typecheck → lint → test (`@tennis/shared` only). All three checks must pass before merging to `main`.
+
+`.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android preview builds via EAS. Pre-builds `@tennis/shared` and `@tennis/firebase-client` before invoking `eas build --platform android --profile preview`. Firebase env vars come from GitHub secrets.
