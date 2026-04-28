@@ -69,10 +69,15 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
 
     // 5. Report confirmed — update rankings (PDF is handled by generateReport trigger)
     if (after.status === 'completed' && before?.status !== 'completed') {
-      await recalculateRankings(after.divisionId);
-      return;
-    }
+  // CLEANUP: Remove any open/incomplete sets before recalculating rankings
+  if (after.liveScore && Array.isArray(after.liveScore.sets)) {
+    const cleanedSets = after.liveScore.sets.filter(set => !!set.winner);
+    after.liveScore.sets = cleanedSets;
+  }
 
+  await recalculateRankings(after.divisionId);
+  return;
+}
     // 6. Report disputed — notify division leader
     if (after.status === 'disputed' && before?.status !== 'disputed') {
       await notifyLeaderOfDispute(db, after, matchId);
