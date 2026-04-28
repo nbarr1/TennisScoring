@@ -3,11 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import Link from 'next/link';
 import { onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import {
   divisionsCol, divisionDoc, channelsCol, usersCol, userDoc,
   createDivision as createDivisionShared, useAuthUser,
+  functions,
 } from '@tennis/firebase-client';
 import type { Division, User, Channel } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
@@ -17,10 +19,14 @@ export default function AdminPage(): React.JSX.Element {
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [inviting, setInviting] = useState(false);
 
   // Find the division this user leads
   useEffect(() => {
@@ -55,6 +61,30 @@ export default function AdminPage(): React.JSX.Element {
       createdAt: Date.now(),
     } as Channel);
     setNewDivisionName('');
+  }
+
+
+  async function sendInviteEmail() {
+    if (!division || !inviteEmail.trim() || !inviteName.trim()) return;
+    setInviting(true);
+    setError('');
+    setInviteMessage('');
+    try {
+      const callable = httpsCallable(functions, 'sendInvite');
+      await callable({
+        email: inviteEmail.trim().toLowerCase(),
+        name: inviteName.trim(),
+        divisionId: division.id,
+      });
+      setInviteMessage(`Invite sent to ${inviteEmail.trim().toLowerCase()}.`);
+      setInviteName('');
+      setInviteEmail('');
+    } catch (e) {
+      const message = (e as { message?: string }).message;
+      setError(message || 'Failed to send invite. Please try again.');
+    } finally {
+      setInviting(false);
+    }
   }
 
   async function addPlayerByEmail() {
@@ -122,7 +152,32 @@ export default function AdminPage(): React.JSX.Element {
               </h2>
               <p style={styles.hint}>{players.length} player{players.length !== 1 ? 's' : ''} enrolled</p>
 
-              <h3 style={styles.subTitle}>Add Player by Email</h3>
+              <h3 style={styles.subTitle}>Invite New Player</h3>
+              <div style={styles.row}>
+                <input
+                  style={styles.input}
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="Player name"
+                />
+                <input
+                  style={styles.input}
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="player@company.com"
+                  type="email"
+                />
+                <button
+                  style={styles.btn}
+                  onClick={sendInviteEmail}
+                  disabled={inviting || !inviteName.trim() || !inviteEmail.trim()}
+                >
+                  {inviting ? 'Sending…' : 'Send Invite'}
+                </button>
+              </div>
+              {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
+
+              <h3 style={styles.subTitle}>Add Existing Player by Email</h3>
               <div style={styles.row}>
                 <input
                   style={styles.input}
@@ -203,6 +258,7 @@ const styles: Record<string, React.CSSProperties> = {
   input: { flex: 1, border: '1px solid #ddd', borderRadius: 10, padding: '10px 14px', fontSize: 14, outline: 'none' },
   btn: { background: 'var(--green-dark)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' as const },
   error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
+  success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
   table: { width: '100%', borderCollapse: 'collapse' as const, marginTop: 8 },
   th: { textAlign: 'left' as const, fontSize: 12, fontWeight: 700, color: '#999', padding: '10px 14px', borderBottom: '2px solid #f0f0f0', textTransform: 'uppercase' as const },
   tr: { borderBottom: '1px solid #f5f5f5' },
