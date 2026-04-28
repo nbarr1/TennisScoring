@@ -29,7 +29,7 @@ describe('extractMatchTotals', () => {
     expect(extractMatchTotals([])).toEqual({ p1Sets: 0, p2Sets: 0, p1Games: 0, p2Games: 0 });
   });
 
-  it('ignores sets without a winner when counting sets', () => {
+  it('excludes sets without a winner entirely (no games counted for incomplete sets)', () => {
     const sets = [
       { player1Games: 6, player2Games: 3, winner: 'player1' as const },
       { player1Games: 2, player2Games: 1 }, // in-progress set, no winner
@@ -37,8 +37,9 @@ describe('extractMatchTotals', () => {
     const result = extractMatchTotals(sets);
     expect(result.p1Sets).toBe(1);
     expect(result.p2Sets).toBe(0);
-    expect(result.p1Games).toBe(8);
-    expect(result.p2Games).toBe(4);
+    // Games from the in-progress set must NOT be counted
+    expect(result.p1Games).toBe(6);
+    expect(result.p2Games).toBe(3);
   });
 
   it('handles a straight-sets match', () => {

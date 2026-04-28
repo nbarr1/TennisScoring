@@ -89,10 +89,16 @@ export function updateRankingWithMatchResult(
 export function extractMatchTotals(sets: Array<{ player1Games: number; player2Games: number; winner?: string }>) {
   let p1Sets = 0, p2Sets = 0, p1Games = 0, p2Games = 0;
   for (const s of sets) {
-    p1Games += s.player1Games;
-    p2Games += s.player2Games;
-    if (s.winner === 'player1') p1Sets++;
-    else if (s.winner === 'player2') p2Sets++;
+    if (s.winner === 'player1') {
+      p1Sets++;
+      p1Games += s.player1Games;
+      p2Games += s.player2Games;
+    } else if (s.winner === 'player2') {
+      p2Sets++;
+      p1Games += s.player1Games;
+      p2Games += s.player2Games;
+    }
+    // Sets without a winner (incomplete/bad data) are excluded entirely
   }
   return { p1Sets, p2Sets, p1Games, p2Games };
 }
