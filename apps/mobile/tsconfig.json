@@ -3,6 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "module": "ESNext",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@tennis/shared": ["../../packages/shared/src/index.ts"],
       "@tennis/firebase-client": ["../../packages/firebase-client/src/index.ts"]
