@@ -1,4 +1,4 @@
-import { computeRankings } from '../rankingEngine';
+import { computeRankings, extractMatchTotals } from '../rankingEngine';
 import type { RankingInput } from '../rankingEngine';
 import type { HeadToHead } from '../../types/ranking';
 
@@ -13,6 +13,41 @@ const makePlayer = (overrides: Partial<RankingInput> & { userId: string }): Rank
   setsLost: overrides.setsLost ?? 0,
   gamesWon: overrides.gamesWon ?? 0,
   gamesLost: overrides.gamesLost ?? 0,
+});
+
+describe('extractMatchTotals', () => {
+  it('sums games and counts set winners', () => {
+    const sets = [
+      { player1Games: 6, player2Games: 3, winner: 'player1' as const },
+      { player1Games: 4, player2Games: 6, winner: 'player2' as const },
+      { player1Games: 6, player2Games: 2, winner: 'player1' as const },
+    ];
+    expect(extractMatchTotals(sets)).toEqual({ p1Sets: 2, p2Sets: 1, p1Games: 16, p2Games: 11 });
+  });
+
+  it('returns zeros for an empty sets array', () => {
+    expect(extractMatchTotals([])).toEqual({ p1Sets: 0, p2Sets: 0, p1Games: 0, p2Games: 0 });
+  });
+
+  it('ignores sets without a winner when counting sets', () => {
+    const sets = [
+      { player1Games: 6, player2Games: 3, winner: 'player1' as const },
+      { player1Games: 2, player2Games: 1 }, // in-progress set, no winner
+    ];
+    const result = extractMatchTotals(sets);
+    expect(result.p1Sets).toBe(1);
+    expect(result.p2Sets).toBe(0);
+    expect(result.p1Games).toBe(8);
+    expect(result.p2Games).toBe(4);
+  });
+
+  it('handles a straight-sets match', () => {
+    const sets = [
+      { player1Games: 6, player2Games: 1, winner: 'player1' as const },
+      { player1Games: 6, player2Games: 2, winner: 'player1' as const },
+    ];
+    expect(extractMatchTotals(sets)).toEqual({ p1Sets: 2, p2Sets: 0, p1Games: 12, p2Games: 3 });
+  });
 });
 
 describe('rankingEngine', () => {

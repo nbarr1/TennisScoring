@@ -79,7 +79,7 @@ function buildHistoricScore(
     if (setWinner === 'player1') p1Sets++; else p2Sets++;
     return { setNumber: i + 1, player1Games: s.p1, player2Games: s.p2, winner: setWinner };
   });
-  const winner: Player = p1Sets >= p2Sets ? 'player1' : 'player2';
+  const winner: Player = p1Sets > p2Sets ? 'player1' : 'player2';
   const score: LiveScore = {
     sets: builtSets,
     currentSet: sets.length - 1,
