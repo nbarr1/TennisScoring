@@ -18,7 +18,9 @@ function buildRankingsFromMatches(matches: Match[], divisionId: string): PlayerR
   const h2hAccum = new Map<string, HeadToHead>();
 
   for (const match of matches) {
-    if (!match.winner || match.player2IsGuest) continue;
+    // Skip matches without winner, non-division matches, or incomplete scores
+    if (!match.winner) continue;
+    if (match.isDivisionMatch === false) continue;  // UPDATED: Use isDivisionMatch flag
     if (!match.liveScore?.sets?.length) continue;
 
     const { player1Id, player2Id, winner, liveScore } = match;
