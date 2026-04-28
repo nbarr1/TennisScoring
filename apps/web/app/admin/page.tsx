@@ -5,13 +5,16 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import Link from 'next/link';
-import { onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { onSnapshot, getDoc } from 'firebase/firestore';
 import {
-  divisionsCol, divisionDoc, channelsCol, usersCol, userDoc,
-  createDivision as createDivisionShared, useAuthUser,
+  divisionsCol,
+  userDoc,
+  createDivision as createDivisionShared,
+  addPlayerToDivisionByEmail,
+  useAuthUser,
   functions,
 } from '@tennis/firebase-client';
-import type { Division, User, Channel } from '@tennis/shared';
+import type { Division, User } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
 export default function AdminPage(): React.JSX.Element {
@@ -31,15 +34,27 @@ export default function AdminPage(): React.JSX.Element {
   // Find the division this user leads
   useEffect(() => {
     if (!firebaseUser) return;
-    const q = query(divisionsCol(), where('leaderIds', 'array-contains', firebaseUser.uid));
+    const q = query(
+      divisionsCol(),
+      where('leaderIds', 'array-contains', firebaseUser.uid),
+    );
     return onSnapshot(q, async (snap) => {
       if (!snap.empty) {
-        const div = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<Division, 'id'>) };
+        const div = {
+          id: snap.docs[0].id,
+          ...(snap.docs[0].data() as Omit<Division, 'id'>),
+        };
         setDivision(div);
         // Load player profiles
         if (div.playerIds.length > 0) {
-          const profiles = await Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))));
-          setPlayers(profiles.filter((d) => d.exists()).map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })));
+          const profiles = await Promise.all(
+            div.playerIds.map((id) => getDoc(userDoc(id))),
+          );
+          setPlayers(
+            profiles
+              .filter((d) => d.exists())
+              .map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })),
+          );
         }
       }
       setLoading(false);
@@ -48,21 +63,12 @@ export default function AdminPage(): React.JSX.Element {
 
   async function createDivision() {
     if (!firebaseUser || !newDivisionName.trim()) return;
-    const divisionId = await createDivisionShared(
-      newDivisionName.trim(),
-      firebaseUser.uid,
-      { displayName: firebaseUser.displayName ?? undefined, email: firebaseUser.email ?? undefined },
-    );
-    await addDoc(channelsCol(), {
-      type: 'division',
-      name: `${newDivisionName.trim()} Chat`,
-      divisionId,
-      participantIds: [firebaseUser.uid],
-      createdAt: Date.now(),
-    } as Channel);
+    await createDivisionShared(newDivisionName.trim(), firebaseUser.uid, {
+      displayName: firebaseUser.displayName ?? undefined,
+      email: firebaseUser.email ?? undefined,
+    });
     setNewDivisionName('');
   }
-
 
   async function sendInviteEmail() {
     if (!division || !inviteEmail.trim() || !inviteName.trim()) return;
@@ -92,18 +98,11 @@ export default function AdminPage(): React.JSX.Element {
     setAdding(true);
     setError('');
     try {
-      const q = query(usersCol(), where('email', '==', newPlayerEmail.trim().toLowerCase()));
-      const snap = await (await import('firebase/firestore')).getDocs(q);
-      if (snap.empty) {
-        setError('No user found with that email. They must sign in to the app first.');
-        return;
-      }
-      const userId = snap.docs[0].id;
-      await updateDoc(divisionDoc(division.id), { playerIds: arrayUnion(userId) });
-      await updateDoc(userDoc(userId), { divisionId: division.id });
+      await addPlayerToDivisionByEmail(division.id, newPlayerEmail.trim());
       setNewPlayerEmail('');
-    } catch {
-      setError('Failed to add player. Please try again.');
+    } catch (e) {
+      const message = (e as { message?: string }).message;
+      setError(message || 'Failed to add player. Please try again.');
     } finally {
       setAdding(false);
     }
@@ -114,11 +113,24 @@ export default function AdminPage(): React.JSX.Element {
       <nav style={styles.nav}>
         <span style={styles.navBrand}>🎾 Tennis League</span>
         <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>Rankings</Link>
-          <Link href="/matches" style={styles.navLink}>Matches</Link>
-          <Link href="/messages" style={styles.navLink}>Messages</Link>
-          <Link href="/profile" style={styles.navLink}>Profile</Link>
-          <Link href="/admin" style={{ ...styles.navLink, ...styles.navLinkActive }}>Admin</Link>
+          <Link href="/dashboard" style={styles.navLink}>
+            Rankings
+          </Link>
+          <Link href="/matches" style={styles.navLink}>
+            Matches
+          </Link>
+          <Link href="/messages" style={styles.navLink}>
+            Messages
+          </Link>
+          <Link href="/profile" style={styles.navLink}>
+            Profile
+          </Link>
+          <Link
+            href="/admin"
+            style={{ ...styles.navLink, ...styles.navLinkActive }}
+          >
+            Admin
+          </Link>
         </div>
       </nav>
 
@@ -130,7 +142,10 @@ export default function AdminPage(): React.JSX.Element {
         ) : !division ? (
           <div style={styles.card}>
             <h2 style={styles.sectionTitle}>Create Your Division</h2>
-            <p style={styles.hint}>You are not currently managing a division. Create one to get started.</p>
+            <p style={styles.hint}>
+              You are not currently managing a division. Create one to get
+              started.
+            </p>
             <div style={styles.row}>
               <input
                 style={styles.input}
@@ -138,7 +153,11 @@ export default function AdminPage(): React.JSX.Element {
                 onChange={(e) => setNewDivisionName(e.target.value)}
                 placeholder="Division name (e.g. Office A)"
               />
-              <button style={styles.btn} onClick={createDivision} disabled={!newDivisionName.trim()}>
+              <button
+                style={styles.btn}
+                onClick={createDivision}
+                disabled={!newDivisionName.trim()}
+              >
                 Create Division
               </button>
             </div>
@@ -150,7 +169,10 @@ export default function AdminPage(): React.JSX.Element {
                 {division.name}
                 <span style={styles.badge}>Code {division.inviteCode}</span>
               </h2>
-              <p style={styles.hint}>{players.length} player{players.length !== 1 ? 's' : ''} enrolled</p>
+              <p style={styles.hint}>
+                {players.length} player{players.length !== 1 ? 's' : ''}{' '}
+                enrolled
+              </p>
 
               <h3 style={styles.subTitle}>Invite New Player</h3>
               <div style={styles.row}>
@@ -170,7 +192,9 @@ export default function AdminPage(): React.JSX.Element {
                 <button
                   style={styles.btn}
                   onClick={sendInviteEmail}
-                  disabled={inviting || !inviteName.trim() || !inviteEmail.trim()}
+                  disabled={
+                    inviting || !inviteName.trim() || !inviteEmail.trim()
+                  }
                 >
                   {inviting ? 'Sending…' : 'Send Invite'}
                 </button>
@@ -186,7 +210,11 @@ export default function AdminPage(): React.JSX.Element {
                   placeholder="player@company.com"
                   type="email"
                 />
-                <button style={styles.btn} onClick={addPlayerByEmail} disabled={adding || !newPlayerEmail.trim()}>
+                <button
+                  style={styles.btn}
+                  onClick={addPlayerByEmail}
+                  disabled={adding || !newPlayerEmail.trim()}
+                >
                   {adding ? 'Adding…' : 'Add Player'}
                 </button>
               </div>
@@ -196,7 +224,9 @@ export default function AdminPage(): React.JSX.Element {
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Players</h2>
               {players.length === 0 ? (
-                <p style={styles.hint}>No players yet. Add players by email above.</p>
+                <p style={styles.hint}>
+                  No players yet. Add players by email above.
+                </p>
               ) : (
                 <table style={styles.table}>
                   <thead>
@@ -212,18 +242,40 @@ export default function AdminPage(): React.JSX.Element {
                       <tr key={p.id} style={styles.tr}>
                         <td style={styles.td}>{p.displayName}</td>
                         <td style={styles.td}>
-                          {p.contactPreferences.allowEmail ? (
-                            <a href={`mailto:${p.email}`} style={styles.contactLink}>{p.email}</a>
-                          ) : '—'}
+                          {p.contactPreferences?.allowEmail !== false ? (
+                            <a
+                              href={`mailto:${p.email}`}
+                              style={styles.contactLink}
+                            >
+                              {p.email}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td style={styles.td}>
-                          {p.phone && p.contactPreferences.allowSMS ? (
-                            <a href={`tel:${p.phone}`} style={styles.contactLink}>{p.phone}</a>
-                          ) : '—'}
+                          {p.phone && p.contactPreferences?.allowSMS ? (
+                            <a
+                              href={`tel:${p.phone}`}
+                              style={styles.contactLink}
+                            >
+                              {p.phone}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td style={styles.td}>
-                          <span style={division.leaderIds.includes(p.id) ? styles.leaderBadge : styles.playerBadge}>
-                            {division.leaderIds.includes(p.id) ? 'Leader' : 'Player'}
+                          <span
+                            style={
+                              division.leaderIds.includes(p.id)
+                                ? styles.leaderBadge
+                                : styles.playerBadge
+                            }
+                          >
+                            {division.leaderIds.includes(p.id)
+                              ? 'Leader'
+                              : 'Player'}
                           </span>
                         </td>
                       </tr>
@@ -241,29 +293,114 @@ export default function AdminPage(): React.JSX.Element {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: '100vh', background: 'var(--bg)' },
-  nav: { background: 'var(--green-dark)', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  nav: {
+    background: 'var(--green-dark)',
+    padding: '16px 32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
   navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24 },
+  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
   navLink: { color: 'rgba(255,255,255,0.75)', fontWeight: 500, fontSize: 15 },
-  navLinkActive: { color: '#fff', borderBottom: '2px solid #ffdc60', paddingBottom: 2 },
+  navLinkActive: {
+    color: '#fff',
+    borderBottom: '2px solid #ffdc60',
+    paddingBottom: 2,
+  },
   main: { maxWidth: 900, margin: '0 auto', padding: '40px 24px' },
-  pageTitle: { fontSize: 28, fontWeight: 800, color: 'var(--green-dark)', marginBottom: 24 },
-  placeholder: { color: 'var(--muted)', padding: 40, textAlign: 'center' as const },
-  card: { background: '#fff', borderRadius: 14, padding: 28, marginBottom: 20, boxShadow: '0 2px 10px rgba(0,0,0,0.05)' },
-  sectionTitle: { fontSize: 20, fontWeight: 700, color: 'var(--green-dark)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12 },
-  subTitle: { fontSize: 15, fontWeight: 700, color: '#444', margin: '20px 0 10px' },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: 800,
+    color: 'var(--green-dark)',
+    marginBottom: 24,
+  },
+  placeholder: {
+    color: 'var(--muted)',
+    padding: 40,
+    textAlign: 'center' as const,
+  },
+  card: {
+    background: '#fff',
+    borderRadius: 14,
+    padding: 28,
+    marginBottom: 20,
+    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: 'var(--green-dark)',
+    marginBottom: 8,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+  },
+  subTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: '#444',
+    margin: '20px 0 10px',
+  },
   hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
-  badge: { fontSize: 12, background: '#e8f5e9', color: 'var(--green-dark)', padding: '2px 10px', borderRadius: 20, fontWeight: 600 },
-  row: { display: 'flex', gap: 10 },
-  input: { flex: 1, border: '1px solid #ddd', borderRadius: 10, padding: '10px 14px', fontSize: 14, outline: 'none' },
-  btn: { background: 'var(--green-dark)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap' as const },
+  badge: {
+    fontSize: 12,
+    background: '#e8f5e9',
+    color: 'var(--green-dark)',
+    padding: '2px 10px',
+    borderRadius: 20,
+    fontWeight: 600,
+  },
+  row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  input: {
+    flex: 1,
+    border: '1px solid #ddd',
+    borderRadius: 10,
+    padding: '10px 14px',
+    fontSize: 14,
+    outline: 'none',
+  },
+  btn: {
+    background: 'var(--green-dark)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 10,
+    padding: '10px 20px',
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
   error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
   success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
   table: { width: '100%', borderCollapse: 'collapse' as const, marginTop: 8 },
-  th: { textAlign: 'left' as const, fontSize: 12, fontWeight: 700, color: '#999', padding: '10px 14px', borderBottom: '2px solid #f0f0f0', textTransform: 'uppercase' as const },
+  th: {
+    textAlign: 'left' as const,
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#999',
+    padding: '10px 14px',
+    borderBottom: '2px solid #f0f0f0',
+    textTransform: 'uppercase' as const,
+  },
   tr: { borderBottom: '1px solid #f5f5f5' },
   td: { padding: '12px 14px', fontSize: 14, color: '#333' },
   contactLink: { color: 'var(--green-dark)', fontWeight: 500 },
-  leaderBadge: { background: '#fff3cd', color: '#856404', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 },
-  playerBadge: { background: '#f0f0f0', color: '#555', padding: '2px 10px', borderRadius: 20, fontSize: 12 },
+  leaderBadge: {
+    background: '#fff3cd',
+    color: '#856404',
+    padding: '2px 10px',
+    borderRadius: 20,
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  playerBadge: {
+    background: '#f0f0f0',
+    color: '#555',
+    padding: '2px 10px',
+    borderRadius: 20,
+    fontSize: 12,
+  },
 };

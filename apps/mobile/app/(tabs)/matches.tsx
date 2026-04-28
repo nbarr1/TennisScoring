@@ -1,15 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, SectionList, StyleSheet, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator, FlatList,
+  View,
+  Text,
+  SectionList,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { onSnapshot } from 'firebase/firestore';
 import {
-  divisionMatchesQuery, createMatch, recordHistoricMatch, searchDivisionPlayers,
-  proposeMatch, acceptMatchProposal, declineMatchProposal,
+  divisionMatchesQuery,
+  createMatch,
+  recordHistoricMatch,
+  searchDivisionPlayers,
+  proposeMatch,
+  acceptMatchProposal,
+  declineMatchProposal,
 } from '@tennis/firebase-client';
-import { formatScoreDisplay, formatGameScore, DAY_LABELS } from '@tennis/shared';
+import {
+  formatScoreDisplay,
+  formatGameScore,
+  DAY_LABELS,
+} from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 import type { Match, User, Availability } from '@tennis/shared';
 
@@ -22,7 +39,13 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function formatScheduledAt(ts?: number): string {
   if (!ts) return 'Time TBD';
   const d = new Date(ts);
-  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -46,7 +69,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function MatchCard({
-  match, onPress, actionKind, onAccept, onDecline, onWithdraw,
+  match,
+  onPress,
+  actionKind,
+  onAccept,
+  onDecline,
+  onWithdraw,
 }: {
   match: Match;
   onPress: () => void;
@@ -56,12 +84,21 @@ function MatchCard({
   onWithdraw?: () => void;
 }) {
   const isLive = match.status === 'in_progress';
-  const isUpcoming = match.status === 'scheduled' || match.status === 'proposed';
+  const isUpcoming =
+    match.status === 'scheduled' || match.status === 'proposed';
 
   return (
-    <TouchableOpacity style={[styles.card, isLive && styles.cardLive]} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.card, isLive && styles.cardLive]}
+      onPress={onPress}
+    >
       <View style={styles.cardHeader}>
-        <Text style={[styles.status, { color: STATUS_COLOR[match.status] ?? '#888' }]}>
+        <Text
+          style={[
+            styles.status,
+            { color: STATUS_COLOR[match.status] ?? '#888' },
+          ]}
+        >
           {STATUS_LABEL[match.status] ?? match.status}
         </Text>
         {match.winner && (
@@ -74,25 +111,41 @@ function MatchCard({
       </View>
 
       {isUpcoming && (
-        <Text style={styles.scheduledLine}>🗓 {formatScheduledAt(match.scheduledAt)}</Text>
+        <Text style={styles.scheduledLine}>
+          🗓 {formatScheduledAt(match.scheduledAt)}
+        </Text>
       )}
 
       {!isUpcoming && (
         <View style={styles.scoreRow}>
-          <Text style={styles.setScore}>{formatScoreDisplay(match.liveScore)}</Text>
+          <Text style={styles.setScore}>
+            {formatScoreDisplay(match.liveScore)}
+          </Text>
           {isLive && (
-            <Text style={styles.gameScore}>{formatGameScore(match.liveScore)}</Text>
+            <Text style={styles.gameScore}>
+              {formatGameScore(match.liveScore)}
+            </Text>
           )}
         </View>
       )}
 
       <View style={styles.players}>
-        <Text style={[styles.playerName, match.winner === 'player1' && styles.winner]}>
+        <Text
+          style={[
+            styles.playerName,
+            match.winner === 'player1' && styles.winner,
+          ]}
+        >
           {match.player1Name ?? 'Player 1'}
         </Text>
         <Text style={styles.vs}>vs</Text>
         <View style={styles.playerRight}>
-          <Text style={[styles.playerName, match.winner === 'player2' && styles.winner]}>
+          <Text
+            style={[
+              styles.playerName,
+              match.winner === 'player2' && styles.winner,
+            ]}
+          >
             {match.player2Name ?? 'Player 2'}
           </Text>
           {match.player2IsGuest && <Text style={styles.guestBadge}>Guest</Text>}
@@ -101,7 +154,8 @@ function MatchCard({
 
       {isLive && (
         <Text style={styles.serverLine}>
-          {match.liveScore.server === 'player1' ? 'P1' : 'P2'} serves · {match.liveScore.serviceSide} side
+          {match.liveScore.server === 'player1' ? 'P1' : 'P2'} serves ·{' '}
+          {match.liveScore.serviceSide} side
         </Text>
       )}
 
@@ -133,7 +187,9 @@ export default function MatchesScreen() {
   const [showCreate, setShowCreate] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
   const [createMode, setCreateMode] = useState<'live' | 'historic'>('live');
-  const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>('search');
+  const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>(
+    'search',
+  );
   const [guestName, setGuestName] = useState('');
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -209,7 +265,7 @@ export default function MatchesScreen() {
               player2Name: selectedOpponent!.displayName,
               divisionId,
               createdBy: user.id,
-            }
+            },
       );
       resetCreateModal();
       router.push(`/match/${matchId}`);
@@ -226,16 +282,34 @@ export default function MatchesScreen() {
     if (opponentMode === 'search' && !selectedOpponent) return;
     if (opponentMode === 'guest' && !guestName.trim()) return;
 
-    const parsed = historicSets.map((s) => ({ p1: parseInt(s.p1, 10), p2: parseInt(s.p2, 10) }));
-    const invalid = parsed.some((s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0);
+    const parsed = historicSets.map((s) => ({
+      p1: parseInt(s.p1, 10),
+      p2: parseInt(s.p2, 10),
+    }));
+    const invalid = parsed.some(
+      (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
+    );
     if (invalid || parsed.length === 0) {
-      Alert.alert('Invalid Score', 'Please enter a valid number of games for each set.');
+      Alert.alert(
+        'Invalid Score',
+        'Please enter a valid number of games for each set.',
+      );
+      return;
+    }
+    if (parsed.some((s) => s.p1 === s.p2)) {
+      Alert.alert(
+        'Invalid Score',
+        'Each set must have a clear winner. Check the set scores.',
+      );
       return;
     }
     const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
     const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
     if (p1Sets === p2Sets) {
-      Alert.alert('Invalid Score', 'The match must have a clear winner. Check the set scores.');
+      Alert.alert(
+        'Invalid Score',
+        'The match must have a clear winner. Check the set scores.',
+      );
       return;
     }
     setCreating(true);
@@ -261,7 +335,7 @@ export default function MatchesScreen() {
               divisionId,
               createdBy: user.id,
               sets: parsed,
-            }
+            },
       );
       resetCreateModal();
       Alert.alert(
@@ -278,13 +352,23 @@ export default function MatchesScreen() {
   }
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#1a472a" /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#1a472a" />
+      </View>
+    );
   }
 
   const uid = user?.id;
-  const toItem = (match: Match, actionKind: ActionKind = null): MatchItem => ({ id: match.id, match, actionKind });
+  const toItem = (match: Match, actionKind: ActionKind = null): MatchItem => ({
+    id: match.id,
+    match,
+    actionKind,
+  });
 
-  const liveMatches = matches.filter((m) => m.status === 'in_progress').map((m) => toItem(m));
+  const liveMatches = matches
+    .filter((m) => m.status === 'in_progress')
+    .map((m) => toItem(m));
   const pendingInvites = matches
     .filter((m) => m.status === 'proposed' && m.player2Id === uid)
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
@@ -298,14 +382,26 @@ export default function MatchesScreen() {
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m));
   const otherStatuses = new Set(['in_progress', 'proposed', 'scheduled']);
-  const otherMatches = matches.filter((m) => !otherStatuses.has(m.status)).map((m) => toItem(m));
+  const otherMatches = matches
+    .filter((m) => !otherStatuses.has(m.status))
+    .map((m) => toItem(m));
 
   const sections: { title: string; data: MatchItem[] }[] = [
-    ...(liveMatches.length > 0 ? [{ title: 'Now Live', data: liveMatches }] : []),
-    ...(pendingInvites.length > 0 ? [{ title: 'Pending Invitations', data: pendingInvites }] : []),
-    ...(awaitingOpponent.length > 0 ? [{ title: 'Awaiting Opponent', data: awaitingOpponent }] : []),
-    ...(upcomingMatches.length > 0 ? [{ title: 'Upcoming', data: upcomingMatches }] : []),
-    ...(otherMatches.length > 0 ? [{ title: 'All Matches', data: otherMatches }] : []),
+    ...(liveMatches.length > 0
+      ? [{ title: 'Now Live', data: liveMatches }]
+      : []),
+    ...(pendingInvites.length > 0
+      ? [{ title: 'Pending Invitations', data: pendingInvites }]
+      : []),
+    ...(awaitingOpponent.length > 0
+      ? [{ title: 'Awaiting Opponent', data: awaitingOpponent }]
+      : []),
+    ...(upcomingMatches.length > 0
+      ? [{ title: 'Upcoming', data: upcomingMatches }]
+      : []),
+    ...(otherMatches.length > 0
+      ? [{ title: 'All Matches', data: otherMatches }]
+      : []),
   ];
 
   return (
@@ -313,7 +409,9 @@ export default function MatchesScreen() {
       {matches.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>No Matches</Text>
-          <Text style={styles.emptyBody}>Create a new match to get started.</Text>
+          <Text style={styles.emptyBody}>
+            Create a new match to get started.
+          </Text>
         </View>
       ) : (
         <SectionList
@@ -324,15 +422,32 @@ export default function MatchesScreen() {
               match={item.match}
               onPress={() => router.push(`/match/${item.id}`)}
               actionKind={item.actionKind}
-              onAccept={() => acceptMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not accept.'))}
-              onDecline={() => declineMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not decline.'))}
-              onWithdraw={() => declineMatchProposal(item.id).catch(() => Alert.alert('Error', 'Could not cancel.'))}
+              onAccept={() =>
+                acceptMatchProposal(item.id).catch(() =>
+                  Alert.alert('Error', 'Could not accept.'),
+                )
+              }
+              onDecline={() =>
+                declineMatchProposal(item.id).catch(() =>
+                  Alert.alert('Error', 'Could not decline.'),
+                )
+              }
+              onWithdraw={() =>
+                declineMatchProposal(item.id).catch(() =>
+                  Alert.alert('Error', 'Could not cancel.'),
+                )
+              }
             />
           )}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
               {section.title === 'Now Live' && <View style={styles.liveDot} />}
-              <Text style={[styles.sectionTitle, section.title === 'Now Live' && styles.sectionTitleLive]}>
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  section.title === 'Now Live' && styles.sectionTitleLive,
+                ]}
+              >
                 {section.title}
               </Text>
             </View>
@@ -342,13 +457,28 @@ export default function MatchesScreen() {
       )}
 
       <View style={styles.fabGroup}>
-        <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => { setCreateMode('historic'); setShowCreate(true); }}>
+        <TouchableOpacity
+          style={[styles.fab, styles.fabSecondary]}
+          onPress={() => {
+            setCreateMode('historic');
+            setShowCreate(true);
+          }}
+        >
           <Text style={styles.fabSecondaryText}>📋 Past</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.fab, styles.fabSecondary]} onPress={() => setShowPropose(true)}>
+        <TouchableOpacity
+          style={[styles.fab, styles.fabSecondary]}
+          onPress={() => setShowPropose(true)}
+        >
           <Text style={styles.fabSecondaryText}>📅 Propose</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.fab} onPress={() => { setCreateMode('live'); setShowCreate(true); }}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => {
+            setCreateMode('live');
+            setShowCreate(true);
+          }}
+        >
           <Text style={styles.fabText}>+ Live</Text>
         </TouchableOpacity>
       </View>
@@ -365,24 +495,50 @@ export default function MatchesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
-              {createMode === 'historic' ? 'Record Past Match' : 'New Live Match'}
+              {createMode === 'historic'
+                ? 'Record Past Match'
+                : 'New Live Match'}
             </Text>
 
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
               <TouchableOpacity
-                style={[styles.modeBtn, opponentMode === 'search' && styles.modeBtnActive]}
-                onPress={() => { setOpponentMode('search'); setGuestName(''); }}
+                style={[
+                  styles.modeBtn,
+                  opponentMode === 'search' && styles.modeBtnActive,
+                ]}
+                onPress={() => {
+                  setOpponentMode('search');
+                  setGuestName('');
+                }}
               >
-                <Text style={[styles.modeBtnText, opponentMode === 'search' && styles.modeBtnTextActive]}>
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    opponentMode === 'search' && styles.modeBtnTextActive,
+                  ]}
+                >
                   Search Player
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modeBtn, opponentMode === 'guest' && styles.modeBtnActive]}
-                onPress={() => { setOpponentMode('guest'); setSelectedOpponent(null); setSearchText(''); setSearchResults([]); }}
+                style={[
+                  styles.modeBtn,
+                  opponentMode === 'guest' && styles.modeBtnActive,
+                ]}
+                onPress={() => {
+                  setOpponentMode('guest');
+                  setSelectedOpponent(null);
+                  setSearchText('');
+                  setSearchResults([]);
+                }}
               >
-                <Text style={[styles.modeBtnText, opponentMode === 'guest' && styles.modeBtnTextActive]}>
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    opponentMode === 'guest' && styles.modeBtnTextActive,
+                  ]}
+                >
                   Guest / No Account
                 </Text>
               </TouchableOpacity>
@@ -401,10 +557,19 @@ export default function MatchesScreen() {
             ) : selectedOpponent ? (
               <View style={styles.selectedPlayer}>
                 <View style={styles.playerChip}>
-                  <Text style={styles.playerChipName}>{selectedOpponent.displayName}</Text>
-                  <Text style={styles.playerChipEmail}>{selectedOpponent.email}</Text>
+                  <Text style={styles.playerChipName}>
+                    {selectedOpponent.displayName}
+                  </Text>
+                  <Text style={styles.playerChipEmail}>
+                    {selectedOpponent.email}
+                  </Text>
                 </View>
-                <TouchableOpacity onPress={() => { setSelectedOpponent(null); setSearchText(''); }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText('');
+                  }}
+                >
                   <Text style={styles.changeText}>Change</Text>
                 </TouchableOpacity>
               </View>
@@ -420,7 +585,12 @@ export default function MatchesScreen() {
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
-                  {searching && <ActivityIndicator style={styles.searchSpinner} color="#1a472a" />}
+                  {searching && (
+                    <ActivityIndicator
+                      style={styles.searchSpinner}
+                      color="#1a472a"
+                    />
+                  )}
                 </View>
                 {searchResults.length > 0 && (
                   <FlatList
@@ -431,79 +601,124 @@ export default function MatchesScreen() {
                     renderItem={({ item }) => (
                       <TouchableOpacity
                         style={styles.resultRow}
-                        onPress={() => { setSelectedOpponent(item); setSearchResults([]); }}
+                        onPress={() => {
+                          setSelectedOpponent(item);
+                          setSearchResults([]);
+                        }}
                       >
-                        <Text style={styles.resultName}>{item.displayName}</Text>
+                        <Text style={styles.resultName}>
+                          {item.displayName}
+                        </Text>
                         <Text style={styles.resultEmail}>{item.email}</Text>
                       </TouchableOpacity>
                     )}
                   />
                 )}
-                {searchText.trim().length > 0 && !searching && searchResults.length === 0 && (
-                  <Text style={styles.noResults}>No players found.</Text>
-                )}
+                {searchText.trim().length > 0 &&
+                  !searching &&
+                  searchResults.length === 0 && (
+                    <Text style={styles.noResults}>No players found.</Text>
+                  )}
               </>
             )}
 
             {/* Historic set-score entry */}
-            {createMode === 'historic' && (opponentMode === 'guest' ? guestName.trim() : selectedOpponent) && (
-              <View style={styles.setsContainer}>
-                <Text style={styles.modalLabel}>Enter set scores (your games first)</Text>
-                {historicSets.map((s, i) => (
-                  <View key={i} style={styles.setRow}>
-                    <Text style={styles.setLabel}>Set {i + 1}</Text>
-                    <TextInput
-                      style={styles.setInput}
-                      value={s.p1}
-                      onChangeText={(v) => {
-                        const next = [...historicSets];
-                        next[i] = { ...next[i], p1: v };
-                        setHistoricSets(next);
-                      }}
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholder="You"
-                    />
-                    <Text style={styles.setDash}>–</Text>
-                    <TextInput
-                      style={styles.setInput}
-                      value={s.p2}
-                      onChangeText={(v) => {
-                        const next = [...historicSets];
-                        next[i] = { ...next[i], p2: v };
-                        setHistoricSets(next);
-                      }}
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholder="Opp"
-                    />
-                    {historicSets.length > 1 && (
-                      <TouchableOpacity onPress={() => setHistoricSets(historicSets.filter((_, j) => j !== i))}>
-                        <Text style={styles.removeSet}>✕</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-                {historicSets.length < 5 && (
-                  <TouchableOpacity onPress={() => setHistoricSets([...historicSets, { p1: '', p2: '' }])}>
-                    <Text style={styles.addSet}>+ Add Set</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
+            {createMode === 'historic' &&
+              (opponentMode === 'guest'
+                ? guestName.trim()
+                : selectedOpponent) && (
+                <View style={styles.setsContainer}>
+                  <Text style={styles.modalLabel}>
+                    Enter set scores (your games first)
+                  </Text>
+                  {historicSets.map((s, i) => (
+                    <View key={i} style={styles.setRow}>
+                      <Text style={styles.setLabel}>Set {i + 1}</Text>
+                      <TextInput
+                        style={styles.setInput}
+                        value={s.p1}
+                        onChangeText={(v) => {
+                          const next = [...historicSets];
+                          next[i] = { ...next[i], p1: v };
+                          setHistoricSets(next);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholder="You"
+                      />
+                      <Text style={styles.setDash}>–</Text>
+                      <TextInput
+                        style={styles.setInput}
+                        value={s.p2}
+                        onChangeText={(v) => {
+                          const next = [...historicSets];
+                          next[i] = { ...next[i], p2: v };
+                          setHistoricSets(next);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholder="Opp"
+                      />
+                      {historicSets.length > 1 && (
+                        <TouchableOpacity
+                          onPress={() =>
+                            setHistoricSets(
+                              historicSets.filter((_, j) => j !== i),
+                            )
+                          }
+                        >
+                          <Text style={styles.removeSet}>✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                  {historicSets.length < 5 && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        setHistoricSets([...historicSets, { p1: '', p2: '' }])
+                      }
+                    >
+                      <Text style={styles.addSet}>+ Add Set</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={resetCreateModal}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={resetCreateModal}
+              >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.createBtn, (creating || (opponentMode === 'search' ? !selectedOpponent : !guestName.trim())) && styles.createBtnDisabled]}
-                onPress={createMode === 'historic' ? handleRecordHistoric : handleCreateMatch}
-                disabled={creating || (opponentMode === 'search' ? !selectedOpponent : !guestName.trim())}
+                style={[
+                  styles.createBtn,
+                  (creating ||
+                    (opponentMode === 'search'
+                      ? !selectedOpponent
+                      : !guestName.trim())) &&
+                    styles.createBtnDisabled,
+                ]}
+                onPress={
+                  createMode === 'historic'
+                    ? handleRecordHistoric
+                    : handleCreateMatch
+                }
+                disabled={
+                  creating ||
+                  (opponentMode === 'search'
+                    ? !selectedOpponent
+                    : !guestName.trim())
+                }
               >
-                {creating
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.createText}>{createMode === 'historic' ? 'Record' : 'Create'}</Text>}
+                {creating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.createText}>
+                    {createMode === 'historic' ? 'Record' : 'Create'}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -597,10 +812,19 @@ function ProposeMatchModal({
             <>
               <View style={styles.selectedPlayer}>
                 <View style={styles.playerChip}>
-                  <Text style={styles.playerChipName}>{selectedOpponent.displayName}</Text>
-                  <Text style={styles.playerChipEmail}>{selectedOpponent.email}</Text>
+                  <Text style={styles.playerChipName}>
+                    {selectedOpponent.displayName}
+                  </Text>
+                  <Text style={styles.playerChipEmail}>
+                    {selectedOpponent.email}
+                  </Text>
                 </View>
-                <TouchableOpacity onPress={() => { setSelectedOpponent(null); setSearchText(''); }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText('');
+                  }}
+                >
                   <Text style={styles.changeText}>Change</Text>
                 </TouchableOpacity>
               </View>
@@ -639,7 +863,12 @@ function ProposeMatchModal({
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                {searching && <ActivityIndicator style={styles.searchSpinner} color="#1a472a" />}
+                {searching && (
+                  <ActivityIndicator
+                    style={styles.searchSpinner}
+                    color="#1a472a"
+                  />
+                )}
               </View>
               {searchResults.length > 0 && (
                 <FlatList
@@ -650,7 +879,10 @@ function ProposeMatchModal({
                   renderItem={({ item }) => (
                     <TouchableOpacity
                       style={styles.resultRow}
-                      onPress={() => { setSelectedOpponent(item); setSearchResults([]); }}
+                      onPress={() => {
+                        setSelectedOpponent(item);
+                        setSearchResults([]);
+                      }}
                     >
                       <Text style={styles.resultName}>{item.displayName}</Text>
                       <Text style={styles.resultEmail}>{item.email}</Text>
@@ -658,9 +890,11 @@ function ProposeMatchModal({
                   )}
                 />
               )}
-              {searchText.trim().length > 0 && !searching && searchResults.length === 0 && (
-                <Text style={styles.noResults}>No players found.</Text>
-              )}
+              {searchText.trim().length > 0 &&
+                !searching &&
+                searchResults.length === 0 && (
+                  <Text style={styles.noResults}>No players found.</Text>
+                )}
             </>
           )}
 
@@ -669,11 +903,19 @@ function ProposeMatchModal({
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.createBtn, (submitting || !selectedOpponent || !date || !time) && styles.createBtnDisabled]}
+              style={[
+                styles.createBtn,
+                (submitting || !selectedOpponent || !date || !time) &&
+                  styles.createBtnDisabled,
+              ]}
               onPress={handleSubmit}
               disabled={submitting || !selectedOpponent || !date || !time}
             >
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.createText}>Send Proposal</Text>}
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.createText}>Send Proposal</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -683,8 +925,15 @@ function ProposeMatchModal({
 }
 
 function AvailabilityHint({ availability }: { availability?: Availability }) {
-  if (!availability || (availability.slots.length === 0 && !availability.note)) {
-    return <Text style={styles.availabilityEmpty}>Opponent hasn&apos;t set their preferred play times.</Text>;
+  if (
+    !availability ||
+    (availability.slots.length === 0 && !availability.note)
+  ) {
+    return (
+      <Text style={styles.availabilityEmpty}>
+        Opponent hasn&apos;t set their preferred play times.
+      </Text>
+    );
   }
   return (
     <View style={styles.availabilityBox}>
@@ -692,96 +941,326 @@ function AvailabilityHint({ availability }: { availability?: Availability }) {
       {availability.slots.map((s, i) => (
         <View key={i} style={styles.availabilityRow}>
           <Text style={styles.availabilityDay}>{DAY_LABELS[s.day]}</Text>
-          <Text style={styles.availabilityTime}>{s.from}–{s.to}</Text>
+          <Text style={styles.availabilityTime}>
+            {s.from}–{s.to}
+          </Text>
         </View>
       ))}
-      {availability.note && <Text style={styles.availabilityNote}>{availability.note}</Text>}
+      {availability.note && (
+        <Text style={styles.availabilityNote}>{availability.note}</Text>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f0' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
   list: { padding: 16, paddingBottom: 80 },
 
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   sectionTitleLive: { color: '#27ae60' },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#27ae60' },
 
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
   cardLive: { borderLeftWidth: 4, borderLeftColor: '#27ae60' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   status: { fontWeight: '700', fontSize: 13 },
-  winnerBadge: { fontSize: 11, fontWeight: '600', color: '#1a472a', backgroundColor: '#e8f5e9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  winnerBadge: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1a472a',
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
 
-  scoreRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10, marginBottom: 8 },
-  setScore: { fontSize: 20, fontWeight: '700', color: '#222', letterSpacing: 1 },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginBottom: 8,
+  },
+  setScore: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#222',
+    letterSpacing: 1,
+  },
   gameScore: { fontSize: 15, fontWeight: '600', color: '#27ae60' },
 
-  players: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  players: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   playerName: { fontSize: 15, fontWeight: '600', color: '#333', flex: 1 },
-  playerRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end' },
+  playerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
   winner: { color: '#1a472a' },
   vs: { fontSize: 13, color: '#999', marginHorizontal: 12 },
-  guestBadge: { fontSize: 10, fontWeight: '700', color: '#e67e22', backgroundColor: '#fff3e0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, overflow: 'hidden' },
+  guestBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#e67e22',
+    backgroundColor: '#fff3e0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
   serverLine: { fontSize: 12, color: '#888', marginTop: 6 },
 
-  fabGroup: { position: 'absolute', bottom: 24, right: 16, flexDirection: 'row', gap: 10 },
-  fab: { backgroundColor: '#1a472a', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 28, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
+  fabGroup: {
+    position: 'absolute',
+    bottom: 24,
+    right: 16,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  fab: {
+    backgroundColor: '#1a472a',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 28,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   fabText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  fabSecondary: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#1a472a' },
+  fabSecondary: {
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#1a472a',
+  },
   fabSecondaryText: { color: '#1a472a', fontWeight: '700', fontSize: 15 },
   setsContainer: { marginBottom: 4, gap: 8 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   setLabel: { fontSize: 13, color: '#666', width: 40 },
-  setInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 16, fontWeight: '700', textAlign: 'center', width: 56, color: '#1a472a' },
+  setInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    width: 56,
+    color: '#1a472a',
+  },
   setDash: { fontSize: 18, color: '#888', fontWeight: '600' },
   removeSet: { fontSize: 18, color: '#c0392b', paddingHorizontal: 6 },
-  addSet: { color: '#1a472a', fontWeight: '600', fontSize: 14, paddingVertical: 4 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 8 },
+  addSet: {
+    color: '#1a472a',
+    fontWeight: '600',
+    fontSize: 14,
+    paddingVertical: 4,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 8,
+  },
   emptyBody: { fontSize: 14, color: '#666', textAlign: 'center' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, maxHeight: '80%' },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: '#1a472a', marginBottom: 20 },
-  modalLabel: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 15, marginBottom: 12 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1a472a',
+    marginBottom: 20,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    marginBottom: 12,
+  },
   searchRow: { flexDirection: 'row', alignItems: 'center' },
   searchInput: { flex: 1, marginBottom: 0 },
   searchSpinner: { marginLeft: 10 },
   resultsList: { maxHeight: 200, marginTop: 8, marginBottom: 12 },
-  resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  resultRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
   resultName: { fontSize: 15, fontWeight: '600', color: '#222' },
   resultEmail: { fontSize: 13, color: '#888', marginTop: 2 },
-  noResults: { fontSize: 14, color: '#999', textAlign: 'center', marginVertical: 12 },
-  selectedPlayer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  noResults: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginVertical: 12,
+  },
+  selectedPlayer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
   playerChip: { flex: 1 },
   playerChipName: { fontSize: 16, fontWeight: '700', color: '#1a472a' },
   playerChipEmail: { fontSize: 13, color: '#666', marginTop: 2 },
   changeText: { fontSize: 14, color: '#1a472a', fontWeight: '600' },
-  modeToggle: { flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: '#ddd', overflow: 'hidden', marginBottom: 16 },
-  modeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', backgroundColor: '#f9f9f9' },
+  modeToggle: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#f9f9f9',
+  },
   modeBtnActive: { backgroundColor: '#1a472a' },
   modeBtnText: { fontSize: 13, fontWeight: '600', color: '#888' },
   modeBtnTextActive: { color: '#fff' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  cancelBtn: { flex: 1, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
+  cancelBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
   cancelText: { color: '#333', fontWeight: '600' },
-  createBtn: { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#1a472a', alignItems: 'center' },
+  createBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: '#1a472a',
+    alignItems: 'center',
+  },
   createBtnDisabled: { opacity: 0.6 },
   createText: { color: '#fff', fontWeight: '600' },
-  scheduledLine: { fontSize: 13, fontWeight: '600', color: '#1a472a', marginBottom: 8 },
+  scheduledLine: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1a472a',
+    marginBottom: 8,
+  },
   cardActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  acceptBtn: { flex: 1, backgroundColor: '#1a472a', padding: 10, borderRadius: 8, alignItems: 'center' },
+  acceptBtn: {
+    flex: 1,
+    backgroundColor: '#1a472a',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
   acceptBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  declineBtn: { flex: 1, backgroundColor: '#fff', padding: 10, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#c0392b' },
+  declineBtn: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#c0392b',
+  },
   declineBtnText: { color: '#c0392b', fontWeight: '600', fontSize: 13 },
-  availabilityBox: { backgroundColor: '#f5f5ec', borderRadius: 10, padding: 12, marginBottom: 12 },
-  availabilityTitle: { fontSize: 11, fontWeight: '700', color: '#1a472a', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  availabilityRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 2 },
-  availabilityDay: { fontSize: 13, fontWeight: '700', color: '#1a472a', width: 32 },
+  availabilityBox: {
+    backgroundColor: '#f5f5ec',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  availabilityTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1a472a',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  availabilityRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  availabilityDay: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1a472a',
+    width: 32,
+  },
   availabilityTime: { fontSize: 13, color: '#444' },
-  availabilityNote: { fontSize: 12, color: '#666', fontStyle: 'italic', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#e7e7d8' },
-  availabilityEmpty: { color: '#999', fontSize: 13, fontStyle: 'italic', marginBottom: 12 },
+  availabilityNote: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#e7e7d8',
+  },
+  availabilityEmpty: {
+    color: '#999',
+    fontSize: 13,
+    fontStyle: 'italic',
+    marginBottom: 12,
+  },
 });

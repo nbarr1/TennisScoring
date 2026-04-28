@@ -4,24 +4,44 @@ import { rankingsQuery, completedDivisionMatchesQuery } from '../collections';
 import { computeRankings, extractMatchTotals } from '@tennis/shared';
 import type { PlayerRanking, Match, HeadToHead } from '@tennis/shared';
 
-function buildRankingsFromMatches(matches: Match[], divisionId: string): PlayerRanking[] {
-  const statsMap = new Map<string, {
-    matchesWon: number;
-    matchesLost: number;
-    setsWon: number;
-    setsLost: number;
-    gamesWon: number;
-    gamesLost: number;
-    displayName: string;
-  }>();
+function hasRankingStats(ranking: PlayerRanking): boolean {
+  return (
+    ranking.matchesPlayed > 0 ||
+    ranking.matchesWon > 0 ||
+    ranking.matchesLost > 0 ||
+    ranking.setsWon > 0 ||
+    ranking.setsLost > 0 ||
+    ranking.gamesWon > 0 ||
+    ranking.gamesLost > 0
+  );
+}
+
+function buildRankingsFromMatches(
+  matches: Match[],
+  divisionId: string,
+): { rankings: PlayerRanking[]; countedMatchCount: number } {
+  const statsMap = new Map<
+    string,
+    {
+      matchesWon: number;
+      matchesLost: number;
+      setsWon: number;
+      setsLost: number;
+      gamesWon: number;
+      gamesLost: number;
+      displayName: string;
+    }
+  >();
 
   const h2hAccum = new Map<string, HeadToHead>();
+  let countedMatchCount = 0;
 
   for (const match of matches) {
     // Skip matches without winner, non-division matches, or incomplete scores
     if (!match.winner) continue;
-    if (match.isDivisionMatch === false) continue;  // UPDATED: Use isDivisionMatch flag
+    if (match.isDivisionMatch === false) continue; // UPDATED: Use isDivisionMatch flag
     if (!match.liveScore?.sets?.length) continue;
+    countedMatchCount += 1;
 
     const { player1Id, player2Id, winner, liveScore } = match;
     const player1Name = match.player1Name ?? player1Id;
@@ -53,7 +73,9 @@ function buildRankingsFromMatches(matches: Match[], divisionId: string): PlayerR
     const p1Stats = statsMap.get(player1Id)!;
     const p2Stats = statsMap.get(player2Id)!;
 
-    const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(liveScore.sets);
+    const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
+      liveScore.sets,
+    );
     const p1Won = winner === 'player1';
 
     if (p1Won) {
@@ -110,7 +132,10 @@ function buildRankingsFromMatches(matches: Match[], divisionId: string): PlayerR
     gamesLost: stats.gamesLost,
   }));
 
-  return computeRankings(rankingInputs, [...h2hAccum.values()]);
+  return {
+    rankings: computeRankings(rankingInputs, [...h2hAccum.values()]),
+    countedMatchCount,
+  };
 }
 
 export function useRankings(divisionId: string | null) {
@@ -129,6 +154,7 @@ export function useRankings(divisionId: string | null) {
 
     let firestoreRankings: PlayerRanking[] = [];
     let computedRankings: PlayerRanking[] = [];
+    let countedMatchCount = 0;
     let rankingsReady = false;
     let matchesReady = false;
 
@@ -136,10 +162,21 @@ export function useRankings(divisionId: string | null) {
       let nextRankings: PlayerRanking[];
       if (computedRankings.length > 0) {
         // Use locally-computed stats (always fresh) and add any division players
-        // who haven't played yet (their zero-stat entries come from Firestore).
+        // who haven't played yet. Only zero-stat Firestore docs are safe to
+        // merge here; nonzero docs may be stale after exclusions/deletions.
         const computedIds = new Set(computedRankings.map((r) => r.userId));
-        const unplayed = firestoreRankings.filter((r) => !computedIds.has(r.userId));
-        nextRankings = [...computedRankings, ...unplayed].sort((a, b) => a.rank - b.rank);
+        const unplayed = firestoreRankings
+          .filter((r) => !computedIds.has(r.userId) && !hasRankingStats(r))
+          .sort((a, b) => a.displayName.localeCompare(b.displayName));
+        nextRankings = [...computedRankings, ...unplayed].map((r, index) => ({
+          ...r,
+          rank: index + 1,
+        }));
+      } else if (matchesReady && countedMatchCount === 0) {
+        nextRankings = firestoreRankings
+          .filter((r) => !hasRankingStats(r))
+          .sort((a, b) => a.displayName.localeCompare(b.displayName))
+          .map((r, index) => ({ ...r, rank: index + 1 }));
       } else {
         nextRankings = firestoreRankings;
       }
@@ -160,7 +197,7 @@ export function useRankings(divisionId: string | null) {
         setError(err);
         rankingsReady = true;
         syncRankings();
-      }
+      },
     );
 
     const unsubMatches = onSnapshot(
@@ -168,9 +205,12 @@ export function useRankings(divisionId: string | null) {
       (snap) => {
         try {
           const matches = snap.docs.map((d) => d.data() as Match);
-          computedRankings = buildRankingsFromMatches(matches, divisionId);
+          const result = buildRankingsFromMatches(matches, divisionId);
+          computedRankings = result.rankings;
+          countedMatchCount = result.countedMatchCount;
         } catch {
           computedRankings = [];
+          countedMatchCount = 0;
         }
         matchesReady = true;
         syncRankings();
@@ -179,7 +219,7 @@ export function useRankings(divisionId: string | null) {
         setError(err);
         matchesReady = true;
         syncRankings();
-      }
+      },
     );
 
     return () => {

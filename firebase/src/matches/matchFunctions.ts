@@ -24,14 +24,13 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
   async (event) => {
     const before = event.data?.before?.data() as Match | undefined;
     const after = event.data?.after?.data() as Match | undefined;
-    if (!after) return;
 
     const matchId = event.params.matchId;
     const db = getFirestore();
 
     // Document deleted — recalculate rankings if a completed match was removed
     if (!after) {
-      if (before?.status === 'completed' && !before?.player2IsGuest) {
+      if (before?.status === 'completed') {
         await recalculateRankings(before.divisionId);
       }
       return;
@@ -68,37 +67,63 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     }
 
     // 5. Report confirmed — update rankings (PDF is handled by generateReport trigger)
-   if (after.status === 'completed' && before?.status !== 'completed') {
-  // CLEANUP: Remove any open/incomplete sets and persist to Firestore
-    if (after.liveScore && Array.isArray(after.liveScore.sets)) {
-      const cleanedSets = after.liveScore.sets.filter(set => !!set.winner);
-      if (cleanedSets.length !== after.liveScore.sets.length) {
-        const db = getFirestore();
-        await db
-          .collection('matches')
-          .doc(event.params.matchId)
-          .update({
+    if (after.status === 'completed' && before?.status !== 'completed') {
+      // CLEANUP: Remove any open/incomplete sets and persist to Firestore
+      if (after.liveScore && Array.isArray(after.liveScore.sets)) {
+        const cleanedSets = after.liveScore.sets.filter((set) => !!set.winner);
+        if (cleanedSets.length !== after.liveScore.sets.length) {
+          const db = getFirestore();
+          await db.collection('matches').doc(event.params.matchId).update({
             'liveScore.sets': cleanedSets,
-        });
-      after.liveScore.sets = cleanedSets;
-    }
-  }
+          });
+          after.liveScore.sets = cleanedSets;
+        }
+      }
 
-  await recalculateRankings(after.divisionId);
-  return;
-}
+      await recalculateRankings(after.divisionId);
+      return;
+    }
+    if (before?.status === 'completed' && after.status !== 'completed') {
+      await recalculateRankings(before.divisionId);
+      return;
+    }
+
+    if (
+      before?.status === 'completed' &&
+      after.status === 'completed' &&
+      rankingsRelevantFieldsChanged(before, after)
+    ) {
+      if (before.divisionId !== after.divisionId) {
+        await recalculateRankings(before.divisionId);
+      }
+      await recalculateRankings(after.divisionId);
+      return;
+    }
     // 6. Report disputed — notify division leader
     if (after.status === 'disputed' && before?.status !== 'disputed') {
       await notifyLeaderOfDispute(db, after, matchId);
       return;
     }
-  }
+  },
 );
+
+function rankingsRelevantFieldsChanged(before: Match, after: Match): boolean {
+  return (
+    before.divisionId !== after.divisionId ||
+    before.player1Id !== after.player1Id ||
+    before.player2Id !== after.player2Id ||
+    before.player2IsGuest !== after.player2IsGuest ||
+    before.isDivisionMatch !== after.isDivisionMatch ||
+    before.winner !== after.winner ||
+    JSON.stringify(before.liveScore?.sets ?? []) !==
+      JSON.stringify(after.liveScore?.sets ?? [])
+  );
+}
 
 async function notifyMatchProposed(
   db: ReturnType<typeof getFirestore>,
   match: Match,
-  matchId: string
+  matchId: string,
 ) {
   const opponentSnap = await db.collection('users').doc(match.player2Id).get();
   const opponent = opponentSnap.data();
@@ -122,7 +147,7 @@ async function notifyMatchProposed(
 async function notifyMatchAccepted(
   db: ReturnType<typeof getFirestore>,
   match: Match,
-  matchId: string
+  matchId: string,
 ) {
   const proposerSnap = await db.collection('users').doc(match.player1Id).get();
   const proposer = proposerSnap.data();
@@ -146,7 +171,7 @@ async function notifyMatchAccepted(
 async function notifyMatchProposalCancelled(
   db: ReturnType<typeof getFirestore>,
   match: Match,
-  matchId: string
+  matchId: string,
 ) {
   // Notify the proposer. If the proposer themselves withdrew, the message is still informative.
   const proposerSnap = await db.collection('users').doc(match.player1Id).get();
@@ -169,11 +194,13 @@ async function notifyOpponentOfSubmission(
   db: ReturnType<typeof getFirestore>,
   match: Match,
   matchId: string,
-  submission: ReportSubmission
+  submission: ReportSubmission,
 ) {
   // The opponent is whichever player did NOT submit
   const opponentId =
-    submission.submittedBy === match.player1Id ? match.player2Id : match.player1Id;
+    submission.submittedBy === match.player1Id
+      ? match.player2Id
+      : match.player1Id;
 
   // No notification for guest opponents
   if (!opponentId || opponentId === 'guest') return;
@@ -182,7 +209,10 @@ async function notifyOpponentOfSubmission(
   const opponent = opponentSnap.data();
   if (!opponent?.fcmTokens?.length) return;
 
-  const submitterSnap = await db.collection('users').doc(submission.submittedBy).get();
+  const submitterSnap = await db
+    .collection('users')
+    .doc(submission.submittedBy)
+    .get();
   const submitterName = submitterSnap.data()?.displayName ?? 'Your opponent';
 
   await getMessaging().sendEachForMulticast({
@@ -200,9 +230,12 @@ async function notifyOpponentOfSubmission(
 async function notifyLeaderOfDispute(
   db: ReturnType<typeof getFirestore>,
   match: Match,
-  matchId: string
+  matchId: string,
 ) {
-  const divisionSnap = await db.collection('divisions').doc(match.divisionId).get();
+  const divisionSnap = await db
+    .collection('divisions')
+    .doc(match.divisionId)
+    .get();
   const leaderId = divisionSnap.data()?.leaderId;
   if (!leaderId) return;
 
@@ -237,54 +270,81 @@ async function recalculateRankings(divisionId: string) {
 
   const matches = matchesSnap.docs.map((d) => d.data() as Match);
 
-  const statsMap = new Map<string, {
-    matchesWon: number; matchesLost: number;
-    setsWon: number; setsLost: number;
-    gamesWon: number; gamesLost: number;
-  }>();
+  const statsMap = new Map<
+    string,
+    {
+      matchesWon: number;
+      matchesLost: number;
+      setsWon: number;
+      setsLost: number;
+      gamesWon: number;
+      gamesLost: number;
+    }
+  >();
 
   const h2hAccum = new Map<string, HeadToHead>();
 
   for (const match of matches) {
     if (!match.winner) continue;
     if (match.isDivisionMatch === false) continue; // honor "include in rankings" toggle for all match types
-
     const { player1Id, player2Id, liveScore, winner } = match;
 
     for (const pid of [player1Id, player2Id]) {
       if (!statsMap.has(pid)) {
-        statsMap.set(pid, { matchesWon: 0, matchesLost: 0, setsWon: 0, setsLost: 0, gamesWon: 0, gamesLost: 0 });
+        statsMap.set(pid, {
+          matchesWon: 0,
+          matchesLost: 0,
+          setsWon: 0,
+          setsLost: 0,
+          gamesWon: 0,
+          gamesLost: 0,
+        });
       }
     }
 
-    const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(liveScore.sets);
+    const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
+      liveScore.sets,
+    );
     const p1Won = winner === 'player1';
     const p1Stats = statsMap.get(player1Id)!;
     const p2Stats = statsMap.get(player2Id)!;
 
-    if (p1Won) { p1Stats.matchesWon++; p2Stats.matchesLost++; }
-    else { p2Stats.matchesWon++; p1Stats.matchesLost++; }
+    if (p1Won) {
+      p1Stats.matchesWon++;
+      p2Stats.matchesLost++;
+    } else {
+      p2Stats.matchesWon++;
+      p1Stats.matchesLost++;
+    }
 
-    p1Stats.setsWon += p1Sets; p1Stats.setsLost += p2Sets;
-    p2Stats.setsWon += p2Sets; p2Stats.setsLost += p1Sets;
-    p1Stats.gamesWon += p1Games; p1Stats.gamesLost += p2Games;
-    p2Stats.gamesWon += p2Games; p2Stats.gamesLost += p1Games;
+    p1Stats.setsWon += p1Sets;
+    p1Stats.setsLost += p2Sets;
+    p2Stats.setsWon += p2Sets;
+    p2Stats.setsLost += p1Sets;
+    p1Stats.gamesWon += p1Games;
+    p1Stats.gamesLost += p2Games;
+    p2Stats.gamesWon += p2Games;
+    p2Stats.gamesLost += p1Games;
 
     const h2hId = [player1Id, player2Id].sort().join('_');
     if (!h2hAccum.has(h2hId)) {
       h2hAccum.set(h2hId, {
-        id: h2hId, divisionId,
+        id: h2hId,
+        divisionId,
         player1Id: [player1Id, player2Id].sort()[0],
         player2Id: [player1Id, player2Id].sort()[1],
-        player1Wins: 0, player2Wins: 0,
+        player1Wins: 0,
+        player2Wins: 0,
       });
     }
     const h2h = h2hAccum.get(h2hId)!;
     const sortedIds = [player1Id, player2Id].sort();
     if (winner === 'player1') {
-      if (player1Id === sortedIds[0]) h2h.player1Wins++; else h2h.player2Wins++;
+      if (player1Id === sortedIds[0]) h2h.player1Wins++;
+      else h2h.player2Wins++;
     } else {
-      if (player2Id === sortedIds[0]) h2h.player1Wins++; else h2h.player2Wins++;
+      if (player2Id === sortedIds[0]) h2h.player1Wins++;
+      else h2h.player2Wins++;
     }
   }
 
@@ -292,22 +352,49 @@ async function recalculateRankings(divisionId: string) {
   const division = divisionSnap.data();
   const playerIds: string[] = division?.playerIds ?? [...statsMap.keys()];
 
-  const userSnaps = await Promise.all(playerIds.map((id) => db.collection('users').doc(id).get()));
-  const displayNames = new Map(userSnaps.map((s) => [s.id, s.data()?.displayName ?? s.id]));
+  const userSnaps = await Promise.all(
+    playerIds.map((id) => db.collection('users').doc(id).get()),
+  );
+  const displayNames = new Map(
+    userSnaps.map((s) => [s.id, s.data()?.displayName ?? s.id]),
+  );
 
   const rankingInputs = playerIds.map((userId) => ({
     userId,
     displayName: displayNames.get(userId) ?? userId,
     divisionId,
     season: division?.season ?? '2024',
-    ...(statsMap.get(userId) ?? { matchesWon: 0, matchesLost: 0, setsWon: 0, setsLost: 0, gamesWon: 0, gamesLost: 0 }),
+    ...(statsMap.get(userId) ?? {
+      matchesWon: 0,
+      matchesLost: 0,
+      setsWon: 0,
+      setsLost: 0,
+      gamesWon: 0,
+      gamesLost: 0,
+    }),
   }));
 
   const rankings = computeRankings(rankingInputs, [...h2hAccum.values()]);
 
   const batch = db.batch();
+  const rankingIds = new Set(rankings.map((ranking) => ranking.userId));
+  const existingRankingsSnap = await db
+    .collection('divisions')
+    .doc(divisionId)
+    .collection('rankings')
+    .get();
+  for (const doc of existingRankingsSnap.docs) {
+    if (!rankingIds.has(doc.id)) {
+      batch.delete(doc.ref);
+    }
+  }
+
   for (const ranking of rankings) {
-    const ref = db.collection('divisions').doc(divisionId).collection('rankings').doc(ranking.userId);
+    const ref = db
+      .collection('divisions')
+      .doc(divisionId)
+      .collection('rankings')
+      .doc(ranking.userId);
     batch.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
 
     const userRef = db.collection('users').doc(ranking.userId);
@@ -329,9 +416,21 @@ async function recalculateRankings(divisionId: string) {
         },
         updatedAt: Date.now(),
       },
-      { merge: true }
+      { merge: true },
     );
   }
+
+  const h2hIds = new Set([...h2hAccum.keys()]);
+  const existingH2HSnap = await db
+    .collection('headToHead')
+    .where('divisionId', '==', divisionId)
+    .get();
+  for (const doc of existingH2HSnap.docs) {
+    if (!h2hIds.has(doc.id)) {
+      batch.delete(doc.ref);
+    }
+  }
+
   for (const h2h of h2hAccum.values()) {
     const ref = db.collection('headToHead').doc(h2h.id);
     batch.set(ref, { ...h2h, updatedAt: FieldValue.serverTimestamp() });
@@ -345,7 +444,10 @@ async function recalculateRankings(divisionId: string) {
  */
 export const resolveDisputedReport = functions.https.onCall(async (request) => {
   if (!request.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'Must be signed in',
+    );
   }
 
   const { matchId } = request.data as { matchId: string };
@@ -355,11 +457,15 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
   const matchSnap = await matchRef.get();
   const match = matchSnap.data() as Match;
 
-  if (!match) throw new functions.https.HttpsError('not-found', 'Match not found');
+  if (!match)
+    throw new functions.https.HttpsError('not-found', 'Match not found');
 
   const isLeader = await checkIsLeader(request.auth.uid, match.divisionId);
   if (!isLeader) {
-    throw new functions.https.HttpsError('permission-denied', 'Only the division leader can resolve disputes');
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only the division leader can resolve disputes',
+    );
   }
 
   await matchRef.update({
@@ -372,7 +478,10 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
   return { success: true };
 });
 
-async function checkIsLeader(uid: string, divisionId: string): Promise<boolean> {
+async function checkIsLeader(
+  uid: string,
+  divisionId: string,
+): Promise<boolean> {
   const db = getFirestore();
   const divSnap = await db.collection('divisions').doc(divisionId).get();
   const data = divSnap.data();
@@ -383,30 +492,43 @@ async function checkIsLeader(uid: string, divisionId: string): Promise<boolean> 
  * HTTPS callable: manually trigger a full rankings recalculation for a division.
  * Restricted to division leaders and admins.
  */
-export const recalculateDivisionRankings = functions.https.onCall(async (request) => {
-  if (!request.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
-  }
+export const recalculateDivisionRankings = functions.https.onCall(
+  async (request) => {
+    if (!request.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be signed in',
+      );
+    }
 
-  const { divisionId } = request.data as { divisionId: string };
-  if (!divisionId) {
-    throw new functions.https.HttpsError('invalid-argument', 'divisionId is required');
-  }
+    const { divisionId } = request.data as { divisionId: string };
+    if (!divisionId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'divisionId is required',
+      );
+    }
 
-  const db = getFirestore();
-  const [userSnap, divSnap] = await Promise.all([
-    db.collection('users').doc(request.auth.uid).get(),
-    db.collection('divisions').doc(divisionId).get(),
-  ]);
+    const db = getFirestore();
+    const [userSnap, divSnap] = await Promise.all([
+      db.collection('users').doc(request.auth.uid).get(),
+      db.collection('divisions').doc(divisionId).get(),
+    ]);
 
-  const isAdmin = userSnap.data()?.role === 'admin';
-  const divData = divSnap.data();
-  const isLeader = (divData?.leaderIds ?? []).includes(request.auth.uid) || divData?.leaderId === request.auth.uid;
+    const isAdmin = userSnap.data()?.role === 'admin';
+    const divData = divSnap.data();
+    const isLeader =
+      (divData?.leaderIds ?? []).includes(request.auth.uid) ||
+      divData?.leaderId === request.auth.uid;
 
-  if (!isAdmin && !isLeader) {
-    throw new functions.https.HttpsError('permission-denied', 'Only division leaders can recalculate rankings');
-  }
+    if (!isAdmin && !isLeader) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only division leaders can recalculate rankings',
+      );
+    }
 
-  await recalculateRankings(divisionId);
-  return { success: true };
-});
+    await recalculateRankings(divisionId);
+    return { success: true };
+  },
+);

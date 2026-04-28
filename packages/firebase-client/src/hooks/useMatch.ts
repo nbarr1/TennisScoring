@@ -1,10 +1,27 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot, updateDoc, addDoc, deleteField, deleteDoc } from 'firebase/firestore';
+import {
+  onSnapshot,
+  updateDoc,
+  addDoc,
+  deleteField,
+  deleteDoc,
+} from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
 import { functions } from '../config';
-import type { Match, Player, TipTrigger, LiveScore, SetScore } from '@tennis/shared';
-import { applyPoint, DEFAULT_FORMAT as defaultFormat, createInitialScore, EMPTY_STATS } from '@tennis/shared';
+import type {
+  Match,
+  Player,
+  TipTrigger,
+  LiveScore,
+  SetScore,
+} from '@tennis/shared';
+import {
+  applyPoint,
+  DEFAULT_FORMAT as defaultFormat,
+  createInitialScore,
+  EMPTY_STATS,
+} from '@tennis/shared';
 
 export function useMatch(matchId: string | null) {
   const [match, setMatch] = useState<Match | null>(null);
@@ -26,7 +43,7 @@ export function useMatch(matchId: string | null) {
       (err) => {
         setError(err);
         setLoading(false);
-      }
+      },
     );
     return unsub;
   }, [matchId]);
@@ -43,9 +60,20 @@ export async function createMatch(params: {
   divisionId: string;
   createdBy: string;
   scheduledAt?: number;
-  isDivisionMatch?: boolean;  // NEW: Add this parameter
+  isDivisionMatch?: boolean; // NEW: Add this parameter
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, scheduledAt, isDivisionMatch } = params;
+  const {
+    player1Id,
+    player2Id,
+    player1Name,
+    player2Name,
+    player2IsGuest,
+    divisionId,
+    createdBy,
+    scheduledAt,
+    isDivisionMatch,
+  } = params;
+  const isGuest = player2IsGuest ?? false;
 
   const matchData: Omit<Match, 'id'> = {
     divisionId,
@@ -53,15 +81,15 @@ export async function createMatch(params: {
     player2Id,
     ...(player1Name && { player1Name }),
     ...(player2Name && { player2Name }),
-    player2IsGuest: player2IsGuest ?? false,
-    playerIds: player2IsGuest ? [player1Id] : [player1Id, player2Id],
+    player2IsGuest: isGuest,
+    playerIds: isGuest ? [player1Id] : [player1Id, player2Id],
     format: defaultFormat,
     status: 'scheduled',
     liveScore: createInitialScore(defaultFormat),
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
     source: 'live',
-    isDivisionMatch: isDivisionMatch ?? true,  // NEW: Default to true
+    isDivisionMatch: isDivisionMatch ?? true,
     createdBy,
     ...(scheduledAt !== undefined && { scheduledAt }),
     createdAt: Date.now(),
@@ -71,15 +99,31 @@ export async function createMatch(params: {
   return ref.id;
 }
 
-function buildHistoricScore(
-  sets: { p1: number; p2: number }[],
-): { score: LiveScore; winner: Player } {
+function buildHistoricScore(sets: { p1: number; p2: number }[]): {
+  score: LiveScore;
+  winner: Player;
+} {
+  if (sets.length === 0) {
+    throw new Error('At least one set is required.');
+  }
+  for (const set of sets) {
+    if (set.p1 === set.p2) {
+      throw new Error('Each set must have a clear winner.');
+    }
+  }
+
   let p1Sets = 0;
   let p2Sets = 0;
   const builtSets: SetScore[] = sets.map((s, i) => {
     const setWinner: Player = s.p1 > s.p2 ? 'player1' : 'player2';
-    if (setWinner === 'player1') p1Sets++; else p2Sets++;
-    return { setNumber: i + 1, player1Games: s.p1, player2Games: s.p2, winner: setWinner };
+    if (setWinner === 'player1') p1Sets++;
+    else p2Sets++;
+    return {
+      setNumber: i,
+      player1Games: s.p1,
+      player2Games: s.p2,
+      winner: setWinner,
+    };
   });
   const winner: Player = p1Sets > p2Sets ? 'player1' : 'player2';
   const score: LiveScore = {
@@ -104,9 +148,19 @@ export async function recordHistoricMatch(params: {
   divisionId: string;
   createdBy: string;
   sets: { p1: number; p2: number }[];
-  isDivisionMatch?: boolean;  // NEW: Add this parameter
+  isDivisionMatch?: boolean; // NEW: Add this parameter
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, player2IsGuest, divisionId, createdBy, sets, isDivisionMatch } = params;
+  const {
+    player1Id,
+    player2Id,
+    player1Name,
+    player2Name,
+    player2IsGuest,
+    divisionId,
+    createdBy,
+    sets,
+    isDivisionMatch,
+  } = params;
   const { score, winner } = buildHistoricScore(sets);
   const now = Date.now();
 
@@ -126,7 +180,7 @@ export async function recordHistoricMatch(params: {
     winner,
     tipsEnabled: false,
     source: 'manual',
-    isDivisionMatch: isDivisionMatch ?? true,  // NEW: Default to true (counts toward rankings)
+    isDivisionMatch: isDivisionMatch ?? true,
     createdBy,
     completedAt: now,
     createdAt: now,
@@ -145,7 +199,10 @@ export async function recordHistoricMatch(params: {
 /**
  * For guest matches: submitting auto-confirms since there's no opponent to review.
  */
-export async function submitGuestReport(matchId: string, submittedBy: string): Promise<void> {
+export async function submitGuestReport(
+  matchId: string,
+  submittedBy: string,
+): Promise<void> {
   const now = Date.now();
   await updateDoc(matchDoc(matchId), {
     status: 'completed',
@@ -186,7 +243,10 @@ export async function deleteMatch(matchId: string): Promise<void> {
   await deleteDoc(matchDoc(matchId));
 }
 
-export async function postponeMatch(matchId: string, newScheduledAt: number): Promise<void> {
+export async function postponeMatch(
+  matchId: string,
+  newScheduledAt: number,
+): Promise<void> {
   await updateDoc(matchDoc(matchId), { scheduledAt: newScheduledAt });
 }
 
@@ -203,7 +263,15 @@ export async function proposeMatch(params: {
   createdBy: string;
   scheduledAt: number;
 }): Promise<string> {
-  const { player1Id, player2Id, player1Name, player2Name, divisionId, createdBy, scheduledAt } = params;
+  const {
+    player1Id,
+    player2Id,
+    player1Name,
+    player2Name,
+    divisionId,
+    createdBy,
+    scheduledAt,
+  } = params;
   const matchData: Omit<Match, 'id'> = {
     divisionId,
     player1Id,
@@ -218,7 +286,7 @@ export async function proposeMatch(params: {
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
     source: 'live',
-    isDivisionMatch: true,  // NEW: Proposals are always division matches
+    isDivisionMatch: true, // NEW: Proposals are always division matches
     createdBy,
     scheduledAt,
     createdAt: Date.now(),
@@ -237,7 +305,10 @@ export async function declineMatchProposal(matchId: string): Promise<void> {
   await updateDoc(matchDoc(matchId), { status: 'cancelled' });
 }
 
-export async function startMatch(matchId: string, server: 'player1' | 'player2'): Promise<void> {
+export async function startMatch(
+  matchId: string,
+  server: 'player1' | 'player2',
+): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'in_progress',
     startedAt: Date.now(),
@@ -248,7 +319,7 @@ export async function startMatch(matchId: string, server: 'player1' | 'player2')
 export async function scorePoint(
   matchId: string,
   match: Match,
-  scorer: 'player1' | 'player2'
+  scorer: 'player1' | 'player2',
 ): Promise<{ matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }> {
   const result = applyPoint(match.liveScore, scorer, match.format);
 
@@ -271,7 +342,10 @@ export async function scorePoint(
   return { matchWinner: result.matchWinner, tips: result.tips };
 }
 
-export async function undoLastPoint(matchId: string, match: Match): Promise<void> {
+export async function undoLastPoint(
+  matchId: string,
+  match: Match,
+): Promise<void> {
   const snapshot = match.undoSnapshot;
   if (!snapshot) return;
   await updateDoc(matchDoc(matchId), {
@@ -287,7 +361,10 @@ export async function undoLastPoint(matchId: string, match: Match): Promise<void
  * Either player submits the end-of-match report.
  * The opponent receives a push notification to review and confirm or dispute.
  */
-export async function submitMatchReport(matchId: string, submittedBy: string): Promise<void> {
+export async function submitMatchReport(
+  matchId: string,
+  submittedBy: string,
+): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     reportSubmission: {
       submittedBy,
@@ -301,7 +378,10 @@ export async function submitMatchReport(matchId: string, submittedBy: string): P
  * The non-submitting player confirms the report is accurate.
  * Triggers ranking recalculation and PDF generation via Cloud Function.
  */
-export async function confirmMatchReport(matchId: string, confirmedBy: string): Promise<void> {
+export async function confirmMatchReport(
+  matchId: string,
+  confirmedBy: string,
+): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'completed',
     'reportSubmission.status': 'confirmed',
@@ -314,7 +394,10 @@ export async function confirmMatchReport(matchId: string, confirmedBy: string): 
  * The non-submitting player disputes the report.
  * Escalates to the division leader via Cloud Function notification.
  */
-export async function disputeMatchReport(matchId: string, disputedBy: string): Promise<void> {
+export async function disputeMatchReport(
+  matchId: string,
+  disputedBy: string,
+): Promise<void> {
   await updateDoc(matchDoc(matchId), {
     status: 'disputed',
     'reportSubmission.status': 'disputed',
@@ -347,7 +430,9 @@ export async function editMatchScore(
   });
 }
 
-export async function recalculateDivisionRankings(divisionId: string): Promise<void> {
+export async function recalculateDivisionRankings(
+  divisionId: string,
+): Promise<void> {
   const callable = httpsCallable(functions, 'recalculateDivisionRankings');
   await callable({ divisionId });
 }
@@ -361,9 +446,17 @@ export function useLiveMatches(divisionId: string | null) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!divisionId) { setLoading(false); return; }
+    if (!divisionId) {
+      setLoading(false);
+      return;
+    }
     const unsub = onSnapshot(liveMatchesQuery(divisionId), (snap) => {
-      setMatches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) })));
+      setMatches(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Match, 'id'>),
+        })),
+      );
       setLoading(false);
     });
     return unsub;

@@ -17,6 +17,15 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function inviteLinkForToken(token: string): string {
   const appUrl = process.env.APP_BASE_URL ?? 'http://localhost:3000';
   return `${appUrl.replace(/\/$/, '')}/invite/accept?token=${encodeURIComponent(token)}`;
@@ -24,7 +33,10 @@ function inviteLinkForToken(token: string): string {
 
 export const sendInvite = onCall(async (request) => {
   if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'You must be signed in to invite users.');
+    throw new HttpsError(
+      'unauthenticated',
+      'You must be signed in to invite users.',
+    );
   }
 
   const { email, name, divisionId } = (request.data ?? {}) as SendInviteInput;
@@ -50,21 +62,29 @@ export const sendInvite = onCall(async (request) => {
   }
 
   if (!isAdmin && !isLeader) {
-    throw new HttpsError('permission-denied', 'Only admins or division leaders can invite users.');
+    throw new HttpsError(
+      'permission-denied',
+      'Only admins or division leaders can invite users.',
+    );
   }
 
   const token = crypto.randomUUID();
   const inviteLink = inviteLinkForToken(token);
+  const htmlName = escapeHtml(safeName);
+  const htmlLink = escapeHtml(inviteLink);
 
-  await db.collection('invites').doc(token).set({
-    token,
-    email: safeEmail,
-    name: safeName,
-    invitedBy: inviterId,
-    invitedAt: FieldValue.serverTimestamp(),
-    accepted: false,
-    ...(divisionId ? { divisionId } : {}),
-  });
+  await db
+    .collection('invites')
+    .doc(token)
+    .set({
+      token,
+      email: safeEmail,
+      name: safeName,
+      invitedBy: inviterId,
+      invitedAt: FieldValue.serverTimestamp(),
+      accepted: false,
+      ...(divisionId ? { divisionId } : {}),
+    });
 
   // Compatible with Firebase Trigger Email extension if installed.
   await db.collection('mail').add({
@@ -72,7 +92,7 @@ export const sendInvite = onCall(async (request) => {
     message: {
       subject: 'You are invited to Tennis League',
       text: `${safeName}, you were invited to join Tennis League. Open this link to create your account and finish your profile: ${inviteLink}`,
-      html: `<p>Hi ${safeName},</p><p>You were invited to join Tennis League.</p><p><a href="${inviteLink}">Accept invite</a> to create your account and finish your profile.</p>`,
+      html: `<p>Hi ${htmlName},</p><p>You were invited to join Tennis League.</p><p><a href="${htmlLink}">Accept invite</a> to create your account and finish your profile.</p>`,
     },
     metadata: {
       type: 'user_invite',
@@ -100,7 +120,10 @@ export const getInvitePreview = onCall(async (request) => {
 
   const invite = inviteSnap.data();
   if (!invite || invite.accepted) {
-    throw new HttpsError('failed-precondition', 'Invite has already been used.');
+    throw new HttpsError(
+      'failed-precondition',
+      'Invite has already been used.',
+    );
   }
 
   return {
@@ -112,7 +135,10 @@ export const getInvitePreview = onCall(async (request) => {
 
 export const acceptInvite = onCall(async (request) => {
   if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Sign in first to accept this invite.');
+    throw new HttpsError(
+      'unauthenticated',
+      'Sign in first to accept this invite.',
+    );
   }
 
   const { token } = (request.data ?? {}) as AcceptInviteInput;
@@ -126,14 +152,20 @@ export const acceptInvite = onCall(async (request) => {
   const authEmail = normalizeEmail(request.auth.token.email ?? '');
 
   if (!authEmail) {
-    throw new HttpsError('failed-precondition', 'Your account must include an email address.');
+    throw new HttpsError(
+      'failed-precondition',
+      'Your account must include an email address.',
+    );
   }
 
   const inviteRef = db.collection('invites').doc(safeToken);
   const userRef = db.collection('users').doc(uid);
 
   await db.runTransaction(async (tx) => {
-    const [inviteSnap, userSnap] = await Promise.all([tx.get(inviteRef), tx.get(userRef)]);
+    const [inviteSnap, userSnap] = await Promise.all([
+      tx.get(inviteRef),
+      tx.get(userRef),
+    ]);
 
     if (!inviteSnap.exists) {
       throw new HttpsError('not-found', 'Invite not found.');
@@ -149,7 +181,10 @@ export const acceptInvite = onCall(async (request) => {
     }
 
     if (normalizeEmail(invite.email ?? '') !== authEmail) {
-      throw new HttpsError('permission-denied', 'This invite is for a different email address.');
+      throw new HttpsError(
+        'permission-denied',
+        'This invite is for a different email address.',
+      );
     }
 
     tx.update(inviteRef, {
@@ -159,11 +194,15 @@ export const acceptInvite = onCall(async (request) => {
     });
 
     if (userSnap.exists) {
-      tx.set(userRef, {
-        displayName: userSnap.data()?.displayName || invite.name,
-        updatedAt: FieldValue.serverTimestamp(),
-        ...(invite.divisionId ? { divisionId: invite.divisionId } : {}),
-      }, { merge: true });
+      tx.set(
+        userRef,
+        {
+          displayName: userSnap.data()?.displayName || invite.name,
+          updatedAt: FieldValue.serverTimestamp(),
+          ...(invite.divisionId ? { divisionId: invite.divisionId } : {}),
+        },
+        { merge: true },
+      );
     }
 
     if (invite.divisionId) {

@@ -1,9 +1,21 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
 import { auth, db } from '@tennis/firebase-client';
 import { doc, setDoc } from 'firebase/firestore';
 
@@ -28,28 +40,54 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        await updateProfile(credential.user, { displayName: displayName.trim() });
-        const now = Date.now();
-        await setDoc(doc(db, 'users', credential.user.uid), {
-          id: credential.user.uid,
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        );
+        await updateProfile(credential.user, {
           displayName: displayName.trim(),
-          email: email.trim().toLowerCase(),
-          role: 'player',
-          divisionId: null,
-          createdAt: now,
-          updatedAt: now,
         });
+        const now = Date.now();
+        await setDoc(
+          doc(db, 'users', credential.user.uid),
+          {
+            id: credential.user.uid,
+            displayName: displayName.trim(),
+            email: email.trim().toLowerCase(),
+            phone: null,
+            avatarUrl: null,
+            contactPreferences: {
+              allowEmail: true,
+              allowSMS: false,
+              allowInApp: true,
+            },
+            role: 'player',
+            divisionId: null,
+            fcmTokens: [],
+            tipsEnabled: true,
+            createdAt: now,
+            updatedAt: now,
+          },
+          { merge: true },
+        );
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       }
       // Auth state change in _layout.tsx handles redirect automatically
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
-      if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+      if (
+        code === 'auth/user-not-found' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/invalid-credential'
+      ) {
         Alert.alert('Sign In Failed', 'Incorrect email or password.');
       } else if (code === 'auth/email-already-in-use') {
-        Alert.alert('Email Taken', 'An account with this email already exists.');
+        Alert.alert(
+          'Email Taken',
+          'An account with this email already exists.',
+        );
       } else if (code === 'auth/weak-password') {
         Alert.alert('Weak Password', 'Password must be at least 6 characters.');
       } else if (code === 'auth/invalid-email') {
@@ -63,8 +101,14 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.inner}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.header}>
           <Text style={styles.logo}>🎾</Text>
           <Text style={styles.title}>Tennis League</Text>
@@ -118,14 +162,20 @@ export default function LoginScreen() {
             onPress={handleSubmit}
             disabled={loading}
           >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.buttonText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>}
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>
+                {mode === 'signin' ? 'Sign In' : 'Create Account'}
+              </Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.toggleBtn}
-            onPress={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); }}
+            onPress={() => {
+              setMode(mode === 'signin' ? 'signup' : 'signin');
+            }}
           >
             <Text style={styles.toggleText}>
               {mode === 'signin'
@@ -149,8 +199,22 @@ const styles = StyleSheet.create({
   form: { gap: 16 },
   field: { gap: 6 },
   label: { fontSize: 14, fontWeight: '600', color: '#444' },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 15, color: '#111' },
-  button: { backgroundColor: '#1a472a', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  input: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 15,
+    color: '#111',
+  },
+  button: {
+    backgroundColor: '#1a472a',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   toggleBtn: { alignItems: 'center', paddingVertical: 12 },

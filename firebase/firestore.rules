@@ -15,6 +15,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function isAdmin() {
+      return isAuth() && getUserData().role == 'admin';
+    }
+
+    function isDivisionMember(divisionId) {
+      return isAuth() && getUserData().divisionId == divisionId;
+    }
+
     function isLeader(divisionId) {
       return isAuth() &&
         request.auth.uid in get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderIds;
@@ -33,22 +41,62 @@ service cloud.firestore {
 
     // ---------- Users ----------
     match /users/{userId} {
-      allow read: if isAuth();
-      allow create: if isUser(userId);
-      allow update: if isUser(userId) || getUserData().role == 'admin';
-      allow delete: if getUserData().role == 'admin';
+      function editableUserFields() {
+        return [
+          'displayName',
+          'phone',
+          'avatarUrl',
+          'contactPreferences',
+          'availability',
+          'tipsEnabled',
+          'fcmTokens',
+          'updatedAt'
+        ];
+      }
+
+      allow read: if isAuth() && (
+        isUser(userId) ||
+        isAdmin() ||
+        resource.data.divisionId == getUserData().divisionId
+      );
+      allow create: if isUser(userId) &&
+        request.resource.data.id == request.auth.uid &&
+        request.resource.data.role == 'player' &&
+        request.resource.data.divisionId == null;
+      allow update: if isAdmin() || (
+        isUser(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(editableUserFields()) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.divisionId == resource.data.divisionId
+      );
+      allow delete: if isAdmin();
     }
 
     // ---------- Divisions ----------
     match /divisions/{divisionId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isLeader(divisionId) || getUserData().role == 'admin';
-      allow delete: if getUserData().role == 'admin';
+      function divisionFields() {
+        return ['name', 'inviteCode', 'leaderIds', 'playerIds', 'createdAt', 'updatedAt'];
+      }
+
+      allow read: if isAuth() && (
+        isAdmin() ||
+        isDivisionMember(divisionId) ||
+        request.auth.uid in resource.data.playerIds ||
+        request.auth.uid in resource.data.leaderIds
+      );
+      allow create: if isAuth() &&
+        request.resource.data.keys().hasOnly(divisionFields()) &&
+        request.resource.data.leaderIds == [request.auth.uid] &&
+        request.resource.data.playerIds == [request.auth.uid] &&
+        request.resource.data.name is string &&
+        request.resource.data.inviteCode is string;
+      allow update: if (isLeader(divisionId) || isAdmin()) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'leaderIds', 'playerIds', 'updatedAt']);
+      allow delete: if isAdmin();
 
       // Rankings sub-collection (written by Cloud Functions)
       match /rankings/{userId} {
-        allow read: if isAuth();
+        allow read: if isAuth() && (isAdmin() || isDivisionMember(divisionId));
         allow write: if false; // Cloud Functions only
       }
     }
@@ -58,33 +106,108 @@ service cloud.firestore {
     // Confirming or disputing a report is only allowed for the non-submitting player.
     function canUpdateMatch(existing, incoming) {
       let isParticipant = isMatchParticipant(existing);
+      let changed = incoming.diff(existing).affectedKeys();
       let isCancellation = incoming.status == 'cancelled' &&
-        (existing.status == 'proposed' || existing.status == 'scheduled' || existing.status == 'in_progress');
-      let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled';
-      let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled';
+        (existing.status == 'proposed' || existing.status == 'scheduled' || existing.status == 'in_progress') &&
+        changed.hasOnly(['status']);
+      let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled' &&
+        changed.hasOnly(['scheduledAt']);
+      let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled' &&
+        changed.hasOnly(['status']);
+      let isScoreUpdate = existing.status in ['scheduled', 'in_progress'] &&
+        changed.hasOnly(['status', 'startedAt', 'liveScore', 'stats', 'winner', 'completedAt', 'undoSnapshot']);
+      let isUndo = changed.hasOnly(['status', 'liveScore', 'winner', 'completedAt', 'undoSnapshot']);
+      let isReportSubmit = existing.status == 'pending_report' &&
+        incoming.status == existing.status &&
+        changed.hasOnly(['reportSubmission']);
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
       let hasSubmission = 'reportSubmission' in existing;
       let isNotSubmitter = !hasSubmission || request.auth.uid != existing.reportSubmission.submittedBy;
+      let isValidConfirmOrDispute = isConfirmOrDispute &&
+        isNotSubmitter &&
+        changed.hasOnly(['status', 'reportSubmission']);
       let isGuestMatch = existing.get('player2IsGuest', false) == true;
+      let isGuestFinalize = isGuestMatch && toCompleted &&
+        changed.hasOnly(['status', 'completedAt', 'reportSubmission']);
+      let isLinkGuest = existing.get('player2IsGuest', false) == true &&
+        incoming.player2IsGuest == false &&
+        changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
+      let isEditScore = existing.status in ['pending_report', 'completed'] &&
+        incoming.status == 'pending_report' &&
+        changed.hasOnly(['liveScore', 'winner', 'status', 'completedAt', 'reportSubmission', 'undoSnapshot']);
       return isParticipant && (
         isCancellation ||
         isPostpone ||
         isAcceptProposal ||
-        (!isConfirmOrDispute || isNotSubmitter || isGuestMatch)
+        isScoreUpdate ||
+        isUndo ||
+        isReportSubmit ||
+        isGuestFinalize ||
+        isLinkGuest ||
+        isEditScore ||
+        isValidConfirmOrDispute
       );
     }
 
     match /matches/{matchId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
-      allow delete: if getUserData().role == 'admin' || isMatchParticipant(resource.data) || isLeader(resource.data.divisionId);
+      function matchFields() {
+        return [
+          'divisionId',
+          'player1Id',
+          'player2Id',
+          'player1Name',
+          'player2Name',
+          'player2IsGuest',
+          'playerIds',
+          'format',
+          'status',
+          'liveScore',
+          'stats',
+          'reportSubmission',
+          'winner',
+          'reportUrl',
+          'tipsEnabled',
+          'undoSnapshot',
+          'source',
+          'isDivisionMatch',
+          'createdBy',
+          'scheduledAt',
+          'startedAt',
+          'completedAt',
+          'createdAt'
+        ];
+      }
+
+      allow read: if isAuth() && (
+        isAdmin() ||
+        isDivisionMember(resource.data.divisionId) ||
+        isMatchParticipant(resource.data) ||
+        isLeader(resource.data.divisionId)
+      );
+      allow create: if isAuth() &&
+        request.resource.data.keys().hasOnly(matchFields()) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.player1Id == request.auth.uid &&
+        isDivisionMember(request.resource.data.divisionId) &&
+        (
+          (
+            request.resource.data.get('player2IsGuest', false) == true &&
+            request.resource.data.playerIds == [request.auth.uid]
+          ) ||
+          (
+            request.resource.data.playerIds == [request.auth.uid, request.resource.data.player2Id] &&
+            get(/databases/$(database)/documents/users/$(request.resource.data.player2Id)).data.divisionId == request.resource.data.divisionId
+          )
+        );
+      allow update: if isAdmin() || isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
+      allow delete: if isAdmin() || isMatchParticipant(resource.data) || isLeader(resource.data.divisionId);
 
       // Score actions sub-collection
       match /actions/{actionId} {
-        allow read: if isAuth();
+        allow read: if isAuth() &&
+          isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
         allow create: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
         allow update: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
         allow delete: if false;
@@ -93,7 +216,10 @@ service cloud.firestore {
 
     // ---------- Head-to-head ----------
     match /headToHead/{h2hId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isAdmin() ||
+        isDivisionMember(resource.data.divisionId)
+      );
       allow write: if false; // Cloud Functions only
     }
 
@@ -111,17 +237,38 @@ service cloud.firestore {
 
     // ---------- Channels ----------
     match /channels/{channelId} {
+      function validDirectChannelCreate() {
+        return request.resource.data.keys().hasOnly(['type', 'participantIds', 'createdAt']) &&
+          request.resource.data.type == 'direct' &&
+          request.resource.data.participantIds.size() == 2 &&
+          request.auth.uid in request.resource.data.participantIds &&
+          get(/databases/$(database)/documents/users/$(request.resource.data.participantIds[0])).data.divisionId == getUserData().divisionId &&
+          get(/databases/$(database)/documents/users/$(request.resource.data.participantIds[1])).data.divisionId == getUserData().divisionId;
+      }
+
       allow read: if isChannelParticipant(resource.data);
-      allow create: if isAuth() && request.auth.uid in request.resource.data.participantIds;
-      allow update: if isChannelParticipant(resource.data);
+      allow create: if isAuth() && validDirectChannelCreate();
+      allow update: if false;
       allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data);
         allow create: if isAuth() &&
           isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data) &&
-          request.resource.data.senderId == request.auth.uid;
-        allow update: if isAuth() && resource.data.senderId == request.auth.uid;
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.keys().hasOnly([
+            'channelId',
+            'senderId',
+            'senderName',
+            'content',
+            'type',
+            'sharedContact',
+            'readBy',
+            'createdAt'
+          ]);
+        allow update: if isAuth() &&
+          resource.data.senderId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
         allow delete: if false;
       }
     }
