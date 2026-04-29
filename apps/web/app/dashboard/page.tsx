@@ -74,8 +74,8 @@ export default function DashboardPage(): React.JSX.Element {
               <span style={styles.thName}>Player</span>
               <span style={styles.thStat}>W</span>
               <span style={styles.thStat}>L</span>
-              <span style={styles.thStat}>Sets</span>
-              <span style={styles.thStat}>Games</span>
+              <span style={styles.thStat}>Sets (W/Total)</span>
+              <span style={styles.thStat}>Games (W/Total)</span>
               <span style={styles.thStat}>+/-</span>
             </div>
             {rankings.map((r, i) => (
