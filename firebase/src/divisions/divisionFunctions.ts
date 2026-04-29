@@ -26,6 +26,11 @@ type AddPlaceholderInput = {
   email?: string;
   sendInvite?: boolean;
 };
+type MergePlayerRecordsInput = {
+  divisionId?: string;
+  sourceUserId?: string;
+  targetUserId?: string;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -335,4 +340,82 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
     });
     throw new HttpsError('internal', 'Could not add member. Please retry or contact support.');
   }
+});
+
+export const mergeDivisionPlayerRecords = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
+  }
+  const { divisionId, sourceUserId, targetUserId } = (request.data ?? {}) as MergePlayerRecordsInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSourceUserId = sourceUserId?.trim();
+  const safeTargetUserId = targetUserId?.trim();
+  if (!safeDivisionId || !safeSourceUserId || !safeTargetUserId) {
+    throw new HttpsError('invalid-argument', 'Division and both user IDs are required.');
+  }
+  if (safeSourceUserId === safeTargetUserId) {
+    throw new HttpsError('invalid-argument', 'Source and target users must be different.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+
+  const [sourceSnap, targetSnap] = await Promise.all([
+    db.collection('users').doc(safeSourceUserId).get(),
+    db.collection('users').doc(safeTargetUserId).get(),
+  ]);
+  if (!sourceSnap.exists || !targetSnap.exists) {
+    throw new HttpsError('not-found', 'One or both users were not found.');
+  }
+
+  const matches = await db
+    .collection('matches')
+    .where('divisionId', '==', safeDivisionId)
+    .where('playerIds', 'array-contains', safeSourceUserId)
+    .get();
+
+  const batch = db.batch();
+  matches.docs.forEach((matchDoc) => {
+    const data = matchDoc.data();
+    const nextPlayer1Id = data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id;
+    const nextPlayer2Id = data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id;
+    const nextPlayerIds = Array.from(
+      new Set(((data.playerIds as string[]) ?? []).map((id) => (id === safeSourceUserId ? safeTargetUserId : id))),
+    );
+    batch.update(matchDoc.ref, {
+      player1Id: nextPlayer1Id,
+      player2Id: nextPlayer2Id,
+      playerIds: nextPlayerIds,
+    });
+  });
+
+  batch.set(
+    db.collection('divisions').doc(safeDivisionId),
+    {
+      playerIds: FieldValue.arrayUnion(safeTargetUserId),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('users').doc(safeTargetUserId),
+    {
+      divisionId: safeDivisionId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('users').doc(safeSourceUserId),
+    {
+      mergedIntoUserId: safeTargetUserId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+  await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
+
+  return { success: true, updatedMatches: matches.size };
 });
