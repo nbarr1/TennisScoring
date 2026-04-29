@@ -41,10 +41,22 @@ describe('extractMatchTotals', () => {
     });
   });
 
-  it('ignores sets without a winner when counting match totals', () => {
+  it('infers winners for completed sets that do not include a winner field', () => {
+    const sets = [
+      { player1Games: 6, player2Games: 3 },
+      { player1Games: 2, player2Games: 6 },
+    ];
+    const result = extractMatchTotals(sets);
+    expect(result.p1Sets).toBe(1);
+    expect(result.p2Sets).toBe(1);
+    expect(result.p1Games).toBe(8);
+    expect(result.p2Games).toBe(9);
+  });
+
+  it('ignores sets that are still tied with no winner', () => {
     const sets = [
       { player1Games: 6, player2Games: 3, winner: 'player1' as const },
-      { player1Games: 2, player2Games: 1 }, // in-progress set, no winner
+      { player1Games: 2, player2Games: 2 },
     ];
     const result = extractMatchTotals(sets);
     expect(result.p1Sets).toBe(1);
