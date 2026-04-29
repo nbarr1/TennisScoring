@@ -160,32 +160,27 @@ export const acceptInvite = onCall(async (request) => {
 
   const inviteRef = db.collection('invites').doc(safeToken);
   const userRef = db.collection('users').doc(uid);
+  const inviteSnap = await inviteRef.get();
+  if (!inviteSnap.exists) {
+    throw new HttpsError('not-found', 'Invite not found.');
+  }
+  const inviteData = inviteSnap.data();
+  if (!inviteData) {
+    throw new HttpsError('not-found', 'Invite not found.');
+  }
+  if (inviteData.accepted) {
+    throw new HttpsError('already-exists', 'Invite already accepted.');
+  }
+  if (normalizeEmail(inviteData.email ?? '') !== authEmail) {
+    throw new HttpsError(
+      'permission-denied',
+      'This invite is for a different email address.',
+    );
+  }
+  const inviteDivisionId = inviteData.divisionId as string | undefined;
 
   await db.runTransaction(async (tx) => {
-    const [inviteSnap, userSnap] = await Promise.all([
-      tx.get(inviteRef),
-      tx.get(userRef),
-    ]);
-
-    if (!inviteSnap.exists) {
-      throw new HttpsError('not-found', 'Invite not found.');
-    }
-
-    const invite = inviteSnap.data();
-    if (!invite) {
-      throw new HttpsError('not-found', 'Invite not found.');
-    }
-
-    if (invite.accepted) {
-      throw new HttpsError('already-exists', 'Invite already accepted.');
-    }
-
-    if (normalizeEmail(invite.email ?? '') !== authEmail) {
-      throw new HttpsError(
-        'permission-denied',
-        'This invite is for a different email address.',
-      );
-    }
+    const userSnap = await tx.get(userRef);
 
     tx.update(inviteRef, {
       accepted: true,
@@ -197,24 +192,56 @@ export const acceptInvite = onCall(async (request) => {
       tx.set(
         userRef,
         {
-          displayName: userSnap.data()?.displayName || invite.name,
+          displayName: userSnap.data()?.displayName || inviteData.name,
           isRegistered: true,
           inviteStatus: 'registered',
           updatedAt: FieldValue.serverTimestamp(),
-          ...(invite.divisionId ? { divisionId: invite.divisionId } : {}),
+          ...(inviteDivisionId ? { divisionId: inviteDivisionId } : {}),
         },
         { merge: true },
       );
     }
 
-    if (invite.divisionId) {
-      const divisionRef = db.collection('divisions').doc(invite.divisionId);
+    if (inviteDivisionId) {
+      const divisionRef = db.collection('divisions').doc(inviteDivisionId);
       tx.update(divisionRef, {
         playerIds: FieldValue.arrayUnion(uid),
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
   });
+
+  if (inviteDivisionId) {
+    const placeholderSnap = await db
+      .collection('users')
+      .where('divisionId', '==', inviteDivisionId)
+      .where('email', '==', authEmail)
+      .where('isRegistered', '==', false)
+      .limit(1)
+      .get();
+    if (!placeholderSnap.empty) {
+      const placeholderRef = placeholderSnap.docs[0].ref;
+      if (placeholderRef.id !== uid) {
+        await db.runTransaction(async (tx) => {
+          tx.update(db.collection('divisions').doc(inviteDivisionId), {
+            playerIds: FieldValue.arrayRemove(placeholderRef.id),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+          tx.set(
+            placeholderRef,
+            {
+              divisionId: null,
+              inviteStatus: 'registered',
+              isRegistered: true,
+              mergedIntoUserId: uid,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        });
+      }
+    }
+  }
 
   return { success: true };
 });

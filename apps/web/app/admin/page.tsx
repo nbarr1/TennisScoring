@@ -88,7 +88,11 @@ export default function AdminPage(): React.JSX.Element {
         sendInviteForMember && !!memberEmail.trim(),
       );
       let inviteWarning = '';
-      if (sendInviteForMember && memberEmail.trim()) {
+      if (
+        memberResult.createdPlaceholder &&
+        sendInviteForMember &&
+        memberEmail.trim()
+      ) {
         setInviting(true);
         try {
           const callable = httpsCallable(functions, 'sendInvite');
@@ -124,7 +128,7 @@ export default function AdminPage(): React.JSX.Element {
         ? sendInviteForMember && memberEmail.trim()
           ? `Placeholder created for ${memberName.trim()}.`
           : 'Placeholder member created.'
-        : 'Existing registered player added to division.';
+        : 'Existing registered player added to division (no invite sent).';
       setInviteMessage(`${baseMessage}${inviteWarning}`);
       setMemberName('');
       setMemberEmail('');
