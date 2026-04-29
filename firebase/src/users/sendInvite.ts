@@ -13,6 +13,40 @@ type SendInviteInput = {
 type InvitePreviewInput = { token?: string };
 type AcceptInviteInput = { token?: string };
 
+
+
+type UserCoreFields = {
+  role: string;
+  createdAt: unknown;
+  contactPreferences: { allowEmail: boolean; allowSMS: boolean; allowInApp: boolean };
+  fcmTokens: unknown[];
+  tipsEnabled: boolean;
+};
+
+function validateUserCompleteness(value: unknown): UserCoreFields | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const user = value as Partial<UserCoreFields>;
+  const contact = user.contactPreferences as Partial<UserCoreFields['contactPreferences']> | undefined;
+  const contactValid = !!contact
+    && typeof contact.allowEmail === 'boolean'
+    && typeof contact.allowSMS === 'boolean'
+    && typeof contact.allowInApp === 'boolean';
+
+  if (
+    user.role !== 'player' && user.role !== 'division_leader' && user.role !== 'admin'
+  ) return undefined;
+  if (!user.createdAt) return undefined;
+  if (!contactValid) return undefined;
+  if (!Array.isArray(user.fcmTokens)) return undefined;
+  if (typeof user.tipsEnabled !== 'boolean') return undefined;
+  return {
+    role: user.role,
+    createdAt: user.createdAt,
+    contactPreferences: contact as UserCoreFields['contactPreferences'],
+    fcmTokens: user.fcmTokens,
+    tipsEnabled: user.tipsEnabled,
+  };
+}
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -196,10 +230,10 @@ export const acceptInvite = onCall(async (request) => {
         email: authEmail,
         isRegistered: true,
         inviteStatus: 'registered',
-        updatedAt: FieldValue.serverTimestamp(),
-        ...(!userSnap.exists ? {
+        updatedAt: Date.now(),
+        ...(validateUserCompleteness(userSnap.data()) === undefined ? {
           role: 'player',
-          createdAt: FieldValue.serverTimestamp(),
+          createdAt: Date.now(),
           contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
           fcmTokens: [],
           tipsEnabled: true,
