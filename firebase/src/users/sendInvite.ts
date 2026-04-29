@@ -198,6 +198,8 @@ export const acceptInvite = onCall(async (request) => {
         userRef,
         {
           displayName: userSnap.data()?.displayName || invite.name,
+          isRegistered: true,
+          inviteStatus: 'registered',
           updatedAt: FieldValue.serverTimestamp(),
           ...(invite.divisionId ? { divisionId: invite.divisionId } : {}),
         },

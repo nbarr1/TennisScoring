@@ -19,6 +19,12 @@ type AddPlayerInput = {
   divisionId?: string;
   email?: string;
 };
+type AddPlaceholderInput = {
+  divisionId?: string;
+  name?: string;
+  email?: string;
+  sendInvite?: boolean;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -247,4 +253,67 @@ export const addPlayerToDivisionByEmail = onCall(async (request) => {
   await addUserToDivisionChannel(db, safeDivisionId, userId);
 
   return { success: true, userId };
+});
+
+export const addDivisionMemberPlaceholder = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
+  const uid = request.auth.uid;
+  const { divisionId, name, email, sendInvite } = (request.data ?? {}) as AddPlaceholderInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeName = name?.trim();
+  const safeEmail = email ? normalizeEmail(email) : '';
+  if (!safeDivisionId || !safeName) {
+    throw new HttpsError('invalid-argument', 'Division and name are required.');
+  }
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, uid, safeDivisionId);
+  if (safeEmail) {
+    const existing = await db.collection('users').where('email', '==', safeEmail).limit(1).get();
+    if (!existing.empty) {
+      const existingUserId = existing.docs[0].id;
+      await db.runTransaction(async (tx) => {
+        tx.update(db.collection('divisions').doc(safeDivisionId), {
+          playerIds: FieldValue.arrayUnion(existingUserId),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(
+          db.collection('users').doc(existingUserId),
+          {
+            divisionId: safeDivisionId,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
+      await addUserToDivisionChannel(db, safeDivisionId, existingUserId);
+      return { success: true, userId: existingUserId, createdPlaceholder: false };
+    }
+  }
+  const now = Date.now();
+  const placeholderRef = db.collection('users').doc();
+  await db.runTransaction(async (tx) => {
+    tx.set(placeholderRef, {
+      id: placeholderRef.id,
+      displayName: safeName,
+      email: safeEmail,
+      phone: null,
+      avatarUrl: null,
+      contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+      divisionId: safeDivisionId,
+      role: 'player',
+      fcmTokens: [],
+      tipsEnabled: true,
+      isRegistered: false,
+      inviteStatus: sendInvite && safeEmail ? 'invite_sent' : 'none',
+      invitedAt: sendInvite && safeEmail ? now : null,
+      invitedBy: sendInvite && safeEmail ? uid : null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.update(db.collection('divisions').doc(safeDivisionId), {
+      playerIds: FieldValue.arrayUnion(placeholderRef.id),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { success: true, userId: placeholderRef.id, createdPlaceholder: true };
 });
