@@ -1,10 +1,15 @@
 {
-  "cli": { "version": ">= 10.0.0", "appVersionSource": "local" },
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "local"
+  },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "simulator": true },
+      "ios": {
+        "simulator": true
+      },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "development",
@@ -14,7 +19,9 @@
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" },
+      "android": {
+        "buildType": "apk"
+      },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "preview",
@@ -30,6 +37,19 @@
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "production",
+        "NODE_VERSION": "20.19.0",
+        "PNPM_VERSION": "9.15.5"
+      }
+    },
+    "wear-preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":wear:assembleRelease"
+      },
+      "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
+      "env": {
+        "APP_ENV": "preview",
         "NODE_VERSION": "20.19.0",
         "PNPM_VERSION": "9.15.5"
       }
