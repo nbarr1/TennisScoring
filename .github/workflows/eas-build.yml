@@ -1,6 +1,15 @@
-name: EAS Build (Android Preview)
+name: EAS Build (Android APKs)
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Which Android APK to build"
+        required: true
+        default: mobile
+        type: choice
+        options:
+          - mobile
+          - wear
 
 jobs:
   build:
@@ -16,8 +25,16 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm install -g pnpm && pnpm install
+      - name: Select EAS profile
+        id: profile
+        run: |
+          if [ "${{ github.event.inputs.target }}" = "wear" ]; then
+            echo "name=wear-preview" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=preview" >> "$GITHUB_OUTPUT"
+          fi
       - working-directory: apps/mobile
-        run: eas build --platform android --profile preview --non-interactive
+        run: eas build --platform android --profile "${{ steps.profile.outputs.name }}" --non-interactive
         env:
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
