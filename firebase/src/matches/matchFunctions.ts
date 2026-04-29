@@ -329,6 +329,13 @@ async function recalculateRankings(
   const divisionPlayerIdSet = new Set(divisionPlayerIds);
   const hasDivisionRoster = divisionPlayerIdSet.size > 0;
 
+  const rosterUserSnaps = await Promise.all(
+    divisionPlayerIds.map((id) => db.collection('users').doc(id).get()),
+  );
+  const rosterDisplayNames = new Map(
+    rosterUserSnaps.map((s) => [s.id, (s.data()?.displayName ?? s.id).trim()]),
+  );
+
   result.completedMatchesScanned = matchesSnap.size;
 
   const statsMap = new Map<string, RankingStats>();
@@ -358,6 +365,15 @@ async function recalculateRankings(
 
     const { player1Id, player2Id, liveScore, winner } = match;
     const isGuestMatch = match.player2IsGuest === true;
+
+    if (!isGuestMatch && hasDivisionRoster) {
+      const canonicalName = rosterDisplayNames.get(player2Id);
+      const providedName = (match.player2Name ?? '').trim();
+      if (canonicalName && providedName && canonicalName !== providedName) {
+        result.skippedNonDivisionMatches += 1;
+        continue;
+      }
+    }
     const player1Included =
       !hasDivisionRoster || divisionPlayerIdSet.has(player1Id);
     const player2Included =
