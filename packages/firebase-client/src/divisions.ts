@@ -1,6 +1,6 @@
 import { getDoc, getDocs, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionsCol, usersCol } from './collections';
+import { divisionDoc, usersCol } from './collections';
 import { functions } from './config';
 import type { Division, User } from '@tennis/shared';
 
@@ -98,4 +98,21 @@ export async function addDivisionMemberPlaceholder(
     userId: result.data.userId,
     createdPlaceholder: result.data.createdPlaceholder,
   };
+}
+
+export async function mergeDivisionPlayerRecords(
+  divisionId: string,
+  sourceUserId: string,
+  targetUserId: string,
+): Promise<number> {
+  const callable = httpsCallable<
+    { divisionId: string; sourceUserId: string; targetUserId: string },
+    { success: boolean; updatedMatches: number }
+  >(functions, 'mergeDivisionPlayerRecords');
+  const result = await callable({
+    divisionId,
+    sourceUserId,
+    targetUserId,
+  });
+  return result.data.updatedMatches;
 }
