@@ -30,6 +30,7 @@ export default function AdminPage(): React.JSX.Element {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [inviteMessage, setInviteMessage] = useState('');
+  const [inviteDebug, setInviteDebug] = useState('');
   const [inviting, setInviting] = useState(false);
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
@@ -78,6 +79,7 @@ export default function AdminPage(): React.JSX.Element {
     setAdding(true);
     setError('');
     setInviteMessage('');
+    setInviteDebug('');
     try {
       const memberResult = await addDivisionMemberPlaceholder(
         division.id,
@@ -100,6 +102,19 @@ export default function AdminPage(): React.JSX.Element {
             (inviteError as { message?: string; code?: string }).message ??
             'Unknown invite error';
           const inviteCode = (inviteError as { code?: string }).code;
+          setInviteDebug(
+            JSON.stringify(
+              {
+                code: inviteCode ?? 'error',
+                message: inviteMessage,
+                memberEmail: memberEmail.trim().toLowerCase(),
+                memberName: memberName.trim(),
+                divisionId: division.id,
+              },
+              null,
+              2,
+            ),
+          );
           inviteWarning = ` Member was added, but invite email failed (${inviteCode ?? 'error'}: ${inviteMessage}).`;
         } finally {
           setInviting(false);
@@ -276,6 +291,14 @@ export default function AdminPage(): React.JSX.Element {
                 </label>
               </div>
               {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
+              {inviteDebug && (
+                <details style={styles.debugDetails}>
+                  <summary style={styles.debugSummary}>
+                    Invite error details (for support)
+                  </summary>
+                  <pre style={styles.debugPre}>{inviteDebug}</pre>
+                </details>
+              )}
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
@@ -457,6 +480,27 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
   success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
+  debugDetails: {
+    marginTop: 8,
+    background: '#f8f9fb',
+    border: '1px solid #e7e9ef',
+    borderRadius: 10,
+    padding: '8px 10px',
+  },
+  debugSummary: {
+    cursor: 'pointer',
+    color: '#555',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  debugPre: {
+    marginTop: 8,
+    marginBottom: 0,
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
+    fontSize: 12,
+    color: '#333',
+  },
   table: { width: '100%', borderCollapse: 'collapse' as const, marginTop: 8 },
   th: {
     textAlign: 'left' as const,
