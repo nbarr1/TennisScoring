@@ -167,10 +167,13 @@ export function useRankings(divisionId: string | null) {
 
     const syncRankings = () => {
       let nextRankings: PlayerRanking[];
-      if (computedRankings.length > 0) {
-        // Use locally-computed stats (always fresh) and add any division players
-        // who haven't played yet. Only zero-stat Firestore docs are safe to
-        // merge here; nonzero docs may be stale after exclusions/deletions.
+      const hasFirestoreStats = firestoreRankings.some(hasRankingStats);
+      if (hasFirestoreStats) {
+        // Prefer server-calculated standings when present. These are computed
+        // from canonical user IDs and are less prone to local identity drift.
+        nextRankings = firestoreRankings;
+      } else if (computedRankings.length > 0) {
+        // Fallback to local computation only before server standings exist.
         const computedIds = new Set(computedRankings.map((r) => r.userId));
         const unplayed = firestoreRankings
           .filter((r) => !computedIds.has(r.userId) && !hasRankingStats(r))
