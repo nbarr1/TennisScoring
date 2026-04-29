@@ -358,7 +358,12 @@ export const mergeDivisionPlayerRecords = onCall(async (request) => {
   }
 
   const db = getFirestore();
-  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const divisionSnap = await requireDivisionLeaderOrAdmin(
+    db,
+    request.auth.uid,
+    safeDivisionId,
+  );
+  const divisionPlayerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
 
   const [sourceSnap, targetSnap] = await Promise.all([
     db.collection('users').doc(safeSourceUserId).get(),
@@ -367,6 +372,20 @@ export const mergeDivisionPlayerRecords = onCall(async (request) => {
   if (!sourceSnap.exists || !targetSnap.exists) {
     throw new HttpsError('not-found', 'One or both users were not found.');
   }
+  const sourceDivisionId = sourceSnap.data()?.divisionId;
+  const targetDivisionId = targetSnap.data()?.divisionId;
+  if (
+    !divisionPlayerIds.includes(safeSourceUserId) ||
+    !divisionPlayerIds.includes(safeTargetUserId) ||
+    sourceDivisionId !== safeDivisionId ||
+    targetDivisionId !== safeDivisionId
+  ) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Both source and target users must already be active members of this division.',
+    );
+  }
+  const targetDisplayName = targetSnap.data()?.displayName ?? null;
 
   const matches = await db
     .collection('matches')
@@ -374,7 +393,16 @@ export const mergeDivisionPlayerRecords = onCall(async (request) => {
     .where('playerIds', 'array-contains', safeSourceUserId)
     .get();
 
-  const batch = db.batch();
+  const maxWritesPerBatch = 450;
+  let batch = db.batch();
+  let writesInBatch = 0;
+  const commits: Array<Promise<FirebaseFirestore.WriteResult[]>> = [];
+  const commitAndRotate = () => {
+    commits.push(batch.commit());
+    batch = db.batch();
+    writesInBatch = 0;
+  };
+
   matches.docs.forEach((matchDoc) => {
     const data = matchDoc.data();
     const nextPlayer1Id = data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id;
@@ -382,17 +410,28 @@ export const mergeDivisionPlayerRecords = onCall(async (request) => {
     const nextPlayerIds = Array.from(
       new Set(((data.playerIds as string[]) ?? []).map((id) => (id === safeSourceUserId ? safeTargetUserId : id))),
     );
-    batch.update(matchDoc.ref, {
+    const updateData: Record<string, unknown> = {
       player1Id: nextPlayer1Id,
       player2Id: nextPlayer2Id,
       playerIds: nextPlayerIds,
-    });
+    };
+    if (data.player1Id === safeSourceUserId && targetDisplayName) {
+      updateData.player1Name = targetDisplayName;
+    }
+    if (data.player2Id === safeSourceUserId && targetDisplayName) {
+      updateData.player2Name = targetDisplayName;
+    }
+    batch.update(matchDoc.ref, updateData);
+    writesInBatch += 1;
+    if (writesInBatch >= maxWritesPerBatch) {
+      commitAndRotate();
+    }
   });
 
   batch.set(
     db.collection('divisions').doc(safeDivisionId),
     {
-      playerIds: FieldValue.arrayUnion(safeTargetUserId),
+      playerIds: FieldValue.arrayRemove(safeSourceUserId),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -409,12 +448,17 @@ export const mergeDivisionPlayerRecords = onCall(async (request) => {
     db.collection('users').doc(safeSourceUserId),
     {
       mergedIntoUserId: safeTargetUserId,
+      divisionId: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
+  writesInBatch += 3;
+  if (writesInBatch > 0) {
+    commitAndRotate();
+  }
 
-  await batch.commit();
+  await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
 
   return { success: true, updatedMatches: matches.size };
