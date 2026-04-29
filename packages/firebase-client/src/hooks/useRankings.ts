@@ -16,10 +16,44 @@ function hasRankingStats(ranking: PlayerRanking): boolean {
   );
 }
 
+function normalizeIdentity(value?: string): string | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function createCanonicalIdResolver(roster: PlayerRanking[]) {
+  const keyToUserId = new Map<string, string>();
+
+  for (const player of roster) {
+    const userIdKey = normalizeIdentity(player.userId);
+    const nameKey = normalizeIdentity(player.displayName);
+    if (userIdKey && !keyToUserId.has(userIdKey)) {
+      keyToUserId.set(userIdKey, player.userId);
+    }
+    if (nameKey && !keyToUserId.has(nameKey)) {
+      keyToUserId.set(nameKey, player.userId);
+    }
+  }
+
+  return ({ userId, displayName }: { userId: string; displayName?: string }) => {
+    const userIdKey = normalizeIdentity(userId);
+    const nameKey = normalizeIdentity(displayName);
+
+    return (
+      (userIdKey ? keyToUserId.get(userIdKey) : undefined) ??
+      (nameKey ? keyToUserId.get(nameKey) : undefined) ??
+      userId
+    );
+  };
+}
+
 function buildRankingsFromMatches(
   matches: Match[],
   divisionId: string,
+  roster: PlayerRanking[],
 ): { rankings: PlayerRanking[]; countedMatchCount: number } {
+  const resolveCanonicalId = createCanonicalIdResolver(roster);
   const statsMap = new Map<
     string,
     {
@@ -47,9 +81,11 @@ function buildRankingsFromMatches(
     const isGuestMatch = match.player2IsGuest === true;
     const player1Name = match.player1Name ?? player1Id;
     const player2Name = match.player2Name ?? player2Id;
+    const resolvedPlayer1Id = resolveCanonicalId({ userId: player1Id, displayName: player1Name });
+    const resolvedPlayer2Id = resolveCanonicalId({ userId: player2Id, displayName: player2Name });
 
-    if (!statsMap.has(player1Id)) {
-      statsMap.set(player1Id, {
+    if (!statsMap.has(resolvedPlayer1Id)) {
+      statsMap.set(resolvedPlayer1Id, {
         matchesWon: 0,
         matchesLost: 0,
         setsWon: 0,
@@ -59,8 +95,8 @@ function buildRankingsFromMatches(
         displayName: player1Name,
       });
     }
-    if (!isGuestMatch && !statsMap.has(player2Id)) {
-      statsMap.set(player2Id, {
+    if (!isGuestMatch && !statsMap.has(resolvedPlayer2Id)) {
+      statsMap.set(resolvedPlayer2Id, {
         matchesWon: 0,
         matchesLost: 0,
         setsWon: 0,
@@ -71,8 +107,8 @@ function buildRankingsFromMatches(
       });
     }
 
-    const p1Stats = statsMap.get(player1Id)!;
-    const p2Stats = isGuestMatch ? null : statsMap.get(player2Id)!;
+    const p1Stats = statsMap.get(resolvedPlayer1Id)!;
+    const p2Stats = isGuestMatch ? null : statsMap.get(resolvedPlayer2Id)!;
 
     const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
       liveScore.sets,
@@ -103,7 +139,7 @@ function buildRankingsFromMatches(
 
     if (isGuestMatch) continue;
 
-    const [h2hPlayer1Id, h2hPlayer2Id] = [player1Id, player2Id].sort();
+    const [h2hPlayer1Id, h2hPlayer2Id] = [resolvedPlayer1Id, resolvedPlayer2Id].sort();
     const h2hId = `${h2hPlayer1Id}_${h2hPlayer2Id}`;
 
     if (!h2hAccum.has(h2hId)) {
@@ -118,7 +154,7 @@ function buildRankingsFromMatches(
     }
 
     const h2h = h2hAccum.get(h2hId)!;
-    const winnerUserId = winner === 'player1' ? player1Id : player2Id;
+    const winnerUserId = winner === 'player1' ? resolvedPlayer1Id : resolvedPlayer2Id;
     if (winnerUserId === h2h.player1Id) {
       h2h.player1Wins += 1;
     } else {
@@ -215,7 +251,7 @@ export function useRankings(divisionId: string | null) {
       (snap) => {
         try {
           const matches = snap.docs.map((d) => d.data() as Match);
-          const result = buildRankingsFromMatches(matches, divisionId);
+          const result = buildRankingsFromMatches(matches, divisionId, firestoreRankings);
           computedRankings = result.rankings;
           countedMatchCount = result.countedMatchCount;
         } catch {
