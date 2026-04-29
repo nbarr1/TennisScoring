@@ -14,4 +14,5 @@ export {
   joinDivisionByCode,
   addPlayerToDivisionByEmail,
   addDivisionMemberPlaceholder,
+  mergeDivisionPlayerRecords,
 } from './divisions/divisionFunctions';
