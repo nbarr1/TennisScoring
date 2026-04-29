@@ -267,6 +267,28 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
   }
   const db = getFirestore();
   await requireDivisionLeaderOrAdmin(db, uid, safeDivisionId);
+  if (safeEmail) {
+    const existing = await db.collection('users').where('email', '==', safeEmail).limit(1).get();
+    if (!existing.empty) {
+      const existingUserId = existing.docs[0].id;
+      await db.runTransaction(async (tx) => {
+        tx.update(db.collection('divisions').doc(safeDivisionId), {
+          playerIds: FieldValue.arrayUnion(existingUserId),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.set(
+          db.collection('users').doc(existingUserId),
+          {
+            divisionId: safeDivisionId,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
+      await addUserToDivisionChannel(db, safeDivisionId, existingUserId);
+      return { success: true, userId: existingUserId, createdPlaceholder: false };
+    }
+  }
   const now = Date.now();
   const placeholderRef = db.collection('users').doc();
   await db.runTransaction(async (tx) => {
@@ -293,5 +315,5 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
-  return { success: true, userId: placeholderRef.id };
+  return { success: true, userId: placeholderRef.id, createdPlaceholder: true };
 });

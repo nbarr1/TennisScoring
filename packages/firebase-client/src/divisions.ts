@@ -83,10 +83,10 @@ export async function addDivisionMemberPlaceholder(
   name: string,
   email?: string,
   sendInvite = true,
-): Promise<string> {
+): Promise<{ userId: string; createdPlaceholder: boolean }> {
   const callable = httpsCallable<
     { divisionId: string; name: string; email?: string; sendInvite?: boolean },
-    { success: boolean; userId: string }
+    { success: boolean; userId: string; createdPlaceholder: boolean }
   >(functions, 'addDivisionMemberPlaceholder');
   const result = await callable({
     divisionId,
@@ -94,5 +94,8 @@ export async function addDivisionMemberPlaceholder(
     email: email?.trim().toLowerCase() || undefined,
     sendInvite,
   });
-  return result.data.userId;
+  return {
+    userId: result.data.userId,
+    createdPlaceholder: result.data.createdPlaceholder,
+  };
 }

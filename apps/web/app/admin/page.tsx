@@ -10,7 +10,6 @@ import {
   divisionsCol,
   userDoc,
   createDivision as createDivisionShared,
-  addPlayerToDivisionByEmail,
   addDivisionMemberPlaceholder,
   recalculateDivisionRankings,
   useAuthUser,
@@ -23,11 +22,9 @@ export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
-  const [newPlayerEmail, setNewPlayerEmail] = useState('');
-  const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [placeholderName, setPlaceholderName] = useState('');
-  const [placeholderEmail, setPlaceholderEmail] = useState('');
+  const [memberName, setMemberName] = useState('');
+  const [memberEmail, setMemberEmail] = useState('');
+  const [sendInviteForMember, setSendInviteForMember] = useState(true);
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -76,62 +73,43 @@ export default function AdminPage(): React.JSX.Element {
     setNewDivisionName('');
   }
 
-  async function sendInviteEmail() {
-    if (!division || !inviteEmail.trim() || !inviteName.trim()) return;
-    setInviting(true);
+  async function addDivisionMember() {
+    if (!division || !memberName.trim()) return;
+    setAdding(true);
     setError('');
     setInviteMessage('');
     try {
-      const callable = httpsCallable(functions, 'sendInvite');
-      await callable({
-        email: inviteEmail.trim().toLowerCase(),
-        name: inviteName.trim(),
-        divisionId: division.id,
-      });
-      setInviteMessage(`Invite sent to ${inviteEmail.trim().toLowerCase()}.`);
-      setInviteName('');
-      setInviteEmail('');
-    } catch (e) {
-      const message = (e as { message?: string }).message;
-      setError(message || 'Failed to send invite. Please try again.');
-    } finally {
-      setInviting(false);
-    }
-  }
-
-  async function addPlayerByEmail() {
-    if (!division || !newPlayerEmail.trim()) return;
-    setAdding(true);
-    setError('');
-    try {
-      await addPlayerToDivisionByEmail(division.id, newPlayerEmail.trim());
-      setNewPlayerEmail('');
-    } catch (e) {
-      const message = (e as { message?: string }).message;
-      setError(message || 'Failed to add player. Please try again.');
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function addPlaceholderPlayer() {
-    if (!division || !placeholderName.trim()) return;
-    setAdding(true);
-    setError('');
-    try {
-      await addDivisionMemberPlaceholder(
+      const memberResult = await addDivisionMemberPlaceholder(
         division.id,
-        placeholderName.trim(),
-        placeholderEmail.trim() || undefined,
-        !!placeholderEmail.trim(),
+        memberName.trim(),
+        memberEmail.trim() || undefined,
+        sendInviteForMember && !!memberEmail.trim(),
       );
-      setPlaceholderName('');
-      setPlaceholderEmail('');
+      if (sendInviteForMember && memberEmail.trim()) {
+        setInviting(true);
+        const callable = httpsCallable(functions, 'sendInvite');
+        await callable({
+          email: memberEmail.trim().toLowerCase(),
+          name: memberName.trim(),
+          divisionId: division.id,
+        });
+      }
+      setInviteMessage(
+        memberResult.createdPlaceholder
+          ? sendInviteForMember && memberEmail.trim()
+            ? `Placeholder created and invite sent to ${memberEmail.trim().toLowerCase()}.`
+            : 'Placeholder member created.'
+          : 'Existing registered player added to division.',
+      );
+      setMemberName('');
+      setMemberEmail('');
+      setSendInviteForMember(true);
     } catch (e) {
       const message = (e as { message?: string }).message;
-      setError(message || 'Failed to add placeholder player. Please try again.');
+      setError(message || 'Failed to add division member. Please try again.');
     } finally {
       setAdding(false);
+      setInviting(false);
     }
   }
 
@@ -243,73 +221,46 @@ export default function AdminPage(): React.JSX.Element {
                 enrolled
               </p>
 
-              <h3 style={styles.subTitle}>Invite New Player</h3>
+              <h3 style={styles.subTitle}>Add Division Member</h3>
+              <p style={styles.hint}>
+                One flow for existing players and placeholders. If the email
+                belongs to a registered account, they are added directly.
+                Otherwise, a placeholder is created.
+              </p>
               <div style={styles.row}>
                 <input
                   style={styles.input}
-                  value={inviteName}
-                  onChange={(e) => setInviteName(e.target.value)}
+                  value={memberName}
+                  onChange={(e) => setMemberName(e.target.value)}
                   placeholder="Player name"
                 />
                 <input
                   style={styles.input}
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="player@company.com"
-                  type="email"
-                />
-                <button
-                  style={styles.btn}
-                  onClick={sendInviteEmail}
-                  disabled={
-                    inviting || !inviteName.trim() || !inviteEmail.trim()
-                  }
-                >
-                  {inviting ? 'Sending…' : 'Send Invite'}
-                </button>
-              </div>
-              {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
-
-              <h3 style={styles.subTitle}>Add Existing Player by Email</h3>
-              <div style={styles.row}>
-                <input
-                  style={styles.input}
-                  value={newPlayerEmail}
-                  onChange={(e) => setNewPlayerEmail(e.target.value)}
-                  placeholder="player@company.com"
-                  type="email"
-                />
-                <button
-                  style={styles.btn}
-                  onClick={addPlayerByEmail}
-                  disabled={adding || !newPlayerEmail.trim()}
-                >
-                  {adding ? 'Adding…' : 'Add Player'}
-                </button>
-              </div>
-              <h3 style={styles.subTitle}>Add Division Member Placeholder</h3>
-              <div style={styles.row}>
-                <input
-                  style={styles.input}
-                  value={placeholderName}
-                  onChange={(e) => setPlaceholderName(e.target.value)}
-                  placeholder="Player name"
-                />
-                <input
-                  style={styles.input}
-                  value={placeholderEmail}
-                  onChange={(e) => setPlaceholderEmail(e.target.value)}
+                  value={memberEmail}
+                  onChange={(e) => setMemberEmail(e.target.value)}
                   placeholder="player@company.com (optional)"
                   type="email"
                 />
                 <button
                   style={styles.btn}
-                  onClick={addPlaceholderPlayer}
-                  disabled={adding || !placeholderName.trim()}
+                  onClick={addDivisionMember}
+                  disabled={adding || inviting || !memberName.trim()}
                 >
-                  {adding ? 'Adding…' : 'Add Placeholder'}
+                  {adding || inviting ? 'Saving…' : 'Add Member'}
                 </button>
               </div>
+              <div style={styles.row}>
+                <label style={{ ...styles.hint, marginBottom: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={sendInviteForMember}
+                    onChange={(e) => setSendInviteForMember(e.target.checked)}
+                    style={{ marginRight: 8 }}
+                  />
+                  Send invite email when an email is provided
+                </label>
+              </div>
+              {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
