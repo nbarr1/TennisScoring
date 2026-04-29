@@ -85,28 +85,43 @@ export default function AdminPage(): React.JSX.Element {
         memberEmail.trim() || undefined,
         sendInviteForMember && !!memberEmail.trim(),
       );
+      let inviteWarning = '';
       if (sendInviteForMember && memberEmail.trim()) {
         setInviting(true);
-        const callable = httpsCallable(functions, 'sendInvite');
-        await callable({
-          email: memberEmail.trim().toLowerCase(),
-          name: memberName.trim(),
-          divisionId: division.id,
-        });
+        try {
+          const callable = httpsCallable(functions, 'sendInvite');
+          await callable({
+            email: memberEmail.trim().toLowerCase(),
+            name: memberName.trim(),
+            divisionId: division.id,
+          });
+        } catch (inviteError) {
+          const inviteMessage =
+            (inviteError as { message?: string; code?: string }).message ??
+            'Unknown invite error';
+          const inviteCode = (inviteError as { code?: string }).code;
+          inviteWarning = ` Member was added, but invite email failed (${inviteCode ?? 'error'}: ${inviteMessage}).`;
+        } finally {
+          setInviting(false);
+        }
       }
-      setInviteMessage(
-        memberResult.createdPlaceholder
-          ? sendInviteForMember && memberEmail.trim()
-            ? `Placeholder created and invite sent to ${memberEmail.trim().toLowerCase()}.`
-            : 'Placeholder member created.'
-          : 'Existing registered player added to division.',
-      );
+      const baseMessage = memberResult.createdPlaceholder
+        ? sendInviteForMember && memberEmail.trim()
+          ? `Placeholder created for ${memberName.trim()}.`
+          : 'Placeholder member created.'
+        : 'Existing registered player added to division.';
+      setInviteMessage(`${baseMessage}${inviteWarning}`);
       setMemberName('');
       setMemberEmail('');
       setSendInviteForMember(true);
     } catch (e) {
-      const message = (e as { message?: string }).message;
-      setError(message || 'Failed to add division member. Please try again.');
+      const message = (e as { message?: string; code?: string }).message;
+      const code = (e as { code?: string }).code;
+      setError(
+        message
+          ? `${code ?? 'error'}: ${message}`
+          : 'Failed to add division member. Please try again.',
+      );
     } finally {
       setAdding(false);
       setInviting(false);
