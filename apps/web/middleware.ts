@@ -2,15 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from 'next-firebase-auth-edge';
 
 const privateKey = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? '').replace(/\\n/g, '\n');
+const cookieSecret = process.env.NEXTAUTH_SECRET;
+const developmentCookieSecret = 'development-only-cookie-secret';
 
 export async function middleware(request: NextRequest) {
+  if (process.env.NODE_ENV === 'production' && !cookieSecret) {
+    console.error('[authMiddleware] NEXTAUTH_SECRET is required in production');
+    return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
+  }
+
   try {
     return await authMiddleware(request, {
       loginPath: '/api/auth/login',
       logoutPath: '/api/auth/logout',
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
       cookieName: 'tennis-auth',
-      cookieSignatureKeys: [process.env.NEXTAUTH_SECRET ?? 'fallback-dev-secret'],
+      cookieSignatureKeys: [cookieSecret ?? developmentCookieSecret],
       cookieSerializeOptions: {
         path: '/',
         httpOnly: true,

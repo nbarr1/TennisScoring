@@ -38,7 +38,11 @@ import {
   getTipsForTriggers,
 } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
-import type { User } from '@tennis/shared';
+import {
+  addWearScoreInputListener,
+  sendScoreToWear,
+} from '../../modules/wear-os';
+import type { Match, TipTrigger, User } from '@tennis/shared';
 
 function TipOverlay({
   tip,
@@ -103,6 +107,36 @@ function DisputeModal({
       </View>
     </Modal>
   );
+}
+
+function buildWearFeedback(
+  match: Match,
+  tipTriggers: TipTrigger[] = [],
+): { feedbackTitle?: string; feedbackBody?: string; matchWinnerName?: string } {
+  const p1Name = match.player1Name ?? 'Player 1';
+  const p2Name = match.player2Name ?? 'Player 2';
+  const winnerName =
+    match.winner === 'player1'
+      ? p1Name
+      : match.winner === 'player2'
+        ? p2Name
+        : undefined;
+
+  if (
+    match.status === 'pending_report' ||
+    match.status === 'completed' ||
+    tipTriggers.includes('match_complete')
+  ) {
+    return {
+      feedbackTitle: 'Match complete',
+      feedbackBody: 'Check your phone to confirm the final match report.',
+      ...(winnerName && { matchWinnerName: winnerName }),
+    };
+  }
+
+  const tip = getTipsForTriggers(tipTriggers)[0];
+  if (!tip) return {};
+  return { feedbackTitle: tip.title, feedbackBody: tip.body };
 }
 
 function EditScoreModal({
@@ -280,13 +314,29 @@ export default function MatchScreen() {
     setScoring(true);
     try {
       const result = await scorePoint(id, match, player);
+      const p1 = match.player1Name ?? 'Player 1';
+      const p2 = match.player2Name ?? 'Player 2';
+      await sendScoreToWear(result.nextScore, {
+        status: result.matchWinner ? 'pending_report' : match.status,
+        player1Name: p1,
+        player2Name: p2,
+        ...buildWearFeedback(
+          {
+            ...match,
+            liveScore: result.nextScore,
+            ...(result.matchWinner && {
+              status: 'pending_report' as const,
+              winner: result.matchWinner,
+            }),
+          },
+          result.tips,
+        ),
+      });
       if (match.tipsEnabled && result.tips.length > 0) {
         const tips = getTipsForTriggers(result.tips);
         if (tips.length > 0) setCurrentTip(tips[0]);
       }
       if (result.matchWinner) {
-        const p1 = match.player1Name ?? 'Player 1';
-        const p2 = match.player2Name ?? 'Player 2';
         Alert.alert(
           'Match Over!',
           `${result.matchWinner === 'player1' ? p1 : p2} wins!\n\nEither player can now submit the match report.`,
@@ -558,6 +608,26 @@ export default function MatchScreen() {
     const { matchDoc } = await import('@tennis/firebase-client');
     await updateDoc(matchDoc(id), { tipsEnabled: !match.tipsEnabled });
   }
+
+  useEffect(() => {
+    if (!match) return;
+    const p1Name = match.player1Name ?? 'Player 1';
+    const p2Name = match.player2Name ?? 'Player 2';
+    void sendScoreToWear(match.liveScore, {
+      status: match.status,
+      player1Name: p1Name,
+      player2Name: p2Name,
+      ...buildWearFeedback(match),
+    });
+  }, [match]);
+
+  useEffect(() => {
+    if (!isParticipant || match?.status !== 'in_progress') return;
+    const subscription = addWearScoreInputListener((event) => {
+      void handlePoint(event.player);
+    });
+    return () => subscription.remove();
+  }, [isParticipant, match?.status, handlePoint]);
 
   if (loading || !match) {
     return (

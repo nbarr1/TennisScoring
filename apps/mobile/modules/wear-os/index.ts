@@ -1,21 +1,41 @@
-import { NativeModulesProxy, EventEmitter, Subscription } from 'expo-modules-core';
-import type { LiveScore } from '@tennis/shared';
+import { NativeEventEmitter, NativeModules } from 'react-native';
+import type { LiveScore, MatchStatus } from '@tennis/shared';
 
-const WearOsNative = NativeModulesProxy.WearOs;
-const emitter = new EventEmitter(WearOsNative);
+const WearOsNative = NativeModules.WearOs;
+const emitter = WearOsNative ? new NativeEventEmitter(WearOsNative) : null;
 
 export type WearScoreInputEvent = { player: 'player1' | 'player2' };
+export type WearSubscription = { remove: () => void };
 
-export async function sendScoreToWear(score: LiveScore): Promise<void> {
+export type WearScorePayload = {
+  score: LiveScore;
+  status: MatchStatus;
+  player1Name: string;
+  player2Name: string;
+  feedbackTitle?: string;
+  feedbackBody?: string;
+  matchWinnerName?: string;
+};
+
+export async function sendScoreToWear(
+  score: LiveScore,
+  payload?: Omit<WearScorePayload, 'score'>,
+): Promise<void> {
   if (!WearOsNative) return;
-  await WearOsNative.sendScore(JSON.stringify(score));
+  await WearOsNative.sendScore(JSON.stringify({ score, ...payload }));
 }
 
-export function isWearOsAvailable(): boolean {
+export async function isWearOsAvailable(): Promise<boolean> {
   if (!WearOsNative) return false;
-  return WearOsNative.isWearOsAvailable() ?? false;
+  return (await WearOsNative.isWearOsAvailable()) ?? false;
 }
 
-export function addWearScoreInputListener(handler: (event: WearScoreInputEvent) => void): Subscription {
-  return emitter.addListener('onWearScoreInput', handler);
+export function addWearScoreInputListener(
+  handler: (event: WearScoreInputEvent) => void,
+): WearSubscription {
+  return (
+    emitter?.addListener('onWearScoreInput', handler) ?? {
+      remove: () => undefined,
+    }
+  );
 }

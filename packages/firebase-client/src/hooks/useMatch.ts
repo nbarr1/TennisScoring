@@ -60,7 +60,7 @@ export async function createMatch(params: {
   divisionId: string;
   createdBy: string;
   scheduledAt?: number;
-  isDivisionMatch?: boolean; // NEW: Add this parameter
+  isDivisionMatch?: boolean;
 }): Promise<string> {
   const {
     player1Id,
@@ -148,7 +148,7 @@ export async function recordHistoricMatch(params: {
   divisionId: string;
   createdBy: string;
   sets: { p1: number; p2: number }[];
-  isDivisionMatch?: boolean; // NEW: Add this parameter
+  isDivisionMatch?: boolean;
 }): Promise<string> {
   const {
     player1Id,
@@ -286,7 +286,7 @@ export async function proposeMatch(params: {
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     tipsEnabled: true,
     source: 'live',
-    isDivisionMatch: true, // NEW: Proposals are always division matches
+    isDivisionMatch: true,
     createdBy,
     scheduledAt,
     createdAt: Date.now(),
@@ -320,7 +320,11 @@ export async function scorePoint(
   matchId: string,
   match: Match,
   scorer: 'player1' | 'player2',
-): Promise<{ matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }> {
+): Promise<{
+  nextScore: LiveScore;
+  matchWinner?: 'player1' | 'player2';
+  tips: TipTrigger[];
+}> {
   const result = applyPoint(match.liveScore, scorer, match.format);
 
   const updates: Partial<Match> = {
@@ -339,7 +343,11 @@ export async function scorePoint(
   }
 
   await updateDoc(matchDoc(matchId), updates as Partial<Match>);
-  return { matchWinner: result.matchWinner, tips: result.tips };
+  return {
+    nextScore: result.nextScore,
+    matchWinner: result.matchWinner,
+    tips: result.tips,
+  };
 }
 
 export async function undoLastPoint(
@@ -432,9 +440,19 @@ export async function editMatchScore(
 
 export async function recalculateDivisionRankings(
   divisionId: string,
-): Promise<void> {
+  normalizeMatches = false,
+): Promise<unknown> {
   const callable = httpsCallable(functions, 'recalculateDivisionRankings');
-  await callable({ divisionId });
+  const result = await callable({ divisionId, normalizeMatches });
+  return result.data;
+}
+
+export async function repairAllDivisionRankings(
+  normalizeMatches = false,
+): Promise<unknown> {
+  const callable = httpsCallable(functions, 'repairAllDivisionRankings');
+  const result = await callable({ normalizeMatches });
+  return result.data;
 }
 
 /**

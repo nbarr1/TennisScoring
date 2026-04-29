@@ -1,0 +1,7 @@
+<resources>
+  <color name="watch_background">#050806</color>
+  <color name="watch_green">#1A472A</color>
+  <color name="watch_green_light">#2D6A4F</color>
+  <color name="watch_yellow">#FFDC60</color>
+  <color name="watch_blue">#1B5E7A</color>
+</resources>

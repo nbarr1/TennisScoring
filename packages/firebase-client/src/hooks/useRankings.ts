@@ -39,11 +39,12 @@ function buildRankingsFromMatches(
   for (const match of matches) {
     // Skip matches without winner, non-division matches, or incomplete scores
     if (!match.winner) continue;
-    if (match.isDivisionMatch === false) continue; // UPDATED: Use isDivisionMatch flag
+    if (match.isDivisionMatch === false) continue;
     if (!match.liveScore?.sets?.length) continue;
     countedMatchCount += 1;
 
     const { player1Id, player2Id, winner, liveScore } = match;
+    const isGuestMatch = match.player2IsGuest === true;
     const player1Name = match.player1Name ?? player1Id;
     const player2Name = match.player2Name ?? player2Id;
 
@@ -58,7 +59,7 @@ function buildRankingsFromMatches(
         displayName: player1Name,
       });
     }
-    if (!statsMap.has(player2Id)) {
+    if (!isGuestMatch && !statsMap.has(player2Id)) {
       statsMap.set(player2Id, {
         matchesWon: 0,
         matchesLost: 0,
@@ -71,7 +72,7 @@ function buildRankingsFromMatches(
     }
 
     const p1Stats = statsMap.get(player1Id)!;
-    const p2Stats = statsMap.get(player2Id)!;
+    const p2Stats = isGuestMatch ? null : statsMap.get(player2Id)!;
 
     const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
       liveScore.sets,
@@ -80,21 +81,27 @@ function buildRankingsFromMatches(
 
     if (p1Won) {
       p1Stats.matchesWon += 1;
-      p2Stats.matchesLost += 1;
+      if (p2Stats) p2Stats.matchesLost += 1;
     } else {
-      p2Stats.matchesWon += 1;
+      if (p2Stats) p2Stats.matchesWon += 1;
       p1Stats.matchesLost += 1;
     }
 
     p1Stats.setsWon += p1Sets;
     p1Stats.setsLost += p2Sets;
-    p2Stats.setsWon += p2Sets;
-    p2Stats.setsLost += p1Sets;
+    if (p2Stats) {
+      p2Stats.setsWon += p2Sets;
+      p2Stats.setsLost += p1Sets;
+    }
 
     p1Stats.gamesWon += p1Games;
     p1Stats.gamesLost += p2Games;
-    p2Stats.gamesWon += p2Games;
-    p2Stats.gamesLost += p1Games;
+    if (p2Stats) {
+      p2Stats.gamesWon += p2Games;
+      p2Stats.gamesLost += p1Games;
+    }
+
+    if (isGuestMatch) continue;
 
     const [h2hPlayer1Id, h2hPlayer2Id] = [player1Id, player2Id].sort();
     const h2hId = `${h2hPlayer1Id}_${h2hPlayer2Id}`;

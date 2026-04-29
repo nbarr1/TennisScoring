@@ -11,6 +11,7 @@ import {
   userDoc,
   createDivision as createDivisionShared,
   addPlayerToDivisionByEmail,
+  recalculateDivisionRankings,
   useAuthUser,
   functions,
 } from '@tennis/firebase-client';
@@ -30,6 +31,8 @@ export default function AdminPage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [inviteMessage, setInviteMessage] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [repairingRankings, setRepairingRankings] = useState(false);
+  const [repairMessage, setRepairMessage] = useState('');
 
   // Find the division this user leads
   useEffect(() => {
@@ -105,6 +108,48 @@ export default function AdminPage(): React.JSX.Element {
       setError(message || 'Failed to add player. Please try again.');
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function repairRankings() {
+    if (!division) return;
+    setRepairingRankings(true);
+    setError('');
+    setRepairMessage('');
+    try {
+      const response = (await recalculateDivisionRankings(
+        division.id,
+        true,
+      )) as {
+        result?: {
+          countedMatches?: number;
+          guestMatchesCounted?: number;
+          matchesNormalized?: number;
+          rankingsWritten?: number;
+          rankingsDeleted?: number;
+        };
+      };
+      const result = response.result;
+      setRepairMessage(
+        result
+          ? `Rankings repaired. Counted ${result.countedMatches ?? 0} match${
+              result.countedMatches === 1 ? '' : 'es'
+            }, including ${result.guestMatchesCounted ?? 0} guest match${
+              result.guestMatchesCounted === 1 ? '' : 'es'
+            }. Updated ${result.rankingsWritten ?? 0} ranking row${
+              result.rankingsWritten === 1 ? '' : 's'
+            } and removed ${result.rankingsDeleted ?? 0} stale row${
+              result.rankingsDeleted === 1 ? '' : 's'
+            }. Normalized ${result.matchesNormalized ?? 0} historic match${
+              result.matchesNormalized === 1 ? '' : 'es'
+            }.`
+          : 'Rankings repaired.',
+      );
+    } catch (e) {
+      const message = (e as { message?: string }).message;
+      setError(message || 'Failed to repair rankings. Please try again.');
+    } finally {
+      setRepairingRankings(false);
     }
   }
 
@@ -219,6 +264,22 @@ export default function AdminPage(): React.JSX.Element {
                 </button>
               </div>
               {error && <p style={styles.error}>{error}</p>}
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Ranking Repair</h2>
+              <p style={styles.hint}>
+                Rebuild rankings and head-to-head records from completed
+                matches without deleting match history.
+              </p>
+              <button
+                style={styles.btn}
+                onClick={repairRankings}
+                disabled={repairingRankings}
+              >
+                {repairingRankings ? 'Repairing...' : 'Repair Rankings'}
+              </button>
+              {repairMessage && <p style={styles.success}>{repairMessage}</p>}
             </div>
 
             <div style={styles.card}>

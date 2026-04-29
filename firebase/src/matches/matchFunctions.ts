@@ -7,6 +7,43 @@ import type { Match, HeadToHead, ReportSubmission } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
 
+type RankingStats = {
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
+};
+
+type RecalculateRankingsOptions = {
+  normalizeMatches?: boolean;
+};
+
+type RecalculateRankingsResult = {
+  divisionId: string;
+  completedMatchesScanned: number;
+  countedMatches: number;
+  skippedMissingWinner: number;
+  skippedMissingScore: number;
+  skippedNonDivisionMatches: number;
+  guestMatchesCounted: number;
+  matchesNormalized: number;
+  rankingsWritten: number;
+  rankingsDeleted: number;
+  headToHeadsWritten: number;
+  headToHeadsDeleted: number;
+};
+
+const emptyRankingStats = (): RankingStats => ({
+  matchesWon: 0,
+  matchesLost: 0,
+  setsWon: 0,
+  setsLost: 0,
+  gamesWon: 0,
+  gamesLost: 0,
+});
+
 /**
  * Triggered on every match document write. Handles three transitions:
  *
@@ -259,98 +296,138 @@ async function notifyLeaderOfDispute(
   });
 }
 
-async function recalculateRankings(divisionId: string) {
+async function recalculateRankings(
+  divisionId: string,
+  options: RecalculateRankingsOptions = {},
+): Promise<RecalculateRankingsResult> {
   const db = getFirestore();
+  const result: RecalculateRankingsResult = {
+    divisionId,
+    completedMatchesScanned: 0,
+    countedMatches: 0,
+    skippedMissingWinner: 0,
+    skippedMissingScore: 0,
+    skippedNonDivisionMatches: 0,
+    guestMatchesCounted: 0,
+    matchesNormalized: 0,
+    rankingsWritten: 0,
+    rankingsDeleted: 0,
+    headToHeadsWritten: 0,
+    headToHeadsDeleted: 0,
+  };
 
-  const matchesSnap = await db
-    .collection('matches')
-    .where('divisionId', '==', divisionId)
-    .where('status', '==', 'completed')
-    .get();
+  const [divisionSnap, matchesSnap] = await Promise.all([
+    db.collection('divisions').doc(divisionId).get(),
+    db
+      .collection('matches')
+      .where('divisionId', '==', divisionId)
+      .where('status', '==', 'completed')
+      .get(),
+  ]);
+  const division = divisionSnap.data();
+  const divisionPlayerIds: string[] = division?.playerIds ?? [];
+  const divisionPlayerIdSet = new Set(divisionPlayerIds);
+  const hasDivisionRoster = divisionPlayerIdSet.size > 0;
 
-  const matches = matchesSnap.docs.map((d) => d.data() as Match);
+  result.completedMatchesScanned = matchesSnap.size;
 
-  const statsMap = new Map<
-    string,
-    {
-      matchesWon: number;
-      matchesLost: number;
-      setsWon: number;
-      setsLost: number;
-      gamesWon: number;
-      gamesLost: number;
-    }
-  >();
+  const statsMap = new Map<string, RankingStats>();
 
   const h2hAccum = new Map<string, HeadToHead>();
+  const writer = db.bulkWriter();
 
-  for (const match of matches) {
-    if (!match.winner) continue;
-    if (match.isDivisionMatch === false) continue; // honor "include in rankings" toggle for all match types
+  for (const doc of matchesSnap.docs) {
+    const match = doc.data() as Match;
+    if (options.normalizeMatches && match.isDivisionMatch === undefined) {
+      writer.update(doc.ref, { isDivisionMatch: true });
+      result.matchesNormalized += 1;
+    }
+
+    if (!match.winner) {
+      result.skippedMissingWinner += 1;
+      continue;
+    }
+    if (match.isDivisionMatch === false) {
+      result.skippedNonDivisionMatches += 1;
+      continue;
+    }
+    if (!match.liveScore?.sets?.length) {
+      result.skippedMissingScore += 1;
+      continue;
+    }
+
     const { player1Id, player2Id, liveScore, winner } = match;
+    const isGuestMatch = match.player2IsGuest === true;
+    const player1Included =
+      !hasDivisionRoster || divisionPlayerIdSet.has(player1Id);
+    const player2Included =
+      !isGuestMatch &&
+      (!hasDivisionRoster || divisionPlayerIdSet.has(player2Id));
 
-    for (const pid of [player1Id, player2Id]) {
-      if (!statsMap.has(pid)) {
-        statsMap.set(pid, {
-          matchesWon: 0,
-          matchesLost: 0,
-          setsWon: 0,
-          setsLost: 0,
-          gamesWon: 0,
-          gamesLost: 0,
-        });
-      }
+    if (!player1Included && !player2Included) continue;
+
+    result.countedMatches += 1;
+    if (isGuestMatch) result.guestMatchesCounted += 1;
+
+    for (const pid of [
+      ...(player1Included ? [player1Id] : []),
+      ...(player2Included ? [player2Id] : []),
+    ]) {
+      if (!statsMap.has(pid)) statsMap.set(pid, emptyRankingStats());
     }
 
     const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
       liveScore.sets,
     );
     const p1Won = winner === 'player1';
-    const p1Stats = statsMap.get(player1Id)!;
-    const p2Stats = statsMap.get(player2Id)!;
 
-    if (p1Won) {
-      p1Stats.matchesWon++;
-      p2Stats.matchesLost++;
-    } else {
-      p2Stats.matchesWon++;
-      p1Stats.matchesLost++;
+    if (player1Included) {
+      const p1Stats = statsMap.get(player1Id)!;
+      if (p1Won) p1Stats.matchesWon++;
+      else p1Stats.matchesLost++;
+      p1Stats.setsWon += p1Sets;
+      p1Stats.setsLost += p2Sets;
+      p1Stats.gamesWon += p1Games;
+      p1Stats.gamesLost += p2Games;
     }
 
-    p1Stats.setsWon += p1Sets;
-    p1Stats.setsLost += p2Sets;
-    p2Stats.setsWon += p2Sets;
-    p2Stats.setsLost += p1Sets;
-    p1Stats.gamesWon += p1Games;
-    p1Stats.gamesLost += p2Games;
-    p2Stats.gamesWon += p2Games;
-    p2Stats.gamesLost += p1Games;
+    if (player2Included) {
+      const p2Stats = statsMap.get(player2Id)!;
+      if (p1Won) p2Stats.matchesLost++;
+      else p2Stats.matchesWon++;
+      p2Stats.setsWon += p2Sets;
+      p2Stats.setsLost += p1Sets;
+      p2Stats.gamesWon += p2Games;
+      p2Stats.gamesLost += p1Games;
+    }
 
-    const h2hId = [player1Id, player2Id].sort().join('_');
+    if (!player1Included || !player2Included) continue;
+
+    const [h2hPlayer1Id, h2hPlayer2Id] = [player1Id, player2Id].sort();
+    const h2hId = `${h2hPlayer1Id}_${h2hPlayer2Id}`;
     if (!h2hAccum.has(h2hId)) {
       h2hAccum.set(h2hId, {
         id: h2hId,
         divisionId,
-        player1Id: [player1Id, player2Id].sort()[0],
-        player2Id: [player1Id, player2Id].sort()[1],
+        player1Id: h2hPlayer1Id,
+        player2Id: h2hPlayer2Id,
         player1Wins: 0,
         player2Wins: 0,
       });
     }
     const h2h = h2hAccum.get(h2hId)!;
-    const sortedIds = [player1Id, player2Id].sort();
     if (winner === 'player1') {
-      if (player1Id === sortedIds[0]) h2h.player1Wins++;
+      if (player1Id === h2hPlayer1Id) h2h.player1Wins++;
       else h2h.player2Wins++;
     } else {
-      if (player2Id === sortedIds[0]) h2h.player1Wins++;
+      if (player2Id === h2hPlayer1Id) h2h.player1Wins++;
       else h2h.player2Wins++;
     }
   }
 
-  const divisionSnap = await db.collection('divisions').doc(divisionId).get();
-  const division = divisionSnap.data();
-  const playerIds: string[] = division?.playerIds ?? [...statsMap.keys()];
+  const playerIds = divisionPlayerIds.length
+    ? divisionPlayerIds
+    : [...statsMap.keys()];
 
   const userSnaps = await Promise.all(
     playerIds.map((id) => db.collection('users').doc(id).get()),
@@ -364,19 +441,11 @@ async function recalculateRankings(divisionId: string) {
     displayName: displayNames.get(userId) ?? userId,
     divisionId,
     season: division?.season ?? '2024',
-    ...(statsMap.get(userId) ?? {
-      matchesWon: 0,
-      matchesLost: 0,
-      setsWon: 0,
-      setsLost: 0,
-      gamesWon: 0,
-      gamesLost: 0,
-    }),
+    ...(statsMap.get(userId) ?? emptyRankingStats()),
   }));
 
   const rankings = computeRankings(rankingInputs, [...h2hAccum.values()]);
 
-  const batch = db.batch();
   const rankingIds = new Set(rankings.map((ranking) => ranking.userId));
   const existingRankingsSnap = await db
     .collection('divisions')
@@ -385,7 +454,8 @@ async function recalculateRankings(divisionId: string) {
     .get();
   for (const doc of existingRankingsSnap.docs) {
     if (!rankingIds.has(doc.id)) {
-      batch.delete(doc.ref);
+      writer.delete(doc.ref);
+      result.rankingsDeleted += 1;
     }
   }
 
@@ -395,10 +465,11 @@ async function recalculateRankings(divisionId: string) {
       .doc(divisionId)
       .collection('rankings')
       .doc(ranking.userId);
-    batch.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
+    writer.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
+    result.rankingsWritten += 1;
 
     const userRef = db.collection('users').doc(ranking.userId);
-    batch.set(
+    writer.set(
       userRef,
       {
         rankingSummary: {
@@ -427,15 +498,18 @@ async function recalculateRankings(divisionId: string) {
     .get();
   for (const doc of existingH2HSnap.docs) {
     if (!h2hIds.has(doc.id)) {
-      batch.delete(doc.ref);
+      writer.delete(doc.ref);
+      result.headToHeadsDeleted += 1;
     }
   }
 
   for (const h2h of h2hAccum.values()) {
     const ref = db.collection('headToHead').doc(h2h.id);
-    batch.set(ref, { ...h2h, updatedAt: FieldValue.serverTimestamp() });
+    writer.set(ref, { ...h2h, updatedAt: FieldValue.serverTimestamp() });
+    result.headToHeadsWritten += 1;
   }
-  await batch.commit();
+  await writer.close();
+  return result;
 }
 
 /**
@@ -528,7 +602,74 @@ export const recalculateDivisionRankings = functions.https.onCall(
       );
     }
 
-    await recalculateRankings(divisionId);
-    return { success: true };
+    const normalizeMatches = request.data?.normalizeMatches === true;
+    const result = await recalculateRankings(divisionId, { normalizeMatches });
+    return { success: true, result };
+  },
+);
+
+/**
+ * HTTPS callable: admin-only repair for every division.
+ * Rebuilds ranking and head-to-head documents from completed matches without
+ * deleting match, user, division, or message source data.
+ */
+export const repairAllDivisionRankings = functions.https.onCall(
+  async (request) => {
+    if (!request.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be signed in',
+      );
+    }
+
+    const db = getFirestore();
+    const userSnap = await db.collection('users').doc(request.auth.uid).get();
+    if (userSnap.data()?.role !== 'admin') {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only admins can repair all division rankings',
+      );
+    }
+
+    const normalizeMatches = request.data?.normalizeMatches === true;
+    const divisionsSnap = await db.collection('divisions').get();
+    const results: RecalculateRankingsResult[] = [];
+
+    for (const divisionDoc of divisionsSnap.docs) {
+      results.push(
+        await recalculateRankings(divisionDoc.id, { normalizeMatches }),
+      );
+    }
+
+    const totals = results.reduce(
+      (acc, result) => ({
+        divisionsProcessed: acc.divisionsProcessed + 1,
+        completedMatchesScanned:
+          acc.completedMatchesScanned + result.completedMatchesScanned,
+        countedMatches: acc.countedMatches + result.countedMatches,
+        guestMatchesCounted:
+          acc.guestMatchesCounted + result.guestMatchesCounted,
+        matchesNormalized: acc.matchesNormalized + result.matchesNormalized,
+        rankingsWritten: acc.rankingsWritten + result.rankingsWritten,
+        rankingsDeleted: acc.rankingsDeleted + result.rankingsDeleted,
+        headToHeadsWritten:
+          acc.headToHeadsWritten + result.headToHeadsWritten,
+        headToHeadsDeleted:
+          acc.headToHeadsDeleted + result.headToHeadsDeleted,
+      }),
+      {
+        divisionsProcessed: 0,
+        completedMatchesScanned: 0,
+        countedMatches: 0,
+        guestMatchesCounted: 0,
+        matchesNormalized: 0,
+        rankingsWritten: 0,
+        rankingsDeleted: 0,
+        headToHeadsWritten: 0,
+        headToHeadsDeleted: 0,
+      },
+    );
+
+    return { success: true, totals, results };
   },
 );

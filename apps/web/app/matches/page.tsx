@@ -361,7 +361,7 @@ function RecordPastMatchModal({
   const [sets, setSets] = useState([{ p1: '', p2: '' }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [isDivisionMatch, setIsDivisionMatch] = useState(true); // NEW: Track if division match
+  const [isDivisionMatch, setIsDivisionMatch] = useState(true);
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -435,7 +435,7 @@ function RecordPastMatchModal({
               divisionId,
               createdBy: currentUser.id,
               sets: parsed,
-              isDivisionMatch, // NEW: Pass the flag
+              isDivisionMatch,
             },
       );
       onClose();
@@ -545,7 +545,6 @@ function RecordPastMatchModal({
           </>
         )}
 
-        {/* NEW: Division match toggle */}
         {opponentReady && (
           <div style={modalStyles.toggleSection}>
             <label style={modalStyles.checkboxLabel}>
