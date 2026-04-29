@@ -38,6 +38,10 @@ export interface User {
   fcmTokens: string[];
   tipsEnabled: boolean;
   tutorialDone?: boolean;
+  isRegistered?: boolean;
+  inviteStatus?: 'none' | 'invite_sent' | 'registered';
+  invitedAt?: number;
+  invitedBy?: string;
   rankingSummary?: {
     divisionId: string;
     rank: number;

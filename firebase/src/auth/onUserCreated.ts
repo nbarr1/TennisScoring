@@ -24,6 +24,8 @@ export const onUserCreated = functions.identity.beforeUserCreated(async (event) 
     role: 'player',
     fcmTokens: [],
     tipsEnabled: true,
+    isRegistered: true,
+    inviteStatus: 'registered',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
