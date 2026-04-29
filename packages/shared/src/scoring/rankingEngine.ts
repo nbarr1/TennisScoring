@@ -86,14 +86,36 @@ export function updateRankingWithMatchResult(
   };
 }
 
+
+function inferWinnerFromCompletedSetScore(player1Games: number, player2Games: number): 'player1' | 'player2' | undefined {
+  const maxGames = Math.max(player1Games, player2Games);
+  const minGames = Math.min(player1Games, player2Games);
+
+  const isStandardWin = maxGames >= 6 && maxGames - minGames >= 2;
+  const isSevenFiveOrSevenSix = maxGames === 7 && (minGames === 5 || minGames === 6);
+
+  if (!isStandardWin && !isSevenFiveOrSevenSix) {
+    return undefined;
+  }
+
+  return player1Games > player2Games ? 'player1' : 'player2';
+}
+
 export function extractMatchTotals(sets: Array<{ player1Games: number; player2Games: number; winner?: string }>) {
   let p1Sets = 0, p2Sets = 0, p1Games = 0, p2Games = 0;
   for (const s of sets) {
-    if (!s.winner) continue; // Ignore open/incomplete sets completely
+    const inferredWinner = inferWinnerFromCompletedSetScore(
+      s.player1Games,
+      s.player2Games,
+    );
+    const winner = s.winner ?? inferredWinner;
+
+    if (!winner) continue; // Ignore open/incomplete or invalid tie sets
+
     p1Games += s.player1Games;
     p2Games += s.player2Games;
-    if (s.winner === 'player1') p1Sets++;
-    else if (s.winner === 'player2') p2Sets++;
+    if (winner === 'player1') p1Sets++;
+    else if (winner === 'player2') p2Sets++;
   }
   return { p1Sets, p2Sets, p1Games, p2Games };
 }
