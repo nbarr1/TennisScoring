@@ -15,7 +15,8 @@ import {
   divisionsCol,
   userDoc,
   createDivision,
-  addPlayerToDivisionByEmail,
+  addDivisionMemberPlaceholder,
+  mergeDivisionPlayerRecords,
 } from '@tennis/firebase-client';
 import { useAppStore } from '../../store/appStore';
 import type { Division, User } from '@tennis/shared';
@@ -24,7 +25,11 @@ export default function AdminScreen() {
   const { user } = useAppStore();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
+  const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
+  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
+  const [mergeSourceUserId, setMergeSourceUserId] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -84,11 +89,23 @@ export default function AdminScreen() {
   }
 
   async function handleAddPlayer() {
-    if (!division || !newPlayerEmail.trim()) return;
+    if (!division || !newPlayerName.trim()) return;
     setAdding(true);
     setError('');
     try {
-      await addPlayerToDivisionByEmail(division.id, newPlayerEmail.trim());
+      const result = await addDivisionMemberPlaceholder(
+        division.id,
+        newPlayerName.trim(),
+        newPlayerEmail.trim() || undefined,
+        false,
+      );
+      setNeedsMergeForUserId(result.userId);
+      setMergeSourceUserId(null);
+      Alert.alert(
+        'Player added',
+        'Do any existing recorded matches belong to this player? If yes, select an existing player below and link records.',
+      );
+      setNewPlayerName('');
       setNewPlayerEmail('');
     } catch (e) {
       setError(
@@ -97,6 +114,29 @@ export default function AdminScreen() {
       );
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleMergeRecords() {
+    if (!division || !mergeSourceUserId || !needsMergeForUserId) return;
+    setMerging(true);
+    setError('');
+    try {
+      const updatedMatches = await mergeDivisionPlayerRecords(
+        division.id,
+        mergeSourceUserId,
+        needsMergeForUserId,
+      );
+      Alert.alert('Records linked', `Updated ${updatedMatches} historical matches.`);
+      setNeedsMergeForUserId(null);
+      setMergeSourceUserId(null);
+    } catch (e) {
+      setError(
+        (e as { message?: string }).message ||
+          'Failed to link historical records. Please try again.',
+      );
+    } finally {
+      setMerging(false);
     }
   }
 
@@ -157,15 +197,19 @@ export default function AdminScreen() {
         <>
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>{division.name}</Text>
-            <View style={styles.inviteRow}>
-              <Text style={styles.inviteLabel}>Invite Code</Text>
-              <Text style={styles.inviteCode}>{division.inviteCode}</Text>
-            </View>
             <Text style={styles.hint}>
               {players.length} player{players.length !== 1 ? 's' : ''} enrolled
             </Text>
 
-            <Text style={styles.subTitle}>Add Player by Email</Text>
+            <Text style={styles.subTitle}>Add Player</Text>
+            <TextInput
+              style={styles.input}
+              value={newPlayerName}
+              onChangeText={setNewPlayerName}
+              placeholder="Full name"
+              placeholderTextColor="#aaa"
+              autoCapitalize="words"
+            />
             <TextInput
               style={styles.input}
               value={newPlayerEmail}
@@ -183,10 +227,10 @@ export default function AdminScreen() {
             <TouchableOpacity
               style={[
                 styles.btn,
-                (!newPlayerEmail.trim() || adding) && styles.btnDisabled,
+                (!newPlayerName.trim() || adding) && styles.btnDisabled,
               ]}
               onPress={handleAddPlayer}
-              disabled={!newPlayerEmail.trim() || adding}
+              disabled={!newPlayerName.trim() || adding}
             >
               {adding ? (
                 <ActivityIndicator color="#fff" />
@@ -194,13 +238,45 @@ export default function AdminScreen() {
                 <Text style={styles.btnText}>Add Player</Text>
               )}
             </TouchableOpacity>
+            {needsMergeForUserId ? (
+              <View style={styles.mergeBox}>
+                <Text style={styles.subTitle}>Link Historical Matches (Optional)</Text>
+                <Text style={styles.hint}>
+                  Pick an existing player record if historical matches should be reassigned to this newly added player.
+                </Text>
+                {players
+                  .filter((p) => p.id !== needsMergeForUserId)
+                  .map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[
+                        styles.mergeCandidate,
+                        mergeSourceUserId === p.id && styles.mergeCandidateActive,
+                      ]}
+                      onPress={() => setMergeSourceUserId(p.id)}
+                    >
+                      <Text style={styles.playerName}>{p.displayName}</Text>
+                    </TouchableOpacity>
+                  ))}
+                <TouchableOpacity
+                  style={[
+                    styles.btn,
+                    (!mergeSourceUserId || merging) && styles.btnDisabled,
+                  ]}
+                  onPress={handleMergeRecords}
+                  disabled={!mergeSourceUserId || merging}
+                >
+                  {merging ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Link Records</Text>}
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Players</Text>
             {players.length === 0 ? (
               <Text style={styles.hint}>
-                No players yet. Add players by email above.
+                No players yet. Add players above.
               </Text>
             ) : (
               <FlatList
@@ -296,23 +372,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hint: { fontSize: 13, color: '#888', marginBottom: 12 },
-  inviteRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  mergeBox: { marginTop: 14, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8 },
+  mergeCandidate: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginBottom: 8,
   },
-  inviteLabel: { fontSize: 13, color: '#888', fontWeight: '600' },
-  inviteCode: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1a472a',
-    backgroundColor: '#e8f5e9',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
+  mergeCandidateActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',

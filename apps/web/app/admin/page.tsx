@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import { httpsCallable } from 'firebase/functions';
 import Link from 'next/link';
 import { onSnapshot, getDoc } from 'firebase/firestore';
 import {
@@ -11,9 +10,9 @@ import {
   userDoc,
   createDivision as createDivisionShared,
   addDivisionMemberPlaceholder,
+  mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
   useAuthUser,
-  functions,
 } from '@tennis/firebase-client';
 import type { Division, User } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
@@ -24,14 +23,14 @@ export default function AdminPage(): React.JSX.Element {
   const [players, setPlayers] = useState<User[]>([]);
   const [memberName, setMemberName] = useState('');
   const [memberEmail, setMemberEmail] = useState('');
-  const [sendInviteForMember, setSendInviteForMember] = useState(true);
+  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
+  const [mergeSourceUserId, setMergeSourceUserId] = useState('');
+  const [merging, setMerging] = useState(false);
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [inviteMessage, setInviteMessage] = useState('');
-  const [inviteDebug, setInviteDebug] = useState('');
-  const [inviting, setInviting] = useState(false);
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
 
@@ -79,60 +78,21 @@ export default function AdminPage(): React.JSX.Element {
     setAdding(true);
     setError('');
     setInviteMessage('');
-    setInviteDebug('');
     try {
       const memberResult = await addDivisionMemberPlaceholder(
         division.id,
         memberName.trim(),
         memberEmail.trim() || undefined,
-        sendInviteForMember && !!memberEmail.trim(),
+        false,
       );
-      let inviteWarning = '';
-      if (
-        memberResult.createdPlaceholder &&
-        sendInviteForMember &&
-        memberEmail.trim()
-      ) {
-        setInviting(true);
-        try {
-          const callable = httpsCallable(functions, 'sendInvite');
-          await callable({
-            email: memberEmail.trim().toLowerCase(),
-            name: memberName.trim(),
-            divisionId: division.id,
-          });
-        } catch (inviteError) {
-          const inviteMessage =
-            (inviteError as { message?: string; code?: string }).message ??
-            'Unknown invite error';
-          const inviteCode = (inviteError as { code?: string }).code;
-          setInviteDebug(
-            JSON.stringify(
-              {
-                code: inviteCode ?? 'error',
-                message: inviteMessage,
-                memberEmail: memberEmail.trim().toLowerCase(),
-                memberName: memberName.trim(),
-                divisionId: division.id,
-              },
-              null,
-              2,
-            ),
-          );
-          inviteWarning = ` Member was added, but invite email failed (${inviteCode ?? 'error'}: ${inviteMessage}).`;
-        } finally {
-          setInviting(false);
-        }
-      }
+      setNeedsMergeForUserId(memberResult.userId);
+      setMergeSourceUserId('');
       const baseMessage = memberResult.createdPlaceholder
-        ? sendInviteForMember && memberEmail.trim()
-          ? `Placeholder created for ${memberName.trim()}.`
-          : 'Placeholder member created.'
-        : 'Existing registered player added to division (no invite sent).';
-      setInviteMessage(`${baseMessage}${inviteWarning}`);
+        ? `Player added for ${memberName.trim()}.`
+        : 'Existing registered player added to division.';
+      setInviteMessage(`${baseMessage} If historical matches exist, link them below.`);
       setMemberName('');
       setMemberEmail('');
-      setSendInviteForMember(true);
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
@@ -143,7 +103,32 @@ export default function AdminPage(): React.JSX.Element {
       );
     } finally {
       setAdding(false);
-      setInviting(false);
+    }
+  }
+
+  async function handleMergeRecords() {
+    if (!division || !needsMergeForUserId || !mergeSourceUserId) return;
+    setMerging(true);
+    setError('');
+    try {
+      const updated = await mergeDivisionPlayerRecords(
+        division.id,
+        mergeSourceUserId,
+        needsMergeForUserId,
+      );
+      setInviteMessage(`Linked records. Updated ${updated} historical matches.`);
+      setNeedsMergeForUserId(null);
+      setMergeSourceUserId('');
+    } catch (e) {
+      const message = (e as { message?: string; code?: string }).message;
+      const code = (e as { code?: string }).code;
+      setError(
+        message
+          ? `${code ?? 'error'}: ${message}`
+          : 'Failed to link historical matches.',
+      );
+    } finally {
+      setMerging(false);
     }
   }
 
@@ -248,7 +233,6 @@ export default function AdminPage(): React.JSX.Element {
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>
                 {division.name}
-                <span style={styles.badge}>Code {division.inviteCode}</span>
               </h2>
               <p style={styles.hint}>
                 {players.length} player{players.length !== 1 ? 's' : ''}{' '}
@@ -278,31 +262,41 @@ export default function AdminPage(): React.JSX.Element {
                 <button
                   style={styles.btn}
                   onClick={addDivisionMember}
-                  disabled={adding || inviting || !memberName.trim()}
+                  disabled={adding || !memberName.trim()}
                 >
-                  {adding || inviting ? 'Saving…' : 'Add Member'}
+                  {adding ? 'Saving…' : 'Add Member'}
                 </button>
               </div>
-              <div style={styles.row}>
-                <label style={{ ...styles.hint, marginBottom: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={sendInviteForMember}
-                    onChange={(e) => setSendInviteForMember(e.target.checked)}
-                    style={{ marginRight: 8 }}
-                  />
-                  Send invite email when an email is provided
-                </label>
-              </div>
               {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
-              {inviteDebug && (
-                <details style={styles.debugDetails}>
-                  <summary style={styles.debugSummary}>
-                    Invite error details (for support)
-                  </summary>
-                  <pre style={styles.debugPre}>{inviteDebug}</pre>
-                </details>
-              )}
+              {needsMergeForUserId ? (
+                <div style={styles.mergeBox}>
+                  <h3 style={styles.subTitle}>Link Historical Matches (Optional)</h3>
+                  <p style={styles.hint}>
+                    If this person already exists in old match records, choose that prior player record and link it to the newly added player.
+                  </p>
+                  <select
+                    style={styles.input}
+                    value={mergeSourceUserId}
+                    onChange={(e) => setMergeSourceUserId(e.target.value)}
+                  >
+                    <option value="">Select existing player record…</option>
+                    {players
+                      .filter((p) => p.id !== needsMergeForUserId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.displayName} ({p.email || p.id})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    style={styles.btn}
+                    onClick={handleMergeRecords}
+                    disabled={!mergeSourceUserId || merging}
+                  >
+                    {merging ? 'Linking…' : 'Link Records'}
+                  </button>
+                </div>
+              ) : null}
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
@@ -326,7 +320,7 @@ export default function AdminPage(): React.JSX.Element {
               <h2 style={styles.sectionTitle}>Players</h2>
               {players.length === 0 ? (
                 <p style={styles.hint}>
-                  No players yet. Add players by email above.
+                  No players yet. Add players above.
                 </p>
               ) : (
                 <table style={styles.table}>
@@ -454,14 +448,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '20px 0 10px',
   },
   hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
-  badge: {
-    fontSize: 12,
-    background: '#e8f5e9',
-    color: 'var(--green-dark)',
-    padding: '2px 10px',
-    borderRadius: 20,
-    fontWeight: 600,
-  },
+  mergeBox: { marginTop: 12, borderTop: '1px solid #eee', paddingTop: 8 },
   row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
   input: {
     flex: 1,
@@ -484,27 +471,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
   success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
-  debugDetails: {
-    marginTop: 8,
-    background: '#f8f9fb',
-    border: '1px solid #e7e9ef',
-    borderRadius: 10,
-    padding: '8px 10px',
-  },
-  debugSummary: {
-    cursor: 'pointer',
-    color: '#555',
-    fontSize: 12,
-    fontWeight: 600,
-  },
-  debugPre: {
-    marginTop: 8,
-    marginBottom: 0,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-word' as const,
-    fontSize: 12,
-    color: '#333',
-  },
   table: { width: '100%', borderCollapse: 'collapse' as const, marginTop: 8 },
   th: {
     textAlign: 'left' as const,

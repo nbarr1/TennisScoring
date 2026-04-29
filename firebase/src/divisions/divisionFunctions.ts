@@ -26,6 +26,11 @@ type AddPlaceholderInput = {
   email?: string;
   sendInvite?: boolean;
 };
+type MergePlayerRecordsInput = {
+  divisionId?: string;
+  sourceUserId?: string;
+  targetUserId?: string;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -335,4 +340,126 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
     });
     throw new HttpsError('internal', 'Could not add member. Please retry or contact support.');
   }
+});
+
+export const mergeDivisionPlayerRecords = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
+  }
+  const { divisionId, sourceUserId, targetUserId } = (request.data ?? {}) as MergePlayerRecordsInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSourceUserId = sourceUserId?.trim();
+  const safeTargetUserId = targetUserId?.trim();
+  if (!safeDivisionId || !safeSourceUserId || !safeTargetUserId) {
+    throw new HttpsError('invalid-argument', 'Division and both user IDs are required.');
+  }
+  if (safeSourceUserId === safeTargetUserId) {
+    throw new HttpsError('invalid-argument', 'Source and target users must be different.');
+  }
+
+  const db = getFirestore();
+  const divisionSnap = await requireDivisionLeaderOrAdmin(
+    db,
+    request.auth.uid,
+    safeDivisionId,
+  );
+  const divisionPlayerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
+
+  const [sourceSnap, targetSnap] = await Promise.all([
+    db.collection('users').doc(safeSourceUserId).get(),
+    db.collection('users').doc(safeTargetUserId).get(),
+  ]);
+  if (!sourceSnap.exists || !targetSnap.exists) {
+    throw new HttpsError('not-found', 'One or both users were not found.');
+  }
+  const sourceDivisionId = sourceSnap.data()?.divisionId;
+  const targetDivisionId = targetSnap.data()?.divisionId;
+  if (
+    !divisionPlayerIds.includes(safeSourceUserId) ||
+    !divisionPlayerIds.includes(safeTargetUserId) ||
+    sourceDivisionId !== safeDivisionId ||
+    targetDivisionId !== safeDivisionId
+  ) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Both source and target users must already be active members of this division.',
+    );
+  }
+  const targetDisplayName = targetSnap.data()?.displayName ?? null;
+
+  const matches = await db
+    .collection('matches')
+    .where('divisionId', '==', safeDivisionId)
+    .where('playerIds', 'array-contains', safeSourceUserId)
+    .get();
+
+  const maxWritesPerBatch = 450;
+  let batch = db.batch();
+  let writesInBatch = 0;
+  const commits: Array<Promise<FirebaseFirestore.WriteResult[]>> = [];
+  const commitAndRotate = () => {
+    commits.push(batch.commit());
+    batch = db.batch();
+    writesInBatch = 0;
+  };
+
+  matches.docs.forEach((matchDoc) => {
+    const data = matchDoc.data();
+    const nextPlayer1Id = data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id;
+    const nextPlayer2Id = data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id;
+    const nextPlayerIds = Array.from(
+      new Set(((data.playerIds as string[]) ?? []).map((id) => (id === safeSourceUserId ? safeTargetUserId : id))),
+    );
+    const updateData: Record<string, unknown> = {
+      player1Id: nextPlayer1Id,
+      player2Id: nextPlayer2Id,
+      playerIds: nextPlayerIds,
+    };
+    if (data.player1Id === safeSourceUserId && targetDisplayName) {
+      updateData.player1Name = targetDisplayName;
+    }
+    if (data.player2Id === safeSourceUserId && targetDisplayName) {
+      updateData.player2Name = targetDisplayName;
+    }
+    batch.update(matchDoc.ref, updateData);
+    writesInBatch += 1;
+    if (writesInBatch >= maxWritesPerBatch) {
+      commitAndRotate();
+    }
+  });
+
+  batch.set(
+    db.collection('divisions').doc(safeDivisionId),
+    {
+      playerIds: FieldValue.arrayRemove(safeSourceUserId),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('users').doc(safeTargetUserId),
+    {
+      divisionId: safeDivisionId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('users').doc(safeSourceUserId),
+    {
+      mergedIntoUserId: safeTargetUserId,
+      divisionId: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  writesInBatch += 3;
+  if (writesInBatch > 0) {
+    commitAndRotate();
+  }
+
+  await Promise.all(commits);
+  await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
+
+  return { success: true, updatedMatches: matches.size };
 });
