@@ -65,6 +65,33 @@ describe('extractMatchTotals', () => {
     expect(result.p2Games).toBe(3);
   });
 
+
+  it('does not infer winners for in-progress set scores', () => {
+    const sets = [
+      { player1Games: 5, player2Games: 4 },
+      { player1Games: 1, player2Games: 0 },
+    ];
+    expect(extractMatchTotals(sets)).toEqual({
+      p1Sets: 0,
+      p2Sets: 0,
+      p1Games: 0,
+      p2Games: 0,
+    });
+  });
+
+  it('infers winners for valid 7-6 and 7-5 completed sets', () => {
+    const sets = [
+      { player1Games: 7, player2Games: 6 },
+      { player1Games: 5, player2Games: 7 },
+    ];
+    expect(extractMatchTotals(sets)).toEqual({
+      p1Sets: 1,
+      p2Sets: 1,
+      p1Games: 12,
+      p2Games: 13,
+    });
+  });
+
   it('handles a straight-sets match', () => {
     const sets = [
       { player1Games: 6, player2Games: 1, winner: 'player1' as const },
