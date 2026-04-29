@@ -77,3 +77,22 @@ export async function addPlayerToDivisionByEmail(
   });
   return result.data.userId;
 }
+
+export async function addDivisionMemberPlaceholder(
+  divisionId: string,
+  name: string,
+  email?: string,
+  sendInvite = true,
+): Promise<string> {
+  const callable = httpsCallable<
+    { divisionId: string; name: string; email?: string; sendInvite?: boolean },
+    { success: boolean; userId: string }
+  >(functions, 'addDivisionMemberPlaceholder');
+  const result = await callable({
+    divisionId,
+    name: name.trim(),
+    email: email?.trim().toLowerCase() || undefined,
+    sendInvite,
+  });
+  return result.data.userId;
+}

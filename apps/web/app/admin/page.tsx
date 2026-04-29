@@ -11,6 +11,7 @@ import {
   userDoc,
   createDivision as createDivisionShared,
   addPlayerToDivisionByEmail,
+  addDivisionMemberPlaceholder,
   recalculateDivisionRankings,
   useAuthUser,
   functions,
@@ -25,6 +26,8 @@ export default function AdminPage(): React.JSX.Element {
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [placeholderName, setPlaceholderName] = useState('');
+  const [placeholderEmail, setPlaceholderEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -106,6 +109,27 @@ export default function AdminPage(): React.JSX.Element {
     } catch (e) {
       const message = (e as { message?: string }).message;
       setError(message || 'Failed to add player. Please try again.');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function addPlaceholderPlayer() {
+    if (!division || !placeholderName.trim()) return;
+    setAdding(true);
+    setError('');
+    try {
+      await addDivisionMemberPlaceholder(
+        division.id,
+        placeholderName.trim(),
+        placeholderEmail.trim() || undefined,
+        !!placeholderEmail.trim(),
+      );
+      setPlaceholderName('');
+      setPlaceholderEmail('');
+    } catch (e) {
+      const message = (e as { message?: string }).message;
+      setError(message || 'Failed to add placeholder player. Please try again.');
     } finally {
       setAdding(false);
     }
@@ -263,6 +287,29 @@ export default function AdminPage(): React.JSX.Element {
                   {adding ? 'Adding…' : 'Add Player'}
                 </button>
               </div>
+              <h3 style={styles.subTitle}>Add Division Member Placeholder</h3>
+              <div style={styles.row}>
+                <input
+                  style={styles.input}
+                  value={placeholderName}
+                  onChange={(e) => setPlaceholderName(e.target.value)}
+                  placeholder="Player name"
+                />
+                <input
+                  style={styles.input}
+                  value={placeholderEmail}
+                  onChange={(e) => setPlaceholderEmail(e.target.value)}
+                  placeholder="player@company.com (optional)"
+                  type="email"
+                />
+                <button
+                  style={styles.btn}
+                  onClick={addPlaceholderPlayer}
+                  disabled={adding || !placeholderName.trim()}
+                >
+                  {adding ? 'Adding…' : 'Add Placeholder'}
+                </button>
+              </div>
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
@@ -296,6 +343,7 @@ export default function AdminPage(): React.JSX.Element {
                       <th style={styles.th}>Email</th>
                       <th style={styles.th}>Phone</th>
                       <th style={styles.th}>Role</th>
+                      <th style={styles.th}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -338,6 +386,13 @@ export default function AdminPage(): React.JSX.Element {
                               ? 'Leader'
                               : 'Player'}
                           </span>
+                        </td>
+                        <td style={styles.td}>
+                          {p.isRegistered === false
+                            ? p.inviteStatus === 'invite_sent'
+                              ? 'Invite Sent'
+                              : 'Unregistered'
+                            : 'Registered'}
                         </td>
                       </tr>
                     ))}
