@@ -188,19 +188,26 @@ export const acceptInvite = onCall(async (request) => {
       acceptedBy: uid,
     });
 
-    if (userSnap.exists) {
-      tx.set(
-        userRef,
-        {
-          displayName: userSnap.data()?.displayName || inviteData.name,
-          isRegistered: true,
-          inviteStatus: 'registered',
-          updatedAt: FieldValue.serverTimestamp(),
-          ...(inviteDivisionId ? { divisionId: inviteDivisionId } : {}),
-        },
-        { merge: true },
-      );
-    }
+    tx.set(
+      userRef,
+      {
+        id: uid,
+        displayName: userSnap.data()?.displayName || inviteData.name,
+        email: authEmail,
+        isRegistered: true,
+        inviteStatus: 'registered',
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(!userSnap.exists ? {
+          role: 'player',
+          createdAt: FieldValue.serverTimestamp(),
+          contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+          fcmTokens: [],
+          tipsEnabled: true,
+        } : {}),
+        ...(inviteDivisionId ? { divisionId: inviteDivisionId } : {}),
+      },
+      { merge: true },
+    );
 
     if (inviteDivisionId) {
       const divisionRef = db.collection('divisions').doc(inviteDivisionId);
