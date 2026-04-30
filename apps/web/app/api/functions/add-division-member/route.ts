@@ -62,6 +62,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const region = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION || 'us-central1';
     const callableUrl = `https://${region}-${projectId}.cloudfunctions.net/addDivisionMemberPlaceholder`;
+    const timeoutMs = 20000;
+    const timeoutController = new AbortController();
+    const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
     const callableResponse = await fetch(callableUrl, {
       method: 'POST',
       headers: {
@@ -70,6 +73,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       body: JSON.stringify({ data: body }),
       cache: 'no-store',
+      signal: timeoutController.signal,
+    }).finally(() => {
+      clearTimeout(timeoutHandle);
     });
 
     const { json: callablePayload, rawText } = await parseUpstreamPayload(
@@ -102,12 +108,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(callablePayload.result);
   } catch (error) {
+    console.error('add-division-member proxy failure', {
+      requestId,
+      error,
+    });
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unexpected error calling Cloud Function.',
+        error: 'Unexpected error calling Cloud Function.',
         requestId,
       },
       { status: 500 },
