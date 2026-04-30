@@ -10,21 +10,13 @@ type CallableSuccessPayload = {
 };
 
 async function parseUpstreamPayload(response: Response): Promise<{
-  json: CallableSuccessPayload | undefined;
+  json: CallableSuccessPayload;
   rawText: string;
 }> {
   const rawText = await response.text();
-  if (!rawText) return { json: undefined, rawText };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    return { json: undefined, rawText };
-  }
-  const candidate = parsed as CallableSuccessPayload;
-  const hasResult = typeof candidate.result?.userId === 'string';
-  const hasError = typeof candidate.error?.message === 'string';
-  const json = hasResult || hasError ? candidate : undefined;
+  const json = (rawText
+    ? (JSON.parse(rawText) as CallableSuccessPayload)
+    : {}) as CallableSuccessPayload;
   return { json, rawText };
 }
 
@@ -80,19 +72,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const { json: callablePayload, rawText } = await parseUpstreamPayload(
       callableResponse,
-    ).catch(() => ({ json: undefined, rawText: '' }));
+    ).catch(() => ({ json: {} as CallableSuccessPayload, rawText: '' }));
 
-    const hasValidResult = typeof callablePayload?.result?.userId === 'string';
-    if (!callableResponse.ok || !hasValidResult) {
+    if (!callableResponse.ok || !callablePayload.result?.userId) {
       console.error('add-division-member upstream failure', {
         requestId,
         callableUrl,
         status: callableResponse.status,
         statusText: callableResponse.statusText,
         hasAuthHeader: Boolean(authHeader),
-        upstreamError: callablePayload?.error?.message ?? null,
+        upstreamError: callablePayload.error?.message ?? null,
         upstreamBodyPreview: rawText.slice(0, 500),
-        payloadMissingOrInvalid: callablePayload === undefined,
       });
       return NextResponse.json(
         {
@@ -114,7 +104,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
     return NextResponse.json(
       {
-        error: 'Unexpected error calling Cloud Function.',
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Unexpected error calling Cloud Function.',
         requestId,
       },
       { status: 500 },
