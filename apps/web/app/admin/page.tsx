@@ -418,7 +418,7 @@ async function addDivisionMemberPlaceholder(
       sendInvite: false,
     }),
   });
-  const payload = (await response.json()) as {
+  const payload = (await response.json().catch(() => ({}))) as {
     userId?: string;
     createdPlaceholder?: boolean;
     linkedHistoricalMatches?: number;

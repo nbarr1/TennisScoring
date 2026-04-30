@@ -18,7 +18,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       sendInvite?: boolean;
     };
 
-    const callableUrl = `https://us-central1-${projectId}.cloudfunctions.net/addDivisionMemberPlaceholder`;
+    const region = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION || 'us-central1';
+    const callableUrl = `https://${region}-${projectId}.cloudfunctions.net/addDivisionMemberPlaceholder`;
     const callableResponse = await fetch(callableUrl, {
       method: 'POST',
       headers: {
