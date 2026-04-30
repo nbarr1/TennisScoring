@@ -35,15 +35,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const authHeader = request.headers.get('authorization') ?? '';
-    const body = (await request.json()) as {
+    const body = (await request
+      .json()
+      .catch(() => undefined)) as
+      | {
       divisionId?: string;
       name?: string;
       email?: string;
       sendInvite?: boolean;
-    };
+    }
+      | undefined;
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json(
+        { error: 'Invalid JSON request body.', requestId },
+        { status: 400 },
+      );
+    }
 
     const region = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION || 'us-central1';
     const callableUrl = `https://${region}-${projectId}.cloudfunctions.net/addDivisionMemberPlaceholder`;
+    const timeoutMs = 20000;
+    const timeoutController = new AbortController();
+    const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
     const callableResponse = await fetch(callableUrl, {
       method: 'POST',
       headers: {
@@ -52,6 +65,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       body: JSON.stringify({ data: body }),
       cache: 'no-store',
+      signal: timeoutController.signal,
+    }).finally(() => {
+      clearTimeout(timeoutHandle);
     });
 
     const { json: callablePayload, rawText } = await parseUpstreamPayload(
@@ -71,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(
         {
           error:
-            callablePayload.error?.message ??
+            callablePayload?.error?.message ??
             'Cloud Function call failed.',
           requestId,
           upstreamStatus: callableResponse.status,
@@ -82,6 +98,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(callablePayload.result);
   } catch (error) {
+    console.error('add-division-member proxy failure', {
+      requestId,
+      error,
+    });
     return NextResponse.json(
       {
         error:
