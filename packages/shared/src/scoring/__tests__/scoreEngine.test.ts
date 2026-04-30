@@ -301,7 +301,7 @@ describe('scoreEngine', () => {
 
   describe('formatScoreDisplay', () => {
     it('formats single set score', () => {
-      let score = createInitialScore(DEFAULT_FORMAT);
+      const score = createInitialScore(DEFAULT_FORMAT);
       score.sets[0].player1Games = 3;
       score.sets[0].player2Games = 2;
       expect(formatScoreDisplay(score)).toBe('3-2');

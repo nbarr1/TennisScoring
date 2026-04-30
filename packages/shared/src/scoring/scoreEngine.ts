@@ -45,7 +45,7 @@ function makeEmptySet(setNumber: number): SetScore {
   return { setNumber, player1Games: 0, player2Games: 0 };
 }
 
-function initialLiveScore(format: MatchFormat_Config): LiveScore {
+function initialLiveScore(): LiveScore {
   return {
     sets: [makeEmptySet(0)],
     currentSet: 0,
@@ -80,8 +80,7 @@ function isSetPoint(score: LiveScore, scorer: Player, format: MatchFormat_Config
 
 function completeTiebreak(
   score: LiveScore,
-  scorer: Player,
-  format: MatchFormat_Config
+  scorer: Player
 ): { updatedScore: LiveScore; tips: TipTrigger[]; setWinner?: Player } {
   const next = deepCloneScore(score);
   const tb = next.tiebreakScore!;
@@ -124,14 +123,6 @@ function resolveTiebreakWinner(p1: number, p2: number): Player | undefined {
   return undefined;
 }
 
-function resolveGameWinner(p1: TennisPoint, p2: TennisPoint): Player | undefined {
-  if (p1 === '40' && p2 !== '40' && p2 !== 'Ad') return 'player1';
-  if (p2 === '40' && p1 !== '40' && p1 !== 'Ad') return 'player2';
-  if (p1 === 'Ad') return 'player1';
-  if (p2 === 'Ad') return 'player2';
-  return undefined;
-}
-
 function resolveSetWinner(
   p1Games: number,
   p2Games: number,
@@ -151,7 +142,7 @@ export function applyPoint(
   const tips: TipTrigger[] = [];
 
   if (score.isTiebreak) {
-    const { updatedScore, tips: tbTips, setWinner } = completeTiebreak(score, scorer, format);
+    const { updatedScore, tips: tbTips, setWinner } = completeTiebreak(score, scorer);
     tips.push(...tbTips);
 
     if (!setWinner) {
@@ -295,13 +286,14 @@ function completeSet(
 }
 
 export function createInitialScore(format: MatchFormat_Config): LiveScore {
-  return initialLiveScore(format);
+  void format;
+  return initialLiveScore();
 }
 
 export function formatScoreDisplay(score: LiveScore): string {
   const sets = score.sets
     .filter((s) => s.winner !== undefined || score.sets.indexOf(s) === score.currentSet)
-    .map((s, i) => {
+    .map((s) => {
       if (s.tiebreak && s.winner) {
         const loserPts = s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points;
         return `${s.player1Games}-${s.player2Games}(${loserPts})`;

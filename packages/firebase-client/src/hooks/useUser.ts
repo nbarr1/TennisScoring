@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { onSnapshot, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { auth } from '../config';
 import { userDoc } from '../collections';
 import type { User } from '@tennis/shared';

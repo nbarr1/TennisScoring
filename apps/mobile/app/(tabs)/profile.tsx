@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, Switch,
-  ScrollView, Alert, Linking
+  ScrollView, Alert
 } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth } from '@tennis/firebase-client';
 import { useAuthUser, useUserProfile, updateUserProfile } from '@tennis/firebase-client';
-import { DAYS_OF_WEEK, DAY_LABELS, type AvailabilitySlot, type DayOfWeek } from '@tennis/shared';
+import { DAYS_OF_WEEK, DAY_LABELS, type AvailabilitySlot } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
