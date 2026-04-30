@@ -310,7 +310,7 @@ describe('scoreEngine', () => {
 
   describe('formatGameScore', () => {
     it('shows deuce', () => {
-      let score = createInitialScore(DEFAULT_FORMAT);
+      const score = createInitialScore(DEFAULT_FORMAT);
       score.currentGame = { player1: '40', player2: '40' };
       expect(formatGameScore(score)).toBe('Deuce');
     });
