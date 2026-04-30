@@ -36,6 +36,30 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+type MatchLike = {
+  isCompleted?: unknown;
+  player1Name?: unknown;
+  player2Name?: unknown;
+  player1Id?: unknown;
+  player2Id?: unknown;
+  playerIds?: unknown;
+};
+
+function isEligibleForNameToIdLink(match: MatchLike): boolean {
+  if (match.isCompleted !== true) return false;
+  const player1NameValid = typeof match.player1Name === 'string' && match.player1Name.trim().length > 0;
+  const player2NameValid = typeof match.player2Name === 'string' && match.player2Name.trim().length > 0;
+  if (!player1NameValid && !player2NameValid) return false;
+  if (match.player1Id !== undefined && typeof match.player1Id !== 'string') return false;
+  if (match.player2Id !== undefined && typeof match.player2Id !== 'string') return false;
+  if (match.playerIds !== undefined && !Array.isArray(match.playerIds)) return false;
+  return true;
+}
+
 function randomInviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -303,11 +327,13 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
     const existingByName = await db
       .collection('users')
       .where('divisionId', '==', safeDivisionId)
-      .where('displayName', '==', safeName)
-      .limit(1)
       .get();
-    if (!existingByName.empty) {
-      return { success: true, userId: existingByName.docs[0].id, createdPlaceholder: false };
+    const exactNameMatch = existingByName.docs.find((doc) => {
+      const displayName = doc.data()?.displayName;
+      return typeof displayName === 'string' && normalizeName(displayName) === normalizeName(safeName);
+    });
+    if (exactNameMatch) {
+      return { success: true, userId: exactNameMatch.id, createdPlaceholder: false };
     }
     const now = Date.now();
     const placeholderRef = db.collection('users').doc();
@@ -344,19 +370,20 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
       .where('divisionId', '==', safeDivisionId)
       .where('isCompleted', '==', true)
       .get();
-    const normalizeName = (value: unknown): string =>
-      typeof value === 'string' ? value.trim().toLowerCase() : '';
+    const readNormalizedName = (value: unknown): string =>
+      typeof value === 'string' ? normalizeName(value) : '';
     const targetName = normalizeName(safeName);
     const matchUpdates = historicalMatches.docs
       .map((doc) => {
-        const data = doc.data();
+        const data = doc.data() as MatchLike;
+        if (!isEligibleForNameToIdLink(data)) return null;
         let touched = false;
         const updateData: Record<string, unknown> = {};
-        if (!data.player1Id && normalizeName(data.player1Name) === targetName) {
+        if (!data.player1Id && readNormalizedName(data.player1Name) === targetName) {
           updateData.player1Id = placeholderRef.id;
           touched = true;
         }
-        if (!data.player2Id && normalizeName(data.player2Name) === targetName) {
+        if (!data.player2Id && readNormalizedName(data.player2Name) === targetName) {
           updateData.player2Id = placeholderRef.id;
           touched = true;
         }
