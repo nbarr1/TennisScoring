@@ -6,6 +6,8 @@ import { randomInt } from 'node:crypto';
 
 if (!getApps().length) initializeApp();
 
+const callableOptions = { cors: true } as const;
+
 type CreateDivisionInput = {
   name?: string;
   displayName?: string;
@@ -129,7 +131,7 @@ async function requireDivisionLeaderOrAdmin(
   return divisionSnap;
 }
 
-export const createDivision = onCall(async (request) => {
+export const createDivision = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -186,7 +188,7 @@ export const createDivision = onCall(async (request) => {
   return { divisionId: divisionRef.id, inviteCode };
 });
 
-export const joinDivisionByCode = onCall(async (request) => {
+export const joinDivisionByCode = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -234,7 +236,7 @@ export const joinDivisionByCode = onCall(async (request) => {
   return { divisionId: divisionRef.id, divisionName: division.name };
 });
 
-export const addPlayerToDivisionByEmail = onCall(async (request) => {
+export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -285,7 +287,7 @@ export const addPlayerToDivisionByEmail = onCall(async (request) => {
   return { success: true, userId };
 });
 
-export const addDivisionMemberPlaceholder = onCall(async (request) => {
+export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
     const uid = request.auth.uid;
@@ -419,7 +421,7 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
   }
 });
 
-export const mergeDivisionPlayerRecords = onCall(async (request) => {
+export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
