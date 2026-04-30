@@ -4,7 +4,7 @@ import { DEFAULT_FORMAT } from '../../types/match';
 describe('scoreEngine', () => {
   describe('basic game progression', () => {
     it('advances from 0 to 15', () => {
-      const score = createInitialScore(DEFAULT_FORMAT);
+      let score = createInitialScore(DEFAULT_FORMAT);
       const result = applyPoint(score, 'player1', DEFAULT_FORMAT);
       expect(result.nextScore.currentGame.player1).toBe('15');
       expect(result.nextScore.currentGame.player2).toBe('0');
@@ -301,7 +301,7 @@ describe('scoreEngine', () => {
 
   describe('formatScoreDisplay', () => {
     it('formats single set score', () => {
-      let score = createInitialScore(DEFAULT_FORMAT);
+      const score = createInitialScore(DEFAULT_FORMAT);
       score.sets[0].player1Games = 3;
       score.sets[0].player2Games = 2;
       expect(formatScoreDisplay(score)).toBe('3-2');
@@ -310,13 +310,13 @@ describe('scoreEngine', () => {
 
   describe('formatGameScore', () => {
     it('shows deuce', () => {
-      const score = createInitialScore(DEFAULT_FORMAT);
+      let score = createInitialScore(DEFAULT_FORMAT);
       score.currentGame = { player1: '40', player2: '40' };
       expect(formatGameScore(score)).toBe('Deuce');
     });
 
     it('shows Ad In', () => {
-      const score = createInitialScore(DEFAULT_FORMAT);
+      let score = createInitialScore(DEFAULT_FORMAT);
       score.currentGame = { player1: 'Ad', player2: '40' };
       expect(formatGameScore(score)).toBe('Ad In');
     });

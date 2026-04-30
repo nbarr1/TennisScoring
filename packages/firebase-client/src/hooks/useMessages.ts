@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot, addDoc, serverTimestamp, updateDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { onSnapshot, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { channelMessagesQuery, channelsCol, messagesCol, userChannelsQuery } from '../collections';
 import type { Message, Channel } from '@tennis/shared';
 

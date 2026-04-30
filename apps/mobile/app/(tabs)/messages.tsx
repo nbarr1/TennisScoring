@@ -128,7 +128,8 @@ export default function MessagesScreen() {
       setDmSearch('');
       setDmResults([]);
       setActiveChannel(channel);
-    } catch {
+    } catch (error) {
+      console.error('Failed to create DM channel', error);
     } finally {
       setDmCreating(false);
     }
