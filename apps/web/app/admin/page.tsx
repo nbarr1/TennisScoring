@@ -9,6 +9,7 @@ import {
   divisionsCol,
   userDoc,
   createDivision as createDivisionShared,
+  addDivisionMemberPlaceholder,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
   useAuthUser,
@@ -73,16 +74,16 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function addDivisionMember() {
-    if (!firebaseUser || !division || !memberName.trim()) return;
+    if (!division || !memberName.trim()) return;
     setAdding(true);
     setError('');
     setInviteMessage('');
     try {
       const memberResult = await addDivisionMemberPlaceholder(
-        firebaseUser,
         division.id,
         memberName.trim(),
         memberEmail.trim() || undefined,
+        false,
       );
       setNeedsMergeForUserId(memberResult.userId);
       setMergeSourceUserId('');
@@ -396,42 +397,6 @@ export default function AdminPage(): React.JSX.Element {
       </main>
     </div>
   );
-}
-
-async function addDivisionMemberPlaceholder(
-  firebaseUser: NonNullable<ReturnType<typeof useAuthUser>['firebaseUser']>,
-  divisionId: string,
-  name: string,
-  email?: string,
-): Promise<{ userId: string; createdPlaceholder: boolean; linkedHistoricalMatches: number }> {
-  const idToken = await firebaseUser.getIdToken();
-  const response = await fetch('/api/functions/add-division-member', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({
-      divisionId,
-      name,
-      email,
-      sendInvite: false,
-    }),
-  });
-  const payload = (await response.json()) as {
-    userId?: string;
-    createdPlaceholder?: boolean;
-    linkedHistoricalMatches?: number;
-    error?: string;
-  };
-  if (!response.ok || !payload.userId) {
-    throw new Error(payload.error ?? 'Failed to add division member.');
-  }
-  return {
-    userId: payload.userId,
-    createdPlaceholder: Boolean(payload.createdPlaceholder),
-    linkedHistoricalMatches: payload.linkedHistoricalMatches ?? 0,
-  };
 }
 
 const styles: Record<string, React.CSSProperties> = {
