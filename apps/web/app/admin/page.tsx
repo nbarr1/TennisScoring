@@ -73,7 +73,7 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function addDivisionMember() {
-    if (!division || !memberName.trim()) return;
+    if (!firebaseUser || !division || !memberName.trim()) return;
     setAdding(true);
     setError('');
     setInviteMessage('');
