@@ -103,7 +103,11 @@ export default function AdminScreen() {
       setMergeSourceUserId(null);
       Alert.alert(
         'Player added',
-        'Do any existing recorded matches belong to this player? If yes, select an existing player below and link records.',
+        result.linkedHistoricalMatches > 0
+          ? `Automatically linked ${result.linkedHistoricalMatches} historical match${
+              result.linkedHistoricalMatches === 1 ? '' : 'es'
+            } by player name. If anything is still missing, use link records below.`
+          : 'If existing recorded matches belong to this player, select an existing player below and link records.',
       );
       setNewPlayerName('');
       setNewPlayerEmail('');

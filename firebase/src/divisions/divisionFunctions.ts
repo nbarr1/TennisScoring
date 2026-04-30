@@ -300,6 +300,15 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
         return { success: true, userId: existingUserId, createdPlaceholder: false };
       }
     }
+    const existingByName = await db
+      .collection('users')
+      .where('divisionId', '==', safeDivisionId)
+      .where('displayName', '==', safeName)
+      .limit(1)
+      .get();
+    if (!existingByName.empty) {
+      return { success: true, userId: existingByName.docs[0].id, createdPlaceholder: false };
+    }
     const now = Date.now();
     const placeholderRef = db.collection('users').doc();
     await db.runTransaction(async (tx) => {
@@ -330,7 +339,48 @@ export const addDivisionMemberPlaceholder = onCall(async (request) => {
         { merge: true },
       );
     });
-    return { success: true, userId: placeholderRef.id, createdPlaceholder: true };
+    const historicalMatches = await db
+      .collection('matches')
+      .where('divisionId', '==', safeDivisionId)
+      .where('isCompleted', '==', true)
+      .get();
+    const normalizeName = (value: unknown): string =>
+      typeof value === 'string' ? value.trim().toLowerCase() : '';
+    const targetName = normalizeName(safeName);
+    const matchUpdates = historicalMatches.docs
+      .map((doc) => {
+        const data = doc.data();
+        let touched = false;
+        const updateData: Record<string, unknown> = {};
+        if (!data.player1Id && normalizeName(data.player1Name) === targetName) {
+          updateData.player1Id = placeholderRef.id;
+          touched = true;
+        }
+        if (!data.player2Id && normalizeName(data.player2Name) === targetName) {
+          updateData.player2Id = placeholderRef.id;
+          touched = true;
+        }
+        if (touched) {
+          const existingPlayerIds = Array.isArray(data.playerIds) ? data.playerIds : [];
+          updateData.playerIds = Array.from(new Set([...existingPlayerIds, placeholderRef.id]));
+          return { ref: doc.ref, updateData };
+        }
+        return null;
+      })
+      .filter((item): item is { ref: FirebaseFirestore.DocumentReference; updateData: Record<string, unknown> } => item !== null);
+
+    for (let i = 0; i < matchUpdates.length; i += 400) {
+      const batch = db.batch();
+      matchUpdates.slice(i, i + 400).forEach(({ ref, updateData }) => batch.update(ref, updateData));
+      await batch.commit();
+    }
+
+    return {
+      success: true,
+      userId: placeholderRef.id,
+      createdPlaceholder: true,
+      linkedHistoricalMatches: matchUpdates.length,
+    };
   } catch (error) {
     if (error instanceof HttpsError) throw error;
     logger.error('addDivisionMemberPlaceholder failed', {
