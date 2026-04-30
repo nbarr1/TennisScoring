@@ -4,7 +4,7 @@ import { DEFAULT_FORMAT } from '../../types/match';
 describe('scoreEngine', () => {
   describe('basic game progression', () => {
     it('advances from 0 to 15', () => {
-      let score = createInitialScore(DEFAULT_FORMAT);
+      const score = createInitialScore(DEFAULT_FORMAT);
       const result = applyPoint(score, 'player1', DEFAULT_FORMAT);
       expect(result.nextScore.currentGame.player1).toBe('15');
       expect(result.nextScore.currentGame.player2).toBe('0');
