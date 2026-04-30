@@ -316,7 +316,7 @@ describe('scoreEngine', () => {
     });
 
     it('shows Ad In', () => {
-      let score = createInitialScore(DEFAULT_FORMAT);
+      const score = createInitialScore(DEFAULT_FORMAT);
       score.currentGame = { player1: 'Ad', player2: '40' };
       expect(formatGameScore(score)).toBe('Ad In');
     });
