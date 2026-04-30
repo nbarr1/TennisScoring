@@ -83,10 +83,19 @@ export async function addDivisionMemberPlaceholder(
   name: string,
   email?: string,
   sendInvite = true,
-): Promise<{ userId: string; createdPlaceholder: boolean }> {
+): Promise<{
+  userId: string;
+  createdPlaceholder: boolean;
+  linkedHistoricalMatches: number;
+}> {
   const callable = httpsCallable<
     { divisionId: string; name: string; email?: string; sendInvite?: boolean },
-    { success: boolean; userId: string; createdPlaceholder: boolean }
+    {
+      success: boolean;
+      userId: string;
+      createdPlaceholder: boolean;
+      linkedHistoricalMatches?: number;
+    }
   >(functions, 'addDivisionMemberPlaceholder');
   const result = await callable({
     divisionId,
@@ -97,6 +106,7 @@ export async function addDivisionMemberPlaceholder(
   return {
     userId: result.data.userId,
     createdPlaceholder: result.data.createdPlaceholder,
+    linkedHistoricalMatches: result.data.linkedHistoricalMatches ?? 0,
   };
 }
 

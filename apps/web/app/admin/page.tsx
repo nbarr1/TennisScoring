@@ -90,7 +90,12 @@ export default function AdminPage(): React.JSX.Element {
       const baseMessage = memberResult.createdPlaceholder
         ? `Player added for ${memberName.trim()}.`
         : 'Existing registered player added to division.';
-      setInviteMessage(`${baseMessage} If historical matches exist, link them below.`);
+      const linkedMessage = memberResult.linkedHistoricalMatches
+        ? ` Automatically linked ${memberResult.linkedHistoricalMatches} historical match${
+            memberResult.linkedHistoricalMatches === 1 ? '' : 'es'
+          } by player name.`
+        : '';
+      setInviteMessage(`${baseMessage}${linkedMessage} If anything is missing, link records below.`);
       setMemberName('');
       setMemberEmail('');
     } catch (e) {
