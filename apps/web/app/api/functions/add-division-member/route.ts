@@ -22,6 +22,10 @@ async function parseUpstreamPayload(response: Response): Promise<{
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = crypto.randomUUID();
+  const debugFunctionsConfig = {
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+    region: process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION ?? null,
+  };
   try {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     if (!projectId) {
@@ -54,6 +58,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const region = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION || 'us-central1';
     const callableUrl = `https://${region}-${projectId}.cloudfunctions.net/addDivisionMemberPlaceholder`;
+    const debugCallableTarget = {
+      ...debugFunctionsConfig,
+      resolvedRegion: region,
+      callableUrl,
+    };
     const timeoutMs = 20000;
     const timeoutController = new AbortController();
     const timeoutHandle = setTimeout(() => timeoutController.abort(), timeoutMs);
@@ -91,6 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Cloud Function call failed.',
           requestId,
           upstreamStatus: callableResponse.status,
+          debugCallableTarget,
         },
         { status: 502 },
       );
@@ -109,6 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ? error.message
             : 'Unexpected error calling Cloud Function.',
         requestId,
+        debugCallableTarget: debugFunctionsConfig,
       },
       { status: 500 },
     );
