@@ -79,10 +79,12 @@ export default function AdminPage(): React.JSX.Element {
     setError('');
     setInviteMessage('');
     try {
+      const trimmedName = memberName.trim();
+      const trimmedEmail = memberEmail.trim() || undefined;
       const memberResult = await addDivisionMemberPlaceholderShared(
         division.id,
-        memberName.trim(),
-        memberEmail.trim() || undefined,
+        trimmedName,
+        trimmedEmail,
         false,
       );
       setNeedsMergeForUserId(memberResult.userId);
