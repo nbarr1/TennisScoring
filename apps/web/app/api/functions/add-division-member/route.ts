@@ -38,7 +38,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const authHeader = request.headers.get('authorization') ?? '';
+    const authHeader =
+      request.headers.get('authorization') ??
+      request.headers.get('Authorization') ??
+      '';
     const body = (await request
       .json()
       .catch(() => undefined)) as
@@ -70,7 +73,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(authHeader
+          ? {
+            authorization: authHeader,
+            Authorization: authHeader,
+          }
+          : {}),
       },
       body: JSON.stringify({ data: body }),
       cache: 'no-store',
