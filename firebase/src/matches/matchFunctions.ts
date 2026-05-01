@@ -273,15 +273,26 @@ async function notifyLeaderOfDispute(
     .collection('divisions')
     .doc(match.divisionId)
     .get();
-  const leaderId = divisionSnap.data()?.leaderId;
-  if (!leaderId) return;
+  const division = divisionSnap.data();
+  const leaderIds = [
+    ...new Set([
+      ...((division?.leaderIds ?? []) as string[]),
+      ...(division?.leaderId ? [division.leaderId as string] : []),
+    ]),
+  ];
+  if (!leaderIds.length) return;
 
-  const leaderSnap = await db.collection('users').doc(leaderId).get();
-  const leader = leaderSnap.data();
-  if (!leader?.fcmTokens?.length) return;
+  const leaderSnaps = await Promise.all(
+    leaderIds.map((leaderId) => db.collection('users').doc(leaderId).get()),
+  );
+  const tokens = leaderSnaps.flatMap((leaderSnap) => {
+    const leader = leaderSnap.data();
+    return Array.isArray(leader?.fcmTokens) ? leader.fcmTokens : [];
+  });
+  if (!tokens.length) return;
 
   await getMessaging().sendEachForMulticast({
-    tokens: leader.fcmTokens,
+    tokens,
     notification: {
       title: 'Match Report Disputed',
       body: 'A player has disputed a match report. Your resolution is needed.',

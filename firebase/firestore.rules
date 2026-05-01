@@ -113,6 +113,7 @@ service cloud.firestore {
       let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled' &&
         changed.hasOnly(['scheduledAt']);
       let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled' &&
+        request.auth.uid == existing.player2Id &&
         changed.hasOnly(['status']);
       let isScoreUpdate = existing.status in ['scheduled', 'in_progress'] &&
         changed.hasOnly(['status', 'startedAt', 'liveScore', 'stats', 'winner', 'completedAt', 'undoSnapshot']);
@@ -124,8 +125,9 @@ service cloud.firestore {
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
       let hasSubmission = 'reportSubmission' in existing;
-      let isNotSubmitter = !hasSubmission || request.auth.uid != existing.reportSubmission.submittedBy;
+      let isNotSubmitter = hasSubmission && request.auth.uid != existing.reportSubmission.submittedBy;
       let isValidConfirmOrDispute = isConfirmOrDispute &&
+        existing.reportSubmission.status == 'pending_confirmation' &&
         isNotSubmitter &&
         changed.hasOnly(['status', 'reportSubmission']);
       let isGuestMatch = existing.get('player2IsGuest', false) == true;

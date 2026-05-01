@@ -8,6 +8,11 @@
     "skipLibCheck": true,
     "outDir": "lib",
     "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@tennis/shared": ["../packages/shared/dist/index.d.ts"]
+    },
+    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "sourceMap": true,
     "types": ["node"]

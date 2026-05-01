@@ -43,7 +43,7 @@ function normalizeName(name: string): string {
 }
 
 type MatchLike = {
-  isCompleted?: unknown;
+  status?: unknown;
   player1Name?: unknown;
   player2Name?: unknown;
   player1Id?: unknown;
@@ -52,7 +52,7 @@ type MatchLike = {
 };
 
 function isEligibleForNameToIdLink(match: MatchLike): boolean {
-  if (match.isCompleted !== true) return false;
+  if (match.status !== 'completed') return false;
   const player1NameValid = typeof match.player1Name === 'string' && match.player1Name.trim().length > 0;
   const player2NameValid = typeof match.player2Name === 'string' && match.player2Name.trim().length > 0;
   if (!player1NameValid && !player2NameValid) return false;
@@ -370,7 +370,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
     const historicalMatches = await db
       .collection('matches')
       .where('divisionId', '==', safeDivisionId)
-      .where('isCompleted', '==', true)
+      .where('status', '==', 'completed')
       .get();
     const readNormalizedName = (value: unknown): string =>
       typeof value === 'string' ? normalizeName(value) : '';
