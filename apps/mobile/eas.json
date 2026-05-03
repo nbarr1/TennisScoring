@@ -45,7 +45,8 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":wear:assembleRelease"
+        "gradleCommand": ":wear:assembleRelease",
+        "applicationArchivePath": "android/wear/build/outputs/**/*.{apk,aab}"
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
