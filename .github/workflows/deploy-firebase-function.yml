@@ -39,8 +39,15 @@ jobs:
         run: pnpm --filter @tennis/firebase-functions build
         working-directory: .
 
+      - name: Write service account credentials
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gcp-sa.json"
+        working-directory: .
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
       - name: Deploy callable function
         run: npx firebase-tools deploy --only functions:addDivisionMemberPlaceholder --project "$FIREBASE_PROJECT_ID"
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
