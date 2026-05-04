@@ -176,9 +176,6 @@ importers:
 
   firebase:
     dependencies:
-      '@tennis/shared':
-        specifier: workspace:*
-        version: link:../packages/shared
       firebase-admin:
         specifier: ^12.0.0
         version: 12.7.0(encoding@0.1.13)
