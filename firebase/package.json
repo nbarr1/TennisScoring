@@ -20,6 +20,7 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
+    "@tennis/shared": "workspace:*",
     "typescript": "^6.0.0",
     "@types/node": "^20.0.0"
   }

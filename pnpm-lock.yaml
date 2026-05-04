@@ -186,6 +186,9 @@ importers:
         specifier: ^1.17.1
         version: 1.17.1
     devDependencies:
+      '@tennis/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.39
