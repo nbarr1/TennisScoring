@@ -15,6 +15,16 @@ android {
         versionName '1.0.0'
     }
 
+
+    signingConfigs {
+        debug {
+            storeFile file('../app/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
         release {
             // Ensure the Wear APK produced by :wear:assembleRelease is signed and installable for internal distribution.
