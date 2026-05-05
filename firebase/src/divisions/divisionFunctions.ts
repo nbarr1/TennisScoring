@@ -35,6 +35,11 @@ type MergePlayerRecordsInput = {
   matchIds?: string[];
   targetEmail?: string;
 };
+type UpdateDivisionPlayerEmailInput = {
+  divisionId?: string;
+  userId?: string;
+  email?: string;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -449,10 +454,10 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   const safeDivisionId = divisionId?.trim();
   const safeSourceUserId = sourceUserId?.trim();
   const safeTargetUserId = targetUserId?.trim();
-  if (!safeDivisionId || !safeSourceUserId || !safeTargetUserId) {
-    throw new HttpsError('invalid-argument', 'Division and both user IDs are required.');
+  if (!safeDivisionId || !safeTargetUserId) {
+    throw new HttpsError('invalid-argument', 'Division and target user ID are required.');
   }
-  if (safeSourceUserId === safeTargetUserId) {
+  if (safeSourceUserId && safeSourceUserId === safeTargetUserId) {
     throw new HttpsError('invalid-argument', 'Source and target users must be different.');
   }
 
@@ -465,18 +470,24 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   const divisionPlayerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
 
   const [sourceSnap, targetSnap] = await Promise.all([
-    db.collection('users').doc(safeSourceUserId).get(),
+    safeSourceUserId ? db.collection('users').doc(safeSourceUserId).get() : null,
     db.collection('users').doc(safeTargetUserId).get(),
   ]);
-  if (!sourceSnap.exists || !targetSnap.exists) {
+  if ((!sourceSnap && safeSourceUserId) || (sourceSnap && !sourceSnap.exists) || !targetSnap.exists) {
     throw new HttpsError('not-found', 'One or both users were not found.');
   }
-  const sourceDivisionId = sourceSnap.data()?.divisionId;
+  const sourceDivisionId = sourceSnap?.data()?.divisionId;
   const targetDivisionId = targetSnap.data()?.divisionId;
+  const sourceRole = sourceSnap?.data()?.role;
+  const divisionLeaderIds = (divisionSnap.data()?.leaderIds ?? []) as string[];
+  const sourceIsPrivileged =
+    sourceRole === 'admin' ||
+    sourceRole === 'division_leader' ||
+    (safeSourceUserId ? divisionLeaderIds.includes(safeSourceUserId) : false);
   if (
-    !divisionPlayerIds.includes(safeSourceUserId) ||
+    (safeSourceUserId && !divisionPlayerIds.includes(safeSourceUserId)) ||
     !divisionPlayerIds.includes(safeTargetUserId) ||
-    sourceDivisionId !== safeDivisionId ||
+    (safeSourceUserId && sourceDivisionId !== safeDivisionId) ||
     targetDivisionId !== safeDivisionId
   ) {
     throw new HttpsError(
@@ -485,20 +496,26 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     );
   }
   const targetDisplayName = targetSnap.data()?.displayName ?? null;
+  const normalizedTargetDisplayName = typeof targetDisplayName === 'string' ? normalizeName(targetDisplayName) : '';
   const safeTargetEmail = typeof targetEmail === 'string' ? normalizeEmail(targetEmail) : '';
-
-  const matches = await db
-    .collection('matches')
-    .where('divisionId', '==', safeDivisionId)
-    .where('playerIds', 'array-contains', safeSourceUserId)
-    .get();
 
   const onlyMatchIds = Array.isArray(matchIds)
     ? new Set(matchIds.map((id) => (typeof id === 'string' ? id.trim() : '')).filter(Boolean))
     : null;
-  const docsToUpdate = onlyMatchIds
-    ? matches.docs.filter((doc) => onlyMatchIds.has(doc.id))
-    : matches.docs;
+  let docsToUpdate: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  if (onlyMatchIds && onlyMatchIds.size > 0) {
+    const docs = await Promise.all(Array.from(onlyMatchIds).map((id) => db.collection('matches').doc(id).get()));
+    docsToUpdate = docs.filter((d): d is FirebaseFirestore.QueryDocumentSnapshot => d.exists && d.data()?.divisionId === safeDivisionId);
+  } else if (safeSourceUserId) {
+    const matches = await db
+      .collection('matches')
+      .where('divisionId', '==', safeDivisionId)
+      .where('playerIds', 'array-contains', safeSourceUserId)
+      .get();
+    docsToUpdate = matches.docs;
+  } else {
+    throw new HttpsError('invalid-argument', 'Select at least one match when source user is not provided.');
+  }
 
   const maxWritesPerBatch = 450;
   let batch = db.batch();
@@ -512,20 +529,35 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
 
   docsToUpdate.forEach((matchDoc) => {
     const data = matchDoc.data();
-    const nextPlayer1Id = data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id;
-    const nextPlayer2Id = data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id;
+    const player1Name = typeof data.player1Name === 'string' ? data.player1Name : '';
+    const player2Name = typeof data.player2Name === 'string' ? data.player2Name : '';
+    const player1LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player1Name) === normalizedTargetDisplayName;
+    const player2LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player2Name) === normalizedTargetDisplayName;
+    const nextPlayer1Id = safeSourceUserId
+      ? (data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id)
+      : (player1LooksLikeTarget ? safeTargetUserId : data.player1Id);
+    const nextPlayer2Id = safeSourceUserId
+      ? (data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id)
+      : (player2LooksLikeTarget ? safeTargetUserId : data.player2Id);
     const nextPlayerIds = Array.from(
-      new Set(((data.playerIds as string[]) ?? []).map((id) => (id === safeSourceUserId ? safeTargetUserId : id))),
+      new Set(
+        ((data.playerIds as string[]) ?? []).map((id) => {
+          if (safeSourceUserId) return id === safeSourceUserId ? safeTargetUserId : id;
+          if (id === data.player1Id && player1LooksLikeTarget) return safeTargetUserId;
+          if (id === data.player2Id && player2LooksLikeTarget) return safeTargetUserId;
+          return id;
+        }),
+      ),
     );
     const updateData: Record<string, unknown> = {
       player1Id: nextPlayer1Id,
       player2Id: nextPlayer2Id,
       playerIds: nextPlayerIds,
     };
-    if (data.player1Id === safeSourceUserId && targetDisplayName) {
+    if ((data.player1Id === safeSourceUserId || player1LooksLikeTarget) && targetDisplayName) {
       updateData.player1Name = targetDisplayName;
     }
-    if (data.player2Id === safeSourceUserId && targetDisplayName) {
+    if ((data.player2Id === safeSourceUserId || player2LooksLikeTarget) && targetDisplayName) {
       updateData.player2Name = targetDisplayName;
     }
     batch.update(matchDoc.ref, updateData);
@@ -538,7 +570,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   batch.set(
     db.collection('divisions').doc(safeDivisionId),
     {
-      playerIds: FieldValue.arrayRemove(safeSourceUserId),
+      ...(!safeSourceUserId || sourceIsPrivileged ? {} : { playerIds: FieldValue.arrayRemove(safeSourceUserId) }),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -552,16 +584,22 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     },
     { merge: true },
   );
-  batch.set(
-    db.collection('users').doc(safeSourceUserId),
-    {
-      mergedIntoUserId: safeTargetUserId,
-      divisionId: FieldValue.delete(),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
-  writesInBatch += 3;
+  if (safeSourceUserId) {
+    batch.set(
+      db.collection('users').doc(safeSourceUserId),
+      {
+        ...(sourceIsPrivileged
+          ? {}
+          : {
+              mergedIntoUserId: safeTargetUserId,
+              divisionId: FieldValue.delete(),
+            }),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  writesInBatch += safeSourceUserId ? 3 : 2;
   if (writesInBatch > 0) {
     commitAndRotate();
   }
@@ -570,4 +608,29 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
 
   return { success: true, updatedMatches: docsToUpdate.length };
+});
+
+export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
+  }
+  const { divisionId, userId, email } = (request.data ?? {}) as UpdateDivisionPlayerEmailInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeUserId = userId?.trim();
+  const safeEmail = typeof email === 'string' ? normalizeEmail(email) : '';
+  if (!safeDivisionId || !safeUserId || !safeEmail) {
+    throw new HttpsError('invalid-argument', 'Division, user, and email are required.');
+  }
+
+  const db = getFirestore();
+  const divisionSnap = await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const playerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
+  if (!playerIds.includes(safeUserId)) {
+    throw new HttpsError('failed-precondition', 'User is not a member of this division.');
+  }
+  await db.collection('users').doc(safeUserId).set(
+    { email: safeEmail, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  return { success: true };
 });
