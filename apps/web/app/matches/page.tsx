@@ -362,6 +362,8 @@ function RecordPastMatchModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [isDivisionMatch, setIsDivisionMatch] = useState(true);
+  const [entryMode, setEntryMode] = useState<'single' | 'bulk'>('single');
+  const [bulkText, setBulkText] = useState('');
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -387,8 +389,72 @@ function RecordPastMatchModal({
     ? guestName.trim().length > 0
     : !!selectedOpponent;
 
+  function parseSetToken(token: string): { p1: number; p2: number } | null {
+    const m = token.trim().match(/^(\d{1,2})\s*[-:]\s*(\d{1,2})$/);
+    if (!m) return null;
+    return { p1: parseInt(m[1], 10), p2: parseInt(m[2], 10) };
+  }
+
+  function parseBulkLine(line: string): { opponentName: string; sets: { p1: number; p2: number }[] } | null {
+    const cleaned = line.trim();
+    if (!cleaned) return null;
+    const parts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 3) return null;
+    const opponentName = parts[0];
+    const sets = parts.slice(1).map(parseSetToken);
+    if (!opponentName || sets.some((s) => !s)) return null;
+    return { opponentName, sets: sets as { p1: number; p2: number }[] };
+  }
+
   async function handleSubmit() {
     setError('');
+    if (entryMode === 'bulk') {
+      const lines = bulkText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (lines.length === 0) {
+        setError('Add at least one line for bulk import.');
+        return;
+      }
+      const parsedLines = lines.map(parseBulkLine);
+      if (parsedLines.some((line) => !line)) {
+        setError('Each line must be: Opponent Name, 6-4, 7-5');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        for (const item of parsedLines as { opponentName: string; sets: { p1: number; p2: number }[] }[]) {
+          const p1Sets = item.sets.filter((s) => s.p1 > s.p2).length;
+          const p2Sets = item.sets.filter((s) => s.p2 > s.p1).length;
+          if (p1Sets === p2Sets || item.sets.some((s) => s.p1 === s.p2)) {
+            throw new Error(`Invalid winner in line for ${item.opponentName}.`);
+          }
+          await recordHistoricMatch({
+            player1Id: currentUser.id,
+            player2Id: 'guest',
+            player1Name: currentUser.displayName,
+            player2Name: item.opponentName,
+            player2IsGuest: true,
+            divisionId,
+            createdBy: currentUser.id,
+            sets: item.sets,
+            isDivisionMatch,
+          });
+        }
+        onClose();
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : 'Could not bulk record matches. Please try again.',
+        );
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const parsed = sets.map((s) => ({
       p1: parseInt(s.p1, 10),
       p2: parseInt(s.p2, 10),
@@ -459,6 +525,33 @@ function RecordPastMatchModal({
           <button
             style={{
               ...modalStyles.modeBtn,
+              ...(entryMode === 'single' ? modalStyles.modeBtnActive : {}),
+            }}
+            onClick={() => setEntryMode('single')}
+          >
+            Single Match
+          </button>
+          <button
+            style={{
+              ...modalStyles.modeBtn,
+              ...(entryMode === 'bulk' ? modalStyles.modeBtnActive : {}),
+            }}
+            onClick={() => {
+              setEntryMode('bulk');
+              setOpponentMode('guest');
+              setSelectedOpponent(null);
+            }}
+          >
+            Bulk Add
+          </button>
+        </div>
+
+        {entryMode === 'single' && (
+          <>
+            <div style={modalStyles.modeToggle}>
+          <button
+            style={{
+              ...modalStyles.modeBtn,
               ...(opponentMode === 'search' ? modalStyles.modeBtnActive : {}),
             }}
             onClick={() => {
@@ -482,9 +575,9 @@ function RecordPastMatchModal({
           >
             Guest / No Account
           </button>
-        </div>
+            </div>
 
-        {opponentMode === 'guest' ? (
+            {opponentMode === 'guest' ? (
           <input
             style={modalStyles.input}
             value={guestName}
@@ -543,9 +636,9 @@ function RecordPastMatchModal({
                 <div style={modalStyles.muted}>No players found.</div>
               )}
           </>
-        )}
+            )}
 
-        {opponentReady && (
+        {entryMode === 'single' && opponentReady && (
           <div style={modalStyles.toggleSection}>
             <label style={modalStyles.checkboxLabel}>
               <input
@@ -564,7 +657,7 @@ function RecordPastMatchModal({
           </div>
         )}
 
-        {opponentReady && (
+        {entryMode === 'single' && opponentReady && (
           <div style={modalStyles.setsBlock}>
             <div style={modalStyles.label}>Set scores (your games first)</div>
             {sets.map((s, i) => (
@@ -622,6 +715,37 @@ function RecordPastMatchModal({
           </div>
         )}
 
+          </>
+        )}
+
+        {entryMode === 'bulk' && (
+          <>
+            <div style={modalStyles.toggleSection}>
+              <div style={modalStyles.checkboxHint}>
+                Format: <strong>Opponent Name, 6-4, 7-5</strong> (one match per line; guest opponents only).
+              </div>
+            </div>
+            <textarea
+              style={modalStyles.textarea}
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              placeholder={"Jane Doe, 6-3, 6-4\nAlex Smith, 4-6, 7-5, 6-2"}
+              rows={7}
+            />
+            <div style={modalStyles.toggleSection}>
+              <label style={modalStyles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={isDivisionMatch}
+                  onChange={(e) => setIsDivisionMatch(e.target.checked)}
+                  style={modalStyles.checkbox}
+                />
+                <span>Include imported matches in division rankings</span>
+              </label>
+            </div>
+          </>
+        )}
+
         {error && <div style={modalStyles.error}>{error}</div>}
 
         <div style={modalStyles.actions}>
@@ -635,12 +759,14 @@ function RecordPastMatchModal({
           <button
             style={{
               ...modalStyles.submitBtn,
-              ...(!opponentReady || submitting ? modalStyles.btnDisabled : {}),
+              ...((entryMode === 'single' && !opponentReady) || submitting
+                ? modalStyles.btnDisabled
+                : {}),
             }}
             onClick={handleSubmit}
-            disabled={!opponentReady || submitting}
+            disabled={(entryMode === 'single' && !opponentReady) || submitting}
           >
-            {submitting ? 'Recording…' : 'Record Match'}
+            {submitting ? 'Recording…' : entryMode === 'bulk' ? 'Import Matches' : 'Record Match'}
           </button>
         </div>
       </div>
@@ -896,6 +1022,17 @@ const modalStyles: Record<string, React.CSSProperties> = {
     marginBottom: 12,
     boxSizing: 'border-box' as const,
     outline: 'none',
+  },
+  textarea: {
+    width: '100%',
+    border: '1px solid #ddd',
+    borderRadius: 10,
+    padding: '10px 14px',
+    fontSize: 14,
+    marginBottom: 12,
+    boxSizing: 'border-box' as const,
+    outline: 'none',
+    resize: 'vertical' as const,
   },
   results: {
     maxHeight: 200,
