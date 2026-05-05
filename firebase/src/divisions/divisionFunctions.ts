@@ -32,6 +32,8 @@ type MergePlayerRecordsInput = {
   divisionId?: string;
   sourceUserId?: string;
   targetUserId?: string;
+  matchIds?: string[];
+  targetEmail?: string;
 };
 
 function normalizeEmail(email: string): string {
@@ -443,7 +445,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
-  const { divisionId, sourceUserId, targetUserId } = (request.data ?? {}) as MergePlayerRecordsInput;
+  const { divisionId, sourceUserId, targetUserId, matchIds, targetEmail } = (request.data ?? {}) as MergePlayerRecordsInput;
   const safeDivisionId = divisionId?.trim();
   const safeSourceUserId = sourceUserId?.trim();
   const safeTargetUserId = targetUserId?.trim();
@@ -483,12 +485,20 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     );
   }
   const targetDisplayName = targetSnap.data()?.displayName ?? null;
+  const safeTargetEmail = typeof targetEmail === 'string' ? normalizeEmail(targetEmail) : '';
 
   const matches = await db
     .collection('matches')
     .where('divisionId', '==', safeDivisionId)
     .where('playerIds', 'array-contains', safeSourceUserId)
     .get();
+
+  const onlyMatchIds = Array.isArray(matchIds)
+    ? new Set(matchIds.map((id) => (typeof id === 'string' ? id.trim() : '')).filter(Boolean))
+    : null;
+  const docsToUpdate = onlyMatchIds
+    ? matches.docs.filter((doc) => onlyMatchIds.has(doc.id))
+    : matches.docs;
 
   const maxWritesPerBatch = 450;
   let batch = db.batch();
@@ -500,7 +510,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     writesInBatch = 0;
   };
 
-  matches.docs.forEach((matchDoc) => {
+  docsToUpdate.forEach((matchDoc) => {
     const data = matchDoc.data();
     const nextPlayer1Id = data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id;
     const nextPlayer2Id = data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id;
@@ -537,6 +547,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     db.collection('users').doc(safeTargetUserId),
     {
       divisionId: safeDivisionId,
+      ...(safeTargetEmail ? { email: safeTargetEmail } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -558,5 +569,5 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
 
-  return { success: true, updatedMatches: matches.size };
+  return { success: true, updatedMatches: docsToUpdate.length };
 });

@@ -4,11 +4,12 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { onSnapshot, getDoc } from 'firebase/firestore';
+import { onSnapshot, getDoc, getDocs } from 'firebase/firestore';
 import {
   divisionsCol,
   userDoc,
   divisionDoc,
+  matchesCol,
   createDivision as createDivisionShared,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
@@ -16,6 +17,7 @@ import {
   useAuthUser,
 } from '@tennis/firebase-client';
 import type { Division, User } from '@tennis/shared';
+import type { Match } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
 export default function AdminPage(): React.JSX.Element {
@@ -27,6 +29,9 @@ export default function AdminPage(): React.JSX.Element {
   const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
   const [mergeSourceUserId, setMergeSourceUserId] = useState('');
   const [merging, setMerging] = useState(false);
+  const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [editEmail, setEditEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -109,8 +114,6 @@ export default function AdminPage(): React.JSX.Element {
         trimmedEmail,
         false,
       );
-      setNeedsMergeForUserId(memberResult.userId);
-      setMergeSourceUserId('');
       const baseMessage = memberResult.createdPlaceholder
         ? `Player added for ${memberName.trim()}.`
         : 'Existing registered player added to division.';
@@ -119,7 +122,7 @@ export default function AdminPage(): React.JSX.Element {
             memberResult.linkedHistoricalMatches === 1 ? '' : 'es'
           } by player name.`
         : '';
-      setInviteMessage(`${baseMessage}${linkedMessage} If anything is missing, link records below.`);
+      setInviteMessage(`${baseMessage}${linkedMessage}`);
       setMemberName('');
       setMemberEmail('');
     } catch (e) {
@@ -144,6 +147,10 @@ export default function AdminPage(): React.JSX.Element {
         division.id,
         mergeSourceUserId,
         needsMergeForUserId,
+        {
+          matchIds: selectedMatchIds.length ? selectedMatchIds : undefined,
+          targetEmail: editEmail.trim() || undefined,
+        },
       );
       setInviteMessage(`Linked records. Updated ${updated} historical matches.`);
       setNeedsMergeForUserId(null);
@@ -160,6 +167,30 @@ export default function AdminPage(): React.JSX.Element {
       setMerging(false);
     }
   }
+  useEffect(() => {
+    async function loadCandidateMatches() {
+      if (!division?.id || !mergeSourceUserId) {
+        setCandidateMatches([]);
+        setSelectedMatchIds([]);
+        return;
+      }
+      const snap = await getDocs(query(matchesCol(), where('divisionId', '==', division.id)));
+      const matches = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+        .filter((m) => Array.isArray(m.playerIds) && m.playerIds.includes(mergeSourceUserId));
+      setCandidateMatches(matches);
+      setSelectedMatchIds(matches.map((m) => m.id));
+    }
+    loadCandidateMatches();
+  }, [division?.id, mergeSourceUserId]);
+
+  useEffect(() => {
+    const selected = players.find((p) => p.id === needsMergeForUserId);
+    setEditEmail(selected?.email ?? '');
+    setMergeSourceUserId('');
+    setCandidateMatches([]);
+    setSelectedMatchIds([]);
+  }, [needsMergeForUserId, players]);
 
   async function repairRankings() {
     if (!division) return;
@@ -297,35 +328,6 @@ export default function AdminPage(): React.JSX.Element {
                 </button>
               </div>
               {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
-              {needsMergeForUserId ? (
-                <div style={styles.mergeBox}>
-                  <h3 style={styles.subTitle}>Link Historical Matches (Optional)</h3>
-                  <p style={styles.hint}>
-                    If this person already exists in old match records, choose that prior player record and link it to the newly added player.
-                  </p>
-                  <select
-                    style={styles.input}
-                    value={mergeSourceUserId}
-                    onChange={(e) => setMergeSourceUserId(e.target.value)}
-                  >
-                    <option value="">Select existing player record…</option>
-                    {players
-                      .filter((p) => p.id !== needsMergeForUserId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.displayName} ({p.email || p.id})
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    style={styles.btn}
-                    onClick={handleMergeRecords}
-                    disabled={!mergeSourceUserId || merging}
-                  >
-                    {merging ? 'Linking…' : 'Link Records'}
-                  </button>
-                </div>
-              ) : null}
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
@@ -415,6 +417,71 @@ export default function AdminPage(): React.JSX.Element {
                   </tbody>
                 </table>
               )}
+              <div style={styles.mergeBox}>
+                <h3 style={styles.subTitle}>Player Maintenance</h3>
+                <p style={styles.hint}>
+                  Update a player email and choose which recorded matches to link from another player record.
+                </p>
+                <select
+                  style={styles.input}
+                  value={needsMergeForUserId ?? ''}
+                  onChange={(e) => setNeedsMergeForUserId(e.target.value || null)}
+                >
+                  <option value="">Select target player…</option>
+                  {players.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.displayName} ({p.email || p.id})
+                    </option>
+                  ))}
+                </select>
+                <select
+                  style={styles.input}
+                  value={mergeSourceUserId}
+                  onChange={(e) => setMergeSourceUserId(e.target.value)}
+                >
+                  <option value="">Select source player record…</option>
+                  {players
+                    .filter((p) => p.id !== needsMergeForUserId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.displayName} ({p.email || p.id})
+                      </option>
+                    ))}
+                </select>
+                <input
+                  style={styles.input}
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  placeholder="Update target player email (optional)"
+                  type="email"
+                />
+                {candidateMatches.length > 0 ? (
+                  <div>
+                    <p style={styles.hint}>Choose recorded matches to link:</p>
+                    {candidateMatches.map((m) => (
+                      <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedMatchIds.includes(m.id)}
+                          onChange={(e) =>
+                            setSelectedMatchIds((prev) =>
+                              e.target.checked ? [...prev, m.id] : prev.filter((id) => id !== m.id),
+                            )
+                          }
+                        />{' '}
+                        {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+                <button
+                  style={styles.btn}
+                  onClick={handleMergeRecords}
+                  disabled={!needsMergeForUserId || !mergeSourceUserId || merging}
+                >
+                  {merging ? 'Saving…' : 'Save Email + Link Matches'}
+                </button>
+              </div>
             </div>
           </>
         )}
