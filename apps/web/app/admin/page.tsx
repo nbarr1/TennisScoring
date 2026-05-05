@@ -8,6 +8,7 @@ import { onSnapshot, getDoc } from 'firebase/firestore';
 import {
   divisionsCol,
   userDoc,
+  divisionDoc,
   createDivision as createDivisionShared,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
@@ -34,35 +35,56 @@ export default function AdminPage(): React.JSX.Element {
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
 
-  // Find the division this user leads
+  // Resolve the division context for leaders and admins.
   useEffect(() => {
-    if (!firebaseUser) return;
-    const q = query(
+    if (!firebaseUser) {
+      setDivision(null);
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
+    const leaderQuery = query(
       divisionsCol(),
       where('leaderIds', 'array-contains', firebaseUser.uid),
     );
-    return onSnapshot(q, async (snap) => {
-      if (!snap.empty) {
-        const div = {
-          id: snap.docs[0].id,
-          ...(snap.docs[0].data() as Omit<Division, 'id'>),
+
+    return onSnapshot(leaderQuery, async (leaderSnap) => {
+      let div: Division | null = null;
+
+      if (!leaderSnap.empty) {
+        div = {
+          id: leaderSnap.docs[0].id,
+          ...(leaderSnap.docs[0].data() as Omit<Division, 'id'>),
         };
-        setDivision(div);
-        // Load player profiles
-        if (div.playerIds.length > 0) {
-          const profiles = await Promise.all(
-            div.playerIds.map((id) => getDoc(userDoc(id))),
-          );
-          setPlayers(
-            profiles
-              .filter((d) => d.exists())
-              .map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })),
-          );
+      } else {
+        const profileSnap = await getDoc(userDoc(firebaseUser.uid));
+        const profileDivisionId = profileSnap.data()?.divisionId;
+        if (typeof profileDivisionId === 'string' && profileDivisionId.trim()) {
+          const divisionSnap = await getDoc(divisionDoc(profileDivisionId));
+          if (divisionSnap.exists()) {
+            div = {
+              id: divisionSnap.id,
+              ...(divisionSnap.data() as Omit<Division, 'id'>),
+            };
+          }
         }
+      }
+
+      setDivision(div);
+      if (div?.playerIds.length) {
+        const profiles = await Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))));
+        setPlayers(
+          profiles
+            .filter((d) => d.exists())
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })),
+        );
+      } else {
+        setPlayers([]);
       }
       setLoading(false);
     });
   }, [firebaseUser]);
+
 
   async function createDivision() {
     if (!firebaseUser || !newDivisionName.trim()) return;
@@ -74,7 +96,7 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function addDivisionMember() {
-    if (!firebaseUser || !division || !memberName.trim()) return;
+    if (!firebaseUser || !division?.id || !memberName.trim()) return;
     setAdding(true);
     setError('');
     setInviteMessage('');
@@ -269,7 +291,7 @@ export default function AdminPage(): React.JSX.Element {
                 <button
                   style={styles.btn}
                   onClick={addDivisionMember}
-                  disabled={adding || !memberName.trim()}
+                  disabled={adding || !memberName.trim() || !division?.id}
                 >
                   {adding ? 'Saving…' : 'Add Member'}
                 </button>
