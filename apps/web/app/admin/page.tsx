@@ -4,11 +4,12 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { onSnapshot, getDoc } from 'firebase/firestore';
+import { onSnapshot, getDoc, getDocs } from 'firebase/firestore';
 import {
   divisionsCol,
   userDoc,
   divisionDoc,
+  matchesCol,
   createDivision as createDivisionShared,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
@@ -16,6 +17,7 @@ import {
   useAuthUser,
 } from '@tennis/firebase-client';
 import type { Division, User } from '@tennis/shared';
+import type { Match } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
 export default function AdminPage(): React.JSX.Element {
@@ -27,6 +29,9 @@ export default function AdminPage(): React.JSX.Element {
   const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
   const [mergeSourceUserId, setMergeSourceUserId] = useState('');
   const [merging, setMerging] = useState(false);
+  const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [editEmail, setEditEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -111,6 +116,9 @@ export default function AdminPage(): React.JSX.Element {
       );
       setNeedsMergeForUserId(memberResult.userId);
       setMergeSourceUserId('');
+      setSelectedMatchIds([]);
+      setCandidateMatches([]);
+      setEditEmail(trimmedEmail ?? '');
       const baseMessage = memberResult.createdPlaceholder
         ? `Player added for ${memberName.trim()}.`
         : 'Existing registered player added to division.';
@@ -144,6 +152,10 @@ export default function AdminPage(): React.JSX.Element {
         division.id,
         mergeSourceUserId,
         needsMergeForUserId,
+        {
+          matchIds: selectedMatchIds,
+          targetEmail: editEmail.trim() || undefined,
+        },
       );
       setInviteMessage(`Linked records. Updated ${updated} historical matches.`);
       setNeedsMergeForUserId(null);
@@ -160,6 +172,26 @@ export default function AdminPage(): React.JSX.Element {
       setMerging(false);
     }
   }
+  useEffect(() => {
+    async function loadCandidateMatches() {
+      if (!division?.id || !mergeSourceUserId) {
+        setCandidateMatches([]);
+        setSelectedMatchIds([]);
+        return;
+      }
+      const snap = await getDocs(
+        query(
+          matchesCol(),
+          where('divisionId', '==', division.id),
+          where('playerIds', 'array-contains', mergeSourceUserId),
+        ),
+      );
+      const matches = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }));
+      setCandidateMatches(matches);
+      setSelectedMatchIds(matches.map((m) => m.id));
+    }
+    loadCandidateMatches();
+  }, [division?.id, mergeSourceUserId]);
 
   async function repairRankings() {
     if (!division) return;
@@ -324,6 +356,34 @@ export default function AdminPage(): React.JSX.Element {
                   >
                     {merging ? 'Linking…' : 'Link Records'}
                   </button>
+                  <input
+                    style={styles.input}
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="Update player email (optional)"
+                    type="email"
+                  />
+                  {candidateMatches.length > 0 ? (
+                    <div>
+                      <p style={styles.hint}>Choose recorded matches to link:</p>
+                      {candidateMatches.map((m) => (
+                        <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedMatchIds.includes(m.id)}
+                            onChange={(e) =>
+                              setSelectedMatchIds((prev) =>
+                                e.target.checked
+                                  ? [...prev, m.id]
+                                  : prev.filter((id) => id !== m.id),
+                              )
+                            }
+                          />{' '}
+                          {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {error && <p style={styles.error}>{error}</p>}
