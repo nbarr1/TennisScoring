@@ -148,7 +148,7 @@ export default function AdminPage(): React.JSX.Element {
         mergeSourceUserId,
         needsMergeForUserId,
         {
-          matchIds: selectedMatchIds.length ? selectedMatchIds : undefined,
+          matchIds: selectedMatchIds,
           targetEmail: editEmail.trim() || undefined,
         },
       );
