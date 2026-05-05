@@ -43,6 +43,7 @@ export default function ProfilePage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [divisionName, setDivisionName] = useState('');
   const [divisionOptions, setDivisionOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -55,6 +56,7 @@ export default function ProfilePage(): React.JSX.Element {
     setTipsEnabled(profile.tipsEnabled ?? true);
     setAvailabilitySlots(profile.availability?.slots ?? []);
     setAvailabilityNote(profile.availability?.note ?? '');
+    setSelectedDivisionId(profile.divisionId ?? '');
   }, [profile]);
 
   useEffect(() => {
@@ -73,11 +75,30 @@ export default function ProfilePage(): React.JSX.Element {
   useEffect(() => {
     async function loadDivisionOptions() {
       if (!firebaseUser?.uid) return;
-      const snap = await getDocs(query(divisionsCol(), where('playerIds', 'array-contains', firebaseUser.uid)));
-      setDivisionOptions(snap.docs.map((d) => ({ id: d.id, name: (d.data().name as string) ?? d.id })));
+      const snap = await getDocs(
+        query(divisionsCol(), where('playerIds', 'array-contains', firebaseUser.uid)),
+      );
+
+      const rawOptions = snap.docs.map((d) => ({
+        id: d.id,
+        name: ((d.data().name as string) ?? d.id).trim(),
+      }));
+
+      const uniqueByName = new Map<string, { id: string; name: string }>();
+      for (const option of rawOptions) {
+        const key = option.name.toLowerCase();
+        const existing = uniqueByName.get(key);
+        if (!existing || existing.id !== profile?.divisionId) {
+          if (option.id === profile?.divisionId || !existing) {
+            uniqueByName.set(key, option);
+          }
+        }
+      }
+
+      setDivisionOptions(Array.from(uniqueByName.values()));
     }
     void loadDivisionOptions();
-  }, [firebaseUser?.uid]);
+  }, [firebaseUser?.uid, profile?.divisionId]);
 
   function addSlot() {
     setAvailabilitySlots((s) => [
@@ -119,6 +140,7 @@ export default function ProfilePage(): React.JSX.Element {
           slots: availabilitySlots,
           ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
         },
+        divisionId: selectedDivisionId || undefined,
       });
       setSavedAt(Date.now());
     } catch (e) {
@@ -194,7 +216,12 @@ export default function ProfilePage(): React.JSX.Element {
             />
           </Field>
           <Field label="Division">
-            <select style={styles.input} value={profile.divisionId ?? ''} disabled>
+            <select
+              style={styles.input}
+              value={selectedDivisionId}
+              onChange={(e) => setSelectedDivisionId(e.target.value)}
+              disabled={divisionOptions.length === 0}
+            >
               {divisionOptions.length > 0 ? divisionOptions.map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               )) : <option value={profile.divisionId ?? ''}>{divisionName || 'No division'}</option>}
