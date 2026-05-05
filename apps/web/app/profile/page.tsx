@@ -43,6 +43,7 @@ export default function ProfilePage(): React.JSX.Element {
   const [error, setError] = useState('');
   const [divisionName, setDivisionName] = useState('');
   const [divisionOptions, setDivisionOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -55,6 +56,7 @@ export default function ProfilePage(): React.JSX.Element {
     setTipsEnabled(profile.tipsEnabled ?? true);
     setAvailabilitySlots(profile.availability?.slots ?? []);
     setAvailabilityNote(profile.availability?.note ?? '');
+    setSelectedDivisionId(profile.divisionId ?? '');
   }, [profile]);
 
   useEffect(() => {
@@ -119,6 +121,7 @@ export default function ProfilePage(): React.JSX.Element {
           slots: availabilitySlots,
           ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
         },
+        divisionId: selectedDivisionId || undefined,
       });
       setSavedAt(Date.now());
     } catch (e) {
@@ -194,7 +197,12 @@ export default function ProfilePage(): React.JSX.Element {
             />
           </Field>
           <Field label="Division">
-            <select style={styles.input} value={profile.divisionId ?? ''} disabled>
+            <select
+              style={styles.input}
+              value={selectedDivisionId}
+              onChange={(e) => setSelectedDivisionId(e.target.value)}
+              disabled={divisionOptions.length === 0}
+            >
               {divisionOptions.length > 0 ? divisionOptions.map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               )) : <option value={profile.divisionId ?? ''}>{divisionName || 'No division'}</option>}
