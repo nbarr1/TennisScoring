@@ -128,8 +128,8 @@ export default function AdminScreen() {
     try {
       const updatedMatches = await mergeDivisionPlayerRecords(
         division.id,
-        mergeSourceUserId,
         needsMergeForUserId,
+        { sourceUserId: mergeSourceUserId },
       );
       Alert.alert('Records linked', `Updated ${updatedMatches} historical matches.`);
       setNeedsMergeForUserId(null);
