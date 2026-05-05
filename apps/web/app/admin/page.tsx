@@ -37,7 +37,12 @@ export default function AdminPage(): React.JSX.Element {
 
   // Resolve the division context for leaders and admins.
   useEffect(() => {
-    if (!firebaseUser) return;
+    if (!firebaseUser) {
+      setDivision(null);
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
     const leaderQuery = query(
       divisionsCol(),
       where('leaderIds', 'array-contains', firebaseUser.uid),
