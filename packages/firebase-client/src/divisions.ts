@@ -134,3 +134,15 @@ export async function mergeDivisionPlayerRecords(
   });
   return result.data.updatedMatches;
 }
+
+export async function updateDivisionPlayerEmail(
+  divisionId: string,
+  userId: string,
+  email: string,
+): Promise<void> {
+  const callable = httpsCallable<
+    { divisionId: string; userId: string; email: string },
+    { success: boolean }
+  >(functions, 'updateDivisionPlayerEmail');
+  await callable({ divisionId, userId, email: email.trim().toLowerCase() });
+}

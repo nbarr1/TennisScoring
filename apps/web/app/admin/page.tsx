@@ -14,6 +14,7 @@ import {
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
   addDivisionMemberPlaceholder as addDivisionMemberPlaceholderShared,
+  updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
   useAuthUser,
 } from '@tennis/firebase-client';
 import type { Division, User } from '@tennis/shared';
@@ -39,6 +40,7 @@ export default function AdminPage(): React.JSX.Element {
   const [inviteMessage, setInviteMessage] = useState('');
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
+  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -149,7 +151,11 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function handleMergeRecords() {
-    if (!division || !needsMergeForUserId || selectedMatchIds.length === 0) return;
+    if (!division || !needsMergeForUserId) return;
+    if (selectedMatchIds.length === 0) {
+      setError('Please select at least one match to link.');
+      return;
+    }
     setMerging(true);
     setError('');
     try {
@@ -178,6 +184,22 @@ export default function AdminPage(): React.JSX.Element {
           ? `${code ?? 'error'}: ${message}`
           : 'Failed to link historical matches.',
       );
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  async function handleUpdatePlayerEmail() {
+    if (!division || !needsMergeForUserId || !editEmail.trim()) return;
+    setMerging(true);
+    setError('');
+    try {
+      await updateDivisionPlayerEmailShared(division.id, needsMergeForUserId, editEmail);
+      setInviteMessage('Player email updated.');
+    } catch (e) {
+      const message = (e as { message?: string; code?: string }).message;
+      const code = (e as { code?: string }).code;
+      setError(message ? `${code ?? 'error'}: ${message}` : 'Failed to update player email.');
     } finally {
       setMerging(false);
     }
@@ -367,70 +389,6 @@ export default function AdminPage(): React.JSX.Element {
                 </button>
               </div>
               {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
-              {needsMergeForUserId ? (
-                <div style={styles.mergeBox}>
-                  <h3 style={styles.subTitle}>Link Historical Matches (Optional)</h3>
-                  <p style={styles.hint}>
-                    If this person already exists in old match records, choose that prior player record and link it to the newly added player.
-                  </p>
-                  <select
-                    style={styles.input}
-                    value={mergeSourceUserId}
-                    onChange={(e) => setMergeSourceUserId(e.target.value)}
-                  >
-                    <option value="">Select existing player record…</option>
-                    {players
-                      .filter((p) => p.id !== needsMergeForUserId)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.displayName} ({p.email || p.id})
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    style={styles.btn}
-                    onClick={handleMergeRecords}
-                    disabled={selectedMatchIds.length === 0 || merging}
-                  >
-                    {merging ? 'Linking…' : 'Link Records'}
-                  </button>
-                  <button
-                    style={styles.btnSecondary}
-                    onClick={undoLastLink}
-                    disabled={!lastLinkAction?.sourceUserId || merging}
-                  >
-                    Undo Last Link
-                  </button>
-                  <input
-                    style={styles.input}
-                    value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
-                    placeholder="Update player email (optional)"
-                    type="email"
-                  />
-                  {candidateMatches.length > 0 ? (
-                    <div>
-                      <p style={styles.hint}>Choose recorded matches to link:</p>
-                      {candidateMatches.map((m) => (
-                        <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedMatchIds.includes(m.id)}
-                            onChange={(e) =>
-                              setSelectedMatchIds((prev) =>
-                                e.target.checked
-                                  ? [...prev, m.id]
-                                  : prev.filter((id) => id !== m.id),
-                              )
-                            }
-                          />{' '}
-                          {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
-                        </label>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
               {error && <p style={styles.error}>{error}</p>}
             </div>
 
@@ -469,8 +427,9 @@ export default function AdminPage(): React.JSX.Element {
                     </tr>
                   </thead>
                   <tbody>
-                    {players.map((p) => (
-                      <tr key={p.id} style={styles.tr}>
+                    {players.flatMap((p) => {
+                      const rows: React.JSX.Element[] = [
+                        <tr key={`${p.id}-row`} style={styles.tr}>
                         <td style={styles.td}>{p.displayName}</td>
                         <td style={styles.td}>
                           {p.contactPreferences?.allowEmail !== false ? (
@@ -522,13 +481,88 @@ export default function AdminPage(): React.JSX.Element {
                             onClick={() => {
                               setNeedsMergeForUserId(p.id);
                               setEditEmail(p.email ?? '');
+                              setExpandedPlayerId((current) => (current === p.id ? null : p.id));
                             }}
                           >
                             Edit / Link
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      ];
+                      if (expandedPlayerId === p.id) {
+                        rows.push(
+                        <tr key={`${p.id}-editor`}>
+                          <td style={styles.td} colSpan={6}>
+                            <div style={styles.inlineEditor}>
+                              <input
+                                style={styles.input}
+                                value={editEmail}
+                                onChange={(e) => setEditEmail(e.target.value)}
+                                placeholder="Update player email (optional)"
+                                type="email"
+                              />
+                              <select
+                                style={styles.input}
+                                value={mergeSourceUserId}
+                                onChange={(e) => setMergeSourceUserId(e.target.value)}
+                              >
+                                <option value="">Source player (optional)</option>
+                                {players
+                                  .filter((candidate) => candidate.id !== p.id)
+                                  .map((candidate) => (
+                                    <option key={candidate.id} value={candidate.id}>
+                                      {candidate.displayName} ({candidate.email || candidate.id})
+                                    </option>
+                                  ))}
+                              </select>
+                              <button
+                                style={styles.btn}
+                                onClick={handleMergeRecords}
+                                disabled={selectedMatchIds.length === 0 || merging || needsMergeForUserId !== p.id}
+                              >
+                                {merging ? 'Linking…' : 'Link Records'}
+                              </button>
+                              <button
+                                style={styles.btnSecondary}
+                                onClick={handleUpdatePlayerEmail}
+                                disabled={merging || !editEmail.trim() || needsMergeForUserId !== p.id}
+                              >
+                                Update Email
+                              </button>
+                              <button
+                                style={styles.btnSecondary}
+                                onClick={undoLastLink}
+                                disabled={!lastLinkAction?.sourceUserId || merging}
+                              >
+                                Undo Last Link
+                              </button>
+                              {candidateMatches.length > 0 ? (
+                                <div style={styles.matchChecklist}>
+                                  {candidateMatches.map((m) => (
+                                    <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedMatchIds.includes(m.id)}
+                                        onChange={(e) =>
+                                          setSelectedMatchIds((prev) =>
+                                            e.target.checked
+                                              ? [...prev, m.id]
+                                              : prev.filter((id) => id !== m.id),
+                                          )
+                                        }
+                                      />{' '}
+                                      {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>,
+                        );
+                      }
+                      return rows;
+                    })}
                   </tbody>
                 </table>
               )}
@@ -596,6 +630,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
   mergeBox: { marginTop: 12, borderTop: '1px solid #eee', paddingTop: 8 },
+  inlineEditor: { display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 10, alignItems: 'start' },
+  matchChecklist: { gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: 8 },
   row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
   input: {
     flex: 1,

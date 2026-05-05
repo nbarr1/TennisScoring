@@ -35,6 +35,11 @@ type MergePlayerRecordsInput = {
   matchIds?: string[];
   targetEmail?: string;
 };
+type UpdateDivisionPlayerEmailInput = {
+  divisionId?: string;
+  userId?: string;
+  email?: string;
+};
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -603,4 +608,29 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
 
   return { success: true, updatedMatches: docsToUpdate.length };
+});
+
+export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
+  }
+  const { divisionId, userId, email } = (request.data ?? {}) as UpdateDivisionPlayerEmailInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeUserId = userId?.trim();
+  const safeEmail = typeof email === 'string' ? normalizeEmail(email) : '';
+  if (!safeDivisionId || !safeUserId || !safeEmail) {
+    throw new HttpsError('invalid-argument', 'Division, user, and email are required.');
+  }
+
+  const db = getFirestore();
+  const divisionSnap = await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const playerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
+  if (!playerIds.includes(safeUserId)) {
+    throw new HttpsError('failed-precondition', 'User is not a member of this division.');
+  }
+  await db.collection('users').doc(safeUserId).set(
+    { email: safeEmail, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  return { success: true };
 });
