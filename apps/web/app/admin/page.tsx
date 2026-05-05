@@ -144,15 +144,15 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function handleMergeRecords() {
-    if (!division || !needsMergeForUserId || !mergeSourceUserId) return;
+    if (!division || !needsMergeForUserId || selectedMatchIds.length === 0) return;
     setMerging(true);
     setError('');
     try {
       const updated = await mergeDivisionPlayerRecords(
         division.id,
-        mergeSourceUserId,
         needsMergeForUserId,
         {
+          sourceUserId: mergeSourceUserId || undefined,
           matchIds: selectedMatchIds,
           targetEmail: editEmail.trim() || undefined,
         },

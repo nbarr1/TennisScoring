@@ -112,14 +112,13 @@ export async function addDivisionMemberPlaceholder(
 
 export async function mergeDivisionPlayerRecords(
   divisionId: string,
-  sourceUserId: string,
   targetUserId: string,
-  options?: { matchIds?: string[]; targetEmail?: string },
+  options?: { sourceUserId?: string; matchIds?: string[]; targetEmail?: string },
 ): Promise<number> {
   const callable = httpsCallable<
     {
       divisionId: string;
-      sourceUserId: string;
+      sourceUserId?: string;
       targetUserId: string;
       matchIds?: string[];
       targetEmail?: string;
@@ -128,7 +127,7 @@ export async function mergeDivisionPlayerRecords(
   >(functions, 'mergeDivisionPlayerRecords');
   const result = await callable({
     divisionId,
-    sourceUserId,
+    sourceUserId: options?.sourceUserId,
     targetUserId,
     matchIds: options?.matchIds,
     targetEmail: options?.targetEmail?.trim().toLowerCase() || undefined,
