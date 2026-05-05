@@ -114,15 +114,24 @@ export async function mergeDivisionPlayerRecords(
   divisionId: string,
   sourceUserId: string,
   targetUserId: string,
+  options?: { matchIds?: string[]; targetEmail?: string },
 ): Promise<number> {
   const callable = httpsCallable<
-    { divisionId: string; sourceUserId: string; targetUserId: string },
+    {
+      divisionId: string;
+      sourceUserId: string;
+      targetUserId: string;
+      matchIds?: string[];
+      targetEmail?: string;
+    },
     { success: boolean; updatedMatches: number }
   >(functions, 'mergeDivisionPlayerRecords');
   const result = await callable({
     divisionId,
     sourceUserId,
     targetUserId,
+    matchIds: options?.matchIds,
+    targetEmail: options?.targetEmail?.trim().toLowerCase() || undefined,
   });
   return result.data.updatedMatches;
 }
