@@ -16,5 +16,4 @@ export {
   addDivisionMemberPlaceholder,
   addDivisionMemberPlaceholderHttp,
   mergeDivisionPlayerRecords,
-  mergeDivisionPlayerRecords as mergedivisionplayerrecords,
 } from './divisions/divisionFunctions';
