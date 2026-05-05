@@ -179,10 +179,14 @@ export default function AdminPage(): React.JSX.Element {
         setSelectedMatchIds([]);
         return;
       }
-      const snap = await getDocs(query(matchesCol(), where('divisionId', '==', division.id)));
-      const matches = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
-        .filter((m) => Array.isArray(m.playerIds) && m.playerIds.includes(mergeSourceUserId));
+      const snap = await getDocs(
+        query(
+          matchesCol(),
+          where('divisionId', '==', division.id),
+          where('playerIds', 'array-contains', mergeSourceUserId),
+        ),
+      );
+      const matches = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }));
       setCandidateMatches(matches);
       setSelectedMatchIds(matches.map((m) => m.id));
     }
