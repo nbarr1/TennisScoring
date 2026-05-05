@@ -51,8 +51,8 @@ jobs:
           node -e "const fs=require('fs');const p='firebase/package.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.devDependencies){delete d.devDependencies['@tennis/shared'];}fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
         working-directory: .
 
-      - name: Deploy callable function
-        run: npx firebase-tools deploy --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords --project "$FIREBASE_PROJECT_ID"
+      - name: Deploy callable functions
+        run: npx firebase-tools deploy --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
