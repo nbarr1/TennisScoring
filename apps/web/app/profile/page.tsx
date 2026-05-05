@@ -8,7 +8,10 @@ import {
   useAuthUser,
   useUserProfile,
   updateUserProfile,
+  divisionDoc,
+  divisionsCol,
 } from '@tennis/firebase-client';
+import { getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
@@ -25,6 +28,7 @@ export default function ProfilePage(): React.JSX.Element {
   );
 
   const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [allowEmail, setAllowEmail] = useState(true);
   const [allowSMS, setAllowSMS] = useState(true);
@@ -37,10 +41,13 @@ export default function ProfilePage(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [divisionName, setDivisionName] = useState('');
+  const [divisionOptions, setDivisionOptions] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     if (!profile) return;
     setDisplayName(profile.displayName ?? '');
+    setEmail(profile.email ?? '');
     setPhone(profile.phone ?? '');
     setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
     setAllowSMS(profile.contactPreferences?.allowSMS ?? true);
@@ -49,6 +56,28 @@ export default function ProfilePage(): React.JSX.Element {
     setAvailabilitySlots(profile.availability?.slots ?? []);
     setAvailabilityNote(profile.availability?.note ?? '');
   }, [profile]);
+
+  useEffect(() => {
+    async function loadDivisionName() {
+      const divisionId = profile?.divisionId;
+      if (!divisionId) {
+        setDivisionName('');
+        return;
+      }
+      const snap = await getDoc(divisionDoc(divisionId));
+      setDivisionName((snap.data()?.name as string) ?? divisionId);
+    }
+    void loadDivisionName();
+  }, [profile?.divisionId]);
+
+  useEffect(() => {
+    async function loadDivisionOptions() {
+      if (!firebaseUser?.uid) return;
+      const snap = await getDocs(query(divisionsCol(), where('playerIds', 'array-contains', firebaseUser.uid)));
+      setDivisionOptions(snap.docs.map((d) => ({ id: d.id, name: (d.data().name as string) ?? d.id })));
+    }
+    void loadDivisionOptions();
+  }, [firebaseUser?.uid]);
 
   function addSlot() {
     setAvailabilitySlots((s) => [
@@ -82,6 +111,7 @@ export default function ProfilePage(): React.JSX.Element {
     try {
       await updateUserProfile(firebaseUser.uid, {
         displayName: displayName.trim(),
+        email: email.trim().toLowerCase() || undefined,
         phone: phone.trim() || undefined,
         contactPreferences: { allowEmail, allowSMS, allowInApp },
         tipsEnabled,
@@ -150,13 +180,10 @@ export default function ProfilePage(): React.JSX.Element {
           </Field>
           <Field label="Email">
             <input
-              style={{ ...styles.input, background: '#f5f5f5' }}
-              value={profile.email ?? ''}
-              readOnly
+              style={styles.input}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
-            <p style={styles.helper}>
-              Email is managed by your account; contact support to change it.
-            </p>
           </Field>
           <Field label="Phone">
             <input
@@ -165,6 +192,13 @@ export default function ProfilePage(): React.JSX.Element {
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Optional, e.g. +1 555-0100"
             />
+          </Field>
+          <Field label="Division">
+            <select style={styles.input} value={profile.divisionId ?? ''} disabled>
+              {divisionOptions.length > 0 ? divisionOptions.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              )) : <option value={profile.divisionId ?? ''}>{divisionName || 'No division'}</option>}
+            </select>
           </Field>
         </div>
 
