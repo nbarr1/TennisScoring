@@ -39,6 +39,11 @@ export default function AdminPage(): React.JSX.Element {
   const [inviteMessage, setInviteMessage] = useState('');
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
+  const [lastLinkAction, setLastLinkAction] = useState<{
+    sourceUserId?: string;
+    targetUserId: string;
+    matchIds: string[];
+  } | null>(null);
 
   // Resolve the division context for leaders and admins.
   useEffect(() => {
@@ -144,20 +149,25 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function handleMergeRecords() {
-    if (!division || !needsMergeForUserId || !mergeSourceUserId) return;
+    if (!division || !needsMergeForUserId || selectedMatchIds.length === 0) return;
     setMerging(true);
     setError('');
     try {
       const updated = await mergeDivisionPlayerRecords(
         division.id,
-        mergeSourceUserId,
         needsMergeForUserId,
         {
+          sourceUserId: mergeSourceUserId || undefined,
           matchIds: selectedMatchIds,
           targetEmail: editEmail.trim() || undefined,
         },
       );
       setInviteMessage(`Linked records. Updated ${updated} historical matches.`);
+      setLastLinkAction({
+        sourceUserId: mergeSourceUserId || undefined,
+        targetUserId: needsMergeForUserId,
+        matchIds: [...selectedMatchIds],
+      });
       setNeedsMergeForUserId(null);
       setMergeSourceUserId('');
     } catch (e) {
@@ -167,6 +177,34 @@ export default function AdminPage(): React.JSX.Element {
         message
           ? `${code ?? 'error'}: ${message}`
           : 'Failed to link historical matches.',
+      );
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  async function undoLastLink() {
+    if (!division || !lastLinkAction?.sourceUserId) return;
+    setMerging(true);
+    setError('');
+    try {
+      const reverted = await mergeDivisionPlayerRecords(
+        division.id,
+        lastLinkAction.sourceUserId,
+        {
+          sourceUserId: lastLinkAction.targetUserId,
+          matchIds: lastLinkAction.matchIds,
+        },
+      );
+      setInviteMessage(`Undo complete. Reverted ${reverted} linked historical matches.`);
+      setLastLinkAction(null);
+    } catch (e) {
+      const message = (e as { message?: string; code?: string }).message;
+      const code = (e as { code?: string }).code;
+      setError(
+        message
+          ? `${code ?? 'error'}: ${message}`
+          : 'Failed to undo the last link action.',
       );
     } finally {
       setMerging(false);
@@ -352,9 +390,16 @@ export default function AdminPage(): React.JSX.Element {
                   <button
                     style={styles.btn}
                     onClick={handleMergeRecords}
-                    disabled={!mergeSourceUserId || merging}
+                    disabled={selectedMatchIds.length === 0 || merging}
                   >
                     {merging ? 'Linking…' : 'Link Records'}
+                  </button>
+                  <button
+                    style={styles.btnSecondary}
+                    onClick={undoLastLink}
+                    disabled={!lastLinkAction?.sourceUserId || merging}
+                  >
+                    Undo Last Link
                   </button>
                   <input
                     style={styles.input}
@@ -420,6 +465,7 @@ export default function AdminPage(): React.JSX.Element {
                       <th style={styles.th}>Phone</th>
                       <th style={styles.th}>Role</th>
                       <th style={styles.th}>Status</th>
+                      <th style={styles.th}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -469,6 +515,17 @@ export default function AdminPage(): React.JSX.Element {
                               ? 'Invite Sent'
                               : 'Unregistered'
                             : 'Registered'}
+                        </td>
+                        <td style={styles.td}>
+                          <button
+                            style={styles.btnSecondary}
+                            onClick={() => {
+                              setNeedsMergeForUserId(p.id);
+                              setEditEmail(p.email ?? '');
+                            }}
+                          >
+                            Edit / Link
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -552,6 +609,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'var(--green-dark)',
     color: '#fff',
     border: 'none',
+    borderRadius: 10,
+    padding: '10px 20px',
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
+  btnSecondary: {
+    background: '#fff',
+    color: 'var(--green-dark)',
+    border: '1px solid var(--green-dark)',
     borderRadius: 10,
     padding: '10px 20px',
     fontWeight: 600,
