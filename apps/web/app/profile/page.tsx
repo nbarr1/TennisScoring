@@ -8,7 +8,9 @@ import {
   useAuthUser,
   useUserProfile,
   updateUserProfile,
+  divisionDoc,
 } from '@tennis/firebase-client';
+import { getDoc } from 'firebase/firestore';
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
@@ -37,6 +39,7 @@ export default function ProfilePage(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [divisionName, setDivisionName] = useState('');
 
   useEffect(() => {
     if (!profile) return;
@@ -49,6 +52,19 @@ export default function ProfilePage(): React.JSX.Element {
     setAvailabilitySlots(profile.availability?.slots ?? []);
     setAvailabilityNote(profile.availability?.note ?? '');
   }, [profile]);
+
+  useEffect(() => {
+    async function loadDivisionName() {
+      const divisionId = profile?.divisionId;
+      if (!divisionId) {
+        setDivisionName('');
+        return;
+      }
+      const snap = await getDoc(divisionDoc(divisionId));
+      setDivisionName((snap.data()?.name as string) ?? divisionId);
+    }
+    void loadDivisionName();
+  }, [profile?.divisionId]);
 
   function addSlot() {
     setAvailabilitySlots((s) => [
@@ -165,6 +181,13 @@ export default function ProfilePage(): React.JSX.Element {
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Optional, e.g. +1 555-0100"
             />
+          </Field>
+          <Field label="Division">
+            <select style={styles.input} value={profile.divisionId ?? ''} disabled>
+              <option value={profile.divisionId ?? ''}>
+                {divisionName || 'No division'}
+              </option>
+            </select>
           </Field>
         </div>
 
