@@ -815,8 +815,14 @@
 
         const playerOne = document.querySelector('[data-control="playerOne"]').value;
         const playerTwo = document.querySelector('[data-control="playerTwo"]').value;
-        preview('p1Button').forEach((target) => (target.innerHTML = `${playerOne}<br>Point`));
-        preview('p2Button').forEach((target) => (target.innerHTML = `${playerTwo}<br>Point`));
+        preview('p1Button').forEach((target) => {
+          target.textContent = '';
+          target.append(document.createTextNode(playerOne), document.createElement('br'), document.createTextNode('Point'));
+        });
+        preview('p2Button').forEach((target) => {
+          target.textContent = '';
+          target.append(document.createTextNode(playerTwo), document.createElement('br'), document.createTextNode('Point'));
+        });
         preview('serverP1').forEach((target) => (target.textContent = playerOne));
         preview('serverP2').forEach((target) => (target.textContent = playerTwo));
         const serverName = serverControl.value === 'playerOne' ? playerOne : playerTwo;
