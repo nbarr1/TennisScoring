@@ -129,11 +129,11 @@ service cloud.firestore {
         request.auth.uid == existing.player2Id &&
         changed.hasOnly(['status']);
       let isStartMatch = existing.status == 'scheduled' && incoming.status == 'in_progress' &&
-        changed.hasOnly(['status', 'startedAt', 'liveScore']);
+        changed.hasOnly(['status', 'startedAt', 'currentSetStartedAt', 'advancedStatsEnabled', 'liveScore']);
       let isUndo = 'undoSnapshot' in existing &&
         incoming.liveScore == existing.undoSnapshot.liveScore &&
         incoming.status == existing.undoSnapshot.status &&
-        changed.hasOnly(['status', 'liveScore', 'winner', 'completedAt', 'undoSnapshot']);
+        changed.hasOnly(['status', 'liveScore', 'stats', 'winner', 'completedAt', 'currentSetStartedAt', 'matchDurationMs', 'undoSnapshot']);
       let isReportSubmit = existing.status == 'pending_report' &&
         incoming.status == existing.status &&
         changed.hasOnly(['reportSubmission']);
@@ -183,6 +183,9 @@ service cloud.firestore {
           'status',
           'liveScore',
           'stats',
+          'advancedStatsEnabled',
+          'currentSetStartedAt',
+          'matchDurationMs',
           'reportSubmission',
           'winner',
           'reportUrl',

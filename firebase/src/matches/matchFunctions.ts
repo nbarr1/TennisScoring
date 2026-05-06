@@ -2,8 +2,8 @@ import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
-import type { Match, HeadToHead, ReportSubmission } from '@tennis/shared';
+import { EMPTY_STATS, applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
+import type { Match, HeadToHead, Player, PlayerMatchStats, ReportSubmission } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
 
@@ -34,6 +34,70 @@ type RecalculateRankingsResult = {
   headToHeadsWritten: number;
   headToHeadsDeleted: number;
 };
+
+
+function cloneStats(stats: Match['stats']): Match['stats'] {
+  return {
+    player1: { ...EMPTY_STATS, ...stats.player1 },
+    player2: { ...EMPTY_STATS, ...stats.player2 },
+  };
+}
+
+function oppositePlayer(player: Player): Player {
+  return player === 'player1' ? 'player2' : 'player1';
+}
+
+function canWinGameOnNextPoint(match: Match, player: Player): boolean {
+  const score = match.liveScore;
+  if (score.isTiebreak) return false;
+  const game = score.currentGame;
+  const mine = game[player];
+  const theirs = game[oppositePlayer(player)];
+  return mine === 'Ad' || (mine === '40' && theirs !== '40' && theirs !== 'Ad');
+}
+
+function applyBasicPointStats(match: Match, scorer: Player): Match['stats'] {
+  const stats = cloneStats(match.stats);
+  const server = match.liveScore.server;
+  const receiver = oppositePlayer(server);
+  const serverStats = stats[server] as PlayerMatchStats;
+  const receiverStats = stats[receiver] as PlayerMatchStats;
+  const isBreakPoint = canWinGameOnNextPoint(match, receiver);
+
+  serverStats.servicePointsTotal += 1;
+  receiverStats.receivingPointsTotal += 1;
+
+  if (scorer === server) {
+    serverStats.servicePointsWon += 1;
+  } else {
+    receiverStats.receivingPointsWon += 1;
+  }
+
+  if (isBreakPoint) {
+    serverStats.breakPointsFaced += 1;
+    if (scorer === receiver) {
+      receiverStats.breakPointsWon += 1;
+    }
+  }
+
+  return stats;
+}
+
+function stampSetTiming(match: Match, nextScore: Match['liveScore'], now: number): Match['liveScore'] {
+  const timedScore = JSON.parse(JSON.stringify(nextScore)) as Match['liveScore'];
+  const startedAt = match.currentSetStartedAt ?? match.startedAt ?? now;
+  const currentSet = timedScore.sets[match.liveScore.currentSet];
+  if (currentSet?.winner && currentSet.completedAt === undefined) {
+    currentSet.startedAt = currentSet.startedAt ?? match.liveScore.sets[match.liveScore.currentSet]?.startedAt ?? startedAt;
+    currentSet.completedAt = now;
+    currentSet.durationMs = Math.max(0, now - currentSet.startedAt);
+  }
+  const nextSet = timedScore.sets[timedScore.currentSet];
+  if (!nextSet?.winner && nextSet?.startedAt === undefined) {
+    nextSet.startedAt = now;
+  }
+  return timedScore;
+}
 
 const emptyRankingStats = (): RankingStats => ({
   matchesWon: 0,
@@ -354,25 +418,40 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
     }
 
     const result = applyPoint(match.liveScore, scorer, match.format);
+    const now = Date.now();
+    const nextStats = applyBasicPointStats(match, scorer);
+    const nextScore = result.setCompleted
+      ? stampSetTiming(match, result.nextScore, now)
+      : result.nextScore;
     const updates: Partial<Match> = {
-      liveScore: result.nextScore,
+      liveScore: nextScore,
+      stats: nextStats,
       undoSnapshot: {
         liveScore: match.liveScore,
         status: match.status,
+        stats: match.stats,
         ...(match.winner !== undefined && { winner: match.winner }),
         ...(match.completedAt !== undefined && { completedAt: match.completedAt }),
+        ...(match.currentSetStartedAt !== undefined && { currentSetStartedAt: match.currentSetStartedAt }),
+        ...(match.matchDurationMs !== undefined && { matchDurationMs: match.matchDurationMs }),
       },
     };
+
+    if (result.setCompleted) {
+      updates.currentSetStartedAt = result.matchWinner ? FieldValue.delete() as never : now;
+    }
 
     if (result.matchWinner) {
       updates.status = 'pending_report';
       updates.winner = result.matchWinner;
-      updates.completedAt = Date.now();
+      updates.completedAt = now;
+      updates.currentSetStartedAt = FieldValue.delete() as never;
+      updates.matchDurationMs = Math.max(0, now - (match.startedAt ?? now));
     }
 
     tx.update(matchRef, updates);
     response = {
-      nextScore: result.nextScore,
+      nextScore,
       matchWinner: result.matchWinner,
       tips: result.tips,
     };

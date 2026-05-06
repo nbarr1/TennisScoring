@@ -4,7 +4,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { Match, User } from '@tennis/shared';
-import { formatScoreDisplay } from '@tennis/shared';
+import { EMPTY_STATS, formatScoreDisplay } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
 
@@ -36,6 +36,19 @@ async function createAndStoreReport(matchId: string, match: Match) {
   const p2 = p2Snap?.data() as User | undefined;
   const p1Name = p1?.displayName ?? match.player1Name ?? 'Player 1';
   const p2Name = p2?.displayName ?? match.player2Name ?? 'Guest';
+  const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
+  const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
+  const pct = (won: number, total: number) => (total > 0 ? `${Math.round((won / total) * 100)}%` : '—');
+  const duration = (ms?: number) => {
+    if (ms === undefined) return '—';
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
 
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595, 842]); // A4
@@ -104,30 +117,23 @@ async function createAndStoreReport(matchId: string, match: Match) {
   const statRows: [string, string, string][] = [
     ['', p1Name, p2Name],
     [
-      'Aces',
-      String(match.stats.player1.aces),
-      String(match.stats.player2.aces),
-    ],
-    [
-      'Double Faults',
-      String(match.stats.player1.doubleFaults),
-      String(match.stats.player2.doubleFaults),
-    ],
-    [
-      'Winners',
-      String(match.stats.player1.winners),
-      String(match.stats.player2.winners),
-    ],
-    [
-      'Unforced Errors',
-      String(match.stats.player1.unforcedErrors),
-      String(match.stats.player2.unforcedErrors),
+      'Receiving Pts Won',
+      pct(p1Stats.receivingPointsWon, p1Stats.receivingPointsTotal),
+      pct(p2Stats.receivingPointsWon, p2Stats.receivingPointsTotal),
     ],
     [
       'Break Pts Won',
-      String(match.stats.player1.breakPointsWon),
-      String(match.stats.player2.breakPointsWon),
+      `${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`,
+      `${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`,
     ],
+    ...(match.advancedStatsEnabled
+      ? ([
+          ['Aces', String(p1Stats.aces), String(p2Stats.aces)],
+          ['Double Faults', String(p1Stats.doubleFaults), String(p2Stats.doubleFaults)],
+          ['Winners', String(p1Stats.winners), String(p2Stats.winners)],
+          ['Unforced Errors', String(p1Stats.unforcedErrors), String(p2Stats.unforcedErrors)],
+        ] as [string, string, string][])
+      : []),
   ];
   for (const [label, v1, v2] of statRows) {
     const isBold = label === '';
@@ -136,6 +142,15 @@ async function createAndStoreReport(matchId: string, match: Match) {
     draw(v2, 430, 11, isBold);
     y -= 16;
   }
+
+  y -= 10;
+  draw('Elapsed Time', 60, 13, true);
+  y -= 18;
+  for (const set of match.liveScore.sets.filter((s) => s.winner)) {
+    draw(`Set ${set.setNumber + 1}: ${duration(set.durationMs)}`, 60, 11);
+    y -= 16;
+  }
+  draw(`Match: ${duration(match.matchDurationMs)}`, 60, 11, true);
 
   // Footer
   y = 40;

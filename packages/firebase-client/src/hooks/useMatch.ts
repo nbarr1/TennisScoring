@@ -86,6 +86,7 @@ export async function createMatch(params: {
     status: 'scheduled',
     liveScore: createInitialScore(defaultFormat),
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    advancedStatsEnabled: false,
     tipsEnabled: true,
     source: 'live',
     isDivisionMatch: isDivisionMatch ?? true,
@@ -176,6 +177,7 @@ export async function recordHistoricMatch(params: {
     status: 'completed',
     liveScore: score,
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    advancedStatsEnabled: false,
     winner,
     tipsEnabled: false,
     source: 'manual',
@@ -283,6 +285,7 @@ export async function proposeMatch(params: {
     status: 'proposed',
     liveScore: createInitialScore(defaultFormat),
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    advancedStatsEnabled: false,
     tipsEnabled: true,
     source: 'live',
     isDivisionMatch: true,
@@ -307,12 +310,28 @@ export async function declineMatchProposal(matchId: string): Promise<void> {
 export async function startMatch(
   matchId: string,
   server: 'player1' | 'player2',
+  advancedStatsEnabled = false,
+  liveScore?: LiveScore,
 ): Promise<void> {
-  await updateDoc(matchDoc(matchId), {
+  const startedAt = Date.now();
+  const updates: Record<string, any> = {
     status: 'in_progress',
-    startedAt: Date.now(),
-    'liveScore.server': server,
-  });
+    startedAt,
+    currentSetStartedAt: startedAt,
+    advancedStatsEnabled,
+  };
+  if (liveScore) {
+    updates.liveScore = {
+      ...liveScore,
+      server,
+      sets: liveScore.sets.map((set, index) =>
+        index === liveScore.currentSet ? { ...set, startedAt } : set,
+      ),
+    };
+  } else {
+    updates['liveScore.server'] = server;
+  }
+  await updateDoc(matchDoc(matchId), updates);
 }
 
 export async function scorePoint(
@@ -341,8 +360,11 @@ export async function undoLastPoint(
   await updateDoc(matchDoc(matchId), {
     liveScore: snapshot.liveScore,
     status: snapshot.status,
+    stats: snapshot.stats,
     winner: snapshot.winner ?? deleteField(),
     completedAt: snapshot.completedAt ?? deleteField(),
+    currentSetStartedAt: snapshot.currentSetStartedAt ?? deleteField(),
+    matchDurationMs: snapshot.matchDurationMs ?? deleteField(),
     undoSnapshot: deleteField(),
   });
 }
