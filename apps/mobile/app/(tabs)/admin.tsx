@@ -10,16 +10,22 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { onSnapshot, getDoc, query, where } from 'firebase/firestore';
+import { onSnapshot, getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
   divisionsCol,
   userDoc,
+  usersCol,
+  divisionDoc,
+  matchesCol,
+  rankingsCol,
   createDivision,
   addDivisionMemberPlaceholder,
   mergeDivisionPlayerRecords,
+  recalculateDivisionRankings,
+  updateDivisionPlayerEmail,
 } from '@tennis/firebase-client';
 import { useAppStore } from '../../store/appStore';
-import type { Division, User } from '@tennis/shared';
+import type { Division, Match, PlayerRanking, User } from '@tennis/shared';
 
 export default function AdminScreen() {
   const { user } = useAppStore();
@@ -27,50 +33,116 @@ export default function AdminScreen() {
   const [players, setPlayers] = useState<User[]>([]);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerEmail, setNewPlayerEmail] = useState('');
-  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
-  const [mergeSourceUserId, setMergeSourceUserId] = useState<string | null>(null);
+  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(
+    null,
+  );
+  const [mergeSourceUserId, setMergeSourceUserId] = useState<string | null>(
+    null,
+  );
   const [merging, setMerging] = useState(false);
+  const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
+  const [candidateMatchRefreshKey, setCandidateMatchRefreshKey] = useState(0);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
+  const [editEmail, setEditEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [repairingRankings, setRepairingRankings] = useState(false);
+  const [repairMessage, setRepairMessage] = useState('');
   const [error, setError] = useState('');
 
   const isAdmin = user?.role === 'admin' || user?.role === 'division_leader';
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setDivision(null);
+      setPlayers([]);
+      setLoading(false);
+      return;
+    }
     const q = query(
       divisionsCol(),
       where('leaderIds', 'array-contains', user.id),
     );
     const unsub = onSnapshot(q, async (snap) => {
+      let div: Division | null = null;
+
       if (!snap.empty) {
-        const div: Division = {
+        div = {
           id: snap.docs[0].id,
           ...(snap.docs[0].data() as Omit<Division, 'id'>),
         };
-        setDivision(div);
-        if (div.playerIds.length > 0) {
-          const profiles = await Promise.all(
-            div.playerIds.map((id) => getDoc(userDoc(id))),
-          );
-          setPlayers(
-            profiles
-              .filter((d) => d.exists())
-              .map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })),
-          );
-        } else {
-          setPlayers([]);
+      } else if (user.divisionId) {
+        const divisionSnap = await getDoc(divisionDoc(user.divisionId));
+        if (divisionSnap.exists()) {
+          div = {
+            id: divisionSnap.id,
+            ...(divisionSnap.data() as Omit<Division, 'id'>),
+          };
         }
+      }
+
+      setDivision(div);
+      if (div) {
+        const activeDivision = div;
+        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
+          await Promise.all([
+            activeDivision.playerIds.length
+              ? Promise.all(
+                  activeDivision.playerIds.map((id) => getDoc(userDoc(id))),
+                )
+              : Promise.resolve([]),
+            getDocs(
+              query(usersCol(), where('divisionId', '==', activeDivision.id)),
+            ),
+            getDocs(rankingsCol(activeDivision.id)),
+          ]);
+        const byId = new Map<string, User>();
+        const addProfile = (id: string, data: Omit<User, 'id'>) => {
+          byId.set(id, { id, ...data });
+        };
+        divisionMemberProfiles.forEach((d) => {
+          if (d.exists()) addProfile(d.id, d.data() as Omit<User, 'id'>);
+        });
+        divisionProfileSnap.docs.forEach((d) =>
+          addProfile(d.id, d.data() as Omit<User, 'id'>),
+        );
+        rankingSnap.docs.forEach((d) => {
+          const ranking = d.data() as PlayerRanking;
+          const userId = ranking.userId || d.id;
+          if (byId.has(userId)) return;
+          byId.set(userId, {
+            id: userId,
+            displayName: ranking.displayName,
+            email: '',
+            contactPreferences: {
+              allowEmail: false,
+              allowSMS: false,
+              allowInApp: true,
+            },
+            divisionId: activeDivision.id,
+            role: 'player',
+            fcmTokens: [],
+            tipsEnabled: true,
+            isRegistered: false,
+            inviteStatus: 'none',
+            createdAt: ranking.updatedAt ?? 0,
+            updatedAt: ranking.updatedAt ?? 0,
+          });
+        });
+        setPlayers(
+          [...byId.values()].sort((a, b) =>
+            a.displayName.localeCompare(b.displayName),
+          ),
+        );
       } else {
-        setDivision(null);
         setPlayers([]);
       }
       setLoading(false);
     });
     return unsub;
-  }, [user?.id]);
+  }, [user]);
 
   async function handleCreateDivision() {
     if (!user || !newDivisionName.trim()) return;
@@ -101,6 +173,9 @@ export default function AdminScreen() {
       );
       setNeedsMergeForUserId(result.userId);
       setMergeSourceUserId(null);
+      setSelectedMatchIds([]);
+      setCandidateMatches([]);
+      setEditEmail(newPlayerEmail.trim());
       Alert.alert(
         'Player added',
         result.linkedHistoricalMatches > 0
@@ -122,17 +197,32 @@ export default function AdminScreen() {
   }
 
   async function handleMergeRecords() {
-    if (!division || !mergeSourceUserId || !needsMergeForUserId) return;
+    if (!division || !needsMergeForUserId) return;
+    if (selectedMatchIds.length === 0) {
+      Alert.alert(
+        'Select matches',
+        'Please select at least one completed match to link.',
+      );
+      return;
+    }
     setMerging(true);
     setError('');
     try {
       const updatedMatches = await mergeDivisionPlayerRecords(
         division.id,
         needsMergeForUserId,
-        { sourceUserId: mergeSourceUserId },
+        {
+          sourceUserId: mergeSourceUserId || undefined,
+          matchIds: selectedMatchIds,
+          targetEmail: editEmail.trim() || undefined,
+        },
       );
-      Alert.alert('Records linked', `Updated ${updatedMatches} historical matches.`);
-      setNeedsMergeForUserId(null);
+      Alert.alert(
+        'Records linked',
+        `Updated ${updatedMatches} historical matches and refreshed rankings.`,
+      );
+      setCandidateMatchRefreshKey((key) => key + 1);
+      setSelectedMatchIds([]);
       setMergeSourceUserId(null);
     } catch (e) {
       setError(
@@ -141,6 +231,94 @@ export default function AdminScreen() {
       );
     } finally {
       setMerging(false);
+    }
+  }
+
+  async function handleUpdatePlayerEmail() {
+    if (!division || !needsMergeForUserId || !editEmail.trim()) return;
+    setMerging(true);
+    setError('');
+    try {
+      await updateDivisionPlayerEmail(
+        division.id,
+        needsMergeForUserId,
+        editEmail,
+      );
+      Alert.alert('Email updated', 'Player email updated.');
+    } catch (e) {
+      setError(
+        (e as { message?: string }).message || 'Failed to update player email.',
+      );
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  useEffect(() => {
+    async function loadCandidateMatches() {
+      if (!division?.id || !needsMergeForUserId) {
+        setCandidateMatches([]);
+        setSelectedMatchIds([]);
+        return;
+      }
+      const snap = await getDocs(
+        query(matchesCol(), where('divisionId', '==', division.id)),
+      );
+      const matches = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+        .filter((match) => {
+          if (match.status !== 'completed') return false;
+          const attachedPlayerIds = new Set(
+            (Array.isArray(match.playerIds) ? match.playerIds : []).filter(
+              (id) => id && id !== 'guest',
+            ),
+          );
+          return (
+            !attachedPlayerIds.has(needsMergeForUserId) &&
+            attachedPlayerIds.size < 2
+          );
+        })
+        .sort(
+          (a, b) =>
+            (b.completedAt ?? b.createdAt ?? 0) -
+            (a.completedAt ?? a.createdAt ?? 0),
+        );
+      setCandidateMatches(matches);
+      setSelectedMatchIds([]);
+    }
+    void loadCandidateMatches();
+  }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
+
+  async function repairRankings() {
+    if (!division) return;
+    setRepairingRankings(true);
+    setRepairMessage('');
+    setError('');
+    try {
+      const response = (await recalculateDivisionRankings(
+        division.id,
+        true,
+      )) as {
+        result?: {
+          countedMatches?: number;
+          guestMatchesCounted?: number;
+          matchesNormalized?: number;
+          rankingsWritten?: number;
+          rankingsDeleted?: number;
+        };
+      };
+      const result = response.result;
+      setRepairMessage(
+        result
+          ? `Rankings repaired. Counted ${result.countedMatches ?? 0} matches, including ${result.guestMatchesCounted ?? 0} guest matches. Updated ${result.rankingsWritten ?? 0} ranking rows and removed ${result.rankingsDeleted ?? 0} stale rows. Normalized ${result.matchesNormalized ?? 0} historic matches.`
+          : 'Rankings repaired.',
+      );
+    } catch (e) {
+      setError(
+        (e as { message?: string }).message || 'Failed to repair rankings.',
+      );
+    } finally {
+      setRepairingRankings(false);
     }
   }
 
@@ -244,9 +422,25 @@ export default function AdminScreen() {
             </TouchableOpacity>
             {needsMergeForUserId ? (
               <View style={styles.mergeBox}>
-                <Text style={styles.subTitle}>Link Historical Matches (Optional)</Text>
+                <Text style={styles.subTitle}>
+                  Link Historical Matches (Optional)
+                </Text>
                 <Text style={styles.hint}>
-                  Pick an existing player record if historical matches should be reassigned to this newly added player.
+                  Pick an existing player record if historical matches should be
+                  reassigned to this newly added player.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={editEmail}
+                  onChangeText={setEditEmail}
+                  placeholder="Update player email (optional)"
+                  placeholderTextColor="#aaa"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Text style={styles.hint}>
+                  Optional: select a source player record.
                 </Text>
                 {players
                   .filter((p) => p.id !== needsMergeForUserId)
@@ -255,24 +449,96 @@ export default function AdminScreen() {
                       key={p.id}
                       style={[
                         styles.mergeCandidate,
-                        mergeSourceUserId === p.id && styles.mergeCandidateActive,
+                        mergeSourceUserId === p.id &&
+                          styles.mergeCandidateActive,
                       ]}
                       onPress={() => setMergeSourceUserId(p.id)}
                     >
                       <Text style={styles.playerName}>{p.displayName}</Text>
                     </TouchableOpacity>
                   ))}
+                <Text style={styles.hint}>
+                  Which recorded matches did this player play in?
+                </Text>
+                {candidateMatches.length > 0 ? (
+                  candidateMatches.map((match) => {
+                    const selected = selectedMatchIds.includes(match.id);
+                    return (
+                      <TouchableOpacity
+                        key={match.id}
+                        style={[
+                          styles.matchCandidate,
+                          selected && styles.mergeCandidateActive,
+                        ]}
+                        onPress={() =>
+                          setSelectedMatchIds((prev) =>
+                            selected
+                              ? prev.filter((id) => id !== match.id)
+                              : [...prev, match.id],
+                          )
+                        }
+                      >
+                        <Text style={styles.playerName}>
+                          {selected ? '✓ ' : ''}
+                          {match.player1Name || 'P1'} vs{' '}
+                          {match.player2Name || 'P2'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.hint}>
+                    No recorded matches are available.
+                  </Text>
+                )}
                 <TouchableOpacity
                   style={[
                     styles.btn,
-                    (!mergeSourceUserId || merging) && styles.btnDisabled,
+                    (selectedMatchIds.length === 0 || merging) &&
+                      styles.btnDisabled,
                   ]}
                   onPress={handleMergeRecords}
-                  disabled={!mergeSourceUserId || merging}
+                  disabled={selectedMatchIds.length === 0 || merging}
                 >
-                  {merging ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Link Records</Text>}
+                  {merging ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.btnText}>Link Selected Matches</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryBtn,
+                    (!editEmail.trim() || merging) && styles.btnDisabled,
+                  ]}
+                  onPress={handleUpdatePlayerEmail}
+                  disabled={!editEmail.trim() || merging}
+                >
+                  <Text style={styles.secondaryBtnText}>Update Email</Text>
                 </TouchableOpacity>
               </View>
+            ) : null}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Ranking Repair</Text>
+            <Text style={styles.hint}>
+              Rebuild rankings and head-to-head records from completed matches
+              without deleting match history.
+            </Text>
+            <TouchableOpacity
+              style={[styles.btn, repairingRankings && styles.btnDisabled]}
+              onPress={repairRankings}
+              disabled={repairingRankings}
+            >
+              {repairingRankings ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>Repair Rankings</Text>
+              )}
+            </TouchableOpacity>
+            {repairMessage ? (
+              <Text style={styles.successText}>{repairMessage}</Text>
             ) : null}
           </View>
 
@@ -376,7 +642,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   hint: { fontSize: 13, color: '#888', marginBottom: 12 },
-  mergeBox: { marginTop: 14, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8 },
+  mergeBox: {
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 8,
+  },
   mergeCandidate: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -386,6 +657,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   mergeCandidateActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
+  matchCandidate: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -404,7 +683,17 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: '#1a472a',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  secondaryBtnText: { color: '#1a472a', fontWeight: '700', fontSize: 15 },
   errorText: { color: '#c0392b', fontSize: 13, marginBottom: 8 },
+  successText: { color: '#1a472a', fontSize: 13, marginTop: 8 },
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',

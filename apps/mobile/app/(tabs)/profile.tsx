@@ -1,12 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, Switch,
-  ScrollView, Alert
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Switch,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { signOut } from 'firebase/auth';
-import { auth } from '@tennis/firebase-client';
-import { useAuthUser, useUserProfile, updateUserProfile } from '@tennis/firebase-client';
-import { DAYS_OF_WEEK, DAY_LABELS, type AvailabilitySlot } from '@tennis/shared';
+import { getDoc, getDocs, query, where } from 'firebase/firestore';
+import {
+  auth,
+  divisionDoc,
+  divisionsCol,
+  useAuthUser,
+  useUserProfile,
+  updateUserProfile,
+} from '@tennis/firebase-client';
+import {
+  DAYS_OF_WEEK,
+  DAY_LABELS,
+  type AvailabilitySlot,
+} from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -17,16 +34,27 @@ export default function ProfileScreen() {
   const { setUser } = useAppStore();
 
   const [editing, setEditing] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [allowEmail, setAllowEmail] = useState(true);
   const [allowSMS, setAllowSMS] = useState(false);
   const [allowInApp, setAllowInApp] = useState(true);
   const [tipsEnabled, setTipsEnabled] = useState(true);
-  const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([]);
+  const [availabilitySlots, setAvailabilitySlots] = useState<
+    AvailabilitySlot[]
+  >([]);
   const [availabilityNote, setAvailabilityNote] = useState('');
+  const [divisionOptions, setDivisionOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [selectedDivisionId, setSelectedDivisionId] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
+    setDisplayName(profile.displayName ?? '');
+    setEmail(profile.email ?? '');
     setPhone(profile.phone ?? '');
     setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
     setAllowSMS(profile.contactPreferences?.allowSMS ?? false);
@@ -34,23 +62,89 @@ export default function ProfileScreen() {
     setTipsEnabled(profile.tipsEnabled ?? true);
     setAvailabilitySlots(profile.availability?.slots ?? []);
     setAvailabilityNote(profile.availability?.note ?? '');
+    setSelectedDivisionId(profile.divisionId ?? '');
   }, [profile]);
 
+  useEffect(() => {
+    async function loadDivisionOptions() {
+      const userId = firebaseUser?.uid;
+      if (!userId) {
+        setDivisionOptions([]);
+        return;
+      }
+
+      const divisionById = new Map<string, { id: string; name: string }>();
+      const addDivisionOption = (id: string, name?: string) => {
+        const trimmedName = name?.trim();
+        divisionById.set(id, { id, name: trimmedName || id });
+      };
+
+      try {
+        const [playerSnap, leaderSnap, currentDivisionSnap] = await Promise.all(
+          [
+            getDocs(
+              query(
+                divisionsCol(),
+                where('playerIds', 'array-contains', userId),
+              ),
+            ),
+            getDocs(
+              query(
+                divisionsCol(),
+                where('leaderIds', 'array-contains', userId),
+              ),
+            ),
+            profile?.divisionId
+              ? getDoc(divisionDoc(profile.divisionId))
+              : null,
+          ],
+        );
+
+        for (const docSnap of [...playerSnap.docs, ...leaderSnap.docs]) {
+          addDivisionOption(
+            docSnap.id,
+            docSnap.data().name as string | undefined,
+          );
+        }
+
+        if (profile?.divisionId) {
+          addDivisionOption(
+            profile.divisionId,
+            currentDivisionSnap?.data()?.name as string | undefined,
+          );
+        }
+
+        setDivisionOptions(Array.from(divisionById.values()));
+      } catch {
+        setDivisionOptions([]);
+      }
+    }
+    void loadDivisionOptions();
+  }, [firebaseUser?.uid, profile?.divisionId]);
+
   function addSlot() {
-    setAvailabilitySlots((s) => [...s, { day: 'mon', from: '18:00', to: '21:00' }]);
+    setAvailabilitySlots((s) => [
+      ...s,
+      { day: 'mon', from: '18:00', to: '21:00' },
+    ]);
   }
   function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
-    setAvailabilitySlots((slots) => slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+    setAvailabilitySlots((slots) =>
+      slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    );
   }
   function removeSlot(idx: number) {
     setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
   }
   function cycleDay(idx: number) {
-    setAvailabilitySlots((slots) => slots.map((s, i) => {
-      if (i !== idx) return s;
-      const next = DAYS_OF_WEEK[(DAYS_OF_WEEK.indexOf(s.day) + 1) % DAYS_OF_WEEK.length];
-      return { ...s, day: next };
-    }));
+    setAvailabilitySlots((slots) =>
+      slots.map((s, i) => {
+        if (i !== idx) return s;
+        const next =
+          DAYS_OF_WEEK[(DAYS_OF_WEEK.indexOf(s.day) + 1) % DAYS_OF_WEEK.length];
+        return { ...s, day: next };
+      }),
+    );
   }
 
   async function handleSave() {
@@ -65,16 +159,29 @@ export default function ProfileScreen() {
         return;
       }
     }
-    await updateUserProfile(firebaseUser.uid, {
-      phone: phone.trim() || undefined,
-      contactPreferences: { allowEmail, allowSMS, allowInApp },
-      tipsEnabled,
-      availability: {
-        slots: availabilitySlots,
-        ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
-      },
-    });
-    setEditing(false);
+    setSaving(true);
+    try {
+      await updateUserProfile(firebaseUser.uid, {
+        displayName: displayName.trim(),
+        email: email.trim().toLowerCase() || undefined,
+        phone: phone.trim() || undefined,
+        contactPreferences: { allowEmail, allowSMS, allowInApp },
+        tipsEnabled,
+        availability: {
+          slots: availabilitySlots,
+          ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
+        },
+        divisionId: selectedDivisionId || undefined,
+      });
+      setEditing(false);
+    } catch (e) {
+      Alert.alert(
+        'Could not save profile',
+        (e as { message?: string }).message || 'Please try again.',
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleSignOut() {
@@ -92,41 +199,139 @@ export default function ProfileScreen() {
   }
 
   if (loading || !profile) {
-    return <View style={styles.center}><Text>Loading profile…</Text></View>;
+    return (
+      <View style={styles.center}>
+        <Text>Loading profile…</Text>
+      </View>
+    );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
-          {(profile.displayName || firebaseUser?.displayName || '?')[0].toUpperCase()}
+          {(profile.displayName ||
+            firebaseUser?.displayName ||
+            '?')[0].toUpperCase()}
         </Text>
       </View>
-      <Text style={styles.name}>{profile.displayName || firebaseUser?.displayName || 'Unknown'}</Text>
-      <Text style={styles.email}>{profile.email || firebaseUser?.email || ''}</Text>
+      <Text style={styles.name}>
+        {profile.displayName || firebaseUser?.displayName || 'Unknown'}
+      </Text>
+      <Text style={styles.email}>
+        {profile.email || firebaseUser?.email || ''}
+      </Text>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Contact Information</Text>
 
         {editing ? (
-          <TextInput
-            style={styles.input}
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Phone number (optional)"
-            keyboardType="phone-pad"
-          />
+          <>
+            <TextInput
+              style={styles.input}
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Display name"
+              autoCapitalize="words"
+            />
+            <TextInput
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email address"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="Phone number (optional)"
+              keyboardType="phone-pad"
+            />
+          </>
         ) : (
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Phone</Text>
-            <Text style={styles.rowValue}>{profile.phone ?? 'Not set'}</Text>
+          <>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Display name</Text>
+              <Text style={styles.rowValue}>
+                {profile.displayName ?? 'Not set'}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Email</Text>
+              <Text style={styles.rowValue}>{profile.email ?? 'Not set'}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Phone</Text>
+              <Text style={styles.rowValue}>{profile.phone ?? 'Not set'}</Text>
+            </View>
+          </>
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Division</Text>
+        <Text style={styles.sectionSubtitle}>
+          Choose the division to use across rankings, matches, and admin tools
+        </Text>
+        {editing ? (
+          <View style={styles.divisionList}>
+            <TouchableOpacity
+              style={[
+                styles.divisionOption,
+                selectedDivisionId === '' && styles.divisionOptionActive,
+              ]}
+              onPress={() => setSelectedDivisionId('')}
+            >
+              <Text
+                style={[
+                  styles.divisionOptionText,
+                  selectedDivisionId === '' && styles.divisionOptionTextActive,
+                ]}
+              >
+                No division
+              </Text>
+            </TouchableOpacity>
+            {divisionOptions.map((division) => (
+              <TouchableOpacity
+                key={division.id}
+                style={[
+                  styles.divisionOption,
+                  selectedDivisionId === division.id &&
+                    styles.divisionOptionActive,
+                ]}
+                onPress={() => setSelectedDivisionId(division.id)}
+              >
+                <Text
+                  style={[
+                    styles.divisionOptionText,
+                    selectedDivisionId === division.id &&
+                      styles.divisionOptionTextActive,
+                  ]}
+                >
+                  {division.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        ) : (
+          <Text style={styles.rowValue}>
+            {divisionOptions.find(
+              (division) => division.id === profile.divisionId,
+            )?.name ??
+              profile.divisionId ??
+              'No division'}
+          </Text>
         )}
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Contact Preferences</Text>
-        <Text style={styles.sectionSubtitle}>Choose how others can contact you</Text>
+        <Text style={styles.sectionSubtitle}>
+          Choose how others can contact you
+        </Text>
 
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Share email with teammates</Text>
@@ -159,7 +364,9 @@ export default function ProfileScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Preferred Play Times</Text>
-        <Text style={styles.sectionSubtitle}>Weekly windows when you&apos;re typically free</Text>
+        <Text style={styles.sectionSubtitle}>
+          Weekly windows when you&apos;re typically free
+        </Text>
 
         {availabilitySlots.length === 0 && !editing && (
           <Text style={styles.emptyHint}>No availability set yet.</Text>
@@ -191,7 +398,10 @@ export default function ProfileScreen() {
               maxLength={5}
             />
             {editing && (
-              <TouchableOpacity onPress={() => removeSlot(idx)} style={styles.slotRemove}>
+              <TouchableOpacity
+                onPress={() => removeSlot(idx)}
+                style={styles.slotRemove}
+              >
                 <Text style={styles.slotRemoveText}>✕</Text>
               </TouchableOpacity>
             )}
@@ -211,11 +421,9 @@ export default function ProfileScreen() {
             placeholder="Optional note, e.g. Flexible weekends"
             multiline
           />
-        ) : (
-          availabilityNote ? (
-            <Text style={styles.noteText}>{availabilityNote}</Text>
-          ) : null
-        )}
+        ) : availabilityNote ? (
+          <Text style={styles.noteText}>{availabilityNote}</Text>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -234,15 +442,27 @@ export default function ProfileScreen() {
       <View style={styles.actions}>
         {editing ? (
           <>
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && styles.btnDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              <Text style={styles.saveBtnText}>
+                {saving ? 'Saving…' : 'Save Changes'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditing(false)}>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setEditing(false)}
+            >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(true)}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => setEditing(true)}
+          >
             <Text style={styles.editBtnText}>Edit Profile</Text>
           </TouchableOpacity>
         )}
@@ -258,37 +478,135 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f0' },
   content: { padding: 24 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#1a472a', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: 12 },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1a472a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
   avatarText: { color: '#fff', fontSize: 32, fontWeight: '700' },
-  name: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', textAlign: 'center' },
+  name: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    textAlign: 'center',
+  },
   email: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 32 },
-  section: { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1a472a', marginBottom: 4 },
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a472a',
+    marginBottom: 4,
+  },
   sectionSubtitle: { fontSize: 12, color: '#999', marginBottom: 12 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
   rowLabel: { color: '#666', fontSize: 14 },
   rowValue: { color: '#333', fontSize: 14, fontWeight: '500' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14 },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
   toggleLabel: { color: '#444', fontSize: 14, flex: 1, marginRight: 16 },
   actions: { gap: 12 },
-  editBtn: { backgroundColor: '#1a472a', padding: 16, borderRadius: 12, alignItems: 'center' },
+  editBtn: {
+    backgroundColor: '#1a472a',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
   editBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  saveBtn: { backgroundColor: '#1a472a', padding: 16, borderRadius: 12, alignItems: 'center' },
+  saveBtn: {
+    backgroundColor: '#1a472a',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
   saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cancelBtn: { padding: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#ddd' },
+  cancelBtn: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
   cancelBtnText: { color: '#555', fontWeight: '600', fontSize: 15 },
   signOutBtn: { padding: 16, borderRadius: 12, alignItems: 'center' },
   signOutBtnText: { color: '#c0392b', fontWeight: '600', fontSize: 15 },
-  slotRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  slotDay: { backgroundColor: '#1a472a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, minWidth: 56, alignItems: 'center' },
+  btnDisabled: { opacity: 0.5 },
+  divisionList: { gap: 8 },
+  divisionOption: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  divisionOptionActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
+  divisionOptionText: { color: '#444', fontSize: 14, fontWeight: '600' },
+  divisionOptionTextActive: { color: '#1a472a' },
+  slotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  slotDay: {
+    backgroundColor: '#1a472a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 56,
+    alignItems: 'center',
+  },
   slotDayText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  slotTime: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, fontSize: 14, width: 70, textAlign: 'center' },
+  slotTime: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 14,
+    width: 70,
+    textAlign: 'center',
+  },
   slotDash: { color: '#888', fontSize: 14 },
   slotDisabled: { opacity: 0.6 },
   slotRemove: { padding: 6 },
   slotRemoveText: { color: '#c0392b', fontSize: 16, fontWeight: '700' },
-  addSlotBtn: { borderWidth: 1, borderStyle: 'dashed', borderColor: '#1a472a', borderRadius: 8, padding: 10, alignItems: 'center', marginTop: 4 },
+  addSlotBtn: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#1a472a',
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
   addSlotBtnText: { color: '#1a472a', fontWeight: '700', fontSize: 13 },
   emptyHint: { color: '#999', fontSize: 13, paddingVertical: 4 },
   noteText: { color: '#444', fontSize: 13, marginTop: 8, fontStyle: 'italic' },
