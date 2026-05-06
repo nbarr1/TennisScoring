@@ -9,6 +9,7 @@ import {
   useRankings,
   useAuthUser,
   useUserProfile,
+  useActiveDivisionId,
 } from '@tennis/firebase-client';
 import type { PlayerRanking } from '@tennis/shared';
 
@@ -18,7 +19,10 @@ export default function DashboardPage(): React.JSX.Element {
   const { profile, loading: profileLoading } = useUserProfile(
     firebaseUser?.uid ?? null,
   );
-  const divisionId = profile?.divisionId ?? null;
+  const { divisionId, loading: divisionLoading } = useActiveDivisionId(
+    firebaseUser?.uid ?? null,
+    profile?.divisionId,
+  );
   const { rankings, loading } = useRankings(divisionId);
 
   useEffect(() => {
@@ -57,11 +61,11 @@ export default function DashboardPage(): React.JSX.Element {
           Sorted by: Matches Won · Sets · Games · Differential · Head-to-Head
         </p>
 
-        {!profileLoading && profile && !profile.divisionId ? (
+        {!profileLoading && !divisionLoading && !divisionId ? (
           <div style={styles.empty}>
             Join or create a division to see standings.
           </div>
-        ) : loading ? (
+        ) : loading || divisionLoading ? (
           <div style={styles.loading}>Loading rankings…</div>
         ) : rankings.length === 0 ? (
           <div style={styles.empty}>
