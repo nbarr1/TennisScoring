@@ -455,151 +455,174 @@ export default function AdminPage(): React.JSX.Element {
                   No players yet. Add players above.
                 </p>
               ) : (
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Name</th>
-                      <th style={styles.th}>Email</th>
-                      <th style={styles.th}>Phone</th>
-                      <th style={styles.th}>Role</th>
-                      <th style={styles.th}>Status</th>
-                      <th style={styles.th}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {players.flatMap((p) => {
-                      const rows: React.JSX.Element[] = [
-                        <tr key={`${p.id}-row`} style={styles.tr}>
-                        <td style={styles.td}>{p.displayName}</td>
-                        <td style={styles.td}>
-                          {p.contactPreferences?.allowEmail !== false ? (
-                            <a
-                              href={`mailto:${p.email}`}
-                              style={styles.contactLink}
-                            >
-                              {p.email}
-                            </a>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          {p.phone && p.contactPreferences?.allowSMS ? (
-                            <a
-                              href={`tel:${p.phone}`}
-                              style={styles.contactLink}
-                            >
-                              {p.phone}
-                            </a>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td style={styles.td}>
-                          <span
-                            style={
-                              division.leaderIds.includes(p.id)
-                                ? styles.leaderBadge
-                                : styles.playerBadge
-                            }
-                          >
-                            {division.leaderIds.includes(p.id)
-                              ? 'Leader'
-                              : 'Player'}
-                          </span>
-                        </td>
-                        <td style={styles.td}>
-                          {p.isRegistered === false
-                            ? p.inviteStatus === 'invite_sent'
-                              ? 'Invite Sent'
-                              : 'Unregistered'
-                            : 'Registered'}
-                        </td>
-                        <td style={styles.td}>
-                          <button
-                            style={styles.btnSecondary}
-                            onClick={() => {
-                              setNeedsMergeForUserId(p.id);
-                              setMergeSourceUserId('');
-                              setSelectedMatchIds([]);
-                              setEditEmail(p.email ?? '');
-                              setExpandedPlayerId((current) => (current === p.id ? null : p.id));
-                            }}
-                          >
-                            Edit / Link
-                          </button>
-                        </td>
+                <div style={styles.tableScroller}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>Name</th>
+                        <th style={styles.th}>Email</th>
+                        <th style={styles.th}>Phone</th>
+                        <th style={styles.th}>Role</th>
+                        <th style={styles.th}>Status</th>
+                        <th style={styles.th}>Actions</th>
                       </tr>
-                      ];
-                      if (expandedPlayerId === p.id) {
-                        rows.push(
-                        <tr key={`${p.id}-editor`}>
-                          <td style={styles.td} colSpan={6}>
-                            <div style={styles.inlineEditor}>
-                              <input
-                                style={styles.input}
-                                value={editEmail}
-                                onChange={(e) => setEditEmail(e.target.value)}
-                                placeholder="Update player email (optional)"
-                                type="email"
-                              />
-                              <p style={styles.linkPrompt}>
-                                Which of the recorded matches did {p.displayName} play in?
-                              </p>
-                              <button
-                                style={styles.btn}
-                                onClick={handleMergeRecords}
-                                disabled={selectedMatchIds.length === 0 || merging || needsMergeForUserId !== p.id}
+                    </thead>
+                    <tbody>
+                      {players.flatMap((p) => {
+                        const rows: React.JSX.Element[] = [
+                          <tr key={`${p.id}-row`} style={styles.tr}>
+                            <td style={styles.td}>{p.displayName}</td>
+                            <td style={styles.td}>
+                              {p.contactPreferences?.allowEmail !== false ? (
+                                <a
+                                  href={`mailto:${p.email}`}
+                                  style={styles.contactLink}
+                                >
+                                  {p.email}
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td style={styles.td}>
+                              {p.phone && p.contactPreferences?.allowSMS ? (
+                                <a
+                                  href={`tel:${p.phone}`}
+                                  style={styles.contactLink}
+                                >
+                                  {p.phone}
+                                </a>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td style={styles.td}>
+                              <span
+                                style={
+                                  division.leaderIds.includes(p.id)
+                                    ? styles.leaderBadge
+                                    : styles.playerBadge
+                                }
                               >
-                                {merging ? 'Linking…' : 'Link Selected Matches'}
-                              </button>
+                                {division.leaderIds.includes(p.id)
+                                  ? 'Leader'
+                                  : 'Player'}
+                              </span>
+                            </td>
+                            <td style={styles.td}>
+                              {p.isRegistered === false
+                                ? p.inviteStatus === 'invite_sent'
+                                  ? 'Invite Sent'
+                                  : 'Unregistered'
+                                : 'Registered'}
+                            </td>
+                            <td style={styles.td}>
                               <button
                                 style={styles.btnSecondary}
-                                onClick={handleUpdatePlayerEmail}
-                                disabled={merging || !editEmail.trim() || needsMergeForUserId !== p.id}
+                                onClick={() => {
+                                  setNeedsMergeForUserId(p.id);
+                                  setMergeSourceUserId('');
+                                  setSelectedMatchIds([]);
+                                  setEditEmail(p.email ?? '');
+                                  setExpandedPlayerId((current) =>
+                                    current === p.id ? null : p.id,
+                                  );
+                                }}
                               >
-                                Update Email
+                                Edit / Link
                               </button>
-                              <button
-                                style={styles.btnSecondary}
-                                onClick={undoLastLink}
-                                disabled={!lastLinkAction?.sourceUserId || merging}
+                            </td>
+                          </tr>
+                        ];
+                        if (expandedPlayerId === p.id) {
+                          rows.push(
+                            <tr key={`${p.id}-editor`}>
+                              <td
+                                style={{ ...styles.td, ...styles.editorCell }}
+                                colSpan={6}
                               >
-                                Undo Last Link
-                              </button>
-                              <div style={styles.matchChecklist}>
-                                {candidateMatches.length > 0 ? (
-                                  candidateMatches.map((m) => (
-                                    <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedMatchIds.includes(m.id)}
-                                        onChange={(e) =>
-                                          setSelectedMatchIds((prev) =>
-                                            e.target.checked
-                                              ? [...prev, m.id]
-                                              : prev.filter((id) => id !== m.id),
-                                          )
-                                        }
-                                      />{' '}
-                                      {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
-                                    </label>
-                                  ))
-                                ) : (
-                                  <p style={styles.hint}>
-                                    No recorded matches are available. Matches already linked to two player profiles are hidden.
+                                <div style={styles.inlineEditor}>
+                                  <input
+                                    style={{
+                                      ...styles.input,
+                                      ...styles.editorInput,
+                                    }}
+                                    value={editEmail}
+                                    onChange={(e) => setEditEmail(e.target.value)}
+                                    placeholder="Update player email (optional)"
+                                    type="email"
+                                  />
+                                  <p style={styles.linkPrompt}>
+                                    Which of the recorded matches did {p.displayName} play in?
                                   </p>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>,
-                        );
-                      }
-                      return rows;
-                    })}
-                  </tbody>
-                </table>
+                                  <div style={styles.editorActions}>
+                                    <button
+                                      style={styles.btn}
+                                      onClick={handleMergeRecords}
+                                      disabled={
+                                        selectedMatchIds.length === 0 ||
+                                        merging ||
+                                        needsMergeForUserId !== p.id
+                                      }
+                                    >
+                                      {merging ? 'Linking…' : 'Link Selected Matches'}
+                                    </button>
+                                    <button
+                                      style={styles.btnSecondary}
+                                      onClick={handleUpdatePlayerEmail}
+                                      disabled={
+                                        merging ||
+                                        !editEmail.trim() ||
+                                        needsMergeForUserId !== p.id
+                                      }
+                                    >
+                                      Update Email
+                                    </button>
+                                    <button
+                                      style={styles.btnSecondary}
+                                      onClick={undoLastLink}
+                                      disabled={!lastLinkAction?.sourceUserId || merging}
+                                    >
+                                      Undo Last Link
+                                    </button>
+                                  </div>
+                                  <div style={styles.matchChecklist}>
+                                    {candidateMatches.length > 0 ? (
+                                      candidateMatches.map((m) => (
+                                        <label
+                                          key={m.id}
+                                          style={{ display: 'block', marginBottom: 6 }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedMatchIds.includes(m.id)}
+                                            onChange={(e) =>
+                                              setSelectedMatchIds((prev) =>
+                                                e.target.checked
+                                                  ? [...prev, m.id]
+                                                  : prev.filter((id) => id !== m.id),
+                                              )
+                                            }
+                                          />{' '}
+                                          {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
+                                        </label>
+                                      ))
+                                    ) : (
+                                      <p style={styles.hint}>
+                                        No recorded matches are available. Matches already linked to two player profiles are hidden.
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>,
+                          );
+                        }
+                        return rows;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </>
@@ -665,7 +688,21 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
   mergeBox: { marginTop: 12, borderTop: '1px solid #eee', paddingTop: 8 },
-  inlineEditor: { display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) minmax(220px, 1.5fr) auto auto auto', gap: 10, alignItems: 'start' },
+  inlineEditor: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(180px, 1fr) minmax(240px, 2fr)',
+    gap: 12,
+    alignItems: 'center',
+    maxWidth: '100%',
+  },
+  editorCell: { background: '#fcfcfc' },
+  editorInput: { boxSizing: 'border-box' as const, minWidth: 0, width: '100%' },
+  editorActions: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
   linkPrompt: { margin: 0, fontSize: 14, color: '#444', alignSelf: 'center' },
   matchChecklist: { gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: 8 },
   row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
@@ -701,7 +738,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
   success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
-  table: { width: '100%', borderCollapse: 'collapse' as const, marginTop: 8 },
+  tableScroller: { overflowX: 'auto' as const, width: '100%' },
+  table: {
+    width: '100%',
+    minWidth: 760,
+    borderCollapse: 'collapse' as const,
+    marginTop: 8,
+  },
   th: {
     textAlign: 'left' as const,
     fontSize: 12,
