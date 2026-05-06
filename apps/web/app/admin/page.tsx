@@ -195,7 +195,7 @@ export default function AdminPage(): React.JSX.Element {
     setMerging(true);
     setError('');
     try {
-      const updatedMatches = await mergeDivisionPlayerRecords(
+      const { updatedMatches } = await mergeDivisionPlayerRecords(
         division.id,
         needsMergeForUserId,
         {
