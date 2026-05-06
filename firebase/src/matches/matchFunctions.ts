@@ -307,7 +307,7 @@ async function notifyLeaderOfDispute(
   });
 }
 
-async function recalculateRankings(
+export async function recalculateRankings(
   divisionId: string,
   options: RecalculateRankingsOptions = {},
 ): Promise<RecalculateRankingsResult> {
