@@ -826,7 +826,12 @@
         preview('serverP1').forEach((target) => (target.textContent = playerOne));
         preview('serverP2').forEach((target) => (target.textContent = playerTwo));
         const serverName = serverControl.value === 'playerOne' ? playerOne : playerTwo;
-        preview('serverLabel').forEach((target) => (target.textContent = `● ${serverName} Serves`));
+        const isInProgress = statusControl.value === 'in_progress';
+        preview('serverLabel').forEach((target) => {
+          target.textContent = `● ${serverName} Serves`;
+          target.style.display = isInProgress ? 'block' : 'none';
+        });
+        preview('serviceSide').forEach((target) => (target.style.display = isInProgress ? 'block' : 'none'));
 
         const isScheduled = statusControl.value === 'scheduled';
         const isPending = statusControl.value === 'pending_report';
