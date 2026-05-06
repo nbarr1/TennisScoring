@@ -107,8 +107,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             callablePayload?.error?.message ??
             'Cloud Function call failed.',
           requestId,
-          upstreamStatus: callableResponse.status,
-          debugCallableTarget,
+          ...(process.env.NODE_ENV !== 'production'
+            ? { upstreamStatus: callableResponse.status, debugCallableTarget }
+            : {}),
         },
         { status: 502 },
       );
@@ -127,7 +128,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ? error.message
             : 'Unexpected error calling Cloud Function.',
         requestId,
-        debugCallableTarget: debugFunctionsConfig,
+        ...(process.env.NODE_ENV !== 'production'
+          ? { debugCallableTarget: debugFunctionsConfig }
+          : {}),
       },
       { status: 500 },
     );

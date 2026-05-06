@@ -137,6 +137,28 @@ describe('scoreEngine', () => {
       expect(score.tiebreakScore).toEqual({ player1Points: 0, player2Points: 0 });
     });
 
+
+
+    it('rotates server before the first tiebreak point', () => {
+      const score = reachTiebreak();
+      expect(score.server).toBe('player1');
+      expect(score.serviceSide).toBe('deuce');
+    });
+
+    it('records a 7-6 set score after winning a tiebreak', () => {
+      let score = reachTiebreak();
+      for (let i = 0; i < 7; i++) {
+        score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      }
+      expect(score.sets[0]).toMatchObject({
+        player1Games: 7,
+        player2Games: 6,
+        winner: 'player1',
+        tiebreak: { player1Points: 7, player2Points: 0 },
+      });
+      expect(formatScoreDisplay(score)).toBe('7-6(0), 0-0');
+    });
+
     it('wins tiebreak at 7-0', () => {
       let score = reachTiebreak();
       for (let i = 0; i < 7; i++) {

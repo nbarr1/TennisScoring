@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, Linking, Modal, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Linking, Modal, ActivityIndicator, Alert,
 } from 'react-native';
 import { useChannels, useMessages, sendMessage, getOrCreateDM, searchDivisionPlayers } from '@tennis/firebase-client';
 import { useAppStore } from '../../store/appStore';
@@ -52,15 +52,23 @@ function ChannelView({ channel }: { channel: Channel }) {
 
   async function handleShareContact() {
     if (!user) return;
+    const sharedContact = {
+      phone: user.contactPreferences?.allowSMS ? user.phone : undefined,
+      email: user.contactPreferences?.allowEmail ? user.email : undefined,
+    };
+    if (!sharedContact.phone && !sharedContact.email) {
+      Alert.alert(
+        'No contact info to share',
+        'Enable email or SMS contact sharing in your profile first.',
+      );
+      return;
+    }
     await sendMessage({
       channelId: channel.id,
       senderId: user.id,
       senderName: user.displayName ?? 'Unknown',
       content: 'Shared contact information',
-      sharedContact: {
-        phone: user.contactPreferences?.allowSMS ? user.phone : undefined,
-        email: user.contactPreferences?.allowEmail ? user.email : undefined,
-      },
+      sharedContact,
     });
   }
 

@@ -106,6 +106,7 @@ export interface UndoSnapshot {
   liveScore: LiveScore;
   status: MatchStatus;
   winner?: Player;
+  completedAt?: number;
 }
 
 export interface Match {

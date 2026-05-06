@@ -128,9 +128,12 @@ service cloud.firestore {
       let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled' &&
         request.auth.uid == existing.player2Id &&
         changed.hasOnly(['status']);
-      let isScoreUpdate = existing.status in ['scheduled', 'in_progress'] &&
-        changed.hasOnly(['status', 'startedAt', 'liveScore', 'stats', 'winner', 'completedAt', 'undoSnapshot']);
-      let isUndo = changed.hasOnly(['status', 'liveScore', 'winner', 'completedAt', 'undoSnapshot']);
+      let isStartMatch = existing.status == 'scheduled' && incoming.status == 'in_progress' &&
+        changed.hasOnly(['status', 'startedAt', 'liveScore']);
+      let isUndo = 'undoSnapshot' in existing &&
+        incoming.liveScore == existing.undoSnapshot.liveScore &&
+        incoming.status == existing.undoSnapshot.status &&
+        changed.hasOnly(['status', 'liveScore', 'winner', 'completedAt', 'undoSnapshot']);
       let isReportSubmit = existing.status == 'pending_report' &&
         incoming.status == existing.status &&
         changed.hasOnly(['reportSubmission']);
@@ -156,7 +159,7 @@ service cloud.firestore {
         isCancellation ||
         isPostpone ||
         isAcceptProposal ||
-        isScoreUpdate ||
+        isStartMatch ||
         isUndo ||
         isReportSubmit ||
         isGuestFinalize ||
@@ -224,7 +227,11 @@ service cloud.firestore {
           )
         );
       allow update: if isAdmin() || isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
-      allow delete: if isAdmin() || isMatchParticipant(resource.data) || isLeader(resource.data.divisionId);
+      allow delete: if isAdmin() || isLeader(resource.data.divisionId) || (
+        isMatchParticipant(resource.data) &&
+        resource.data.createdBy == request.auth.uid &&
+        resource.data.status in ['proposed', 'scheduled']
+      );
 
       // Score actions sub-collection
       match /actions/{actionId} {
@@ -279,6 +286,7 @@ service cloud.firestore {
         allow create: if isAuth() &&
           isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data) &&
           request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.readBy == [request.auth.uid] &&
           request.resource.data.keys().hasOnly([
             'channelId',
             'senderId',
@@ -290,7 +298,9 @@ service cloud.firestore {
             'createdAt'
           ]);
         allow update: if isAuth() &&
-          resource.data.senderId == request.auth.uid &&
+          isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data) &&
+          request.auth.uid in request.resource.data.readBy &&
+          request.resource.data.readBy.hasAll(resource.data.readBy) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
         allow delete: if false;
       }

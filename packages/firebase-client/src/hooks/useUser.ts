@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { arrayUnion, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth } from '../config';
 import { userDoc } from '../collections';
 import type { User } from '@tennis/shared';
@@ -48,9 +48,5 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
 }
 
 export async function registerFcmToken(uid: string, token: string): Promise<void> {
-  const snap = await getDoc(userDoc(uid));
-  const existing: string[] = snap.data()?.fcmTokens ?? [];
-  if (!existing.includes(token)) {
-    await updateDoc(userDoc(uid), { fcmTokens: [...existing, token] });
-  }
+  await updateDoc(userDoc(uid), { fcmTokens: arrayUnion(token) });
 }

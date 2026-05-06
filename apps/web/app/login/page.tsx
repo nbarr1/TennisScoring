@@ -39,10 +39,13 @@ export default function LoginPage(): React.JSX.Element {
 
       // Exchange the Firebase ID token for a server-side session cookie via the middleware's loginPath
       const idToken = await user.getIdToken();
-      await fetch('/api/auth/login', {
+      const sessionResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });
+      if (!sessionResponse.ok) {
+        throw new Error('Could not establish a web session.');
+      }
 
       router.replace('/dashboard');
     } catch (err: unknown) {
