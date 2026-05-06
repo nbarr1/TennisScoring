@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tennis Scoring · Mobile Live Scoring Layout Preview</title>
+    <style>
+      :root {
+        --court: #1a472a;
+        --court-light: #2d6a4f;
+        --court-dark: #1b4332;
+        --accent: #ffdc60;
+        --success: #27ae60;
+        --danger: #ff6b6b;
+        --text: #ffffff;
+        --muted: rgba(255, 255, 255, 0.72);
+        --glass: rgba(255, 255, 255, 0.1);
+        --phone-width: 390px;
+        --content-pad: 24px;
+        --button-pad: 28px;
+        --radius: 16px;
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(255, 220, 96, 0.18), transparent 32rem),
+          linear-gradient(135deg, #0d2416 0%, #102f1d 48%, #08140d 100%);
+        color: var(--text);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) minmax(320px, 420px);
+        gap: 32px;
+        align-items: start;
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      .intro {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        justify-content: space-between;
+        align-items: end;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.8rem, 4vw, 3.25rem);
+        letter-spacing: -0.04em;
+      }
+
+      .intro p {
+        max-width: 760px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--accent);
+        font-weight: 800;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stage {
+        display: grid;
+        place-items: start center;
+        position: sticky;
+        top: 24px;
+      }
+
+      .phone-frame {
+        width: min(var(--phone-width), 100%);
+        padding: 12px;
+        border-radius: 42px;
+        background: #050807;
+        box-shadow:
+          0 28px 70px rgba(0, 0, 0, 0.42),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .phone-screen {
+        overflow: hidden;
+        min-height: 780px;
+        border-radius: 32px;
+        background: var(--court);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .status-bar {
+        display: flex;
+        justify-content: space-between;
+        padding: 14px 22px 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .screen-content {
+        padding: var(--content-pad);
+        padding-bottom: 48px;
+      }
+
+      .score-board {
+        text-align: center;
+        padding: 32px 0;
+      }
+
+      .set-row,
+      .player-row,
+      .tips-row,
+      .stat-toggle-row {
+        display: flex;
+        align-items: center;
+      }
+
+      .set-row {
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .sets-label {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 16px;
+      }
+
+      .sets-score {
+        color: #fff;
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      .score-main {
+        margin-bottom: 8px;
+        color: #fff;
+        font-size: 40px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+
+      .game-score {
+        margin-bottom: 16px;
+        color: #a8d5a2;
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .server-label {
+        color: var(--accent);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .service-side {
+        margin-top: 4px;
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 12px;
+      }
+
+      .player-row {
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 20px;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .vs {
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 13px;
+      }
+
+      .manage-btn,
+      .live-badge,
+      .undo-btn,
+      .link-btn {
+        display: block;
+        width: fit-content;
+        margin-inline: auto;
+        border: 0;
+        font: inherit;
+      }
+
+      .manage-btn {
+        margin-bottom: 20px;
+        padding: 7px 16px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .live-badge {
+        margin-bottom: 20px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.15);
+        color: var(--danger);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .score-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .point-btn {
+        min-height: 108px;
+        padding: var(--button-pad) 12px;
+        border: 0;
+        border-radius: var(--radius);
+        color: #fff;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1.3;
+        text-align: center;
+        cursor: pointer;
+        transition: transform 150ms ease, filter 150ms ease;
+      }
+
+      .point-btn:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.08);
+      }
+
+      .point-btn:active {
+        transform: translateY(0);
+      }
+
+      .point-btn.p1 {
+        background: var(--court-light);
+      }
+
+      .point-btn.p2 {
+        background: var(--court-dark);
+      }
+
+      .undo-btn {
+        margin-bottom: 4px;
+        padding: 10px 14px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .tips-row,
+      .server-select,
+      .link-section,
+      .feedback-card {
+        border-radius: 14px;
+        background: var(--glass);
+      }
+
+      .tips-row {
+        justify-content: space-between;
+        padding: 12px 16px;
+      }
+
+      .server-select {
+        display: none;
+        margin-bottom: 20px;
+        padding: 20px;
+        text-align: center;
+      }
+
+      .server-select.active {
+        display: block;
+      }
+
+      .server-select h2 {
+        margin-bottom: 14px;
+        font-size: 17px;
+      }
+
+      .stat-toggle-row {
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        text-align: left;
+      }
+
+      .stat-title {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .stat-hint {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .server-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .server-buttons button {
+        border: 0;
+        border-radius: 12px;
+        padding: 16px 8px;
+        background: var(--accent);
+        color: var(--court);
+        font: inherit;
+        font-weight: 900;
+      }
+
+      .link-section,
+      .feedback-card {
+        margin-top: 18px;
+        padding: 16px;
+        text-align: center;
+      }
+
+      .link-section p,
+      .feedback-card p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .link-btn {
+        margin-top: 10px;
+        padding: 10px 16px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.15);
+        color: var(--accent);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .feedback-card {
+        display: none;
+        border: 1px solid rgba(255, 220, 96, 0.26);
+      }
+
+      .feedback-card.active {
+        display: block;
+      }
+
+      .feedback-card strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--accent);
+      }
+
+      .switch {
+        position: relative;
+        display: inline-flex;
+        width: 46px;
+        height: 26px;
+        border-radius: 999px;
+        background: #ccc;
+        flex: 0 0 auto;
+        cursor: pointer;
+      }
+
+      .switch input {
+        opacity: 0;
+        position: absolute;
+      }
+
+      .switch span {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        top: 2px;
+        left: 2px;
+        border-radius: 50%;
+        background: #f4f3f4;
+        transition: 160ms ease;
+      }
+
+      .switch input:checked + span {
+        left: 22px;
+        background: var(--court);
+      }
+
+      .switch:has(input:checked) {
+        background: var(--accent);
+      }
+
+      .controls {
+        display: grid;
+        gap: 16px;
+      }
+
+      .panel {
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 22px;
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+        backdrop-filter: blur(16px);
+      }
+
+      .panel h2 {
+        margin-bottom: 14px;
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 10px 11px;
+        background: rgba(0, 0, 0, 0.22);
+        color: #fff;
+        font: inherit;
+      }
+
+      input[type="color"] {
+        height: 42px;
+        padding: 4px;
+      }
+
+      input[type="range"] {
+        accent-color: var(--accent);
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .control-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .action-btn {
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: var(--accent);
+        color: var(--court);
+        font: inherit;
+        font-weight: 900;
+        cursor: pointer;
+      }
+
+      .action-btn.secondary {
+        background: rgba(255, 255, 255, 0.14);
+        color: #fff;
+      }
+
+      .output {
+        overflow: auto;
+        max-height: 210px;
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.28);
+        color: rgba(255, 255, 255, 0.8);
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.76rem;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 860px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        .stage {
+          position: static;
+        }
+      }
+
+      @media (max-width: 440px) {
+        main {
+          width: 100%;
+          padding: 0;
+        }
+
+        .intro,
+        .controls {
+          padding: 20px;
+        }
+
+        .phone-frame {
+          width: 100%;
+          padding: 0;
+          border-radius: 0;
+        }
+
+        .phone-screen {
+          border-radius: 0;
+          min-height: 100vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div>
+          <span class="pill">Prototype · Mobile live scoring</span>
+          <h1 id="page-title">Live scoring layout preview</h1>
+        </div>
+        <p>
+          This standalone prototype mirrors the active match area from
+          <code>apps/mobile/app/match/[id].tsx</code>. Edit names, score text,
+          match state, density, and colors, then copy the generated feedback JSON
+          into an issue, comment, or follow-up prompt so the preferred layout can
+          be implemented in the React Native screen.
+        </p>
+      </section>
+
+      <section class="stage" aria-label="Phone preview">
+        <div class="phone-frame">
+          <div class="phone-screen" id="phone-screen">
+            <div class="status-bar" aria-hidden="true">
+              <span>9:41</span>
+              <span>LTE ◔</span>
+            </div>
+            <div class="screen-content">
+              <section class="score-board" aria-label="Score board">
+                <div class="set-row">
+                  <span class="sets-label">Sets</span>
+                  <span class="sets-score" data-preview="setsScore">1 – 0</span>
+                </div>
+                <div class="score-main" data-preview="scoreMain">6-4, 3-2</div>
+                <div class="game-score" data-preview="gameScore">40 – 30</div>
+                <div class="server-label" data-preview="serverLabel">● Alex Rivera Serves</div>
+                <div class="service-side" data-preview="serviceSide">deuce court · Set 22:14 · Match 1:04:33</div>
+              </section>
+
+              <section class="player-row" aria-label="Players">
+                <span data-preview="playerOne">Alex Rivera</span>
+                <span class="vs">vs</span>
+                <span data-preview="playerTwo">Jamie Chen</span>
+              </section>
+
+              <button class="manage-btn" type="button">⋯ Options</button>
+              <span class="live-badge">● LIVE</span>
+
+              <section class="server-select" id="server-select" aria-label="Server selection">
+                <h2>Who is serving first?</h2>
+                <div class="stat-toggle-row">
+                  <div>
+                    <strong class="stat-title">Track advanced stats?</strong>
+                    <span class="stat-hint">Adds aces, double faults, winners, and unforced errors to the report.</span>
+                  </div>
+                  <label class="switch" aria-label="Advanced stats enabled">
+                    <input type="checkbox" checked />
+                    <span></span>
+                  </label>
+                </div>
+                <div class="server-buttons">
+                  <button type="button" data-preview="serverP1">Alex Rivera</button>
+                  <button type="button" data-preview="serverP2">Jamie Chen</button>
+                </div>
+              </section>
+
+              <section id="in-progress-controls" aria-label="Score controls">
+                <div class="score-buttons">
+                  <button class="point-btn p1" type="button" data-preview="p1Button">Alex Rivera<br />Point</button>
+                  <button class="point-btn p2" type="button" data-preview="p2Button">Jamie Chen<br />Point</button>
+                </div>
+                <button class="undo-btn" type="button">↩ Undo Last Point</button>
+                <div class="tips-row">
+                  <strong>Live Tips</strong>
+                  <label class="switch" aria-label="Live tips enabled">
+                    <input id="tips-toggle" type="checkbox" checked />
+                    <span></span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="link-section" id="guest-section">
+                <p>👤 Playing against a guest? Link their account once they join the app.</p>
+                <button class="link-btn" type="button">Link Opponent Account</button>
+              </section>
+
+              <section class="feedback-card" id="post-match-card">
+                <strong>Post-match report area</strong>
+                <p data-preview="postMatchCopy">Use this space to preview final score reporting, confirmation, or dispute copy below the live controls.</p>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="controls" aria-label="Preview controls">
+        <section class="panel">
+          <h2>Content</h2>
+          <div class="field-grid">
+            <label>Player 1
+              <input data-control="playerOne" value="Alex Rivera" />
+            </label>
+            <label>Player 2
+              <input data-control="playerTwo" value="Jamie Chen" />
+            </label>
+            <label>Sets score
+              <input data-control="setsScore" value="1 – 0" />
+            </label>
+            <label>Match score
+              <input data-control="scoreMain" value="6-4, 3-2" />
+            </label>
+            <label>Game score
+              <input data-control="gameScore" value="40 – 30" />
+            </label>
+            <label>Service detail
+              <input data-control="serviceSide" value="deuce court · Set 22:14 · Match 1:04:33" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>State</h2>
+          <div class="field-grid">
+            <label>Serving player
+              <select id="server-control">
+                <option value="playerOne">Player 1</option>
+                <option value="playerTwo">Player 2</option>
+              </select>
+            </label>
+            <label>Match status
+              <select id="status-control">
+                <option value="in_progress">In progress</option>
+                <option value="scheduled">Scheduled setup</option>
+                <option value="pending_report">Pending report</option>
+              </select>
+            </label>
+            <label>Guest opponent
+              <select id="guest-control">
+                <option value="show">Show guest link</option>
+                <option value="hide">Hide guest link</option>
+              </select>
+            </label>
+            <label>Tips enabled
+              <select id="tips-control">
+                <option value="show">On</option>
+                <option value="hide">Off</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Visual direction</h2>
+          <div class="field-grid">
+            <label>Court background
+              <input type="color" id="court-color" value="#1a472a" />
+            </label>
+            <label>Accent
+              <input type="color" id="accent-color" value="#ffdc60" />
+            </label>
+            <label>Phone width
+              <input type="range" id="phone-width" min="320" max="430" value="390" />
+            </label>
+            <label>Density
+              <select id="density-control">
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+                <option value="spacious">Spacious</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Feedback to implement</h2>
+          <label>Notes
+            <textarea id="feedback-notes" placeholder="Example: Make score buttons taller, move LIVE above player names, use a brighter yellow for active server…"></textarea>
+          </label>
+          <div class="control-actions" style="margin-top: 12px">
+            <button class="action-btn" id="copy-feedback" type="button">Copy feedback JSON</button>
+            <button class="action-btn secondary" id="reset-preview" type="button">Reset</button>
+          </div>
+          <pre class="output" id="feedback-output" aria-live="polite"></pre>
+        </section>
+      </aside>
+    </main>
+
+    <script>
+      const defaults = {
+        playerOne: 'Alex Rivera',
+        playerTwo: 'Jamie Chen',
+        setsScore: '1 – 0',
+        scoreMain: '6-4, 3-2',
+        gameScore: '40 – 30',
+        serviceSide: 'deuce court · Set 22:14 · Match 1:04:33',
+        server: 'playerOne',
+        status: 'in_progress',
+        guest: 'show',
+        tips: 'show',
+        courtColor: '#1a472a',
+        accentColor: '#ffdc60',
+        phoneWidth: '390',
+        density: 'comfortable',
+        notes: '',
+      };
+
+      const controls = document.querySelectorAll('[data-control]');
+      const preview = (name) => document.querySelectorAll(`[data-preview="${name}"]`);
+      const serverControl = document.querySelector('#server-control');
+      const statusControl = document.querySelector('#status-control');
+      const guestControl = document.querySelector('#guest-control');
+      const tipsControl = document.querySelector('#tips-control');
+      const courtColor = document.querySelector('#court-color');
+      const accentColor = document.querySelector('#accent-color');
+      const phoneWidth = document.querySelector('#phone-width');
+      const densityControl = document.querySelector('#density-control');
+      const feedbackNotes = document.querySelector('#feedback-notes');
+      const feedbackOutput = document.querySelector('#feedback-output');
+      const root = document.documentElement;
+
+      function getState() {
+        const values = Object.fromEntries(
+          Array.from(controls).map((control) => [control.dataset.control, control.value]),
+        );
+        return {
+          ...values,
+          server: serverControl.value,
+          status: statusControl.value,
+          guestOpponentSection: guestControl.value,
+          tips: tipsControl.value,
+          colors: {
+            court: courtColor.value,
+            accent: accentColor.value,
+          },
+          layout: {
+            phoneWidth: Number(phoneWidth.value),
+            density: densityControl.value,
+          },
+          notes: feedbackNotes.value.trim(),
+          sourceScreen: 'apps/mobile/app/match/[id].tsx',
+        };
+      }
+
+      function updateOutput() {
+        feedbackOutput.textContent = JSON.stringify(getState(), null, 2);
+      }
+
+      function applyDensity(value) {
+        const settings = {
+          compact: { content: '18px', button: '20px', radius: '13px' },
+          comfortable: { content: '24px', button: '28px', radius: '16px' },
+          spacious: { content: '30px', button: '34px', radius: '20px' },
+        }[value];
+        root.style.setProperty('--content-pad', settings.content);
+        root.style.setProperty('--button-pad', settings.button);
+        root.style.setProperty('--radius', settings.radius);
+      }
+
+      function render() {
+        controls.forEach((control) => {
+          preview(control.dataset.control).forEach((target) => {
+            target.textContent = control.value;
+          });
+        });
+
+        const playerOne = document.querySelector('[data-control="playerOne"]').value;
+        const playerTwo = document.querySelector('[data-control="playerTwo"]').value;
+        preview('p1Button').forEach((target) => {
+          target.textContent = '';
+          target.append(document.createTextNode(playerOne), document.createElement('br'), document.createTextNode('Point'));
+        });
+        preview('p2Button').forEach((target) => {
+          target.textContent = '';
+          target.append(document.createTextNode(playerTwo), document.createElement('br'), document.createTextNode('Point'));
+        });
+        preview('serverP1').forEach((target) => (target.textContent = playerOne));
+        preview('serverP2').forEach((target) => (target.textContent = playerTwo));
+        const serverName = serverControl.value === 'playerOne' ? playerOne : playerTwo;
+        const isInProgress = statusControl.value === 'in_progress';
+        preview('serverLabel').forEach((target) => {
+          target.textContent = `● ${serverName} Serves`;
+          target.style.display = isInProgress ? 'block' : 'none';
+        });
+        preview('serviceSide').forEach((target) => (target.style.display = isInProgress ? 'block' : 'none'));
+
+        const isScheduled = statusControl.value === 'scheduled';
+        const isPending = statusControl.value === 'pending_report';
+        document.querySelector('#server-select').classList.toggle('active', isScheduled);
+        document.querySelector('#in-progress-controls').style.display = isScheduled || isPending ? 'none' : 'block';
+        document.querySelector('.live-badge').style.display = statusControl.value === 'in_progress' ? 'block' : 'none';
+        document.querySelector('#post-match-card').classList.toggle('active', isPending);
+        preview('postMatchCopy').forEach((target) => {
+          target.textContent = `Previewing final score report for ${document.querySelector('[data-control="scoreMain"]').value}.`;
+        });
+
+        document.querySelector('#guest-section').style.display = guestControl.value === 'show' ? 'block' : 'none';
+        document.querySelector('#tips-toggle').checked = tipsControl.value === 'show';
+        root.style.setProperty('--court', courtColor.value);
+        root.style.setProperty('--accent', accentColor.value);
+        root.style.setProperty('--phone-width', `${phoneWidth.value}px`);
+        applyDensity(densityControl.value);
+        updateOutput();
+      }
+
+      function reset() {
+        controls.forEach((control) => {
+          control.value = defaults[control.dataset.control];
+        });
+        serverControl.value = defaults.server;
+        statusControl.value = defaults.status;
+        guestControl.value = defaults.guest;
+        tipsControl.value = defaults.tips;
+        courtColor.value = defaults.courtColor;
+        accentColor.value = defaults.accentColor;
+        phoneWidth.value = defaults.phoneWidth;
+        densityControl.value = defaults.density;
+        feedbackNotes.value = defaults.notes;
+        render();
+      }
+
+      document.querySelectorAll('input, select, textarea').forEach((el) => {
+        el.addEventListener('input', render);
+        el.addEventListener('change', render);
+      });
+
+      document.querySelector('#copy-feedback').addEventListener('click', async () => {
+        updateOutput();
+        try {
+          await navigator.clipboard.writeText(feedbackOutput.textContent);
+          document.querySelector('#copy-feedback').textContent = 'Copied!';
+          setTimeout(() => (document.querySelector('#copy-feedback').textContent = 'Copy feedback JSON'), 1200);
+        } catch {
+          feedbackOutput.focus();
+        }
+      });
+
+      document.querySelector('#reset-preview').addEventListener('click', reset);
+      render();
+    </script>
+  </body>
+</html>
