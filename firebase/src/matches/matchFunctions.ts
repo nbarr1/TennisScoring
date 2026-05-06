@@ -319,7 +319,7 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
   }
 
   const { matchId, scorer } = (request.data ?? {}) as ScoreMatchPointInput;
-  const safeMatchId = matchId?.trim();
+  const safeMatchId = typeof matchId === 'string' ? matchId.trim() : undefined;
   if (!safeMatchId || (scorer !== 'player1' && scorer !== 'player2')) {
     throw new functions.https.HttpsError(
       'invalid-argument',
