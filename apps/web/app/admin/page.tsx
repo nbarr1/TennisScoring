@@ -195,7 +195,7 @@ export default function AdminPage(): React.JSX.Element {
     setMerging(true);
     setError('');
     try {
-      const updated = await mergeDivisionPlayerRecords(
+      const updatedMatches = await mergeDivisionPlayerRecords(
         division.id,
         needsMergeForUserId,
         {
@@ -205,7 +205,7 @@ export default function AdminPage(): React.JSX.Element {
         },
       );
       setInviteMessage(
-        `Linked records. Updated ${updated.updatedMatches} historical match${updated.updatedMatches === 1 ? '' : 'es'} and refreshed rankings.`,
+        `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? '' : 'es'} and refreshed rankings.`,
       );
       setLastLinkAction({
         sourceUserId: mergeSourceUserId || undefined,
