@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { computeRankings, extractMatchTotals } from '@tennis/shared';
+import { applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
 import type { Match, HeadToHead, ReportSubmission } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
@@ -221,7 +221,7 @@ async function notifyMatchProposalCancelled(
       title: 'Match Proposal Cancelled',
       body: 'Your match proposal was cancelled.',
     },
-    data: { type: 'match_declined', matchId },
+    data: { type: 'match_proposal_cancelled', matchId },
     android: { priority: 'high' },
     apns: { payload: { aps: { sound: 'default', badge: 1 } } },
   });
@@ -306,6 +306,80 @@ async function notifyLeaderOfDispute(
     'reportSubmission.leaderNotifiedAt': Date.now(),
   });
 }
+
+
+type ScoreMatchPointInput = {
+  matchId?: string;
+  scorer?: 'player1' | 'player2';
+};
+
+export const scoreMatchPoint = functions.https.onCall(async (request) => {
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+
+  const { matchId, scorer } = (request.data ?? {}) as ScoreMatchPointInput;
+  const safeMatchId = matchId?.trim();
+  if (!safeMatchId || (scorer !== 'player1' && scorer !== 'player2')) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'matchId and scorer are required',
+    );
+  }
+
+  const db = getFirestore();
+  const matchRef = db.collection('matches').doc(safeMatchId);
+  let response: { nextScore: Match['liveScore']; matchWinner?: 'player1' | 'player2'; tips: string[] } | null = null;
+
+  await db.runTransaction(async (tx) => {
+    const matchSnap = await tx.get(matchRef);
+    if (!matchSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Match not found');
+    }
+
+    const match = matchSnap.data() as Match;
+    const isParticipant =
+      request.auth!.uid === match.player1Id || request.auth!.uid === match.player2Id;
+    if (!isParticipant) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Only match participants can score this match',
+      );
+    }
+    if (match.status !== 'scheduled' && match.status !== 'in_progress') {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Only scheduled or in-progress matches can be scored',
+      );
+    }
+
+    const result = applyPoint(match.liveScore, scorer, match.format);
+    const updates: Partial<Match> = {
+      liveScore: result.nextScore,
+      undoSnapshot: {
+        liveScore: match.liveScore,
+        status: match.status,
+        ...(match.winner !== undefined && { winner: match.winner }),
+        ...(match.completedAt !== undefined && { completedAt: match.completedAt }),
+      },
+    };
+
+    if (result.matchWinner) {
+      updates.status = 'pending_report';
+      updates.winner = result.matchWinner;
+      updates.completedAt = Date.now();
+    }
+
+    tx.update(matchRef, updates);
+    response = {
+      nextScore: result.nextScore,
+      matchWinner: result.matchWinner,
+      tips: result.tips,
+    };
+  });
+
+  return response;
+});
 
 export async function recalculateRankings(
   divisionId: string,

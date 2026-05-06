@@ -1,6 +1,6 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
 import { recalculateRankings } from '../matches/matchFunctions';
@@ -295,23 +295,6 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
   return { success: true, userId };
 });
 
-
-export const addDivisionMemberPlaceholderHttp = onRequest({ cors: true }, async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
-
-  res.status(200).json({ message: 'Success' });
-});
 
 export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
   try {

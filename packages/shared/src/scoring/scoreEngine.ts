@@ -98,8 +98,8 @@ function completeTiebreak(
     tips.push('service_change');
   }
 
-  // Alternate server every 2 points (start of tiebreak, then every 2)
-  if (total > 0 && total % 2 === 0) {
+  // Tiebreak service order: one opening point, then alternating two-point blocks.
+  if (total > 0 && total % 2 === 1) {
     next.server = oppositePlayer(next.server);
     next.serviceSide = 'deuce';
   } else if (total > 0) {
@@ -108,8 +108,14 @@ function completeTiebreak(
 
   const winner = resolveTiebreakWinner(tb.player1Points, tb.player2Points);
   if (winner) {
-    next.sets[next.currentSet].tiebreak = { ...tb };
-    next.sets[next.currentSet].winner = winner;
+    const currentSet = next.sets[next.currentSet];
+    if (winner === 'player1') {
+      currentSet.player1Games = Math.max(currentSet.player1Games, currentSet.player2Games + 1);
+    } else {
+      currentSet.player2Games = Math.max(currentSet.player2Games, currentSet.player1Games + 1);
+    }
+    currentSet.tiebreak = { ...tb };
+    currentSet.winner = winner;
     return { updatedScore: next, tips, setWinner: winner };
   }
 
@@ -229,9 +235,11 @@ export function applyPoint(
     curSet.player2Games === format.tiebreakAt &&
     (!isFinalSet || format.finalSetTiebreak)
   ) {
+    next.server = oppositePlayer(next.server);
+    next.serviceSide = 'deuce';
     next.isTiebreak = true;
     next.tiebreakScore = { player1Points: 0, player2Points: 0 };
-    tips.push('tiebreak_start');
+    tips.push('service_change', 'tiebreak_start');
     return { nextScore: next, tips };
   }
 

@@ -1,5 +1,6 @@
 export {
   onMatchUpdate,
+  scoreMatchPoint,
   resolveDisputedReport,
   recalculateDivisionRankings,
   repairAllDivisionRankings,
@@ -14,7 +15,6 @@ export {
   joinDivisionByCode,
   addPlayerToDivisionByEmail,
   addDivisionMemberPlaceholder,
-  addDivisionMemberPlaceholderHttp,
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,
 } from './divisions/divisionFunctions';

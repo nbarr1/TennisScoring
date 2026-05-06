@@ -20,6 +20,7 @@ import {
 } from '@tennis/shared';
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const NOTIFICATION_OPT_IN_KEY = 'tennis-notifications-opt-in';
 
 export default function ProfilePage(): React.JSX.Element {
   const { firebaseUser, loading: authLoading } = useAuthUser();
@@ -116,6 +117,23 @@ export default function ProfilePage(): React.JSX.Element {
   }
   function removeSlot(idx: number) {
     setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
+  }
+
+
+  async function handleEnableNotifications() {
+    setError('');
+    if (!('Notification' in window)) {
+      setError('Browser notifications are not supported on this device.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setError('Notifications were not enabled. You can retry from browser settings.');
+      return;
+    }
+    window.localStorage.setItem(NOTIFICATION_OPT_IN_KEY, 'true');
+    window.dispatchEvent(new Event('tennis-notifications-opt-in'));
+    setSavedAt(Date.now());
   }
 
   async function handleSave() {
@@ -323,6 +341,13 @@ export default function ProfilePage(): React.JSX.Element {
             onChange={setTipsEnabled}
             label="Show in-match tips during live scoring"
           />
+          <p style={styles.helper}>
+            Enable browser notifications to receive match proposals, reports,
+            and messages on this device.
+          </p>
+          <button type="button" style={styles.secondaryBtn} onClick={handleEnableNotifications}>
+            Enable browser notifications
+          </button>
         </div>
 
         {error && <div style={styles.error}>{error}</div>}
@@ -447,6 +472,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   checkbox: { width: 16, height: 16, accentColor: '#1a472a' },
   actions: { display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 },
+  secondaryBtn: { background: '#f0f5ef', color: 'var(--green-dark)', border: 'none', borderRadius: 10, padding: '12px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 12 },
   saveBtn: {
     background: 'var(--green-dark)',
     color: '#fff',

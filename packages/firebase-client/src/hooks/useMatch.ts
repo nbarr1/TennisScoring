@@ -17,7 +17,6 @@ import type {
   SetScore,
 } from '@tennis/shared';
 import {
-  applyPoint,
   DEFAULT_FORMAT as defaultFormat,
   createInitialScore,
   EMPTY_STATS,
@@ -318,36 +317,19 @@ export async function startMatch(
 
 export async function scorePoint(
   matchId: string,
-  match: Match,
+  _match: Match,
   scorer: 'player1' | 'player2',
 ): Promise<{
   nextScore: LiveScore;
   matchWinner?: 'player1' | 'player2';
   tips: TipTrigger[];
 }> {
-  const result = applyPoint(match.liveScore, scorer, match.format);
-
-  const updates: Partial<Match> = {
-    liveScore: result.nextScore,
-    undoSnapshot: {
-      liveScore: match.liveScore,
-      status: match.status,
-      ...(match.winner !== undefined && { winner: match.winner }),
-    },
-  };
-
-  if (result.matchWinner) {
-    updates.status = 'pending_report';
-    updates.winner = result.matchWinner;
-    updates.completedAt = Date.now();
-  }
-
-  await updateDoc(matchDoc(matchId), updates as Partial<Match>);
-  return {
-    nextScore: result.nextScore,
-    matchWinner: result.matchWinner,
-    tips: result.tips,
-  };
+  const callable = httpsCallable<
+    { matchId: string; scorer: 'player1' | 'player2' },
+    { nextScore: LiveScore; matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }
+  >(functions, 'scoreMatchPoint');
+  const result = await callable({ matchId, scorer });
+  return result.data;
 }
 
 export async function undoLastPoint(
@@ -359,8 +341,8 @@ export async function undoLastPoint(
   await updateDoc(matchDoc(matchId), {
     liveScore: snapshot.liveScore,
     status: snapshot.status,
-    winner: deleteField(),
-    completedAt: deleteField(),
+    winner: snapshot.winner ?? deleteField(),
+    completedAt: snapshot.completedAt ?? deleteField(),
     undoSnapshot: deleteField(),
   });
 }
