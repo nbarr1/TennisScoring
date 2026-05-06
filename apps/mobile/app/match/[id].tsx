@@ -33,6 +33,7 @@ import {
   searchDivisionPlayers,
 } from '@tennis/firebase-client';
 import {
+  EMPTY_STATS,
   formatScoreDisplay,
   formatGameScore,
   getTipsForTriggers,
@@ -107,6 +108,21 @@ function DisputeModal({
       </View>
     </Modal>
   );
+}
+
+function formatDuration(ms?: number): string {
+  if (ms === undefined) return '—';
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function statPercent(won: number, total: number): string {
+  if (total <= 0) return '—';
+  return `${Math.round((won / total) * 100)}%`;
 }
 
 function buildWearFeedback(
@@ -274,6 +290,8 @@ export default function MatchScreen() {
   const [showEditScore, setShowEditScore] = useState(false);
   const [editSets, setEditSets] = useState<{ p1: string; p2: string }[]>([]);
   const [editSaving, setEditSaving] = useState(false);
+  const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
+  const [clockTick, setClockTick] = useState(Date.now());
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState('');
@@ -610,6 +628,12 @@ export default function MatchScreen() {
   }
 
   useEffect(() => {
+    if (match?.status !== 'in_progress') return;
+    const timer = setInterval(() => setClockTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [match?.status]);
+
+  useEffect(() => {
     if (!match) return;
     const p1Name = match.player1Name ?? 'Player 1';
     const p2Name = match.player2Name ?? 'Player 2';
@@ -642,6 +666,8 @@ export default function MatchScreen() {
   const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
   const p1Name = match.player1Name ?? 'Player 1';
   const p2Name = match.player2Name ?? 'Player 2';
+  const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
+  const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
   const canEditScore =
     canManage &&
     (match.status === 'pending_report' || match.status === 'completed');
@@ -649,6 +675,15 @@ export default function MatchScreen() {
     match.liveScore.server === 'player1'
       ? `● ${p1Name} Serves`
       : `● ${p2Name} Serves`;
+  const elapsedMs =
+    match.matchDurationMs ??
+    (match.startedAt && match.status === 'in_progress'
+      ? clockTick - match.startedAt
+      : undefined);
+  const currentSetElapsedMs =
+    match.status === 'in_progress' && match.currentSetStartedAt
+      ? clockTick - match.currentSetStartedAt
+      : match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -664,7 +699,7 @@ export default function MatchScreen() {
           <>
             <Text style={styles.serverLabel}>{serverLabel}</Text>
             <Text style={styles.serviceSide}>
-              {match.liveScore.serviceSide} court
+              {match.liveScore.serviceSide} court · Set {formatDuration(currentSetElapsedMs)} · Match {formatDuration(elapsedMs)}
             </Text>
           </>
         )}
@@ -698,16 +733,28 @@ export default function MatchScreen() {
       {isParticipant && match.status === 'scheduled' && (
         <View style={styles.serverSelectSection}>
           <Text style={styles.serverSelectTitle}>Who is serving first?</Text>
+          <View style={styles.statToggleRow}>
+            <View style={styles.statToggleCopy}>
+              <Text style={styles.statToggleTitle}>Track advanced stats?</Text>
+              <Text style={styles.statToggleHint}>Adds aces, double faults, winners, and unforced errors to the report. Basic stats and match timing are always tracked.</Text>
+            </View>
+            <Switch
+              value={advancedStatsEnabled}
+              onValueChange={setAdvancedStatsEnabled}
+              trackColor={{ true: '#ffdc60', false: '#ccc' }}
+              thumbColor={advancedStatsEnabled ? '#1a472a' : '#f4f3f4'}
+            />
+          </View>
           <View style={styles.serverSelectBtns}>
             <TouchableOpacity
               style={styles.serverSelectBtn}
-              onPress={() => startMatch(id!, 'player1')}
+              onPress={() => startMatch(id!, 'player1', advancedStatsEnabled, match.liveScore)}
             >
               <Text style={styles.serverSelectBtnText}>{p1Name}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.serverSelectBtn}
-              onPress={() => startMatch(id!, 'player2')}
+              onPress={() => startMatch(id!, 'player2', advancedStatsEnabled, match.liveScore)}
             >
               <Text style={styles.serverSelectBtnText}>{p2Name}</Text>
             </TouchableOpacity>
@@ -798,6 +845,7 @@ export default function MatchScreen() {
               {match.winner === 'player1' ? p1Name : p2Name} wins!
             </Text>
             <Text style={styles.reportScore}>{scoreDisplay}</Text>
+            <Text style={styles.reportHint}>Match time: {formatDuration(elapsedMs)}</Text>
             <Text style={styles.reportHint}>
               No opponent account — tap below to finalize the result instantly.
             </Text>
@@ -945,41 +993,41 @@ export default function MatchScreen() {
             </View>
             {[
               {
-                label: 'Aces',
-                p1: match.stats.player1.aces,
-                p2: match.stats.player2.aces,
-              },
-              {
-                label: 'Double Faults',
-                p1: match.stats.player1.doubleFaults,
-                p2: match.stats.player2.doubleFaults,
-              },
-              {
-                label: 'Winners',
-                p1: match.stats.player1.winners,
-                p2: match.stats.player2.winners,
-              },
-              {
-                label: 'Unforced Errors',
-                p1: match.stats.player1.unforcedErrors,
-                p2: match.stats.player2.unforcedErrors,
+                label: 'Receiving Points Won',
+                p1: statPercent(p1Stats.receivingPointsWon, p1Stats.receivingPointsTotal),
+                p2: statPercent(p2Stats.receivingPointsWon, p2Stats.receivingPointsTotal),
               },
               {
                 label: 'Break Pts Won',
-                p1: match.stats.player1.breakPointsWon,
-                p2: match.stats.player2.breakPointsWon,
+                p1: `${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`,
+                p2: `${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`,
               },
+              ...(match.advancedStatsEnabled
+                ? [
+                    { label: 'Aces', p1: String(p1Stats.aces), p2: String(p2Stats.aces) },
+                    { label: 'Double Faults', p1: String(p1Stats.doubleFaults), p2: String(p2Stats.doubleFaults) },
+                    { label: 'Winners', p1: String(p1Stats.winners), p2: String(p2Stats.winners) },
+                    { label: 'Unforced Errors', p1: String(p1Stats.unforcedErrors), p2: String(p2Stats.unforcedErrors) },
+                  ]
+                : []),
             ].map(({ label, p1, p2 }) => (
               <View key={label} style={statsStyles.row}>
                 <Text style={statsStyles.label}>{label}</Text>
-                <Text style={[statsStyles.val, p1 > p2 && statsStyles.valBold]}>
-                  {p1}
-                </Text>
-                <Text style={[statsStyles.val, p2 > p1 && statsStyles.valBold]}>
-                  {p2}
-                </Text>
+                <Text style={statsStyles.val}>{p1}</Text>
+                <Text style={statsStyles.val}>{p2}</Text>
               </View>
             ))}
+            <View style={statsStyles.durationBlock}>
+              <Text style={statsStyles.durationTitle}>Elapsed Time</Text>
+              {match.liveScore.sets
+                .filter((set) => set.winner || set.setNumber === match.liveScore.currentSet)
+                .map((set) => (
+                  <Text key={set.setNumber} style={statsStyles.durationText}>
+                    Set {set.setNumber + 1}: {formatDuration(set.durationMs ?? (set.setNumber === match.liveScore.currentSet ? currentSetElapsedMs : undefined))}
+                  </Text>
+                ))}
+              <Text style={statsStyles.durationText}>Match: {formatDuration(elapsedMs)}</Text>
+            </View>
           </View>
         )}
 
@@ -1257,6 +1305,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tipsLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  statToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  statToggleCopy: { flex: 1, gap: 4 },
+  statToggleTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  statToggleHint: { color: 'rgba(255,255,255,0.72)', fontSize: 12, lineHeight: 16 },
 
   // Post-match report section
   reportSection: {
@@ -1568,6 +1629,9 @@ const statsStyles = StyleSheet.create({
     textAlign: 'right',
   },
   valBold: { fontWeight: '800', color: '#ffdc60' },
+  durationBlock: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)' },
+  durationTitle: { color: '#ffdc60', fontWeight: '700', fontSize: 13, marginBottom: 6 },
+  durationText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, lineHeight: 20 },
 });
 
 const editScoreStyles = StyleSheet.create({

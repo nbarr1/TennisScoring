@@ -32,6 +32,9 @@ export interface SetScore {
   player2Games: number;
   tiebreak?: TiebreakScore;
   winner?: Player;
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
 }
 
 export interface GameScore {
@@ -82,6 +85,10 @@ export interface PlayerMatchStats {
   firstServeTotal: number;
   winners: number;
   unforcedErrors: number;
+  servicePointsWon: number;
+  servicePointsTotal: number;
+  receivingPointsWon: number;
+  receivingPointsTotal: number;
   breakPointsWon: number;
   breakPointsFaced: number;
 }
@@ -98,6 +105,10 @@ export const EMPTY_STATS: PlayerMatchStats = {
   firstServeTotal: 0,
   winners: 0,
   unforcedErrors: 0,
+  servicePointsWon: 0,
+  servicePointsTotal: 0,
+  receivingPointsWon: 0,
+  receivingPointsTotal: 0,
   breakPointsWon: 0,
   breakPointsFaced: 0,
 };
@@ -107,6 +118,9 @@ export interface UndoSnapshot {
   status: MatchStatus;
   winner?: Player;
   completedAt?: number;
+  stats: MatchStats;
+  currentSetStartedAt?: number;
+  matchDurationMs?: number;
 }
 
 export interface Match {
@@ -122,6 +136,9 @@ export interface Match {
   status: MatchStatus;
   liveScore: LiveScore;
   stats: MatchStats;
+  advancedStatsEnabled?: boolean;
+  currentSetStartedAt?: number;
+  matchDurationMs?: number;
   reportSubmission?: ReportSubmission;
   winner?: Player;
   reportUrl?: string;

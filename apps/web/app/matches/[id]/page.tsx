@@ -8,7 +8,7 @@ import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch,
 } from '@tennis/firebase-client';
-import { formatScoreDisplay, formatGameScore } from '@tennis/shared';
+import { EMPTY_STATS, formatScoreDisplay, formatGameScore } from '@tennis/shared';
 import Link from 'next/link';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
@@ -39,6 +39,17 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
   const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
+  const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
+  const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
+  const statPercent = (won: number, total: number) => total > 0 ? `${Math.round((won / total) * 100)}%` : '—';
+  const formatDuration = (ms?: number) => {
+    if (ms === undefined) return '—';
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
   const statusLabel = match.status === 'in_progress' ? '● LIVE'
     : match.status === 'completed' ? 'Final'
     : match.status === 'pending_report' ? 'Pending Report'
@@ -224,11 +235,21 @@ export default function MatchPage({ params }: { params: { id: string } }): React
             <h2 style={styles.sectionTitle}>Match Statistics</h2>
             <div style={styles.statsTable}>
               <StatRow label="" v1={p1Name} v2={p2Name} header />
-              <StatRow label="Aces" v1={String(match.stats.player1.aces)} v2={String(match.stats.player2.aces)} />
-              <StatRow label="Double Faults" v1={String(match.stats.player1.doubleFaults)} v2={String(match.stats.player2.doubleFaults)} />
-              <StatRow label="Winners" v1={String(match.stats.player1.winners)} v2={String(match.stats.player2.winners)} />
-              <StatRow label="Unforced Errors" v1={String(match.stats.player1.unforcedErrors)} v2={String(match.stats.player2.unforcedErrors)} />
-              <StatRow label="Break Points Won" v1={String(match.stats.player1.breakPointsWon)} v2={String(match.stats.player2.breakPointsWon)} />
+              <StatRow label="Receiving Points Won" v1={statPercent(p1Stats.receivingPointsWon, p1Stats.receivingPointsTotal)} v2={statPercent(p2Stats.receivingPointsWon, p2Stats.receivingPointsTotal)} />
+              <StatRow label="Break Points Won" v1={`${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`} v2={`${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`} />
+              {match.advancedStatsEnabled && <>
+                <StatRow label="Aces" v1={String(p1Stats.aces)} v2={String(p2Stats.aces)} />
+                <StatRow label="Double Faults" v1={String(p1Stats.doubleFaults)} v2={String(p2Stats.doubleFaults)} />
+                <StatRow label="Winners" v1={String(p1Stats.winners)} v2={String(p2Stats.winners)} />
+                <StatRow label="Unforced Errors" v1={String(p1Stats.unforcedErrors)} v2={String(p2Stats.unforcedErrors)} />
+              </>}
+            </div>
+            <div style={styles.statsTable}>
+              <StatRow label="Elapsed Time" v1="" v2="" header />
+              {match.liveScore.sets.filter((set) => set.winner).map((set) => (
+                <StatRow key={set.setNumber} label={`Set ${set.setNumber + 1}`} v1={formatDuration(set.durationMs)} v2="" />
+              ))}
+              <StatRow label="Match" v1={formatDuration(match.matchDurationMs)} v2="" />
             </div>
 
           </div>
