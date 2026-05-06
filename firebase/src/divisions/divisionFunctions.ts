@@ -3,6 +3,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
+import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
@@ -436,6 +437,9 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
       matchUpdates.slice(i, i + 400).forEach(({ ref, updateData }) => batch.update(ref, updateData));
       await batch.commit();
     }
+    if (matchUpdates.length > 0) {
+      await recalculateRankings(safeDivisionId);
+    }
 
     return {
       success: true,
@@ -647,6 +651,9 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
 
   await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
+  if (updatedMatches > 0) {
+    await recalculateRankings(safeDivisionId);
+  }
 
   return { success: true, updatedMatches };
 });

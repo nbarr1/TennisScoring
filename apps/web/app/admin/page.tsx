@@ -33,6 +33,7 @@ export default function AdminPage(): React.JSX.Element {
   const [mergeSourceUserId, setMergeSourceUserId] = useState('');
   const [merging, setMerging] = useState(false);
   const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
+  const [candidateMatchRefreshKey, setCandidateMatchRefreshKey] = useState(0);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [editEmail, setEditEmail] = useState('');
   const [newDivisionName, setNewDivisionName] = useState('');
@@ -194,7 +195,7 @@ export default function AdminPage(): React.JSX.Element {
     setMerging(true);
     setError('');
     try {
-      const updated = await mergeDivisionPlayerRecords(
+      const updatedMatches = await mergeDivisionPlayerRecords(
         division.id,
         needsMergeForUserId,
         {
@@ -203,13 +204,16 @@ export default function AdminPage(): React.JSX.Element {
           targetEmail: editEmail.trim() || undefined,
         },
       );
-      setInviteMessage(`Linked records. Updated ${updated} historical matches.`);
+      setInviteMessage(
+        `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? '' : 'es'} and refreshed rankings.`,
+      );
       setLastLinkAction({
         sourceUserId: mergeSourceUserId || undefined,
         targetUserId: needsMergeForUserId,
         matchIds: [...selectedMatchIds],
       });
-      setNeedsMergeForUserId(null);
+      setCandidateMatchRefreshKey((key) => key + 1);
+      setSelectedMatchIds([]);
       setMergeSourceUserId('');
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
@@ -291,7 +295,7 @@ export default function AdminPage(): React.JSX.Element {
       setSelectedMatchIds([]);
     }
     loadCandidateMatches();
-  }, [division?.id, needsMergeForUserId]);
+  }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
 
   async function repairRankings() {
     if (!division) return;
