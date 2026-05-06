@@ -12,6 +12,7 @@ import {
   proposeMatch,
   acceptMatchProposal,
   declineMatchProposal,
+  useActiveDivisionId,
   useAuthUser,
   useUserProfile,
 } from '@tennis/firebase-client';
@@ -133,7 +134,10 @@ function stop(handler: () => void) {
 export default function MatchesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const { profile } = useUserProfile(firebaseUser?.uid ?? null);
-  const divisionId = profile?.divisionId ?? null;
+  const { divisionId, loading: divisionLoading } = useActiveDivisionId(
+    firebaseUser?.uid ?? null,
+    profile?.divisionId,
+  );
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRecord, setShowRecord] = useState(false);
@@ -145,16 +149,24 @@ export default function MatchesPage(): React.JSX.Element {
       setLoading(false);
       return;
     }
+    setLoading(true);
     const q = divisionMatchesQuery(divisionId);
-    return onSnapshot(q, (snap) => {
-      setMatches(
-        snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Match, 'id'>),
-        })),
-      );
-      setLoading(false);
-    });
+    return onSnapshot(
+      q,
+      (snap) => {
+        setMatches(
+          snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<Match, 'id'>),
+          })),
+        );
+        setLoading(false);
+      },
+      () => {
+        setMatches([]);
+        setLoading(false);
+      },
+    );
   }, [divisionId]);
 
   const uid = firebaseUser?.uid;
@@ -200,7 +212,7 @@ export default function MatchesPage(): React.JSX.Element {
       <main style={styles.main}>
         <div style={styles.titleRow}>
           <h1 style={styles.pageTitle}>Matches</h1>
-          {profile?.divisionId && firebaseUser && (
+          {divisionId && firebaseUser && (
             <div style={styles.titleActions}>
               <button
                 style={styles.proposeBtn}
@@ -218,11 +230,11 @@ export default function MatchesPage(): React.JSX.Element {
           )}
         </div>
 
-        {profile && !profile.divisionId ? (
+        {!divisionLoading && !divisionId ? (
           <div style={styles.emptyCard}>
             Join or create a division to see and record matches.
           </div>
-        ) : loading ? (
+        ) : loading || divisionLoading ? (
           <div style={styles.placeholder}>Loading matches…</div>
         ) : matches.length === 0 ? (
           <div style={styles.emptyCard}>
@@ -321,18 +333,18 @@ export default function MatchesPage(): React.JSX.Element {
           </>
         )}
 
-        {showRecord && firebaseUser && profile?.divisionId && (
+        {showRecord && firebaseUser && profile && divisionId && (
           <RecordPastMatchModal
             currentUser={profile}
-            divisionId={profile.divisionId}
+            divisionId={divisionId}
             onClose={() => setShowRecord(false)}
           />
         )}
 
-        {showPropose && firebaseUser && profile?.divisionId && (
+        {showPropose && firebaseUser && profile && divisionId && (
           <ProposeMatchModal
             currentUser={profile}
-            divisionId={profile.divisionId}
+            divisionId={divisionId}
             onClose={() => setShowPropose(false)}
           />
         )}

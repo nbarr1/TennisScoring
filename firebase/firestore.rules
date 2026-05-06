@@ -23,6 +23,15 @@ service cloud.firestore {
       return isAuth() && getUserData().divisionId == divisionId;
     }
 
+    function isUserInDivisionRoster(divisionId, userId) {
+      let division = get(/databases/$(database)/documents/divisions/$(divisionId)).data;
+      return userId in division.playerIds || userId in division.leaderIds;
+    }
+
+    function isDivisionRosterMember(divisionId) {
+      return isAuth() && isUserInDivisionRoster(divisionId, request.auth.uid);
+    }
+
     function isLeader(divisionId) {
       return isAuth() &&
         request.auth.uid in get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderIds;
@@ -96,7 +105,11 @@ service cloud.firestore {
 
       // Rankings sub-collection (written by Cloud Functions)
       match /rankings/{userId} {
-        allow read: if isAuth() && (isAdmin() || isDivisionMember(divisionId));
+        allow read: if isAuth() && (
+          isAdmin() ||
+          isDivisionMember(divisionId) ||
+          isDivisionRosterMember(divisionId)
+        );
         allow write: if false; // Cloud Functions only
       }
     }
@@ -185,6 +198,7 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isAdmin() ||
         isDivisionMember(resource.data.divisionId) ||
+        isDivisionRosterMember(resource.data.divisionId) ||
         isMatchParticipant(resource.data) ||
         isLeader(resource.data.divisionId)
       );
@@ -192,7 +206,10 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(matchFields()) &&
         request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.player1Id == request.auth.uid &&
-        isDivisionMember(request.resource.data.divisionId) &&
+        (
+          isDivisionMember(request.resource.data.divisionId) ||
+          isDivisionRosterMember(request.resource.data.divisionId)
+        ) &&
         (
           (
             request.resource.data.get('player2IsGuest', false) == true &&
@@ -200,7 +217,10 @@ service cloud.firestore {
           ) ||
           (
             request.resource.data.playerIds == [request.auth.uid, request.resource.data.player2Id] &&
-            get(/databases/$(database)/documents/users/$(request.resource.data.player2Id)).data.divisionId == request.resource.data.divisionId
+            (
+              get(/databases/$(database)/documents/users/$(request.resource.data.player2Id)).data.divisionId == request.resource.data.divisionId ||
+              isUserInDivisionRoster(request.resource.data.divisionId, request.resource.data.player2Id)
+            )
           )
         );
       allow update: if isAdmin() || isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
@@ -220,7 +240,8 @@ service cloud.firestore {
     match /headToHead/{h2hId} {
       allow read: if isAuth() && (
         isAdmin() ||
-        isDivisionMember(resource.data.divisionId)
+        isDivisionMember(resource.data.divisionId) ||
+        isDivisionRosterMember(resource.data.divisionId)
       );
       allow write: if false; // Cloud Functions only
     }

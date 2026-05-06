@@ -1,8 +1,101 @@
-import { getDoc, getDocs, query, where } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, usersCol } from './collections';
+import { divisionDoc, divisionsCol, usersCol } from './collections';
 import { functions } from './config';
 import type { Division, User } from '@tennis/shared';
+
+export function useActiveDivisionId(
+  userId: string | null,
+  profileDivisionId?: string | null,
+): { divisionId: string | null; loading: boolean } {
+  const [divisionId, setDivisionId] = useState<string | null>(
+    profileDivisionId ?? null,
+  );
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userId) {
+      setDivisionId(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    let profileDivisionExists = false;
+    let profileReady = !profileDivisionId;
+    let leaderDivisionIds: string[] = [];
+    let playerDivisionIds: string[] = [];
+    let leadersReady = false;
+    let playersReady = false;
+
+    const syncDivisionId = () => {
+      if (!profileReady || !leadersReady || !playersReady) return;
+
+      const fallbackDivisionId =
+        leaderDivisionIds[0] ?? playerDivisionIds[0] ?? null;
+      setDivisionId(
+        profileDivisionId && profileDivisionExists
+          ? profileDivisionId
+          : fallbackDivisionId,
+      );
+      setLoading(false);
+    };
+
+    const unsubProfile = profileDivisionId
+      ? onSnapshot(
+          divisionDoc(profileDivisionId),
+          (snap) => {
+            profileDivisionExists = snap.exists();
+            profileReady = true;
+            syncDivisionId();
+          },
+          () => {
+            profileDivisionExists = false;
+            profileReady = true;
+            syncDivisionId();
+          },
+        )
+      : undefined;
+
+    const unsubLeaders = onSnapshot(
+      query(divisionsCol(), where('leaderIds', 'array-contains', userId)),
+      (snap) => {
+        leaderDivisionIds = snap.docs.map((docSnap) => docSnap.id);
+        leadersReady = true;
+        syncDivisionId();
+      },
+      () => {
+        leaderDivisionIds = [];
+        leadersReady = true;
+        syncDivisionId();
+      },
+    );
+
+    const unsubPlayers = onSnapshot(
+      query(divisionsCol(), where('playerIds', 'array-contains', userId)),
+      (snap) => {
+        playerDivisionIds = snap.docs.map((docSnap) => docSnap.id);
+        playersReady = true;
+        syncDivisionId();
+      },
+      () => {
+        playerDivisionIds = [];
+        playersReady = true;
+        syncDivisionId();
+      },
+    );
+
+    return () => {
+      unsubProfile?.();
+      unsubLeaders();
+      unsubPlayers();
+    };
+  }, [userId, profileDivisionId]);
+
+  return { divisionId, loading };
+}
 
 export async function createDivision(
   name: string,
