@@ -672,13 +672,32 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
 
   const db = getFirestore();
   const divisionSnap = await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
-  const playerIds = (divisionSnap.data()?.playerIds ?? []) as string[];
-  if (!playerIds.includes(safeUserId)) {
+  const divisionData = divisionSnap.data() ?? {};
+  const playerIds = (divisionData.playerIds ?? []) as string[];
+  const leaderIds = (divisionData.leaderIds ?? []) as string[];
+  const userSnap = await db.collection('users').doc(safeUserId).get();
+  const userDivisionId = userSnap.data()?.divisionId;
+  const isDivisionMember =
+    playerIds.includes(safeUserId) ||
+    leaderIds.includes(safeUserId) ||
+    userDivisionId === safeDivisionId;
+  if (!isDivisionMember) {
     throw new HttpsError('failed-precondition', 'User is not a member of this division.');
   }
-  await db.collection('users').doc(safeUserId).set(
-    { email: safeEmail, updatedAt: FieldValue.serverTimestamp() },
+
+  const batch = db.batch();
+  batch.set(
+    db.collection('users').doc(safeUserId),
+    { email: safeEmail, divisionId: safeDivisionId, updatedAt: FieldValue.serverTimestamp() },
     { merge: true },
   );
+  if (!playerIds.includes(safeUserId) && leaderIds.includes(safeUserId)) {
+    batch.set(
+      db.collection('divisions').doc(safeDivisionId),
+      { playerIds: FieldValue.arrayUnion(safeUserId), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  }
+  await batch.commit();
   return { success: true };
 });
