@@ -360,6 +360,14 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
       return typeof displayName === 'string' && normalizeName(displayName) === normalizeName(safeName);
     });
     if (exactNameMatch) {
+      await db.collection('divisions').doc(safeDivisionId).set(
+        {
+          playerIds: FieldValue.arrayUnion(exactNameMatch.id),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      await addUserToDivisionChannel(db, safeDivisionId, exactNameMatch.id);
       return { success: true, userId: exactNameMatch.id, createdPlaceholder: false };
     }
     const now = Date.now();
@@ -484,15 +492,19 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     sourceRole === 'admin' ||
     sourceRole === 'division_leader' ||
     (safeSourceUserId ? divisionLeaderIds.includes(safeSourceUserId) : false);
+  const targetIsDivisionMember =
+    divisionPlayerIds.includes(safeTargetUserId) || targetDivisionId === safeDivisionId;
   if (
     (safeSourceUserId && !divisionPlayerIds.includes(safeSourceUserId)) ||
-    !divisionPlayerIds.includes(safeTargetUserId) ||
-    (safeSourceUserId && sourceDivisionId !== safeDivisionId) ||
-    targetDivisionId !== safeDivisionId
+    (safeSourceUserId && !divisionPlayerIds.includes(safeTargetUserId)) ||
+    !targetIsDivisionMember ||
+    (safeSourceUserId && sourceDivisionId !== safeDivisionId)
   ) {
     throw new HttpsError(
       'failed-precondition',
-      'Both source and target users must already be active members of this division.',
+      safeSourceUserId
+        ? 'Both source and target users must already be active members of this division.'
+        : 'Target user must already belong to this division.',
     );
   }
   const targetDisplayName = targetSnap.data()?.displayName ?? null;
@@ -527,40 +539,67 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     writesInBatch = 0;
   };
 
+  let updatedMatches = 0;
   docsToUpdate.forEach((matchDoc) => {
     const data = matchDoc.data();
     const player1Name = typeof data.player1Name === 'string' ? data.player1Name : '';
     const player2Name = typeof data.player2Name === 'string' ? data.player2Name : '';
     const player1LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player1Name) === normalizedTargetDisplayName;
     const player2LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player2Name) === normalizedTargetDisplayName;
+    const existingPlayerIds = Array.isArray(data.playerIds)
+      ? (data.playerIds as string[]).filter((id) => typeof id === 'string' && id.trim() && id !== 'guest')
+      : [];
+    const attachedPlayerIds = new Set(existingPlayerIds);
+    const player1HasAttachedProfile = typeof data.player1Id === 'string' && data.player1Id !== 'guest' && attachedPlayerIds.has(data.player1Id);
+    const player2HasAttachedProfile = typeof data.player2Id === 'string' && data.player2Id !== 'guest' && attachedPlayerIds.has(data.player2Id);
+    if (!safeSourceUserId && (attachedPlayerIds.has(safeTargetUserId) || attachedPlayerIds.size >= 2)) {
+      return;
+    }
+
+    const shouldAttachPlayer1 = !safeSourceUserId && (
+      player1LooksLikeTarget || (!player1HasAttachedProfile && player2HasAttachedProfile)
+    );
+    const shouldAttachPlayer2 = !safeSourceUserId && (
+      player2LooksLikeTarget || (!player2HasAttachedProfile && player1HasAttachedProfile)
+    );
     const nextPlayer1Id = safeSourceUserId
       ? (data.player1Id === safeSourceUserId ? safeTargetUserId : data.player1Id)
-      : (player1LooksLikeTarget ? safeTargetUserId : data.player1Id);
+      : (shouldAttachPlayer1 ? safeTargetUserId : data.player1Id);
     const nextPlayer2Id = safeSourceUserId
       ? (data.player2Id === safeSourceUserId ? safeTargetUserId : data.player2Id)
-      : (player2LooksLikeTarget ? safeTargetUserId : data.player2Id);
+      : (shouldAttachPlayer2 ? safeTargetUserId : data.player2Id);
     const nextPlayerIds = Array.from(
       new Set(
-        ((data.playerIds as string[]) ?? []).map((id) => {
-          if (safeSourceUserId) return id === safeSourceUserId ? safeTargetUserId : id;
-          if (id === data.player1Id && player1LooksLikeTarget) return safeTargetUserId;
-          if (id === data.player2Id && player2LooksLikeTarget) return safeTargetUserId;
-          return id;
-        }),
+        [
+          ...((data.playerIds as string[]) ?? []).map((id) => {
+            if (safeSourceUserId) return id === safeSourceUserId ? safeTargetUserId : id;
+            if (id === data.player1Id && shouldAttachPlayer1) return safeTargetUserId;
+            if (id === data.player2Id && shouldAttachPlayer2) return safeTargetUserId;
+            return id;
+          }),
+          ...(!safeSourceUserId && (shouldAttachPlayer1 || shouldAttachPlayer2) ? [safeTargetUserId] : []),
+        ].filter((id) => typeof id === 'string' && id.trim() && id !== 'guest'),
       ),
     );
+    if (!safeSourceUserId && !shouldAttachPlayer1 && !shouldAttachPlayer2) {
+      return;
+    }
     const updateData: Record<string, unknown> = {
       player1Id: nextPlayer1Id,
       player2Id: nextPlayer2Id,
       playerIds: nextPlayerIds,
     };
-    if ((data.player1Id === safeSourceUserId || player1LooksLikeTarget) && targetDisplayName) {
+    if ((data.player1Id === safeSourceUserId || shouldAttachPlayer1) && targetDisplayName) {
       updateData.player1Name = targetDisplayName;
     }
-    if ((data.player2Id === safeSourceUserId || player2LooksLikeTarget) && targetDisplayName) {
+    if ((data.player2Id === safeSourceUserId || shouldAttachPlayer2) && targetDisplayName) {
       updateData.player2Name = targetDisplayName;
     }
+    if (shouldAttachPlayer2) {
+      updateData.player2IsGuest = false;
+    }
     batch.update(matchDoc.ref, updateData);
+    updatedMatches += 1;
     writesInBatch += 1;
     if (writesInBatch >= maxWritesPerBatch) {
       commitAndRotate();
@@ -570,7 +609,9 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   batch.set(
     db.collection('divisions').doc(safeDivisionId),
     {
-      ...(!safeSourceUserId || sourceIsPrivileged ? {} : { playerIds: FieldValue.arrayRemove(safeSourceUserId) }),
+      ...(safeSourceUserId
+        ? (!sourceIsPrivileged ? { playerIds: FieldValue.arrayRemove(safeSourceUserId) } : {})
+        : { playerIds: FieldValue.arrayUnion(safeTargetUserId) }),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -607,7 +648,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
 
-  return { success: true, updatedMatches: docsToUpdate.length };
+  return { success: true, updatedMatches };
 });
 
 export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {

@@ -10,6 +10,8 @@ import {
   userDoc,
   divisionDoc,
   matchesCol,
+  rankingsCol,
+  usersCol,
   createDivision as createDivisionShared,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
@@ -18,7 +20,7 @@ import {
   useAuthUser,
 } from '@tennis/firebase-client';
 import type { Division, User } from '@tennis/shared';
-import type { Match } from '@tennis/shared';
+import type { Match, PlayerRanking } from '@tennis/shared';
 import { query, where } from 'firebase/firestore';
 
 export default function AdminPage(): React.JSX.Element {
@@ -83,12 +85,45 @@ export default function AdminPage(): React.JSX.Element {
       }
 
       setDivision(div);
-      if (div?.playerIds.length) {
-        const profiles = await Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))));
+      if (div) {
+        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] = await Promise.all([
+          div.playerIds.length
+            ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
+            : Promise.resolve([]),
+          getDocs(query(usersCol(), where('divisionId', '==', div.id))),
+          getDocs(rankingsCol(div.id)),
+        ]);
+        const rankingFallbacks = rankingSnap.docs.map((d) => {
+          const data = d.data() as PlayerRanking;
+          return { ...data, userId: data.userId || d.id };
+        });
+        const byId = new Map<string, User>();
+        const addProfile = (id: string, data: Omit<User, 'id'>) => {
+          byId.set(id, { id, ...data });
+        };
+        divisionMemberProfiles.forEach((d) => {
+          if (d.exists()) addProfile(d.id, d.data() as Omit<User, 'id'>);
+        });
+        divisionProfileSnap.docs.forEach((d) => addProfile(d.id, d.data() as Omit<User, 'id'>));
+        rankingFallbacks.forEach((ranking) => {
+          if (byId.has(ranking.userId)) return;
+          byId.set(ranking.userId, {
+            id: ranking.userId,
+            displayName: ranking.displayName,
+            email: '',
+            contactPreferences: { allowEmail: false, allowSMS: false, allowInApp: true },
+            divisionId: div.id,
+            role: 'player',
+            fcmTokens: [],
+            tipsEnabled: true,
+            isRegistered: false,
+            inviteStatus: 'none',
+            createdAt: ranking.updatedAt ?? 0,
+            updatedAt: ranking.updatedAt ?? 0,
+          });
+        });
         setPlayers(
-          profiles
-            .filter((d) => d.exists())
-            .map((d) => ({ id: d.id, ...(d.data() as Omit<User, 'id'>) })),
+          [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)),
         );
       } else {
         setPlayers([]);
@@ -234,24 +269,29 @@ export default function AdminPage(): React.JSX.Element {
   }
   useEffect(() => {
     async function loadCandidateMatches() {
-      if (!division?.id || !mergeSourceUserId) {
+      if (!division?.id || !needsMergeForUserId) {
         setCandidateMatches([]);
         setSelectedMatchIds([]);
         return;
       }
-      const snap = await getDocs(
-        query(
-          matchesCol(),
-          where('divisionId', '==', division.id),
-          where('playerIds', 'array-contains', mergeSourceUserId),
-        ),
-      );
-      const matches = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }));
+      const snap = await getDocs(query(matchesCol(), where('divisionId', '==', division.id)));
+      const matches = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+        .filter((match) => {
+          if (match.status !== 'completed') return false;
+          const attachedPlayerIds = new Set(
+            (Array.isArray(match.playerIds) ? match.playerIds : []).filter(
+              (id) => id && id !== 'guest',
+            ),
+          );
+          return !attachedPlayerIds.has(needsMergeForUserId) && attachedPlayerIds.size < 2;
+        })
+        .sort((a, b) => (b.completedAt ?? b.createdAt ?? 0) - (a.completedAt ?? a.createdAt ?? 0));
       setCandidateMatches(matches);
-      setSelectedMatchIds(matches.map((m) => m.id));
+      setSelectedMatchIds([]);
     }
     loadCandidateMatches();
-  }, [division?.id, mergeSourceUserId]);
+  }, [division?.id, needsMergeForUserId]);
 
   async function repairRankings() {
     if (!division) return;
@@ -480,6 +520,8 @@ export default function AdminPage(): React.JSX.Element {
                             style={styles.btnSecondary}
                             onClick={() => {
                               setNeedsMergeForUserId(p.id);
+                              setMergeSourceUserId('');
+                              setSelectedMatchIds([]);
                               setEditEmail(p.email ?? '');
                               setExpandedPlayerId((current) => (current === p.id ? null : p.id));
                             }}
@@ -501,26 +543,15 @@ export default function AdminPage(): React.JSX.Element {
                                 placeholder="Update player email (optional)"
                                 type="email"
                               />
-                              <select
-                                style={styles.input}
-                                value={mergeSourceUserId}
-                                onChange={(e) => setMergeSourceUserId(e.target.value)}
-                              >
-                                <option value="">Source player (optional)</option>
-                                {players
-                                  .filter((candidate) => candidate.id !== p.id)
-                                  .map((candidate) => (
-                                    <option key={candidate.id} value={candidate.id}>
-                                      {candidate.displayName} ({candidate.email || candidate.id})
-                                    </option>
-                                  ))}
-                              </select>
+                              <p style={styles.linkPrompt}>
+                                Which of the recorded matches did {p.displayName} play in?
+                              </p>
                               <button
                                 style={styles.btn}
                                 onClick={handleMergeRecords}
                                 disabled={selectedMatchIds.length === 0 || merging || needsMergeForUserId !== p.id}
                               >
-                                {merging ? 'Linking…' : 'Link Records'}
+                                {merging ? 'Linking…' : 'Link Selected Matches'}
                               </button>
                               <button
                                 style={styles.btnSecondary}
@@ -536,9 +567,9 @@ export default function AdminPage(): React.JSX.Element {
                               >
                                 Undo Last Link
                               </button>
-                              {candidateMatches.length > 0 ? (
-                                <div style={styles.matchChecklist}>
-                                  {candidateMatches.map((m) => (
+                              <div style={styles.matchChecklist}>
+                                {candidateMatches.length > 0 ? (
+                                  candidateMatches.map((m) => (
                                     <label key={m.id} style={{ display: 'block', marginBottom: 6 }}>
                                       <input
                                         type="checkbox"
@@ -553,9 +584,13 @@ export default function AdminPage(): React.JSX.Element {
                                       />{' '}
                                       {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
                                     </label>
-                                  ))}
-                                </div>
-                              ) : null}
+                                  ))
+                                ) : (
+                                  <p style={styles.hint}>
+                                    No recorded matches are available. Matches already linked to two player profiles are hidden.
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>,
@@ -630,7 +665,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
   mergeBox: { marginTop: 12, borderTop: '1px solid #eee', paddingTop: 8 },
-  inlineEditor: { display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 10, alignItems: 'start' },
+  inlineEditor: { display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) minmax(220px, 1.5fr) auto auto auto', gap: 10, alignItems: 'start' },
+  linkPrompt: { margin: 0, fontSize: 14, color: '#444', alignSelf: 'center' },
   matchChecklist: { gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: 8 },
   row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
   input: {
