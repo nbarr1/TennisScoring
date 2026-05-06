@@ -542,7 +542,7 @@ export default function AdminPage(): React.JSX.Element {
                                 colSpan={6}
                               >
                                 <div style={styles.inlineEditor}>
-                                  <input
+                                                                   <input
                                     style={{
                                       ...styles.input,
                                       ...styles.editorInput,
@@ -551,6 +551,7 @@ export default function AdminPage(): React.JSX.Element {
                                     onChange={(e) => setEditEmail(e.target.value)}
                                     placeholder="Update player email (optional)"
                                     type="email"
+                                    aria-label="Update player email"
                                   />
                                   <p style={styles.linkPrompt}>
                                     Which of the recorded matches did {p.displayName} play in?
