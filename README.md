@@ -79,3 +79,8 @@ Feel free to [open an issue](https://github.com/nbarr1/TennisScoring/issues) or 
 ---
 
 **GE Vernova Tennis League — All skill levels welcome!**
+
+## Design previews
+
+- Open `design/live-scoring-layout-preview.html` in a browser to review and edit a standalone mock of the mobile live scoring layout. Use the **Copy feedback JSON** button to capture layout notes that can be applied back to `apps/mobile/app/match/[id].tsx`.
+
