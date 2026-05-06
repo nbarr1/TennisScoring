@@ -142,7 +142,7 @@ export default function AdminScreen() {
       setLoading(false);
     });
     return unsub;
-  }, [user]);
+  }, [user?.id, user?.divisionId]);
 
   async function handleCreateDivision() {
     if (!user || !newDivisionName.trim()) return;
@@ -262,12 +262,15 @@ export default function AdminScreen() {
         return;
       }
       const snap = await getDocs(
-        query(matchesCol(), where('divisionId', '==', division.id)),
+        query(
+          matchesCol(),
+          where('divisionId', '==', division.id),
+          where('status', '==', 'completed'),
+        ),
       );
       const matches = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
         .filter((match) => {
-          if (match.status !== 'completed') return false;
           const attachedPlayerIds = new Set(
             (Array.isArray(match.playerIds) ? match.playerIds : []).filter(
               (id) => id && id !== 'guest',
