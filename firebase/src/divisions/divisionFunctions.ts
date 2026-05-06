@@ -571,7 +571,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     const nextPlayerIds = Array.from(
       new Set(
         [
-          ...((data.playerIds as string[]) ?? []).map((id) => {
+...existingPlayerIds.map((id) => {
             if (safeSourceUserId) return id === safeSourceUserId ? safeTargetUserId : id;
             if (id === data.player1Id && shouldAttachPlayer1) return safeTargetUserId;
             if (id === data.player2Id && shouldAttachPlayer2) return safeTargetUserId;
