@@ -41,8 +41,9 @@ export default function ProfilePage(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState('');
-  const [divisionName, setDivisionName] = useState('');
-  const [divisionOptions, setDivisionOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [divisionOptions, setDivisionOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [selectedDivisionId, setSelectedDivisionId] = useState('');
 
   useEffect(() => {
@@ -60,42 +61,44 @@ export default function ProfilePage(): React.JSX.Element {
   }, [profile]);
 
   useEffect(() => {
-    async function loadDivisionName() {
-      const divisionId = profile?.divisionId;
-      if (!divisionId) {
-        setDivisionName('');
+    async function loadDivisionOptions() {
+      const userId = firebaseUser?.uid;
+      if (!userId) {
+        setDivisionOptions([]);
         return;
       }
-      const snap = await getDoc(divisionDoc(divisionId));
-      setDivisionName((snap.data()?.name as string) ?? divisionId);
-    }
-    void loadDivisionName();
-  }, [profile?.divisionId]);
 
-  useEffect(() => {
-    async function loadDivisionOptions() {
-      if (!firebaseUser?.uid) return;
-      const snap = await getDocs(
-        query(divisionsCol(), where('playerIds', 'array-contains', firebaseUser.uid)),
-      );
+      const divisionById = new Map<string, { id: string; name: string }>();
+      const addDivisionOption = (id: string, name?: string) => {
+        const trimmedName = name?.trim();
+        divisionById.set(id, { id, name: trimmedName || id });
+      };
 
-      const rawOptions = snap.docs.map((d) => ({
-        id: d.id,
-        name: ((d.data().name as string) ?? d.id).trim(),
-      }));
+      const [playerSnap, leaderSnap, currentDivisionSnap] = await Promise.all([
+        getDocs(
+          query(divisionsCol(), where('playerIds', 'array-contains', userId)),
+        ),
+        getDocs(
+          query(divisionsCol(), where('leaderIds', 'array-contains', userId)),
+        ),
+        profile?.divisionId ? getDoc(divisionDoc(profile.divisionId)) : null,
+      ]);
 
-      const uniqueByName = new Map<string, { id: string; name: string }>();
-      for (const option of rawOptions) {
-        const key = option.name.toLowerCase();
-        const existing = uniqueByName.get(key);
-        if (!existing || existing.id !== profile?.divisionId) {
-          if (option.id === profile?.divisionId || !existing) {
-            uniqueByName.set(key, option);
-          }
-        }
+      for (const docSnap of [...playerSnap.docs, ...leaderSnap.docs]) {
+        addDivisionOption(
+          docSnap.id,
+          docSnap.data().name as string | undefined,
+        );
       }
 
-      setDivisionOptions(Array.from(uniqueByName.values()));
+      if (profile?.divisionId) {
+        addDivisionOption(
+          profile.divisionId,
+          currentDivisionSnap?.data()?.name as string | undefined,
+        );
+      }
+
+      setDivisionOptions(Array.from(divisionById.values()));
     }
     void loadDivisionOptions();
   }, [firebaseUser?.uid, profile?.divisionId]);
@@ -220,11 +223,13 @@ export default function ProfilePage(): React.JSX.Element {
               style={styles.input}
               value={selectedDivisionId}
               onChange={(e) => setSelectedDivisionId(e.target.value)}
-              disabled={divisionOptions.length === 0}
             >
-              {divisionOptions.length > 0 ? divisionOptions.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              )) : <option value={profile.divisionId ?? ''}>{divisionName || 'No division'}</option>}
+              <option value="">No division</option>
+              {divisionOptions.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
             </select>
           </Field>
         </div>
