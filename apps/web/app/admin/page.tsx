@@ -205,7 +205,7 @@ export default function AdminPage(): React.JSX.Element {
         },
       );
       setInviteMessage(
-        `Linked records. Updated ${updated} historical match${updated === 1 ? '' : 'es'} and refreshed rankings.`,
+        `Linked records. Updated ${updated.updatedMatches} historical match${updated.updatedMatches === 1 ? '' : 'es'} and refreshed rankings.`,
       );
       setLastLinkAction({
         sourceUserId: mergeSourceUserId || undefined,
