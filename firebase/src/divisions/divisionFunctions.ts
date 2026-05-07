@@ -527,18 +527,31 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   };
 
   let updatedMatches = 0;
+  const linkedDivisionPlayerIds = new Set<string>([safeTargetUserId]);
   docsToUpdate.forEach((matchDoc) => {
     const data = matchDoc.data();
     const player1Name = typeof data.player1Name === 'string' ? data.player1Name : '';
     const player2Name = typeof data.player2Name === 'string' ? data.player2Name : '';
-    const player1LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player1Name) === normalizedTargetDisplayName;
-    const player2LooksLikeTarget = normalizedTargetDisplayName.length > 0 && normalizeName(player2Name) === normalizedTargetDisplayName;
+    const player1LooksLikeTarget =
+      normalizedTargetDisplayName.length > 0 &&
+      normalizeName(player1Name) === normalizedTargetDisplayName;
+    const player2LooksLikeTarget =
+      normalizedTargetDisplayName.length > 0 &&
+      normalizeName(player2Name) === normalizedTargetDisplayName;
     const existingPlayerIds = Array.isArray(data.playerIds)
-      ? (data.playerIds as string[]).filter((id) => typeof id === 'string' && id.trim() && id !== 'guest')
+      ? (data.playerIds as string[]).filter(
+          (id) => typeof id === 'string' && id.trim() && id !== 'guest',
+        )
       : [];
     const attachedPlayerIds = new Set(existingPlayerIds);
-    const player1HasAttachedProfile = typeof data.player1Id === 'string' && data.player1Id !== 'guest' && attachedPlayerIds.has(data.player1Id);
-    const player2HasAttachedProfile = typeof data.player2Id === 'string' && data.player2Id !== 'guest' && attachedPlayerIds.has(data.player2Id);
+    const player1HasAttachedProfile =
+      typeof data.player1Id === 'string' &&
+      data.player1Id !== 'guest' &&
+      attachedPlayerIds.has(data.player1Id);
+    const player2HasAttachedProfile =
+      typeof data.player2Id === 'string' &&
+      data.player2Id !== 'guest' &&
+      attachedPlayerIds.has(data.player2Id);
     if (!safeSourceUserId && (attachedPlayerIds.has(safeTargetUserId) || attachedPlayerIds.size >= 2)) {
       return;
     }
@@ -558,13 +571,21 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     const nextPlayerIds = Array.from(
       new Set(
         [
-...existingPlayerIds.map((id) => {
-            if (safeSourceUserId) return id === safeSourceUserId ? safeTargetUserId : id;
-            if (id === data.player1Id && shouldAttachPlayer1) return safeTargetUserId;
-            if (id === data.player2Id && shouldAttachPlayer2) return safeTargetUserId;
+          ...existingPlayerIds.map((id) => {
+            if (safeSourceUserId) {
+              return id === safeSourceUserId ? safeTargetUserId : id;
+            }
+            if (id === data.player1Id && shouldAttachPlayer1) {
+              return safeTargetUserId;
+            }
+            if (id === data.player2Id && shouldAttachPlayer2) {
+              return safeTargetUserId;
+            }
             return id;
           }),
-          ...(!safeSourceUserId && (shouldAttachPlayer1 || shouldAttachPlayer2) ? [safeTargetUserId] : []),
+          ...(!safeSourceUserId && (shouldAttachPlayer1 || shouldAttachPlayer2)
+            ? [safeTargetUserId]
+            : []),
         ].filter((id) => typeof id === 'string' && id.trim() && id !== 'guest'),
       ),
     );
@@ -585,6 +606,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     if (shouldAttachPlayer2) {
       updateData.player2IsGuest = false;
     }
+    nextPlayerIds.forEach((id) => linkedDivisionPlayerIds.add(id));
     batch.update(matchDoc.ref, updateData);
     updatedMatches += 1;
     writesInBatch += 1;
@@ -593,12 +615,20 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     }
   });
 
+  const divisionPlayerIdUpdate = safeSourceUserId
+    ? (!sourceIsPrivileged
+        ? { playerIds: FieldValue.arrayRemove(safeSourceUserId) }
+        : {})
+    : {
+        playerIds: FieldValue.arrayUnion(
+          ...Array.from(linkedDivisionPlayerIds),
+        ),
+      };
+
   batch.set(
     db.collection('divisions').doc(safeDivisionId),
     {
-      ...(safeSourceUserId
-        ? (!sourceIsPrivileged ? { playerIds: FieldValue.arrayRemove(safeSourceUserId) } : {})
-        : { playerIds: FieldValue.arrayUnion(safeTargetUserId) }),
+      ...divisionPlayerIdUpdate,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },

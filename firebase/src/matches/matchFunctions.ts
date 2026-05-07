@@ -489,7 +489,32 @@ export async function recalculateRankings(
       .get(),
   ]);
   const division = divisionSnap.data();
-  const divisionPlayerIds: string[] = division?.playerIds ?? [];
+  const baseDivisionPlayerIds: string[] = Array.isArray(division?.playerIds)
+    ? division.playerIds.filter(
+        (id: unknown): id is string =>
+          typeof id === 'string' && id.trim().length > 0,
+      )
+    : [];
+  const divisionProfileSnap = await db
+    .collection('users')
+    .where('divisionId', '==', divisionId)
+    .get();
+  const linkedDivisionMatchPlayerIds = matchesSnap.docs.flatMap((doc) => {
+    const match = doc.data() as Match;
+    if (match.isDivisionMatch === false) return [];
+    const ids = Array.isArray(match.playerIds) ? match.playerIds : [];
+    return ids.filter(
+      (id): id is string =>
+        typeof id === 'string' && id.trim().length > 0 && id !== 'guest',
+    );
+  });
+  const divisionPlayerIds = Array.from(
+    new Set([
+      ...baseDivisionPlayerIds,
+      ...divisionProfileSnap.docs.map((doc) => doc.id),
+      ...linkedDivisionMatchPlayerIds,
+    ]),
+  );
   const divisionPlayerIdSet = new Set(divisionPlayerIds);
   const hasDivisionRoster = divisionPlayerIdSet.size > 0;
 
