@@ -104,8 +104,8 @@ function getStatusState(match: Match): { label: string; player?: 'player1' | 'pl
   const p2SetPoint = p2CanWinGame && currentSet.player2Games + 1 >= match.format.gamesPerSet && currentSet.player2Games + 1 - currentSet.player1Games >= 2;
   const p1MatchPoint = p1SetPoint && score.player1SetsWon === match.format.setsToWin - 1;
   const p2MatchPoint = p2SetPoint && score.player2SetsWon === match.format.setsToWin - 1;
-  const totalGames = score.sets.reduce((sum, set) => sum + set.player1Games + set.player2Games, 0);
-  const sideChange = totalGames > 0 && totalGames % 2 === 1;
+  const totalGamesInSet = currentSet.player1Games + currentSet.player2Games;
+  const sideChange = totalGamesInSet % 2 === 1;
 
   if (score.isTiebreak) {
     return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
