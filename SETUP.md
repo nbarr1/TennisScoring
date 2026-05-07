@@ -37,9 +37,16 @@ Fill in Firebase config values and PingID OIDC credentials.
 **Firebase Functions** reads env at runtime via `process.env.*`.
 
 Set Cloud Functions env config:
+
 ```bash
 firebase functions:config:set pingid.issuer_url="..." pingid.client_id="..."
 ```
+
+## Shared Package Guidelines
+
+`packages/shared` is the canonical workspace for cross-platform tennis domain logic. Use it for types, scoring/ranking utilities, tips, and reusable profile helpers such as availability slot updates, validation, and profile update normalization. Import these helpers from `@tennis/shared` in web, mobile, Firebase client, and Cloud Functions code instead of copying equivalent logic into each app.
+
+The web app keeps repeated top-level navigation markup and styles in `apps/web/app/shared/AppNav.tsx`.
 
 ## 3. Install & Build
 
@@ -117,6 +124,7 @@ cd apps/mobile/android
 ## 8. PingID SSO Configuration
 
 Register two redirect URIs in your PingID application:
+
 - **Mobile**: `tennisleague://` (custom scheme for `expo-auth-session`)
 - **Web**: `https://your-domain.com/api/auth/callback`
 
@@ -127,6 +135,17 @@ cd apps/web && pnpm build
 firebase deploy --only hosting
 ```
 
+## Verification Commands
+
+```bash
+# Shared package unit tests
+pnpm --filter @tennis/shared test -- --runInBand
+
+# Full workspace type checking, linting, and tests
+pnpm typecheck
+pnpm lint
+pnpm test
+```
 
 ## Branch Cleanup (Repository Maintenance)
 

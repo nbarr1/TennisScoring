@@ -1,10 +1,11 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { onSnapshot } from 'firebase/firestore';
+import { AppNav, appNavStyles } from "../shared/AppNav";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { onSnapshot } from "firebase/firestore";
 import {
   divisionMatchesQuery,
   recordHistoricMatch,
@@ -15,52 +16,52 @@ import {
   useActiveDivisionId,
   useAuthUser,
   useUserProfile,
-} from '@tennis/firebase-client';
+} from "@tennis/firebase-client";
 import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
-} from '@tennis/shared';
-import type { Match, User, Availability } from '@tennis/shared';
+} from "@tennis/shared";
+import type { Match, User, Availability } from "@tennis/shared";
 
 const STATUS_COLOR: Record<string, string> = {
-  in_progress: '#27ae60',
-  pending_report: '#e67e22',
-  completed: '#555',
-  disputed: '#c0392b',
-  scheduled: '#1a472a',
-  proposed: '#8e44ad',
-  cancelled: '#999',
+  in_progress: "#27ae60",
+  pending_report: "#e67e22",
+  completed: "#555",
+  disputed: "#c0392b",
+  scheduled: "#1a472a",
+  proposed: "#8e44ad",
+  cancelled: "#999",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  in_progress: '● LIVE',
-  pending_report: 'Pending Report',
-  completed: 'Final',
-  disputed: '⚠ Disputed',
-  scheduled: 'Scheduled',
-  proposed: 'Proposed',
-  cancelled: 'Cancelled',
+  in_progress: "● LIVE",
+  pending_report: "Pending Report",
+  completed: "Final",
+  disputed: "⚠ Disputed",
+  scheduled: "Scheduled",
+  proposed: "Proposed",
+  cancelled: "Cancelled",
 };
 
 function formatScheduledAt(ts?: number): string {
-  if (!ts) return 'Time TBD';
+  if (!ts) return "Time TBD";
   const d = new Date(ts);
   return d.toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
 }
 
 function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
-  const isLive = m.status === 'in_progress';
-  const isHistoric = m.source === 'manual';
-  const isUpcoming = m.status === 'scheduled' || m.status === 'proposed';
-  const p1 = m.player1Name ?? 'Player 1';
-  const p2 = m.player2Name ?? 'Player 2';
+  const isLive = m.status === "in_progress";
+  const isHistoric = m.source === "manual";
+  const isUpcoming = m.status === "scheduled" || m.status === "proposed";
+  const p1 = m.player1Name ?? "Player 1";
+  const p2 = m.player2Name ?? "Player 2";
   return (
     <Link
       key={m.id}
@@ -71,11 +72,11 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
         <span style={{ ...styles.statusDot, color: STATUS_COLOR[m.status] }}>
           {STATUS_LABEL[m.status] ?? m.status}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
-          {m.status === 'completed' && m.winner && (
+          {m.status === "completed" && m.winner && (
             <span style={styles.winnerBadge}>
-              {m.winner === 'player1' ? p1 : p2} wins
+              {m.winner === "player1" ? p1 : p2} wins
             </span>
           )}
         </div>
@@ -98,22 +99,22 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
 
       <div style={styles.players}>
         <span
-          style={m.winner === 'player1' ? styles.winnerName : styles.playerName}
+          style={m.winner === "player1" ? styles.winnerName : styles.playerName}
         >
           {p1}
         </span>
         <span style={styles.vs}>vs</span>
         <span
-          style={m.winner === 'player2' ? styles.winnerName : styles.playerName}
+          style={m.winner === "player2" ? styles.winnerName : styles.playerName}
         >
           {p2}
-          {m.player2IsGuest ? ' (Guest)' : ''}
+          {m.player2IsGuest ? " (Guest)" : ""}
         </span>
       </div>
 
       {isLive && (
         <div style={styles.serverLine}>
-          {m.liveScore.server === 'player1' ? p1 : p2} serves ·{' '}
+          {m.liveScore.server === "player1" ? p1 : p2} serves ·{" "}
           {m.liveScore.serviceSide} side
         </div>
       )}
@@ -157,7 +158,7 @@ export default function MatchesPage(): React.JSX.Element {
         setMatches(
           snap.docs.map((d) => ({
             id: d.id,
-            ...(d.data() as Omit<Match, 'id'>),
+            ...(d.data() as Omit<Match, "id">),
           })),
         );
         setLoading(false);
@@ -170,44 +171,22 @@ export default function MatchesPage(): React.JSX.Element {
   }, [divisionId]);
 
   const uid = firebaseUser?.uid;
-  const liveMatches = matches.filter((m) => m.status === 'in_progress');
+  const liveMatches = matches.filter((m) => m.status === "in_progress");
   const pendingInvites = matches
-    .filter((m) => m.status === 'proposed' && m.player2Id === uid)
+    .filter((m) => m.status === "proposed" && m.player2Id === uid)
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const awaitingOpponent = matches
-    .filter((m) => m.status === 'proposed' && m.player1Id === uid)
+    .filter((m) => m.status === "proposed" && m.player1Id === uid)
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const upcomingMatches = matches
-    .filter((m) => m.status === 'scheduled')
+    .filter((m) => m.status === "scheduled")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
-  const otherStatuses = new Set(['in_progress', 'proposed', 'scheduled']);
+  const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
   const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
 
   return (
     <div style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
-        <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>
-            Rankings
-          </Link>
-          <Link
-            href="/matches"
-            style={{ ...styles.navLink, ...styles.navLinkActive }}
-          >
-            Matches
-          </Link>
-          <Link href="/messages" style={styles.navLink}>
-            Messages
-          </Link>
-          <Link href="/profile" style={styles.navLink}>
-            Profile
-          </Link>
-          <Link href="/admin" style={styles.navLink}>
-            Admin
-          </Link>
-        </div>
-      </nav>
+      <AppNav active="matches" />
 
       <main style={styles.main}>
         <div style={styles.titleRow}>
@@ -362,20 +341,20 @@ function RecordPastMatchModal({
   divisionId: string;
   onClose: () => void;
 }) {
-  const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>(
-    'search',
+  const [opponentMode, setOpponentMode] = useState<"search" | "guest">(
+    "search",
   );
-  const [guestName, setGuestName] = useState('');
-  const [searchText, setSearchText] = useState('');
+  const [guestName, setGuestName] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
   const [searching, setSearching] = useState(false);
-  const [sets, setSets] = useState([{ p1: '', p2: '' }]);
+  const [sets, setSets] = useState([{ p1: "", p2: "" }]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isDivisionMatch, setIsDivisionMatch] = useState(true);
-  const [entryMode, setEntryMode] = useState<'single' | 'bulk'>('single');
-  const [bulkText, setBulkText] = useState('');
+  const [entryMode, setEntryMode] = useState<"single" | "bulk">("single");
+  const [bulkText, setBulkText] = useState("");
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -396,7 +375,7 @@ function RecordPastMatchModal({
     return () => clearTimeout(t);
   }, [searchText, divisionId, selectedOpponent, currentUser.id]);
 
-  const isGuestOpponent = opponentMode === 'guest';
+  const isGuestOpponent = opponentMode === "guest";
   const opponentReady = isGuestOpponent
     ? guestName.trim().length > 0
     : !!selectedOpponent;
@@ -407,10 +386,15 @@ function RecordPastMatchModal({
     return { p1: parseInt(m[1], 10), p2: parseInt(m[2], 10) };
   }
 
-  function parseBulkLine(line: string): { opponentName: string; sets: { p1: number; p2: number }[] } | null {
+  function parseBulkLine(
+    line: string,
+  ): { opponentName: string; sets: { p1: number; p2: number }[] } | null {
     const cleaned = line.trim();
     if (!cleaned) return null;
-    const parts = cleaned.split(',').map((p) => p.trim()).filter(Boolean);
+    const parts = cleaned
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
     if (parts.length < 3) return null;
     const opponentName = parts[0];
     const sets = parts.slice(1).map(parseSetToken);
@@ -419,24 +403,27 @@ function RecordPastMatchModal({
   }
 
   async function handleSubmit() {
-    setError('');
-    if (entryMode === 'bulk') {
+    setError("");
+    if (entryMode === "bulk") {
       const lines = bulkText
-        .split('\n')
+        .split("\n")
         .map((line) => line.trim())
         .filter(Boolean);
       if (lines.length === 0) {
-        setError('Add at least one line for bulk import.');
+        setError("Add at least one line for bulk import.");
         return;
       }
       const parsedLines = lines.map(parseBulkLine);
       if (parsedLines.some((line) => !line)) {
-        setError('Each line must be: Opponent Name, 6-4, 7-5');
+        setError("Each line must be: Opponent Name, 6-4, 7-5");
         return;
       }
       setSubmitting(true);
       try {
-        for (const item of parsedLines as { opponentName: string; sets: { p1: number; p2: number }[] }[]) {
+        for (const item of parsedLines as {
+          opponentName: string;
+          sets: { p1: number; p2: number }[];
+        }[]) {
           const p1Sets = item.sets.filter((s) => s.p1 > s.p2).length;
           const p2Sets = item.sets.filter((s) => s.p2 > s.p1).length;
           if (p1Sets === p2Sets || item.sets.some((s) => s.p1 === s.p2)) {
@@ -444,7 +431,7 @@ function RecordPastMatchModal({
           }
           await recordHistoricMatch({
             player1Id: currentUser.id,
-            player2Id: 'guest',
+            player2Id: "guest",
             player1Name: currentUser.displayName,
             player2Name: item.opponentName,
             player2IsGuest: true,
@@ -459,7 +446,7 @@ function RecordPastMatchModal({
         setError(
           e instanceof Error
             ? e.message
-            : 'Could not bulk record matches. Please try again.',
+            : "Could not bulk record matches. Please try again.",
         );
       } finally {
         setSubmitting(false);
@@ -475,27 +462,27 @@ function RecordPastMatchModal({
       (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
     );
     if (invalid || parsed.length === 0) {
-      setError('Please enter a valid number of games for each set.');
+      setError("Please enter a valid number of games for each set.");
       return;
     }
     if (parsed.some((s) => s.p1 === s.p2)) {
-      setError('Each set must have a clear winner. Check the set scores.');
+      setError("Each set must have a clear winner. Check the set scores.");
       return;
     }
     const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
     const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
     if (p1Sets === p2Sets) {
-      setError('The match must have a clear winner. Check the set scores.');
+      setError("The match must have a clear winner. Check the set scores.");
       return;
     }
     setSubmitting(true);
     try {
-      const isGuest = opponentMode === 'guest';
+      const isGuest = opponentMode === "guest";
       await recordHistoricMatch(
         isGuest
           ? {
               player1Id: currentUser.id,
-              player2Id: 'guest',
+              player2Id: "guest",
               player1Name: currentUser.displayName,
               player2Name: guestName.trim(),
               player2IsGuest: true,
@@ -521,7 +508,7 @@ function RecordPastMatchModal({
       setError(
         e instanceof Error
           ? e.message
-          : 'Could not record match. Please try again.',
+          : "Could not record match. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -537,20 +524,20 @@ function RecordPastMatchModal({
           <button
             style={{
               ...modalStyles.modeBtn,
-              ...(entryMode === 'single' ? modalStyles.modeBtnActive : {}),
+              ...(entryMode === "single" ? modalStyles.modeBtnActive : {}),
             }}
-            onClick={() => setEntryMode('single')}
+            onClick={() => setEntryMode("single")}
           >
             Single Match
           </button>
           <button
             style={{
               ...modalStyles.modeBtn,
-              ...(entryMode === 'bulk' ? modalStyles.modeBtnActive : {}),
+              ...(entryMode === "bulk" ? modalStyles.modeBtnActive : {}),
             }}
             onClick={() => {
-              setEntryMode('bulk');
-              setOpponentMode('guest');
+              setEntryMode("bulk");
+              setOpponentMode("guest");
               setSelectedOpponent(null);
             }}
           >
@@ -558,183 +545,191 @@ function RecordPastMatchModal({
           </button>
         </div>
 
-        {entryMode === 'single' && (
+        {entryMode === "single" && (
           <>
             <div style={modalStyles.modeToggle}>
-          <button
-            style={{
-              ...modalStyles.modeBtn,
-              ...(opponentMode === 'search' ? modalStyles.modeBtnActive : {}),
-            }}
-            onClick={() => {
-              setOpponentMode('search');
-              setGuestName('');
-            }}
-          >
-            Search Player
-          </button>
-          <button
-            style={{
-              ...modalStyles.modeBtn,
-              ...(opponentMode === 'guest' ? modalStyles.modeBtnActive : {}),
-            }}
-            onClick={() => {
-              setOpponentMode('guest');
-              setSelectedOpponent(null);
-              setSearchText('');
-              setSearchResults([]);
-            }}
-          >
-            Guest / No Account
-          </button>
+              <button
+                style={{
+                  ...modalStyles.modeBtn,
+                  ...(opponentMode === "search"
+                    ? modalStyles.modeBtnActive
+                    : {}),
+                }}
+                onClick={() => {
+                  setOpponentMode("search");
+                  setGuestName("");
+                }}
+              >
+                Search Player
+              </button>
+              <button
+                style={{
+                  ...modalStyles.modeBtn,
+                  ...(opponentMode === "guest"
+                    ? modalStyles.modeBtnActive
+                    : {}),
+                }}
+                onClick={() => {
+                  setOpponentMode("guest");
+                  setSelectedOpponent(null);
+                  setSearchText("");
+                  setSearchResults([]);
+                }}
+              >
+                Guest / No Account
+              </button>
             </div>
 
-            {opponentMode === 'guest' ? (
-          <input
-            style={modalStyles.input}
-            value={guestName}
-            onChange={(e) => setGuestName(e.target.value)}
-            placeholder="Guest name…"
-          />
-        ) : selectedOpponent ? (
-          <div style={modalStyles.selectedRow}>
-            <div>
-              <div style={modalStyles.selectedName}>
-                {selectedOpponent.displayName}
-              </div>
-              <div style={modalStyles.selectedEmail}>
-                {selectedOpponent.email}
-              </div>
-            </div>
-            <button
-              style={modalStyles.changeBtn}
-              onClick={() => {
-                setSelectedOpponent(null);
-                setSearchText('');
-              }}
-            >
-              Change
-            </button>
-          </div>
-        ) : (
-          <>
-            <input
-              style={modalStyles.input}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search opponent by name or email…"
-            />
-            {searching && <div style={modalStyles.muted}>Searching…</div>}
-            {searchResults.length > 0 && (
-              <div style={modalStyles.results}>
-                {searchResults.map((u) => (
-                  <button
-                    key={u.id}
-                    style={modalStyles.resultRow}
-                    onClick={() => {
-                      setSelectedOpponent(u);
-                      setSearchResults([]);
-                    }}
-                  >
-                    <div style={modalStyles.resultName}>{u.displayName}</div>
-                    <div style={modalStyles.resultEmail}>{u.email}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {searchText.trim().length > 0 &&
-              !searching &&
-              searchResults.length === 0 && (
-                <div style={modalStyles.muted}>No players found.</div>
-              )}
-          </>
-            )}
-
-        {entryMode === 'single' && opponentReady && (
-          <div style={modalStyles.toggleSection}>
-            <label style={modalStyles.checkboxLabel}>
+            {opponentMode === "guest" ? (
               <input
-                type="checkbox"
-                checked={isDivisionMatch}
-                onChange={(e) => setIsDivisionMatch(e.target.checked)}
-                style={modalStyles.checkbox}
+                style={modalStyles.input}
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                placeholder="Guest name…"
               />
-              <span>Include in division rankings</span>
-            </label>
-            <div style={modalStyles.checkboxHint}>
-              {isDivisionMatch
-                ? 'This match will count toward the division standings.'
-                : "This match will be recorded but won't affect rankings."}
-            </div>
-          </div>
-        )}
+            ) : selectedOpponent ? (
+              <div style={modalStyles.selectedRow}>
+                <div>
+                  <div style={modalStyles.selectedName}>
+                    {selectedOpponent.displayName}
+                  </div>
+                  <div style={modalStyles.selectedEmail}>
+                    {selectedOpponent.email}
+                  </div>
+                </div>
+                <button
+                  style={modalStyles.changeBtn}
+                  onClick={() => {
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                  }}
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  style={modalStyles.input}
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search opponent by name or email…"
+                />
+                {searching && <div style={modalStyles.muted}>Searching…</div>}
+                {searchResults.length > 0 && (
+                  <div style={modalStyles.results}>
+                    {searchResults.map((u) => (
+                      <button
+                        key={u.id}
+                        style={modalStyles.resultRow}
+                        onClick={() => {
+                          setSelectedOpponent(u);
+                          setSearchResults([]);
+                        }}
+                      >
+                        <div style={modalStyles.resultName}>
+                          {u.displayName}
+                        </div>
+                        <div style={modalStyles.resultEmail}>{u.email}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchText.trim().length > 0 &&
+                  !searching &&
+                  searchResults.length === 0 && (
+                    <div style={modalStyles.muted}>No players found.</div>
+                  )}
+              </>
+            )}
 
-        {entryMode === 'single' && opponentReady && (
-          <div style={modalStyles.setsBlock}>
-            <div style={modalStyles.label}>Set scores (your games first)</div>
-            {sets.map((s, i) => (
-              <div key={i} style={modalStyles.setRow}>
-                <span style={modalStyles.setLabel}>Set {i + 1}</span>
-                <input
-                  style={modalStyles.setInput}
-                  value={s.p1}
-                  onChange={(e) => {
-                    const next = [...sets];
-                    next[i] = {
-                      ...next[i],
-                      p1: e.target.value.replace(/[^0-9]/g, ''),
-                    };
-                    setSets(next);
-                  }}
-                  placeholder="You"
-                  inputMode="numeric"
-                  maxLength={2}
-                />
-                <span style={modalStyles.setDash}>–</span>
-                <input
-                  style={modalStyles.setInput}
-                  value={s.p2}
-                  onChange={(e) => {
-                    const next = [...sets];
-                    next[i] = {
-                      ...next[i],
-                      p2: e.target.value.replace(/[^0-9]/g, ''),
-                    };
-                    setSets(next);
-                  }}
-                  placeholder="Opp"
-                  inputMode="numeric"
-                  maxLength={2}
-                />
-                {sets.length > 1 && (
+            {entryMode === "single" && opponentReady && (
+              <div style={modalStyles.toggleSection}>
+                <label style={modalStyles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={isDivisionMatch}
+                    onChange={(e) => setIsDivisionMatch(e.target.checked)}
+                    style={modalStyles.checkbox}
+                  />
+                  <span>Include in division rankings</span>
+                </label>
+                <div style={modalStyles.checkboxHint}>
+                  {isDivisionMatch
+                    ? "This match will count toward the division standings."
+                    : "This match will be recorded but won't affect rankings."}
+                </div>
+              </div>
+            )}
+
+            {entryMode === "single" && opponentReady && (
+              <div style={modalStyles.setsBlock}>
+                <div style={modalStyles.label}>
+                  Set scores (your games first)
+                </div>
+                {sets.map((s, i) => (
+                  <div key={i} style={modalStyles.setRow}>
+                    <span style={modalStyles.setLabel}>Set {i + 1}</span>
+                    <input
+                      style={modalStyles.setInput}
+                      value={s.p1}
+                      onChange={(e) => {
+                        const next = [...sets];
+                        next[i] = {
+                          ...next[i],
+                          p1: e.target.value.replace(/[^0-9]/g, ""),
+                        };
+                        setSets(next);
+                      }}
+                      placeholder="You"
+                      inputMode="numeric"
+                      maxLength={2}
+                    />
+                    <span style={modalStyles.setDash}>–</span>
+                    <input
+                      style={modalStyles.setInput}
+                      value={s.p2}
+                      onChange={(e) => {
+                        const next = [...sets];
+                        next[i] = {
+                          ...next[i],
+                          p2: e.target.value.replace(/[^0-9]/g, ""),
+                        };
+                        setSets(next);
+                      }}
+                      placeholder="Opp"
+                      inputMode="numeric"
+                      maxLength={2}
+                    />
+                    {sets.length > 1 && (
+                      <button
+                        style={modalStyles.removeSet}
+                        onClick={() => setSets(sets.filter((_, j) => j !== i))}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {sets.length < 5 && (
                   <button
-                    style={modalStyles.removeSet}
-                    onClick={() => setSets(sets.filter((_, j) => j !== i))}
+                    style={modalStyles.addSet}
+                    onClick={() => setSets([...sets, { p1: "", p2: "" }])}
                   >
-                    ✕
+                    + Add Set
                   </button>
                 )}
               </div>
-            ))}
-            {sets.length < 5 && (
-              <button
-                style={modalStyles.addSet}
-                onClick={() => setSets([...sets, { p1: '', p2: '' }])}
-              >
-                + Add Set
-              </button>
             )}
-          </div>
-        )}
-
           </>
         )}
 
-        {entryMode === 'bulk' && (
+        {entryMode === "bulk" && (
           <>
             <div style={modalStyles.toggleSection}>
               <div style={modalStyles.checkboxHint}>
-                Format: <strong>Opponent Name, 6-4, 7-5</strong> (one match per line; guest opponents only).
+                Format: <strong>Opponent Name, 6-4, 7-5</strong> (one match per
+                line; guest opponents only).
               </div>
             </div>
             <textarea
@@ -771,14 +766,18 @@ function RecordPastMatchModal({
           <button
             style={{
               ...modalStyles.submitBtn,
-              ...((entryMode === 'single' && !opponentReady) || submitting
+              ...((entryMode === "single" && !opponentReady) || submitting
                 ? modalStyles.btnDisabled
                 : {}),
             }}
             onClick={handleSubmit}
-            disabled={(entryMode === 'single' && !opponentReady) || submitting}
+            disabled={(entryMode === "single" && !opponentReady) || submitting}
           >
-            {submitting ? 'Recording…' : entryMode === 'bulk' ? 'Import Matches' : 'Record Match'}
+            {submitting
+              ? "Recording…"
+              : entryMode === "bulk"
+                ? "Import Matches"
+                : "Record Match"}
           </button>
         </div>
       </div>
@@ -823,13 +822,13 @@ function ProposeMatchModal({
   divisionId: string;
   onClose: () => void;
 }) {
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
   const [searching, setSearching] = useState(false);
-  const [scheduledAt, setScheduledAt] = useState('');
+  const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -851,18 +850,18 @@ function ProposeMatchModal({
   }, [searchText, divisionId, selectedOpponent, currentUser.id]);
 
   async function handleSubmit() {
-    setError('');
+    setError("");
     if (!selectedOpponent) {
-      setError('Select an opponent.');
+      setError("Select an opponent.");
       return;
     }
     const ts = Date.parse(scheduledAt);
     if (!ts || Number.isNaN(ts)) {
-      setError('Pick a valid date and time.');
+      setError("Pick a valid date and time.");
       return;
     }
     if (ts < Date.now()) {
-      setError('Pick a time in the future.');
+      setError("Pick a time in the future.");
       return;
     }
     setSubmitting(true);
@@ -878,7 +877,7 @@ function ProposeMatchModal({
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send the proposal.');
+      setError(e instanceof Error ? e.message : "Could not send the proposal.");
     } finally {
       setSubmitting(false);
     }
@@ -904,7 +903,7 @@ function ProposeMatchModal({
                 style={modalStyles.changeBtn}
                 onClick={() => {
                   setSelectedOpponent(null);
-                  setSearchText('');
+                  setSearchText("");
                 }}
               >
                 Change
@@ -978,7 +977,7 @@ function ProposeMatchModal({
             onClick={handleSubmit}
             disabled={!selectedOpponent || !scheduledAt || submitting}
           >
-            {submitting ? 'Sending…' : 'Send Proposal'}
+            {submitting ? "Sending…" : "Send Proposal"}
           </button>
         </div>
       </div>
@@ -988,160 +987,160 @@ function ProposeMatchModal({
 
 const modalStyles: Record<string, React.CSSProperties> = {
   overlay: {
-    position: 'fixed' as const,
+    position: "fixed" as const,
     inset: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 100,
     padding: 16,
   },
   card: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 16,
     padding: 28,
     maxWidth: 460,
-    width: '100%',
-    maxHeight: '90vh',
-    overflowY: 'auto' as const,
+    width: "100%",
+    maxHeight: "90vh",
+    overflowY: "auto" as const,
   },
-  title: { fontSize: 20, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
+  title: { fontSize: 20, fontWeight: 700, color: "#1a472a", marginBottom: 16 },
   modeToggle: {
-    display: 'flex',
+    display: "flex",
     borderRadius: 10,
-    border: '1px solid #ddd',
-    overflow: 'hidden',
+    border: "1px solid #ddd",
+    overflow: "hidden",
     marginBottom: 14,
   },
   modeBtn: {
     flex: 1,
-    padding: '10px 0',
-    background: '#f9f9f9',
-    border: 'none',
+    padding: "10px 0",
+    background: "#f9f9f9",
+    border: "none",
     fontSize: 13,
     fontWeight: 600,
-    color: '#888',
-    cursor: 'pointer',
+    color: "#888",
+    cursor: "pointer",
   },
-  modeBtnActive: { background: '#1a472a', color: '#fff' },
+  modeBtnActive: { background: "#1a472a", color: "#fff" },
   input: {
-    width: '100%',
-    border: '1px solid #ddd',
+    width: "100%",
+    border: "1px solid #ddd",
     borderRadius: 10,
-    padding: '10px 14px',
+    padding: "10px 14px",
     fontSize: 14,
     marginBottom: 12,
-    boxSizing: 'border-box' as const,
-    outline: 'none',
+    boxSizing: "border-box" as const,
+    outline: "none",
   },
   textarea: {
-    width: '100%',
-    border: '1px solid #ddd',
+    width: "100%",
+    border: "1px solid #ddd",
     borderRadius: 10,
-    padding: '10px 14px',
+    padding: "10px 14px",
     fontSize: 14,
     marginBottom: 12,
-    boxSizing: 'border-box' as const,
-    outline: 'none',
-    resize: 'vertical' as const,
+    boxSizing: "border-box" as const,
+    outline: "none",
+    resize: "vertical" as const,
   },
   results: {
     maxHeight: 200,
-    overflowY: 'auto' as const,
-    border: '1px solid #eee',
+    overflowY: "auto" as const,
+    border: "1px solid #eee",
     borderRadius: 10,
     marginBottom: 12,
   },
   resultRow: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left' as const,
-    padding: '10px 14px',
-    background: '#fff',
-    border: 'none',
-    borderBottom: '1px solid #f5f5f5',
-    cursor: 'pointer',
+    display: "block",
+    width: "100%",
+    textAlign: "left" as const,
+    padding: "10px 14px",
+    background: "#fff",
+    border: "none",
+    borderBottom: "1px solid #f5f5f5",
+    cursor: "pointer",
   },
-  resultName: { fontSize: 14, fontWeight: 600, color: '#222' },
-  resultEmail: { fontSize: 12, color: '#888', marginTop: 2 },
+  resultName: { fontSize: 14, fontWeight: 600, color: "#222" },
+  resultEmail: { fontSize: 12, color: "#888", marginTop: 2 },
   selectedRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    background: '#f0f9f0',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    background: "#f0f9f0",
     borderRadius: 10,
     padding: 12,
     marginBottom: 14,
   },
-  selectedName: { fontSize: 15, fontWeight: 700, color: '#1a472a' },
-  selectedEmail: { fontSize: 12, color: '#666', marginTop: 2 },
+  selectedName: { fontSize: 15, fontWeight: 700, color: "#1a472a" },
+  selectedEmail: { fontSize: 12, color: "#666", marginTop: 2 },
   changeBtn: {
-    background: 'transparent',
-    border: 'none',
-    color: '#1a472a',
+    background: "transparent",
+    border: "none",
+    color: "#1a472a",
     fontWeight: 600,
     fontSize: 13,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   setsBlock: { marginBottom: 14 },
-  label: { fontSize: 13, fontWeight: 600, color: '#444', marginBottom: 8 },
-  setRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 },
-  setLabel: { fontSize: 13, color: '#666', width: 48 },
+  label: { fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 8 },
+  setRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 },
+  setLabel: { fontSize: 13, color: "#666", width: 48 },
   setInput: {
     width: 56,
-    padding: '8px 0',
-    border: '1px solid #ddd',
+    padding: "8px 0",
+    border: "1px solid #ddd",
     borderRadius: 8,
     fontSize: 16,
     fontWeight: 700,
-    textAlign: 'center' as const,
-    color: '#1a472a',
+    textAlign: "center" as const,
+    color: "#1a472a",
   },
-  setDash: { color: '#999', fontWeight: 600 },
+  setDash: { color: "#999", fontWeight: 600 },
   removeSet: {
-    marginLeft: 'auto',
-    background: 'transparent',
-    border: 'none',
-    color: '#c0392b',
+    marginLeft: "auto",
+    background: "transparent",
+    border: "none",
+    color: "#c0392b",
     fontSize: 16,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   addSet: {
-    background: 'transparent',
-    border: 'none',
-    color: '#1a472a',
+    background: "transparent",
+    border: "none",
+    color: "#1a472a",
     fontWeight: 600,
     fontSize: 13,
-    padding: '4px 0',
-    cursor: 'pointer',
+    padding: "4px 0",
+    cursor: "pointer",
   },
-  actions: { display: 'flex', gap: 10, marginTop: 12 },
+  actions: { display: "flex", gap: 10, marginTop: 12 },
   cancelBtn: {
     flex: 1,
-    padding: '12px 0',
-    background: '#f0f0f0',
-    border: 'none',
+    padding: "12px 0",
+    background: "#f0f0f0",
+    border: "none",
     borderRadius: 10,
     fontWeight: 600,
-    color: '#333',
-    cursor: 'pointer',
+    color: "#333",
+    cursor: "pointer",
   },
   submitBtn: {
     flex: 1,
-    padding: '12px 0',
-    background: '#1a472a',
-    border: 'none',
+    padding: "12px 0",
+    background: "#1a472a",
+    border: "none",
     borderRadius: 10,
     fontWeight: 700,
-    color: '#fff',
-    cursor: 'pointer',
+    color: "#fff",
+    cursor: "pointer",
   },
-  btnDisabled: { opacity: 0.5, cursor: 'not-allowed' as const },
-  error: { color: '#c0392b', fontSize: 13, marginBottom: 12 },
-  muted: { color: '#999', fontSize: 13, marginBottom: 12 },
+  btnDisabled: { opacity: 0.5, cursor: "not-allowed" as const },
+  error: { color: "#c0392b", fontSize: 13, marginBottom: 12 },
+  muted: { color: "#999", fontSize: 13, marginBottom: 12 },
   availability: {
-    background: '#f7f7f0',
+    background: "#f7f7f0",
     borderRadius: 10,
     padding: 12,
     marginBottom: 12,
@@ -1149,234 +1148,217 @@ const modalStyles: Record<string, React.CSSProperties> = {
   availabilityTitle: {
     fontSize: 12,
     fontWeight: 700,
-    color: '#1a472a',
+    color: "#1a472a",
     marginBottom: 6,
-    textTransform: 'uppercase' as const,
+    textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
   availabilityRow: {
-    display: 'flex',
+    display: "flex",
     gap: 10,
-    alignItems: 'center',
+    alignItems: "center",
     fontSize: 13,
-    color: '#333',
-    padding: '2px 0',
+    color: "#333",
+    padding: "2px 0",
   },
-  availabilityDay: { fontWeight: 600, color: '#1a472a', minWidth: 32 },
-  availabilityTime: { color: '#444' },
+  availabilityDay: { fontWeight: 600, color: "#1a472a", minWidth: 32 },
+  availabilityTime: { color: "#444" },
   availabilityNote: {
     fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic' as const,
+    color: "#666",
+    fontStyle: "italic" as const,
     marginTop: 6,
     paddingTop: 6,
-    borderTop: '1px solid #e7e7d8',
+    borderTop: "1px solid #e7e7d8",
   },
   toggleSection: {
     marginBottom: 14,
-    background: '#f0f9f0',
+    background: "#f0f9f0",
     borderRadius: 10,
     padding: 12,
   } as const,
   checkboxLabel: {
-    display: 'flex' as const,
-    alignItems: 'center',
+    display: "flex" as const,
+    alignItems: "center",
     gap: 10,
-    cursor: 'pointer',
+    cursor: "pointer",
     fontSize: 14,
     fontWeight: 600,
-    color: '#1a472a',
+    color: "#1a472a",
   } as const,
   checkbox: {
-    cursor: 'pointer' as const,
+    cursor: "pointer" as const,
     width: 18,
     height: 18,
   } as const,
   checkboxHint: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginTop: 8,
-    fontStyle: 'italic' as const,
+    fontStyle: "italic" as const,
   } as const,
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', background: 'var(--bg)' },
-  nav: {
-    background: 'var(--green-dark)',
-    padding: '16px 32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    flexWrap: 'wrap',
-  },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
-  navLink: { color: 'rgba(255,255,255,0.75)', fontWeight: 500, fontSize: 15 },
-  navLinkActive: {
-    color: '#fff',
-    borderBottom: '2px solid #ffdc60',
-    paddingBottom: 2,
-  },
-  main: { maxWidth: 960, margin: '0 auto', padding: '40px 24px' },
+  page: appNavStyles.page,
+  main: { maxWidth: 960, margin: "0 auto", padding: "40px 24px" },
   titleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 24,
     gap: 16,
-    flexWrap: 'wrap' as const,
+    flexWrap: "wrap" as const,
   },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     margin: 0,
   },
   recordBtn: {
-    background: '#fff',
-    border: '1.5px solid var(--green-dark)',
-    color: 'var(--green-dark)',
+    background: "#fff",
+    border: "1.5px solid var(--green-dark)",
+    color: "var(--green-dark)",
     borderRadius: 10,
-    padding: '10px 18px',
+    padding: "10px 18px",
     fontWeight: 700,
     fontSize: 14,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   historicBadge: {
     fontSize: 11,
     fontWeight: 600,
-    color: '#1a472a',
-    background: '#ffdc60',
-    padding: '2px 8px',
+    color: "#1a472a",
+    background: "#ffdc60",
+    padding: "2px 8px",
     borderRadius: 12,
   },
   placeholder: {
-    color: 'var(--muted)',
+    color: "var(--muted)",
     padding: 40,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
   },
   emptyCard: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 14,
     padding: 40,
-    textAlign: 'center' as const,
-    color: 'var(--muted)',
+    textAlign: "center" as const,
+    color: "var(--muted)",
   },
 
   liveSection: { marginBottom: 32 },
   liveSectionHeader: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 10,
     marginBottom: 14,
   },
   livePulse: {
     width: 10,
     height: 10,
-    borderRadius: '50%',
-    background: '#27ae60',
-    boxShadow: '0 0 0 3px rgba(39,174,96,0.3)',
-    animation: 'pulse 1.5s infinite',
+    borderRadius: "50%",
+    background: "#27ae60",
+    boxShadow: "0 0 0 3px rgba(39,174,96,0.3)",
+    animation: "pulse 1.5s infinite",
   },
   liveSectionTitle: {
     fontSize: 18,
     fontWeight: 700,
-    color: '#1a472a',
+    color: "#1a472a",
     margin: 0,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 700,
-    color: '#666',
+    color: "#666",
     marginBottom: 14,
   },
 
   grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: 16,
   },
   card: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 14,
     padding: 20,
-    boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
-    display: 'block',
-    cursor: 'pointer',
+    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+    display: "block",
+    cursor: "pointer",
   },
   cardLive: {
-    borderLeft: '4px solid #27ae60',
-    boxShadow: '0 4px 16px rgba(39,174,96,0.15)',
+    borderLeft: "4px solid #27ae60",
+    boxShadow: "0 4px 16px rgba(39,174,96,0.15)",
   },
   cardTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
   },
   statusDot: { fontWeight: 700, fontSize: 13 },
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,
-    color: 'var(--green-dark)',
-    background: '#e8f5e9',
-    padding: '2px 8px',
+    color: "var(--green-dark)",
+    background: "#e8f5e9",
+    padding: "2px 8px",
     borderRadius: 20,
   },
   scoreBlock: { marginBottom: 8 },
-  setScore: { fontSize: 22, fontWeight: 700, color: '#222', letterSpacing: 1 },
+  setScore: { fontSize: 22, fontWeight: 700, color: "#222", letterSpacing: 1 },
   gameScore: {
     fontSize: 15,
     fontWeight: 600,
-    color: '#27ae60',
+    color: "#27ae60",
     marginLeft: 10,
   },
-  players: { display: 'flex', alignItems: 'center', gap: 10 },
-  playerName: { fontSize: 15, fontWeight: 500, color: '#555' },
-  winnerName: { fontSize: 15, fontWeight: 700, color: 'var(--green-dark)' },
-  vs: { fontSize: 12, color: '#bbb' },
-  serverLine: { fontSize: 12, color: '#888', marginTop: 8 },
+  players: { display: "flex", alignItems: "center", gap: 10 },
+  playerName: { fontSize: 15, fontWeight: 500, color: "#555" },
+  winnerName: { fontSize: 15, fontWeight: 700, color: "var(--green-dark)" },
+  vs: { fontSize: 12, color: "#bbb" },
+  serverLine: { fontSize: 12, color: "#888", marginTop: 8 },
   scheduledLine: {
     fontSize: 13,
     fontWeight: 600,
-    color: '#1a472a',
+    color: "#1a472a",
     marginBottom: 8,
   },
   section: { marginBottom: 28 },
-  titleActions: { display: 'flex', gap: 10, flexWrap: 'wrap' as const },
+  titleActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
   proposeBtn: {
-    background: 'var(--green-dark)',
-    border: 'none',
-    color: '#fff',
+    background: "var(--green-dark)",
+    border: "none",
+    color: "#fff",
     borderRadius: 10,
-    padding: '10px 18px',
+    padding: "10px 18px",
     fontWeight: 700,
     fontSize: 14,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
-  actionsRow: { display: 'flex', gap: 8, marginTop: 12 },
+  actionsRow: { display: "flex", gap: 8, marginTop: 12 },
   acceptBtn: {
     flex: 1,
-    padding: '8px 12px',
-    background: '#1a472a',
-    color: '#fff',
-    border: 'none',
+    padding: "8px 12px",
+    background: "#1a472a",
+    color: "#fff",
+    border: "none",
     borderRadius: 8,
     fontWeight: 700,
     fontSize: 13,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   declineBtn: {
     flex: 1,
-    padding: '8px 12px',
-    background: '#fff',
-    color: '#c0392b',
-    border: '1px solid #c0392b',
+    padding: "8px 12px",
+    background: "#fff",
+    color: "#c0392b",
+    border: "1px solid #c0392b",
     borderRadius: 8,
     fontWeight: 600,
     fontSize: 13,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
 };
