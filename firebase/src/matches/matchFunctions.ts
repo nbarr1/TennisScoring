@@ -531,6 +531,12 @@ export async function recalculateRankings(
           typeof id === 'string' && id.trim().length > 0,
       )
     : [];
+  const divisionLeaderIds: string[] = Array.isArray(division?.leaderIds)
+    ? division.leaderIds.filter(
+        (id: unknown): id is string =>
+          typeof id === 'string' && id.trim().length > 0,
+      )
+    : [];
   const divisionProfileSnap = await db
     .collection('users')
     .where('divisionId', '==', divisionId)
@@ -549,6 +555,7 @@ export async function recalculateRankings(
   const divisionPlayerIds = Array.from(
     new Set([
       ...baseDivisionPlayerIds,
+      ...divisionLeaderIds,
       ...divisionProfileSnap.docs.map((doc) => doc.id),
       ...linkedDivisionMatchPlayerIds,
     ]),
@@ -717,6 +724,8 @@ export async function recalculateRankings(
     writer.set(
       userRef,
       {
+        divisionId: ranking.divisionId,
+        mergedIntoUserId: FieldValue.delete(),
         rankingSummary: {
           divisionId: ranking.divisionId,
           rank: ranking.rank,
