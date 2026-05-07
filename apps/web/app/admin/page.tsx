@@ -51,6 +51,10 @@ export default function AdminPage(): React.JSX.Element {
     targetUserId: string;
     matchIds: string[];
   } | null>(null);
+  const [linkActionMessage, setLinkActionMessage] = useState<{
+    targetUserId: string;
+    message: string;
+  } | null>(null);
 
   // Resolve the division context for leaders and admins.
   useEffect(() => {
@@ -216,9 +220,11 @@ export default function AdminPage(): React.JSX.Element {
           targetEmail: editEmail.trim() || undefined,
         },
       );
-      setInviteMessage(
-        `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? "" : "es"} and refreshed rankings.`,
-      );
+      setInviteMessage("");
+      setLinkActionMessage({
+        targetUserId: needsMergeForUserId,
+        message: `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? "" : "es"} and refreshed rankings.`,
+      });
       setLastLinkAction({
         sourceUserId: mergeSourceUserId || undefined,
         targetUserId: needsMergeForUserId,
@@ -277,9 +283,11 @@ export default function AdminPage(): React.JSX.Element {
           matchIds: lastLinkAction.matchIds,
         },
       );
-      setInviteMessage(
-        `Undo complete. Reverted ${reverted} linked historical matches.`,
-      );
+      setInviteMessage("");
+      setLinkActionMessage({
+        targetUserId: lastLinkAction.sourceUserId,
+        message: `Undo complete. Reverted ${reverted} linked historical matches.`,
+      });
       setLastLinkAction(null);
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
@@ -533,6 +541,7 @@ export default function AdminPage(): React.JSX.Element {
                                   setMergeSourceUserId("");
                                   setSelectedMatchIds([]);
                                   setEditEmail(p.email ?? "");
+                                  setLinkActionMessage(null);
                                   setExpandedPlayerId((current) =>
                                     current === p.id ? null : p.id,
                                   );
@@ -602,6 +611,11 @@ export default function AdminPage(): React.JSX.Element {
                                     >
                                       Undo Last Link
                                     </button>
+                                    {linkActionMessage?.targetUserId === p.id && (
+                                      <p style={styles.inlineSuccess}>
+                                        {linkActionMessage.message}
+                                      </p>
+                                    )}
                                   </div>
                                   <div style={styles.matchChecklist}>
                                     {candidateMatches.length > 0 ? (
@@ -751,6 +765,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { marginTop: 10, color: "#c0392b", fontSize: 13 },
   success: { marginTop: 10, color: "#1a7f37", fontSize: 13 },
+  inlineSuccess: {
+    flexBasis: "100%",
+    margin: "0 0 4px",
+    color: "#1a7f37",
+    fontSize: 13,
+    fontWeight: 600,
+  },
   tableScroller: { overflowX: "auto" as const, width: "100%" },
   table: {
     width: "100%",
