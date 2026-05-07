@@ -122,7 +122,7 @@ function getStatusState(match: Match): { label: string; player?: 'player1' | 'pl
       const player = p1CanWinTiebreak ? 'player1' : 'player2';
       return { label: 'Set point', player, color: COURT.ad, tone: 'sp', sideChange, flags: { [player]: 'SP' } };
     }
-    return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+    return { label: 'Tiebreak', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
   }
   if (p1MatchPoint || p2MatchPoint) {
     const player = p1MatchPoint ? 'player1' : 'player2';
@@ -830,7 +830,12 @@ export default function MatchScreen() {
   const showSetupSurface = isParticipant && match.status === 'scheduled';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, showCourtSurface && styles.liveContent]}
+      scrollEnabled={!showCourtSurface}
+      bounces={!showCourtSurface}
+    >
       {showSetupSurface ? (
         <View style={styles.setupSurface}>
           <View style={styles.setupTopRow}>
@@ -988,17 +993,22 @@ export default function MatchScreen() {
               <View style={styles.bottomCourtBar}>
                 <Text style={styles.bottomIcon}>↺</Text>
                 <Text style={styles.bottomIcon}>⇄</Text>
-                <TouchableOpacity
-                  style={[styles.holdUndoKey, (!match.undoSnapshot || scoring) && styles.holdUndoDisabled]}
-                  onLongPress={handleUndo}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.holdUndoKey,
+                    pressed && match.undoSnapshot && !scoring && styles.holdUndoPressed,
+                    (!match.undoSnapshot || scoring) && styles.holdUndoDisabled,
+                  ]}
+                  onLongPress={() => void handleUndo()}
                   delayLongPress={1000}
                   disabled={!match.undoSnapshot || scoring}
+                  hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel="Hold to undo the last point"
                 >
                   <Text style={styles.holdUndoTitle}>↩  {match.undoSnapshot ? 'Hold to undo' : 'Nothing to undo'}</Text>
                   <Text style={styles.holdUndoHint}>{match.undoSnapshot ? `Current score · ${gameDisplay}` : 'Last-point reversal unavailable'}</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               <View style={styles.tipsRowCourt}>
                 <Text style={styles.tipsLabel}>Live tips</Text>
@@ -1439,6 +1449,7 @@ export default function MatchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#081014' },
   content: { padding: 18, paddingBottom: 48 },
+  liveContent: { flexGrow: 1, padding: 12, paddingBottom: 10, overflow: 'hidden' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   setupSurface: { gap: 18, paddingBottom: 24 },
   setupTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -1465,52 +1476,53 @@ const styles = StyleSheet.create({
   startMatchKey: { marginTop: 140, backgroundColor: COURT.line, borderRadius: 18, paddingVertical: 24, alignItems: 'center', shadowColor: COURT.amber, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
   startMatchKeyText: { color: '#081014', fontSize: 18, fontWeight: '900', letterSpacing: 4 },
   setupFooter: { textAlign: 'center', color: 'rgba(242,239,230,0.45)', fontWeight: '700' },
-  courtHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  courtTitle: { color: COURT.line, fontSize: 34, fontWeight: '900', letterSpacing: -1 },
-  courtSubtitle: { color: 'rgba(242,239,230,0.72)', fontSize: 17, fontWeight: '700' },
+  courtHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  courtTitle: { color: COURT.line, fontSize: 28, fontWeight: '900', letterSpacing: -1 },
+  courtSubtitle: { color: 'rgba(242,239,230,0.72)', fontSize: 14, fontWeight: '700' },
   courtOptionsBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  courtOptionsText: { color: COURT.line, fontSize: 32, fontWeight: '900' },
-  scoreboardPanel: { backgroundColor: COURT.scoreboard, borderRadius: 26, borderWidth: 1, borderColor: 'rgba(242,239,230,0.16)', padding: 14, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  scoreboardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  livePanelLabel: { color: 'rgba(242,239,230,0.76)', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
-  panelTimer: { color: 'rgba(242,239,230,0.7)', fontSize: 14, fontWeight: '800', fontFamily: 'monospace' },
-  panelScoreRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center' },
+  courtOptionsText: { color: COURT.line, fontSize: 28, fontWeight: '900' },
+  scoreboardPanel: { backgroundColor: COURT.scoreboard, borderRadius: 22, borderWidth: 1, borderColor: 'rgba(242,239,230,0.16)', padding: 10, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  scoreboardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  livePanelLabel: { color: 'rgba(242,239,230,0.76)', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
+  panelTimer: { color: 'rgba(242,239,230,0.7)', fontSize: 12, fontWeight: '800', fontFamily: 'monospace' },
+  panelScoreRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center' },
   panelScoreRowDivider: { borderTopWidth: 1, borderTopColor: 'rgba(242,239,230,0.09)' },
   panelNameCell: { flex: 1.3, flexDirection: 'row', alignItems: 'center', gap: 8 },
   serverDot: { color: COURT.amber, textShadowColor: COURT.amber, textShadowRadius: 10, fontSize: 18 },
-  panelColorBar: { width: 5, height: 32, borderRadius: 999 },
-  panelNameText: { flex: 1, color: COURT.line, fontSize: 19, fontWeight: '900' },
+  panelColorBar: { width: 5, height: 28, borderRadius: 999 },
+  panelNameText: { flex: 1, color: COURT.line, fontSize: 17, fontWeight: '900' },
   panelSetsCell: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
-  panelSetNumber: { minWidth: 28, textAlign: 'center', color: COURT.line, fontSize: 28, fontWeight: '800', fontFamily: 'monospace' },
-  panelPointNumber: { minWidth: 64, textAlign: 'right', color: COURT.line, fontSize: 36, fontWeight: '900', fontFamily: 'monospace' },
+  panelSetNumber: { minWidth: 24, textAlign: 'center', color: COURT.line, fontSize: 24, fontWeight: '800', fontFamily: 'monospace' },
+  panelPointNumber: { minWidth: 56, textAlign: 'right', color: COURT.line, fontSize: 32, fontWeight: '900', fontFamily: 'monospace' },
   panelAdNumber: { color: COURT.ad },
-  courtSurface: { position: 'relative', minHeight: 620, paddingTop: 48, marginBottom: 18 },
-  courtLineVerticalLeft: { position: 'absolute', top: 0, bottom: 92, left: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
-  courtLineVerticalCenter: { position: 'absolute', top: 0, bottom: 92, left: '50%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
-  courtLineVerticalRight: { position: 'absolute', top: 0, bottom: 92, right: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtSurface: { position: 'relative', flex: 1, minHeight: 0, paddingTop: 26, marginBottom: 0 },
+  courtLineVerticalLeft: { position: 'absolute', top: 0, bottom: 70, left: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtLineVerticalCenter: { position: 'absolute', top: 0, bottom: 70, left: '50%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtLineVerticalRight: { position: 'absolute', top: 0, bottom: 70, right: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
   courtLineHorizontal: { position: 'absolute', left: 8, right: 8, top: '54%', height: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
-  statusPill: { alignSelf: 'center', borderWidth: 2, borderRadius: 13, paddingHorizontal: 18, paddingVertical: 6, marginBottom: 24, minHeight: 34 },
-  statusPillText: { fontSize: 18, fontWeight: '900' },
-  tapZonesRow: { flexDirection: 'row', flex: 1, minHeight: 470 },
-  tapZone: { flex: 1, borderRadius: 26, padding: 22, justifyContent: 'space-between', alignItems: 'center', minHeight: 470, shadowColor: '#000', shadowOpacity: 0.36, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 7 },
+  statusPill: { alignSelf: 'center', borderWidth: 2, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 4, marginBottom: 10, minHeight: 28 },
+  statusPillText: { fontSize: 15, fontWeight: '900' },
+  tapZonesRow: { flexDirection: 'row', flex: 1, minHeight: 0 },
+  tapZone: { flex: 1, borderRadius: 22, padding: 18, justifyContent: 'space-between', alignItems: 'center', minHeight: 0, shadowColor: '#000', shadowOpacity: 0.36, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 7 },
   tapZoneP1: { backgroundColor: COURT.pA, borderTopColor: COURT.amber, borderTopWidth: 5 },
   tapZoneP2: { backgroundColor: COURT.pB, borderTopColor: COURT.amber, borderTopWidth: 5 },
   tapZonePressed: { transform: [{ translateY: 2 }, { scale: 0.99 }], opacity: 0.92 },
-  tapZoneName: { alignSelf: 'flex-end', color: COURT.line, fontSize: 18, fontWeight: '900' },
-  tapZoneScore: { color: '#FFFFFF', fontSize: 116, fontWeight: '900', fontFamily: 'monospace', letterSpacing: -4, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 10, minWidth: 150, textAlign: 'center' },
-  tapZoneSub: { color: 'rgba(255,255,255,0.72)', fontSize: 16, fontWeight: '900', textAlign: 'center' },
-  tapZoneFooter: { color: 'rgba(255,255,255,0.58)', fontSize: 15, fontWeight: '900' },
+  tapZoneName: { alignSelf: 'flex-end', color: COURT.line, fontSize: 16, fontWeight: '900' },
+  tapZoneScore: { color: '#FFFFFF', fontSize: 92, fontWeight: '900', fontFamily: 'monospace', letterSpacing: -4, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 10, minWidth: 118, textAlign: 'center' },
+  tapZoneSub: { color: 'rgba(255,255,255,0.72)', fontSize: 13, fontWeight: '900', textAlign: 'center' },
+  tapZoneFooter: { color: 'rgba(255,255,255,0.58)', fontSize: 13, fontWeight: '900' },
   netCord: { width: 8, backgroundColor: 'rgba(242,239,230,0.82)', marginHorizontal: 4, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   vsKnot: { width: 42, height: 42, borderRadius: 21, overflow: 'hidden', backgroundColor: 'rgba(14,20,24,0.62)', color: 'rgba(242,239,230,0.72)', fontSize: 12, fontWeight: '900', textAlign: 'center', textAlignVertical: 'center' },
-  flagPill: { position: 'absolute', top: 22, left: 18, overflow: 'hidden', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 3 },
+  flagPill: { position: 'absolute', top: 18, left: 14, overflow: 'hidden', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 3 },
   flagPillRight: { left: undefined, right: 18 },
-  bottomCourtBar: { flexDirection: 'row', gap: 14, alignItems: 'center', marginTop: 18 },
-  bottomIcon: { color: COURT.line, fontSize: 34, fontWeight: '800', width: 48, textAlign: 'center' },
-  holdUndoKey: { flex: 1, backgroundColor: '#FFD9A3', borderRadius: 20, minHeight: 76, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  bottomCourtBar: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 10 },
+  bottomIcon: { color: COURT.line, fontSize: 28, fontWeight: '800', width: 40, textAlign: 'center' },
+  holdUndoKey: { flex: 1, backgroundColor: '#FFD9A3', borderRadius: 18, minHeight: 62, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  holdUndoPressed: { transform: [{ scale: 0.98 }], backgroundColor: COURT.amber },
   holdUndoDisabled: { opacity: 0.48 },
-  holdUndoTitle: { color: '#14100B', fontSize: 22, fontWeight: '900' },
-  holdUndoHint: { color: 'rgba(20,16,11,0.62)', fontSize: 14, fontWeight: '700', marginTop: 4 },
-  tipsRowCourt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 12 },
+  holdUndoTitle: { color: '#14100B', fontSize: 19, fontWeight: '900' },
+  holdUndoHint: { color: 'rgba(20,16,11,0.62)', fontSize: 12, fontWeight: '700', marginTop: 2 },
+  tipsRowCourt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 6 },
   matchCompleteCard: { backgroundColor: '#202B30', borderRadius: 28, padding: 26, alignItems: 'center', gap: 12, marginBottom: 18, borderLeftWidth: 5, borderLeftColor: COURT.pA, borderRightWidth: 5, borderRightColor: COURT.pB },
   matchCompleteIcon: { width: 76, height: 76, borderRadius: 38, overflow: 'hidden', backgroundColor: 'rgba(74,222,128,0.18)', color: '#8BF0AC', textAlign: 'center', textAlignVertical: 'center', fontSize: 46, fontWeight: '900' },
   matchCompleteLabel: { color: '#8BF0AC', fontSize: 14, fontWeight: '900', letterSpacing: 3 },
