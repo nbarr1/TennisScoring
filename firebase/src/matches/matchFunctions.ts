@@ -36,6 +36,22 @@ type RecalculateRankingsResult = {
 };
 
 
+function validateMatchCompleteness(match: Match): Match | undefined {
+  if (match.status !== 'completed') return undefined;
+  if (match.winner !== 'player1' && match.winner !== 'player2') return undefined;
+  if (typeof match.player1Id !== 'string' || match.player1Id.trim().length === 0) {
+    return undefined;
+  }
+  if (typeof match.player2Id !== 'string' || match.player2Id.trim().length === 0) {
+    return undefined;
+  }
+  if (!Array.isArray(match.playerIds)) return undefined;
+  if (!Array.isArray(match.liveScore?.sets) || match.liveScore.sets.length === 0) {
+    return undefined;
+  }
+  return match;
+}
+
 function cloneStats(stats: Match['stats']): Match['stats'] {
   return {
     player1: { ...EMPTY_STATS, ...stats.player1 },
@@ -499,14 +515,16 @@ export async function recalculateRankings(
     .collection('users')
     .where('divisionId', '==', divisionId)
     .get();
-  const linkedDivisionMatchPlayerIds = matchesSnap.docs.flatMap((doc) => {
-    const match = doc.data() as Match;
-    if (match.isDivisionMatch === false) return [];
+  const linkedDivisionMatchPlayerIds = new Set<string>();
+  matchesSnap.docs.forEach((doc) => {
+    const match = validateMatchCompleteness(doc.data() as Match);
+    if (match === undefined || match.isDivisionMatch === false) return;
     const ids = Array.isArray(match.playerIds) ? match.playerIds : [];
-    return ids.filter(
-      (id): id is string =>
-        typeof id === 'string' && id.trim().length > 0 && id !== 'guest',
-    );
+    ids.forEach((id) => {
+      if (typeof id === 'string' && id.trim().length > 0 && id !== 'guest') {
+        linkedDivisionMatchPlayerIds.add(id);
+      }
+    });
   });
   const divisionPlayerIds = Array.from(
     new Set([
@@ -533,22 +551,24 @@ export async function recalculateRankings(
   const writer = db.bulkWriter();
 
   for (const doc of matchesSnap.docs) {
-    const match = doc.data() as Match;
-    if (options.normalizeMatches && match.isDivisionMatch === undefined) {
+    const rawMatch = doc.data() as Match;
+    if (options.normalizeMatches && rawMatch.isDivisionMatch === undefined) {
       writer.update(doc.ref, { isDivisionMatch: true });
       result.matchesNormalized += 1;
     }
 
-    if (!match.winner) {
-      result.skippedMissingWinner += 1;
-      continue;
-    }
-    if (match.isDivisionMatch === false) {
+    if (rawMatch.isDivisionMatch === false) {
       result.skippedNonDivisionMatches += 1;
       continue;
     }
-    if (!match.liveScore?.sets?.length) {
-      result.skippedMissingScore += 1;
+
+    const match = validateMatchCompleteness(rawMatch);
+    if (match === undefined) {
+      if (!rawMatch.winner) {
+        result.skippedMissingWinner += 1;
+      } else {
+        result.skippedMissingScore += 1;
+      }
       continue;
     }
 
