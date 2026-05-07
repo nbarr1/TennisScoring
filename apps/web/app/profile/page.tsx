@@ -1,26 +1,27 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { AppNav, appNavStyles } from "../shared/AppNav";
+import { useEffect, useState } from "react";
 import {
   useAuthUser,
   useUserProfile,
   updateUserProfile,
-  divisionDoc,
-  divisionsCol,
-} from '@tennis/firebase-client';
-import { getDoc, getDocs, query, where } from 'firebase/firestore';
+  useDivisionOptions,
+} from "@tennis/firebase-client";
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
+  addAvailabilitySlot,
+  buildUserProfileUpdates,
+  removeAvailabilitySlot,
+  updateAvailabilitySlot,
+  validateAvailabilitySlots,
   type AvailabilitySlot,
   type DayOfWeek,
-} from '@tennis/shared';
-
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const NOTIFICATION_OPT_IN_KEY = 'tennis-notifications-opt-in';
+} from "@tennis/shared";
+const NOTIFICATION_OPT_IN_KEY = "tennis-notifications-opt-in";
 
 export default function ProfilePage(): React.JSX.Element {
   const { firebaseUser, loading: authLoading } = useAuthUser();
@@ -28,9 +29,9 @@ export default function ProfilePage(): React.JSX.Element {
     firebaseUser?.uid ?? null,
   );
 
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [allowEmail, setAllowEmail] = useState(true);
   const [allowSMS, setAllowSMS] = useState(true);
   const [allowInApp, setAllowInApp] = useState(true);
@@ -38,134 +39,86 @@ export default function ProfilePage(): React.JSX.Element {
   const [availabilitySlots, setAvailabilitySlots] = useState<
     AvailabilitySlot[]
   >([]);
-  const [availabilityNote, setAvailabilityNote] = useState('');
+  const [availabilityNote, setAvailabilityNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [error, setError] = useState('');
-  const [divisionOptions, setDivisionOptions] = useState<
-    Array<{ id: string; name: string }>
-  >([]);
-  const [selectedDivisionId, setSelectedDivisionId] = useState('');
+  const [error, setError] = useState("");
+  const divisionOptions = useDivisionOptions(
+    firebaseUser?.uid,
+    profile?.divisionId,
+  );
+  const [selectedDivisionId, setSelectedDivisionId] = useState("");
 
   useEffect(() => {
     if (!profile) return;
-    setDisplayName(profile.displayName ?? '');
-    setEmail(profile.email ?? '');
-    setPhone(profile.phone ?? '');
+    setDisplayName(profile.displayName ?? "");
+    setEmail(profile.email ?? "");
+    setPhone(profile.phone ?? "");
     setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
     setAllowSMS(profile.contactPreferences?.allowSMS ?? true);
     setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
     setTipsEnabled(profile.tipsEnabled ?? true);
     setAvailabilitySlots(profile.availability?.slots ?? []);
-    setAvailabilityNote(profile.availability?.note ?? '');
-    setSelectedDivisionId(profile.divisionId ?? '');
+    setAvailabilityNote(profile.availability?.note ?? "");
+    setSelectedDivisionId(profile.divisionId ?? "");
   }, [profile]);
 
-  useEffect(() => {
-    async function loadDivisionOptions() {
-      const userId = firebaseUser?.uid;
-      if (!userId) {
-        setDivisionOptions([]);
-        return;
-      }
-
-      const divisionById = new Map<string, { id: string; name: string }>();
-      const addDivisionOption = (id: string, name?: string) => {
-        const trimmedName = name?.trim();
-        divisionById.set(id, { id, name: trimmedName || id });
-      };
-
-      const [playerSnap, leaderSnap, currentDivisionSnap] = await Promise.all([
-        getDocs(
-          query(divisionsCol(), where('playerIds', 'array-contains', userId)),
-        ),
-        getDocs(
-          query(divisionsCol(), where('leaderIds', 'array-contains', userId)),
-        ),
-        profile?.divisionId ? getDoc(divisionDoc(profile.divisionId)) : null,
-      ]);
-
-      for (const docSnap of [...playerSnap.docs, ...leaderSnap.docs]) {
-        addDivisionOption(
-          docSnap.id,
-          docSnap.data().name as string | undefined,
-        );
-      }
-
-      if (profile?.divisionId) {
-        addDivisionOption(
-          profile.divisionId,
-          currentDivisionSnap?.data()?.name as string | undefined,
-        );
-      }
-
-      setDivisionOptions(Array.from(divisionById.values()));
-    }
-    void loadDivisionOptions();
-  }, [firebaseUser?.uid, profile?.divisionId]);
-
   function addSlot() {
-    setAvailabilitySlots((s) => [
-      ...s,
-      { day: 'mon', from: '18:00', to: '21:00' },
-    ]);
+    setAvailabilitySlots(addAvailabilitySlot);
   }
   function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
-    setAvailabilitySlots((slots) =>
-      slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
-    );
+    setAvailabilitySlots((slots) => updateAvailabilitySlot(slots, idx, patch));
   }
   function removeSlot(idx: number) {
-    setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
+    setAvailabilitySlots((slots) => removeAvailabilitySlot(slots, idx));
   }
 
-
   async function handleEnableNotifications() {
-    setError('');
-    if (!('Notification' in window)) {
-      setError('Browser notifications are not supported on this device.');
+    setError("");
+    if (!("Notification" in window)) {
+      setError("Browser notifications are not supported on this device.");
       return;
     }
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      setError('Notifications were not enabled. You can retry from browser settings.');
+    if (permission !== "granted") {
+      setError(
+        "Notifications were not enabled. You can retry from browser settings.",
+      );
       return;
     }
-    window.localStorage.setItem(NOTIFICATION_OPT_IN_KEY, 'true');
-    window.dispatchEvent(new Event('tennis-notifications-opt-in'));
+    window.localStorage.setItem(NOTIFICATION_OPT_IN_KEY, "true");
+    window.dispatchEvent(new Event("tennis-notifications-opt-in"));
     setSavedAt(Date.now());
   }
 
   async function handleSave() {
     if (!firebaseUser || !profile) return;
-    for (const slot of availabilitySlots) {
-      if (!TIME_RE.test(slot.from) || !TIME_RE.test(slot.to)) {
-        setError('Times must be in HH:MM 24-hour format.');
-        return;
-      }
-      if (slot.from >= slot.to) {
-        setError('Each slot must end after it starts.');
-        return;
-      }
+    const validation = validateAvailabilitySlots(availabilitySlots);
+    if (!validation.valid) {
+      setError(validation.message);
+      return;
     }
     setSaving(true);
-    setError('');
+    setError("");
     try {
-      await updateUserProfile(firebaseUser.uid, {
-        displayName: displayName.trim(),
-        email: email.trim().toLowerCase() || undefined,
-        phone: phone.trim() || undefined,
-        contactPreferences: { allowEmail, allowSMS, allowInApp },
-        tipsEnabled,
-        availability: {
-          slots: availabilitySlots,
-          ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
-        },
-        divisionId: selectedDivisionId || undefined,
-      });
+      await updateUserProfile(
+        firebaseUser.uid,
+        buildUserProfileUpdates({
+          displayName,
+          email,
+          phone,
+          allowEmail,
+          allowSMS,
+          allowInApp,
+          tipsEnabled,
+          availabilitySlots,
+          availabilityNote,
+          selectedDivisionId,
+        }),
+      );
       setSavedAt(Date.now());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile.');
+      setError(e instanceof Error ? e.message : "Could not save profile.");
     } finally {
       setSaving(false);
     }
@@ -185,29 +138,7 @@ export default function ProfilePage(): React.JSX.Element {
 
   return (
     <div style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
-        <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>
-            Rankings
-          </Link>
-          <Link href="/matches" style={styles.navLink}>
-            Matches
-          </Link>
-          <Link href="/messages" style={styles.navLink}>
-            Messages
-          </Link>
-          <Link
-            href="/profile"
-            style={{ ...styles.navLink, ...styles.navLinkActive }}
-          >
-            Profile
-          </Link>
-          <Link href="/admin" style={styles.navLink}>
-            Admin
-          </Link>
-        </div>
-      </nav>
+      <AppNav active="profile" />
 
       <main style={styles.main}>
         <h1 style={styles.pageTitle}>Profile</h1>
@@ -326,7 +257,7 @@ export default function ProfilePage(): React.JSX.Element {
           </button>
           <Field label="Note">
             <textarea
-              style={{ ...styles.input, minHeight: 64, resize: 'vertical' }}
+              style={{ ...styles.input, minHeight: 64, resize: "vertical" }}
               value={availabilityNote}
               onChange={(e) => setAvailabilityNote(e.target.value)}
               placeholder="Optional, e.g. Flexible weekends; usually busy Tues."
@@ -345,7 +276,11 @@ export default function ProfilePage(): React.JSX.Element {
             Enable browser notifications to receive match proposals, reports,
             and messages on this device.
           </p>
-          <button type="button" style={styles.secondaryBtn} onClick={handleEnableNotifications}>
+          <button
+            type="button"
+            style={styles.secondaryBtn}
+            onClick={handleEnableNotifications}
+          >
             Enable browser notifications
           </button>
         </div>
@@ -354,7 +289,7 @@ export default function ProfilePage(): React.JSX.Element {
 
         <div style={styles.actions}>
           <button style={styles.saveBtn} onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
+            {saving ? "Saving…" : "Save changes"}
           </button>
           {savedAt && (
             <span style={styles.saved}>
@@ -405,132 +340,125 @@ function CheckboxRow({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', background: 'var(--bg)' },
-  nav: {
-    background: 'var(--green-dark)',
-    padding: '16px 32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    flexWrap: 'wrap',
-  },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
-  navLink: { color: 'rgba(255,255,255,0.75)', fontWeight: 500, fontSize: 15 },
-  navLinkActive: {
-    color: '#fff',
-    borderBottom: '2px solid #ffdc60',
-    paddingBottom: 2,
-  },
-  main: { maxWidth: 720, margin: '0 auto', padding: '40px 24px' },
+  page: appNavStyles.page,
+  main: { maxWidth: 720, margin: "0 auto", padding: "40px 24px" },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     marginBottom: 24,
   },
   card: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 14,
     padding: 28,
     marginBottom: 20,
-    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 700,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     marginBottom: 16,
   },
   field: { marginBottom: 16 },
   label: {
-    display: 'block',
+    display: "block",
     fontSize: 13,
     fontWeight: 600,
-    color: '#444',
+    color: "#444",
     marginBottom: 6,
   },
   input: {
-    width: '100%',
-    border: '1px solid #ddd',
+    width: "100%",
+    border: "1px solid #ddd",
     borderRadius: 10,
-    padding: '10px 14px',
+    padding: "10px 14px",
     fontSize: 14,
-    boxSizing: 'border-box',
-    outline: 'none',
+    boxSizing: "border-box",
+    outline: "none",
   },
-  helper: { fontSize: 12, color: '#888', marginTop: 6 },
+  helper: { fontSize: 12, color: "#888", marginTop: 6 },
   checkboxRow: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 10,
-    padding: '8px 0',
-    cursor: 'pointer',
+    padding: "8px 0",
+    cursor: "pointer",
     fontSize: 14,
-    color: '#333',
+    color: "#333",
   },
-  checkbox: { width: 16, height: 16, accentColor: '#1a472a' },
-  actions: { display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 },
-  secondaryBtn: { background: '#f0f5ef', color: 'var(--green-dark)', border: 'none', borderRadius: 10, padding: '12px 18px', fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 12 },
-  saveBtn: {
-    background: 'var(--green-dark)',
-    color: '#fff',
-    border: 'none',
+  checkbox: { width: 16, height: 16, accentColor: "#1a472a" },
+  actions: { display: "flex", alignItems: "center", gap: 16, marginTop: 8 },
+  secondaryBtn: {
+    background: "#f0f5ef",
+    color: "var(--green-dark)",
+    border: "none",
     borderRadius: 10,
-    padding: '12px 24px',
+    padding: "12px 18px",
     fontWeight: 700,
     fontSize: 14,
-    cursor: 'pointer',
+    cursor: "pointer",
+    marginTop: 12,
   },
-  saved: { color: '#2d6a4f', fontSize: 13, fontWeight: 600 },
-  error: { color: '#c0392b', fontSize: 13, marginBottom: 12 },
+  saveBtn: {
+    background: "var(--green-dark)",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "12px 24px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  saved: { color: "#2d6a4f", fontSize: 13, fontWeight: 600 },
+  error: { color: "#c0392b", fontSize: 13, marginBottom: 12 },
   placeholder: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '50vh',
-    color: '#888',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: "50vh",
+    color: "#888",
   },
   slotRow: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 10,
     marginBottom: 10,
-    flexWrap: 'wrap',
+    flexWrap: "wrap",
   },
   slotDay: {
-    border: '1px solid #ddd',
+    border: "1px solid #ddd",
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: "8px 10px",
     fontSize: 14,
-    background: '#fff',
+    background: "#fff",
   },
   slotTime: {
-    border: '1px solid #ddd',
+    border: "1px solid #ddd",
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: "8px 10px",
     fontSize: 14,
     width: 110,
   },
-  slotDash: { color: '#888' },
+  slotDash: { color: "#888" },
   slotRemove: {
-    border: 'none',
-    background: 'transparent',
-    color: '#c0392b',
-    cursor: 'pointer',
+    border: "none",
+    background: "transparent",
+    color: "#c0392b",
+    cursor: "pointer",
     fontSize: 16,
-    padding: '4px 8px',
+    padding: "4px 8px",
   },
   addSlotBtn: {
-    background: 'transparent',
-    color: 'var(--green-dark)',
-    border: '1px dashed var(--green-dark)',
+    background: "transparent",
+    color: "var(--green-dark)",
+    border: "1px dashed var(--green-dark)",
     borderRadius: 8,
-    padding: '8px 14px',
+    padding: "8px 14px",
     fontWeight: 600,
     fontSize: 13,
-    cursor: 'pointer',
+    cursor: "pointer",
     marginBottom: 12,
   },
 };

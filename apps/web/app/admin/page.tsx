@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { onSnapshot, getDoc, getDocs } from 'firebase/firestore';
+import { AppNav, appNavStyles } from "../shared/AppNav";
+import { useState, useEffect } from "react";
+import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
 import {
   divisionsCol,
   userDoc,
@@ -18,31 +18,33 @@ import {
   addDivisionMemberPlaceholder as addDivisionMemberPlaceholderShared,
   updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
   useAuthUser,
-} from '@tennis/firebase-client';
-import type { Division, User } from '@tennis/shared';
-import type { Match, PlayerRanking } from '@tennis/shared';
-import { query, where } from 'firebase/firestore';
+} from "@tennis/firebase-client";
+import type { Division, User } from "@tennis/shared";
+import type { Match, PlayerRanking } from "@tennis/shared";
+import { query, where } from "firebase/firestore";
 
 export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
-  const [memberName, setMemberName] = useState('');
-  const [memberEmail, setMemberEmail] = useState('');
-  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(null);
-  const [mergeSourceUserId, setMergeSourceUserId] = useState('');
+  const [memberName, setMemberName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(
+    null,
+  );
+  const [mergeSourceUserId, setMergeSourceUserId] = useState("");
   const [merging, setMerging] = useState(false);
   const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
   const [candidateMatchRefreshKey, setCandidateMatchRefreshKey] = useState(0);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
-  const [editEmail, setEditEmail] = useState('');
-  const [newDivisionName, setNewDivisionName] = useState('');
+  const [editEmail, setEditEmail] = useState("");
+  const [newDivisionName, setNewDivisionName] = useState("");
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState('');
-  const [inviteMessage, setInviteMessage] = useState('');
+  const [error, setError] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
   const [repairingRankings, setRepairingRankings] = useState(false);
-  const [repairMessage, setRepairMessage] = useState('');
+  const [repairMessage, setRepairMessage] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
@@ -60,7 +62,7 @@ export default function AdminPage(): React.JSX.Element {
     }
     const leaderQuery = query(
       divisionsCol(),
-      where('leaderIds', 'array-contains', firebaseUser.uid),
+      where("leaderIds", "array-contains", firebaseUser.uid),
     );
 
     return onSnapshot(leaderQuery, async (leaderSnap) => {
@@ -69,17 +71,17 @@ export default function AdminPage(): React.JSX.Element {
       if (!leaderSnap.empty) {
         div = {
           id: leaderSnap.docs[0].id,
-          ...(leaderSnap.docs[0].data() as Omit<Division, 'id'>),
+          ...(leaderSnap.docs[0].data() as Omit<Division, "id">),
         };
       } else {
         const profileSnap = await getDoc(userDoc(firebaseUser.uid));
         const profileDivisionId = profileSnap.data()?.divisionId;
-        if (typeof profileDivisionId === 'string' && profileDivisionId.trim()) {
+        if (typeof profileDivisionId === "string" && profileDivisionId.trim()) {
           const divisionSnap = await getDoc(divisionDoc(profileDivisionId));
           if (divisionSnap.exists()) {
             div = {
               id: divisionSnap.id,
-              ...(divisionSnap.data() as Omit<Division, 'id'>),
+              ...(divisionSnap.data() as Omit<Division, "id">),
             };
           }
         }
@@ -87,44 +89,53 @@ export default function AdminPage(): React.JSX.Element {
 
       setDivision(div);
       if (div) {
-        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] = await Promise.all([
-          div.playerIds.length
-            ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
-            : Promise.resolve([]),
-          getDocs(query(usersCol(), where('divisionId', '==', div.id))),
-          getDocs(rankingsCol(div.id)),
-        ]);
+        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
+          await Promise.all([
+            div.playerIds.length
+              ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
+              : Promise.resolve([]),
+            getDocs(query(usersCol(), where("divisionId", "==", div.id))),
+            getDocs(rankingsCol(div.id)),
+          ]);
         const rankingFallbacks = rankingSnap.docs.map((d) => {
           const data = d.data() as PlayerRanking;
           return { ...data, userId: data.userId || d.id };
         });
         const byId = new Map<string, User>();
-        const addProfile = (id: string, data: Omit<User, 'id'>) => {
+        const addProfile = (id: string, data: Omit<User, "id">) => {
           byId.set(id, { id, ...data });
         };
         divisionMemberProfiles.forEach((d) => {
-          if (d.exists()) addProfile(d.id, d.data() as Omit<User, 'id'>);
+          if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
         });
-        divisionProfileSnap.docs.forEach((d) => addProfile(d.id, d.data() as Omit<User, 'id'>));
+        divisionProfileSnap.docs.forEach((d) =>
+          addProfile(d.id, d.data() as Omit<User, "id">),
+        );
         rankingFallbacks.forEach((ranking) => {
           if (byId.has(ranking.userId)) return;
           byId.set(ranking.userId, {
             id: ranking.userId,
             displayName: ranking.displayName,
-            email: '',
-            contactPreferences: { allowEmail: false, allowSMS: false, allowInApp: true },
+            email: "",
+            contactPreferences: {
+              allowEmail: false,
+              allowSMS: false,
+              allowInApp: true,
+            },
             divisionId: div.id,
-            role: 'player',
+            role: "player",
             fcmTokens: [],
             tipsEnabled: true,
             isRegistered: false,
-            inviteStatus: 'none',
+            inviteStatus: "none",
             createdAt: ranking.updatedAt ?? 0,
             updatedAt: ranking.updatedAt ?? 0,
           });
         });
         setPlayers(
-          [...byId.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)),
+          [...byId.values()].sort((a, b) =>
+            a.displayName.localeCompare(b.displayName),
+          ),
         );
       } else {
         setPlayers([]);
@@ -133,21 +144,20 @@ export default function AdminPage(): React.JSX.Element {
     });
   }, [firebaseUser]);
 
-
   async function createDivision() {
     if (!firebaseUser || !newDivisionName.trim()) return;
     await createDivisionShared(newDivisionName.trim(), firebaseUser.uid, {
       displayName: firebaseUser.displayName ?? undefined,
       email: firebaseUser.email ?? undefined,
     });
-    setNewDivisionName('');
+    setNewDivisionName("");
   }
 
   async function addDivisionMember() {
     if (!firebaseUser || !division?.id || !memberName.trim()) return;
     setAdding(true);
-    setError('');
-    setInviteMessage('');
+    setError("");
+    setInviteMessage("");
     try {
       const trimmedName = memberName.trim();
       const trimmedEmail = memberEmail.trim() || undefined;
@@ -158,28 +168,30 @@ export default function AdminPage(): React.JSX.Element {
         false,
       );
       setNeedsMergeForUserId(memberResult.userId);
-      setMergeSourceUserId('');
+      setMergeSourceUserId("");
       setSelectedMatchIds([]);
       setCandidateMatches([]);
-      setEditEmail(trimmedEmail ?? '');
+      setEditEmail(trimmedEmail ?? "");
       const baseMessage = memberResult.createdPlaceholder
         ? `Player added for ${memberName.trim()}.`
-        : 'Existing registered player added to division.';
+        : "Existing registered player added to division.";
       const linkedMessage = memberResult.linkedHistoricalMatches
         ? ` Automatically linked ${memberResult.linkedHistoricalMatches} historical match${
-            memberResult.linkedHistoricalMatches === 1 ? '' : 'es'
+            memberResult.linkedHistoricalMatches === 1 ? "" : "es"
           } by player name.`
-        : '';
-      setInviteMessage(`${baseMessage}${linkedMessage} If anything is missing, link records below.`);
-      setMemberName('');
-      setMemberEmail('');
+        : "";
+      setInviteMessage(
+        `${baseMessage}${linkedMessage} If anything is missing, link records below.`,
+      );
+      setMemberName("");
+      setMemberEmail("");
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
       setError(
         message
-          ? `${code ?? 'error'}: ${message}`
-          : 'Failed to add division member. Please try again.',
+          ? `${code ?? "error"}: ${message}`
+          : "Failed to add division member. Please try again.",
       );
     } finally {
       setAdding(false);
@@ -189,11 +201,11 @@ export default function AdminPage(): React.JSX.Element {
   async function handleMergeRecords() {
     if (!division || !needsMergeForUserId) return;
     if (selectedMatchIds.length === 0) {
-      setError('Please select at least one match to link.');
+      setError("Please select at least one match to link.");
       return;
     }
     setMerging(true);
-    setError('');
+    setError("");
     try {
       const updatedMatches = await mergeDivisionPlayerRecords(
         division.id,
@@ -205,7 +217,7 @@ export default function AdminPage(): React.JSX.Element {
         },
       );
       setInviteMessage(
-        `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? '' : 'es'} and refreshed rankings.`,
+        `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? "" : "es"} and refreshed rankings.`,
       );
       setLastLinkAction({
         sourceUserId: mergeSourceUserId || undefined,
@@ -214,14 +226,14 @@ export default function AdminPage(): React.JSX.Element {
       });
       setCandidateMatchRefreshKey((key) => key + 1);
       setSelectedMatchIds([]);
-      setMergeSourceUserId('');
+      setMergeSourceUserId("");
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
       setError(
         message
-          ? `${code ?? 'error'}: ${message}`
-          : 'Failed to link historical matches.',
+          ? `${code ?? "error"}: ${message}`
+          : "Failed to link historical matches.",
       );
     } finally {
       setMerging(false);
@@ -231,14 +243,22 @@ export default function AdminPage(): React.JSX.Element {
   async function handleUpdatePlayerEmail() {
     if (!division || !needsMergeForUserId || !editEmail.trim()) return;
     setMerging(true);
-    setError('');
+    setError("");
     try {
-      await updateDivisionPlayerEmailShared(division.id, needsMergeForUserId, editEmail);
-      setInviteMessage('Player email updated.');
+      await updateDivisionPlayerEmailShared(
+        division.id,
+        needsMergeForUserId,
+        editEmail,
+      );
+      setInviteMessage("Player email updated.");
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
-      setError(message ? `${code ?? 'error'}: ${message}` : 'Failed to update player email.');
+      setError(
+        message
+          ? `${code ?? "error"}: ${message}`
+          : "Failed to update player email.",
+      );
     } finally {
       setMerging(false);
     }
@@ -247,7 +267,7 @@ export default function AdminPage(): React.JSX.Element {
   async function undoLastLink() {
     if (!division || !lastLinkAction?.sourceUserId) return;
     setMerging(true);
-    setError('');
+    setError("");
     try {
       const reverted = await mergeDivisionPlayerRecords(
         division.id,
@@ -257,15 +277,17 @@ export default function AdminPage(): React.JSX.Element {
           matchIds: lastLinkAction.matchIds,
         },
       );
-      setInviteMessage(`Undo complete. Reverted ${reverted} linked historical matches.`);
+      setInviteMessage(
+        `Undo complete. Reverted ${reverted} linked historical matches.`,
+      );
       setLastLinkAction(null);
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
       setError(
         message
-          ? `${code ?? 'error'}: ${message}`
-          : 'Failed to undo the last link action.',
+          ? `${code ?? "error"}: ${message}`
+          : "Failed to undo the last link action.",
       );
     } finally {
       setMerging(false);
@@ -278,19 +300,28 @@ export default function AdminPage(): React.JSX.Element {
         setSelectedMatchIds([]);
         return;
       }
-      const snap = await getDocs(query(matchesCol(), where('divisionId', '==', division.id)));
+      const snap = await getDocs(
+        query(matchesCol(), where("divisionId", "==", division.id)),
+      );
       const matches = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }))
         .filter((match) => {
-          if (match.status !== 'completed') return false;
+          if (match.status !== "completed") return false;
           const attachedPlayerIds = new Set(
             (Array.isArray(match.playerIds) ? match.playerIds : []).filter(
-              (id) => id && id !== 'guest',
+              (id) => id && id !== "guest",
             ),
           );
-          return !attachedPlayerIds.has(needsMergeForUserId) && attachedPlayerIds.size < 2;
+          return (
+            !attachedPlayerIds.has(needsMergeForUserId) &&
+            attachedPlayerIds.size < 2
+          );
         })
-        .sort((a, b) => (b.completedAt ?? b.createdAt ?? 0) - (a.completedAt ?? a.createdAt ?? 0));
+        .sort(
+          (a, b) =>
+            (b.completedAt ?? b.createdAt ?? 0) -
+            (a.completedAt ?? a.createdAt ?? 0),
+        );
       setCandidateMatches(matches);
       setSelectedMatchIds([]);
     }
@@ -300,8 +331,8 @@ export default function AdminPage(): React.JSX.Element {
   async function repairRankings() {
     if (!division) return;
     setRepairingRankings(true);
-    setError('');
-    setRepairMessage('');
+    setError("");
+    setRepairMessage("");
     try {
       const response = (await recalculateDivisionRankings(
         division.id,
@@ -319,21 +350,21 @@ export default function AdminPage(): React.JSX.Element {
       setRepairMessage(
         result
           ? `Rankings repaired. Counted ${result.countedMatches ?? 0} match${
-              result.countedMatches === 1 ? '' : 'es'
+              result.countedMatches === 1 ? "" : "es"
             }, including ${result.guestMatchesCounted ?? 0} guest match${
-              result.guestMatchesCounted === 1 ? '' : 'es'
+              result.guestMatchesCounted === 1 ? "" : "es"
             }. Updated ${result.rankingsWritten ?? 0} ranking row${
-              result.rankingsWritten === 1 ? '' : 's'
+              result.rankingsWritten === 1 ? "" : "s"
             } and removed ${result.rankingsDeleted ?? 0} stale row${
-              result.rankingsDeleted === 1 ? '' : 's'
+              result.rankingsDeleted === 1 ? "" : "s"
             }. Normalized ${result.matchesNormalized ?? 0} historic match${
-              result.matchesNormalized === 1 ? '' : 'es'
+              result.matchesNormalized === 1 ? "" : "es"
             }.`
-          : 'Rankings repaired.',
+          : "Rankings repaired.",
       );
     } catch (e) {
       const message = (e as { message?: string }).message;
-      setError(message || 'Failed to repair rankings. Please try again.');
+      setError(message || "Failed to repair rankings. Please try again.");
     } finally {
       setRepairingRankings(false);
     }
@@ -341,29 +372,7 @@ export default function AdminPage(): React.JSX.Element {
 
   return (
     <div style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
-        <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>
-            Rankings
-          </Link>
-          <Link href="/matches" style={styles.navLink}>
-            Matches
-          </Link>
-          <Link href="/messages" style={styles.navLink}>
-            Messages
-          </Link>
-          <Link href="/profile" style={styles.navLink}>
-            Profile
-          </Link>
-          <Link
-            href="/admin"
-            style={{ ...styles.navLink, ...styles.navLinkActive }}
-          >
-            Admin
-          </Link>
-        </div>
-      </nav>
+      <AppNav active="admin" />
 
       <main style={styles.main}>
         <h1 style={styles.pageTitle}>Division Admin</h1>
@@ -396,11 +405,9 @@ export default function AdminPage(): React.JSX.Element {
         ) : (
           <>
             <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>
-                {division.name}
-              </h2>
+              <h2 style={styles.sectionTitle}>{division.name}</h2>
               <p style={styles.hint}>
-                {players.length} player{players.length !== 1 ? 's' : ''}{' '}
+                {players.length} player{players.length !== 1 ? "s" : ""}{" "}
                 enrolled
               </p>
 
@@ -429,7 +436,7 @@ export default function AdminPage(): React.JSX.Element {
                   onClick={addDivisionMember}
                   disabled={adding || !memberName.trim() || !division?.id}
                 >
-                  {adding ? 'Saving…' : 'Add Member'}
+                  {adding ? "Saving…" : "Add Member"}
                 </button>
               </div>
               {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
@@ -439,15 +446,15 @@ export default function AdminPage(): React.JSX.Element {
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Ranking Repair</h2>
               <p style={styles.hint}>
-                Rebuild rankings and head-to-head records from completed
-                matches without deleting match history.
+                Rebuild rankings and head-to-head records from completed matches
+                without deleting match history.
               </p>
               <button
                 style={styles.btn}
                 onClick={repairRankings}
                 disabled={repairingRankings}
               >
-                {repairingRankings ? 'Repairing...' : 'Repair Rankings'}
+                {repairingRankings ? "Repairing..." : "Repair Rankings"}
               </button>
               {repairMessage && <p style={styles.success}>{repairMessage}</p>}
             </div>
@@ -455,9 +462,7 @@ export default function AdminPage(): React.JSX.Element {
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Players</h2>
               {players.length === 0 ? (
-                <p style={styles.hint}>
-                  No players yet. Add players above.
-                </p>
+                <p style={styles.hint}>No players yet. Add players above.</p>
               ) : (
                 <div style={styles.tableScroller}>
                   <table style={styles.table}>
@@ -485,7 +490,7 @@ export default function AdminPage(): React.JSX.Element {
                                   {p.email}
                                 </a>
                               ) : (
-                                '—'
+                                "—"
                               )}
                             </td>
                             <td style={styles.td}>
@@ -497,7 +502,7 @@ export default function AdminPage(): React.JSX.Element {
                                   {p.phone}
                                 </a>
                               ) : (
-                                '—'
+                                "—"
                               )}
                             </td>
                             <td style={styles.td}>
@@ -509,25 +514,25 @@ export default function AdminPage(): React.JSX.Element {
                                 }
                               >
                                 {division.leaderIds.includes(p.id)
-                                  ? 'Leader'
-                                  : 'Player'}
+                                  ? "Leader"
+                                  : "Player"}
                               </span>
                             </td>
                             <td style={styles.td}>
                               {p.isRegistered === false
-                                ? p.inviteStatus === 'invite_sent'
-                                  ? 'Invite Sent'
-                                  : 'Unregistered'
-                                : 'Registered'}
+                                ? p.inviteStatus === "invite_sent"
+                                  ? "Invite Sent"
+                                  : "Unregistered"
+                                : "Registered"}
                             </td>
                             <td style={styles.td}>
                               <button
                                 style={styles.btnSecondary}
                                 onClick={() => {
                                   setNeedsMergeForUserId(p.id);
-                                  setMergeSourceUserId('');
+                                  setMergeSourceUserId("");
                                   setSelectedMatchIds([]);
-                                  setEditEmail(p.email ?? '');
+                                  setEditEmail(p.email ?? "");
                                   setExpandedPlayerId((current) =>
                                     current === p.id ? null : p.id,
                                   );
@@ -536,7 +541,7 @@ export default function AdminPage(): React.JSX.Element {
                                 Edit / Link
                               </button>
                             </td>
-                          </tr>
+                          </tr>,
                         ];
                         if (expandedPlayerId === p.id) {
                           rows.push(
@@ -546,19 +551,22 @@ export default function AdminPage(): React.JSX.Element {
                                 colSpan={6}
                               >
                                 <div style={styles.inlineEditor}>
-                                                                   <input
+                                  <input
                                     style={{
                                       ...styles.input,
                                       ...styles.editorInput,
                                     }}
                                     value={editEmail}
-                                    onChange={(e) => setEditEmail(e.target.value)}
+                                    onChange={(e) =>
+                                      setEditEmail(e.target.value)
+                                    }
                                     placeholder="Update player email (optional)"
                                     type="email"
                                     aria-label="Update player email"
                                   />
                                   <p style={styles.linkPrompt}>
-                                    Which of the recorded matches did {p.displayName} play in?
+                                    Which of the recorded matches did{" "}
+                                    {p.displayName} play in?
                                   </p>
                                   <div style={styles.editorActions}>
                                     <button
@@ -570,7 +578,9 @@ export default function AdminPage(): React.JSX.Element {
                                         needsMergeForUserId !== p.id
                                       }
                                     >
-                                      {merging ? 'Linking…' : 'Link Selected Matches'}
+                                      {merging
+                                        ? "Linking…"
+                                        : "Link Selected Matches"}
                                     </button>
                                     <button
                                       style={styles.btnSecondary}
@@ -586,7 +596,9 @@ export default function AdminPage(): React.JSX.Element {
                                     <button
                                       style={styles.btnSecondary}
                                       onClick={undoLastLink}
-                                      disabled={!lastLinkAction?.sourceUserId || merging}
+                                      disabled={
+                                        !lastLinkAction?.sourceUserId || merging
+                                      }
                                     >
                                       Undo Last Link
                                     </button>
@@ -596,25 +608,35 @@ export default function AdminPage(): React.JSX.Element {
                                       candidateMatches.map((m) => (
                                         <label
                                           key={m.id}
-                                          style={{ display: 'block', marginBottom: 6 }}
+                                          style={{
+                                            display: "block",
+                                            marginBottom: 6,
+                                          }}
                                         >
                                           <input
                                             type="checkbox"
-                                            checked={selectedMatchIds.includes(m.id)}
+                                            checked={selectedMatchIds.includes(
+                                              m.id,
+                                            )}
                                             onChange={(e) =>
                                               setSelectedMatchIds((prev) =>
                                                 e.target.checked
                                                   ? [...prev, m.id]
-                                                  : prev.filter((id) => id !== m.id),
+                                                  : prev.filter(
+                                                      (id) => id !== m.id,
+                                                    ),
                                               )
                                             }
-                                          />{' '}
-                                          {m.player1Name || 'P1'} vs {m.player2Name || 'P2'}
+                                          />{" "}
+                                          {m.player1Name || "P1"} vs{" "}
+                                          {m.player2Name || "P2"}
                                         </label>
                                       ))
                                     ) : (
                                       <p style={styles.hint}>
-                                        No recorded matches are available. Matches already linked to two player profiles are hidden.
+                                        No recorded matches are available.
+                                        Matches already linked to two player
+                                        profiles are hidden.
                                       </p>
                                     )}
                                   </div>
@@ -637,143 +659,129 @@ export default function AdminPage(): React.JSX.Element {
   );
 }
 
-
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', background: 'var(--bg)' },
-  nav: {
-    background: 'var(--green-dark)',
-    padding: '16px 32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    flexWrap: 'wrap',
-  },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
-  navLink: { color: 'rgba(255,255,255,0.75)', fontWeight: 500, fontSize: 15 },
-  navLinkActive: {
-    color: '#fff',
-    borderBottom: '2px solid #ffdc60',
-    paddingBottom: 2,
-  },
-  main: { maxWidth: 900, margin: '0 auto', padding: '40px 24px' },
+  page: appNavStyles.page,
+  main: { maxWidth: 900, margin: "0 auto", padding: "40px 24px" },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     marginBottom: 24,
   },
   placeholder: {
-    color: 'var(--muted)',
+    color: "var(--muted)",
     padding: 40,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
   },
   card: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 14,
     padding: 28,
     marginBottom: 20,
-    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 700,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     marginBottom: 8,
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 12,
   },
   subTitle: {
     fontSize: 15,
     fontWeight: 700,
-    color: '#444',
-    margin: '20px 0 10px',
+    color: "#444",
+    margin: "20px 0 10px",
   },
-  hint: { fontSize: 14, color: 'var(--muted)', marginBottom: 16 },
-  mergeBox: { marginTop: 12, borderTop: '1px solid #eee', paddingTop: 8 },
+  hint: { fontSize: 14, color: "var(--muted)", marginBottom: 16 },
+  mergeBox: { marginTop: 12, borderTop: "1px solid #eee", paddingTop: 8 },
   inlineEditor: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(180px, 1fr) minmax(240px, 2fr)',
+    display: "grid",
+    gridTemplateColumns: "minmax(180px, 1fr) minmax(240px, 2fr)",
     gap: 12,
-    alignItems: 'center',
-    maxWidth: '100%',
+    alignItems: "center",
+    maxWidth: "100%",
   },
-  editorCell: { background: '#fcfcfc' },
-  editorInput: { boxSizing: 'border-box' as const, minWidth: 0, width: '100%' },
+  editorCell: { background: "#fcfcfc" },
+  editorInput: { boxSizing: "border-box" as const, minWidth: 0, width: "100%" },
   editorActions: {
-    gridColumn: '1 / -1',
-    display: 'flex',
-    flexWrap: 'wrap',
+    gridColumn: "1 / -1",
+    display: "flex",
+    flexWrap: "wrap",
     gap: 10,
   },
-  linkPrompt: { margin: 0, fontSize: 14, color: '#444', alignSelf: 'center' },
-  matchChecklist: { gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: 8 },
-  row: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  linkPrompt: { margin: 0, fontSize: 14, color: "#444", alignSelf: "center" },
+  matchChecklist: {
+    gridColumn: "1 / -1",
+    borderTop: "1px solid #eee",
+    paddingTop: 8,
+  },
+  row: { display: "flex", gap: 10, flexWrap: "wrap" },
   input: {
     flex: 1,
-    border: '1px solid #ddd',
+    border: "1px solid #ddd",
     borderRadius: 10,
-    padding: '10px 14px',
+    padding: "10px 14px",
     fontSize: 14,
-    outline: 'none',
+    outline: "none",
   },
   btn: {
-    background: 'var(--green-dark)',
-    color: '#fff',
-    border: 'none',
+    background: "var(--green-dark)",
+    color: "#fff",
+    border: "none",
     borderRadius: 10,
-    padding: '10px 20px',
+    padding: "10px 20px",
     fontWeight: 600,
     fontSize: 14,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
   },
   btnSecondary: {
-    background: '#fff',
-    color: 'var(--green-dark)',
-    border: '1px solid var(--green-dark)',
+    background: "#fff",
+    color: "var(--green-dark)",
+    border: "1px solid var(--green-dark)",
     borderRadius: 10,
-    padding: '10px 20px',
+    padding: "10px 20px",
     fontWeight: 600,
     fontSize: 14,
-    cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
   },
-  error: { marginTop: 10, color: '#c0392b', fontSize: 13 },
-  success: { marginTop: 10, color: '#1a7f37', fontSize: 13 },
-  tableScroller: { overflowX: 'auto' as const, width: '100%' },
+  error: { marginTop: 10, color: "#c0392b", fontSize: 13 },
+  success: { marginTop: 10, color: "#1a7f37", fontSize: 13 },
+  tableScroller: { overflowX: "auto" as const, width: "100%" },
   table: {
-    width: '100%',
+    width: "100%",
     minWidth: 760,
-    borderCollapse: 'collapse' as const,
+    borderCollapse: "collapse" as const,
     marginTop: 8,
   },
   th: {
-    textAlign: 'left' as const,
+    textAlign: "left" as const,
     fontSize: 12,
     fontWeight: 700,
-    color: '#999',
-    padding: '10px 14px',
-    borderBottom: '2px solid #f0f0f0',
-    textTransform: 'uppercase' as const,
+    color: "#999",
+    padding: "10px 14px",
+    borderBottom: "2px solid #f0f0f0",
+    textTransform: "uppercase" as const,
   },
-  tr: { borderBottom: '1px solid #f5f5f5' },
-  td: { padding: '12px 14px', fontSize: 14, color: '#333' },
-  contactLink: { color: 'var(--green-dark)', fontWeight: 500 },
+  tr: { borderBottom: "1px solid #f5f5f5" },
+  td: { padding: "12px 14px", fontSize: 14, color: "#333" },
+  contactLink: { color: "var(--green-dark)", fontWeight: 500 },
   leaderBadge: {
-    background: '#fff3cd',
-    color: '#856404',
-    padding: '2px 10px',
+    background: "#fff3cd",
+    color: "#856404",
+    padding: "2px 10px",
     borderRadius: 20,
     fontSize: 12,
     fontWeight: 700,
   },
   playerBadge: {
-    background: '#f0f0f0',
-    color: '#555',
-    padding: '2px 10px',
+    background: "#f0f0f0",
+    color: "#555",
+    padding: "2px 10px",
     borderRadius: 20,
     fontSize: 12,
   },

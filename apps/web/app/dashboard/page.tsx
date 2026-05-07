@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { AppNav, appNavStyles } from "../shared/AppNav";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   useRankings,
   useAuthUser,
   useUserProfile,
   useActiveDivisionId,
-} from '@tennis/firebase-client';
-import type { PlayerRanking } from '@tennis/shared';
+} from "@tennis/firebase-client";
+import type { PlayerRanking } from "@tennis/shared";
 
 export default function DashboardPage(): React.JSX.Element {
   const router = useRouter();
@@ -28,32 +28,13 @@ export default function DashboardPage(): React.JSX.Element {
   useEffect(() => {
     if (profileLoading || !profile) return;
     if (profile.divisionId && !profile.tutorialDone) {
-      router.replace('/onboarding/tutorial');
+      router.replace("/onboarding/tutorial");
     }
   }, [profileLoading, profile, router]);
 
   return (
     <div style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
-        <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>
-            Rankings
-          </Link>
-          <Link href="/matches" style={styles.navLink}>
-            Matches
-          </Link>
-          <Link href="/messages" style={styles.navLink}>
-            Messages
-          </Link>
-          <Link href="/profile" style={styles.navLink}>
-            Profile
-          </Link>
-          <Link href="/admin" style={styles.navLink}>
-            Admin
-          </Link>
-        </div>
-      </nav>
+      <AppNav active="dashboard" />
 
       <main style={styles.main}>
         <h1 style={styles.pageTitle}>Division Standings</h1>
@@ -101,11 +82,11 @@ function RankingRow({
 }) {
   const medal =
     index === 0
-      ? '🥇'
+      ? "🥇"
       : index === 1
-        ? '🥈'
+        ? "🥈"
         : index === 2
-          ? '🥉'
+          ? "🥉"
           : `${index + 1}`;
   return (
     <div
@@ -127,10 +108,10 @@ function RankingRow({
       <span
         style={{
           ...styles.tdStat,
-          color: ranking.gameDifferential >= 0 ? '#2d6a4f' : '#c0392b',
+          color: ranking.gameDifferential >= 0 ? "#2d6a4f" : "#c0392b",
         }}
       >
-        {ranking.gameDifferential > 0 ? '+' : ''}
+        {ranking.gameDifferential > 0 ? "+" : ""}
         {ranking.gameDifferential}
       </span>
     </div>
@@ -138,64 +119,52 @@ function RankingRow({
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { minHeight: '100vh', background: 'var(--bg)' },
-  nav: {
-    background: 'var(--green-dark)',
-    padding: '16px 32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    flexWrap: 'wrap',
-  },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
-  navLink: { color: 'rgba(255,255,255,0.85)', fontWeight: 500, fontSize: 15 },
-  main: { maxWidth: 900, margin: '0 auto', padding: '40px 24px' },
+  page: appNavStyles.page,
+  main: { maxWidth: 900, margin: "0 auto", padding: "40px 24px" },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
-    color: 'var(--green-dark)',
+    color: "var(--green-dark)",
     marginBottom: 8,
   },
-  subtitle: { fontSize: 13, color: 'var(--muted)', marginBottom: 32 },
-  loading: { textAlign: 'center', color: 'var(--muted)', padding: 40 },
+  subtitle: { fontSize: 13, color: "var(--muted)", marginBottom: 32 },
+  loading: { textAlign: "center", color: "var(--muted)", padding: 40 },
   empty: {
-    textAlign: 'center',
-    color: 'var(--muted)',
+    textAlign: "center",
+    color: "var(--muted)",
     padding: 40,
-    background: '#fff',
+    background: "#fff",
     borderRadius: 12,
   },
   table: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 14,
-    overflowX: 'auto',
-    boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+    overflowX: "auto",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
   },
   tableHeader: {
-    display: 'grid',
-    gridTemplateColumns: '60px 1fr 60px 60px 80px 100px 60px',
+    display: "grid",
+    gridTemplateColumns: "60px 1fr 60px 60px 80px 100px 60px",
     minWidth: 640,
-    padding: '12px 20px',
-    background: 'var(--green-dark)',
-    color: '#fff',
+    padding: "12px 20px",
+    background: "var(--green-dark)",
+    color: "#fff",
     fontWeight: 700,
     fontSize: 13,
   },
   thRank: {},
   thName: {},
-  thStat: { textAlign: 'center' as const },
+  thStat: { textAlign: "center" as const },
   tableRow: {
-    display: 'grid',
-    gridTemplateColumns: '60px 1fr 60px 60px 80px 100px 60px',
+    display: "grid",
+    gridTemplateColumns: "60px 1fr 60px 60px 80px 100px 60px",
     minWidth: 640,
-    padding: '14px 20px',
-    borderBottom: '1px solid #f0f0f0',
-    alignItems: 'center',
+    padding: "14px 20px",
+    borderBottom: "1px solid #f0f0f0",
+    alignItems: "center",
   },
-  tableRowFirst: { background: '#fffef0', fontWeight: 600 },
+  tableRowFirst: { background: "#fffef0", fontWeight: 600 },
   tdRank: { fontSize: 18 },
-  tdName: { fontWeight: 600, color: 'var(--text)' },
-  tdStat: { textAlign: 'center' as const, fontSize: 14, color: 'var(--muted)' },
+  tdName: { fontWeight: 600, color: "var(--text)" },
+  tdStat: { textAlign: "center" as const, fontSize: 14, color: "var(--muted)" },
 };

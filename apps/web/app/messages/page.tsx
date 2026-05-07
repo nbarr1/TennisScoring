@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
+import { AppNav, appNavStyles } from "../shared/AppNav";
+import { useState, useRef, useEffect } from "react";
 import {
   useAuthUser,
   useChannels,
@@ -12,8 +12,8 @@ import {
   getOrCreateDM,
   searchDivisionPlayers,
   useUserProfile,
-} from '@tennis/firebase-client';
-import type { Channel, Message, User } from '@tennis/shared';
+} from "@tennis/firebase-client";
+import type { Channel, Message, User } from "@tennis/shared";
 
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
@@ -24,39 +24,17 @@ export default function MessagesPage(): React.JSX.Element {
 
   function channelLabel(ch: Channel): string {
     if (ch.name) return ch.name;
-    if (ch.type === 'division') return '🎾 Division Chat';
-    if (ch.type === 'direct') {
+    if (ch.type === "division") return "🎾 Division Chat";
+    if (ch.type === "direct") {
       const otherId = ch.participantIds.find((id) => id !== firebaseUser?.uid);
-      return otherId ? `💬 ${otherId.slice(0, 6)}…` : '💬 Direct Message';
+      return otherId ? `💬 ${otherId.slice(0, 6)}…` : "💬 Direct Message";
     }
     return ch.type;
   }
 
   return (
     <div style={styles.page}>
-      <nav style={styles.nav}>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
-        <div style={styles.navLinks}>
-          <Link href="/dashboard" style={styles.navLink}>
-            Rankings
-          </Link>
-          <Link href="/matches" style={styles.navLink}>
-            Matches
-          </Link>
-          <Link
-            href="/messages"
-            style={{ ...styles.navLink, ...styles.navLinkActive }}
-          >
-            Messages
-          </Link>
-          <Link href="/profile" style={styles.navLink}>
-            Profile
-          </Link>
-          <Link href="/admin" style={styles.navLink}>
-            Admin
-          </Link>
-        </div>
-      </nav>
+      <AppNav active="messages" />
 
       <div style={styles.layout}>
         {/* Sidebar */}
@@ -102,9 +80,9 @@ export default function MessagesPage(): React.JSX.Element {
           {active ? (
             <ChatPane
               channel={active}
-              currentUserId={firebaseUser?.uid ?? ''}
+              currentUserId={firebaseUser?.uid ?? ""}
               currentUserName={
-                profile?.displayName ?? firebaseUser?.displayName ?? 'You'
+                profile?.displayName ?? firebaseUser?.displayName ?? "You"
               }
             />
           ) : (
@@ -141,11 +119,11 @@ function NewDmModal({
   onClose: () => void;
   onCreated: (channel: Channel) => void;
 }) {
-  const [searchText, setSearchText] = useState('');
+  const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!searchText.trim()) {
@@ -168,7 +146,7 @@ function NewDmModal({
 
   async function handlePick(user: User) {
     setCreating(true);
-    setError('');
+    setError("");
     try {
       const channel = await getOrCreateDM(currentUserId, user.id);
       onCreated({ ...channel, name: channel.name ?? `💬 ${user.displayName}` });
@@ -176,7 +154,7 @@ function NewDmModal({
       setError(
         e instanceof Error
           ? e.message
-          : 'Could not start conversation. Please try again.',
+          : "Could not start conversation. Please try again.",
       );
     } finally {
       setCreating(false);
@@ -239,18 +217,18 @@ function ChatPane({
   currentUserName: string;
 }) {
   const { messages } = useMessages(channel.id);
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim()) return;
     const content = text.trim();
-    setText('');
+    setText("");
     await sendMessage({
       channelId: channel.id,
       senderId: currentUserId,
@@ -264,9 +242,9 @@ function ChatPane({
       <div style={styles.chatHeader}>
         <span style={styles.chatTitle}>
           {channel.name ??
-            (channel.type === 'division'
-              ? '🎾 Division Chat'
-              : '💬 Direct Message')}
+            (channel.type === "division"
+              ? "🎾 Division Chat"
+              : "💬 Direct Message")}
         </span>
       </div>
 
@@ -332,253 +310,234 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    minHeight: '100vh',
-    background: 'var(--bg)',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  nav: {
-    background: 'var(--green-dark)',
-    padding: '16px 32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    flexWrap: 'wrap',
-    flexShrink: 0,
-  },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 20 },
-  navLinks: { display: 'flex', gap: 24, flexWrap: 'wrap' },
-  navLink: { color: 'rgba(255,255,255,0.75)', fontWeight: 500, fontSize: 15 },
-  navLinkActive: {
-    color: '#fff',
-    borderBottom: '2px solid #ffdc60',
-    paddingBottom: 2,
+    ...appNavStyles.page,
+    display: "flex",
+    flexDirection: "column",
   },
   layout: {
-    display: 'flex',
+    display: "flex",
     flex: 1,
-    flexWrap: 'wrap',
-    overflow: 'hidden',
-    minHeight: 'calc(100vh - 57px)',
+    flexWrap: "wrap",
+    overflow: "hidden",
+    minHeight: "calc(100vh - 57px)",
   },
   sidebar: {
-    width: 'min(280px, 100%)',
-    background: '#fff',
-    borderRight: '1px solid #eee',
-    overflowY: 'auto' as const,
-    padding: '16px 0',
+    width: "min(280px, 100%)",
+    background: "#fff",
+    borderRight: "1px solid #eee",
+    overflowY: "auto" as const,
+    padding: "16px 0",
   },
   sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0 16px 12px',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 16px 12px",
   },
   sidebarTitle: {
     fontSize: 13,
     fontWeight: 700,
-    color: '#999',
-    textTransform: 'uppercase' as const,
+    color: "#999",
+    textTransform: "uppercase" as const,
     letterSpacing: 1,
     margin: 0,
   },
   newDmBtn: {
-    background: 'var(--green-dark)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '50%',
+    background: "var(--green-dark)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "50%",
     width: 26,
     height: 26,
     fontSize: 18,
     fontWeight: 700,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     lineHeight: 1,
   },
   modalOverlay: {
-    position: 'fixed' as const,
+    position: "fixed" as const,
     inset: 0,
-    background: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 100,
     padding: 16,
   },
   modalCard: {
-    background: '#fff',
+    background: "#fff",
     borderRadius: 16,
     padding: 28,
     maxWidth: 420,
-    width: '100%',
+    width: "100%",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 700,
-    color: '#1a472a',
+    color: "#1a472a",
     marginBottom: 8,
   },
-  modalHint: { fontSize: 13, color: '#666', marginBottom: 14 },
+  modalHint: { fontSize: 13, color: "#666", marginBottom: 14 },
   modalInput: {
-    width: '100%',
-    border: '1px solid #ddd',
+    width: "100%",
+    border: "1px solid #ddd",
     borderRadius: 10,
-    padding: '10px 14px',
+    padding: "10px 14px",
     fontSize: 14,
     marginBottom: 12,
-    boxSizing: 'border-box' as const,
-    outline: 'none',
+    boxSizing: "border-box" as const,
+    outline: "none",
   },
   results: {
     maxHeight: 240,
-    overflowY: 'auto' as const,
-    border: '1px solid #eee',
+    overflowY: "auto" as const,
+    border: "1px solid #eee",
     borderRadius: 10,
     marginBottom: 12,
   },
   resultRow: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left' as const,
-    padding: '10px 14px',
-    background: '#fff',
-    border: 'none',
-    borderBottom: '1px solid #f5f5f5',
-    cursor: 'pointer',
+    display: "block",
+    width: "100%",
+    textAlign: "left" as const,
+    padding: "10px 14px",
+    background: "#fff",
+    border: "none",
+    borderBottom: "1px solid #f5f5f5",
+    cursor: "pointer",
   },
-  resultName: { fontSize: 14, fontWeight: 600, color: '#222' },
-  resultEmail: { fontSize: 12, color: '#888', marginTop: 2 },
-  muted: { color: '#999', fontSize: 13, marginBottom: 12 },
-  error: { color: '#c0392b', fontSize: 13, marginBottom: 12 },
+  resultName: { fontSize: 14, fontWeight: 600, color: "#222" },
+  resultEmail: { fontSize: 12, color: "#888", marginTop: 2 },
+  muted: { color: "#999", fontSize: 13, marginBottom: 12 },
+  error: { color: "#c0392b", fontSize: 13, marginBottom: 12 },
   modalCancel: {
-    width: '100%',
-    padding: '10px 0',
-    background: '#f0f0f0',
-    border: 'none',
+    width: "100%",
+    padding: "10px 0",
+    background: "#f0f0f0",
+    border: "none",
     borderRadius: 10,
     fontWeight: 600,
-    color: '#333',
-    cursor: 'pointer',
+    color: "#333",
+    cursor: "pointer",
   },
   channelBtn: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left' as const,
-    padding: '12px 16px',
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    borderBottom: '1px solid #f5f5f5',
+    display: "block",
+    width: "100%",
+    textAlign: "left" as const,
+    padding: "12px 16px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    borderBottom: "1px solid #f5f5f5",
   },
   channelBtnActive: {
-    background: '#f0f9f0',
-    borderLeft: '3px solid var(--green-dark)',
+    background: "#f0f9f0",
+    borderLeft: "3px solid var(--green-dark)",
   },
   channelName: {
-    display: 'block',
+    display: "block",
     fontWeight: 600,
-    color: '#222',
+    color: "#222",
     fontSize: 14,
     marginBottom: 2,
   },
   preview: {
-    display: 'block',
+    display: "block",
     fontSize: 12,
-    color: '#aaa',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
+    color: "#aaa",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   empty: {
     fontSize: 13,
-    color: '#bbb',
-    padding: '16px',
-    textAlign: 'center' as const,
+    color: "#bbb",
+    padding: "16px",
+    textAlign: "center" as const,
   },
   chatArea: {
     flex: 1,
     minWidth: 320,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
   },
   selectPrompt: {
     flex: 1,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#bbb',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#bbb",
     fontSize: 16,
   },
   chatPane: {
     flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
   },
   chatHeader: {
-    padding: '14px 24px',
-    borderBottom: '1px solid #eee',
-    background: '#fff',
+    padding: "14px 24px",
+    borderBottom: "1px solid #eee",
+    background: "#fff",
   },
-  chatTitle: { fontWeight: 700, fontSize: 16, color: '#222' },
+  chatTitle: { fontWeight: 700, fontSize: 16, color: "#222" },
   messageList: {
     flex: 1,
-    overflowY: 'auto' as const,
-    padding: '20px 24px',
-    display: 'flex',
-    flexDirection: 'column',
+    overflowY: "auto" as const,
+    padding: "20px 24px",
+    display: "flex",
+    flexDirection: "column",
     gap: 8,
   },
   bubble: {
-    maxWidth: '65%',
-    padding: '10px 14px',
+    maxWidth: "65%",
+    padding: "10px 14px",
     borderRadius: 16,
     fontSize: 14,
   },
   bubbleMe: {
-    background: 'var(--green-dark)',
-    color: '#fff',
-    alignSelf: 'flex-end',
+    background: "var(--green-dark)",
+    color: "#fff",
+    alignSelf: "flex-end",
     borderBottomRightRadius: 4,
   },
   bubbleThem: {
-    background: '#fff',
-    color: '#222',
-    alignSelf: 'flex-start',
+    background: "#fff",
+    color: "#222",
+    alignSelf: "flex-start",
     borderBottomLeftRadius: 4,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
   },
-  senderName: { fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 4 },
+  senderName: { fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 },
   bubbleText: { lineHeight: 1.5 },
-  contactActions: { display: 'flex', gap: 12, marginTop: 8 },
-  contactLink: { color: 'var(--green-dark)', fontWeight: 700, fontSize: 12 },
+  contactActions: { display: "flex", gap: 12, marginTop: 8 },
+  contactLink: { color: "var(--green-dark)", fontWeight: 700, fontSize: 12 },
   inputRow: {
-    display: 'flex',
+    display: "flex",
     gap: 8,
-    padding: '12px 24px',
-    borderTop: '1px solid #eee',
-    background: '#fff',
+    padding: "12px 24px",
+    borderTop: "1px solid #eee",
+    background: "#fff",
   },
   input: {
     flex: 1,
-    border: '1px solid #ddd',
+    border: "1px solid #ddd",
     borderRadius: 24,
-    padding: '10px 16px',
+    padding: "10px 16px",
     fontSize: 14,
-    outline: 'none',
+    outline: "none",
   },
   sendBtn: {
-    background: 'var(--green-dark)',
-    color: '#fff',
-    border: 'none',
+    background: "var(--green-dark)",
+    color: "#fff",
+    border: "none",
     borderRadius: 24,
-    padding: '10px 20px',
+    padding: "10px 20px",
     fontWeight: 600,
     fontSize: 14,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
 };

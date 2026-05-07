@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,25 +8,26 @@ import {
   Switch,
   ScrollView,
   Alert,
-} from 'react-native';
-import { signOut } from 'firebase/auth';
-import { getDoc, getDocs, query, where } from 'firebase/firestore';
+} from "react-native";
+import { signOut } from "firebase/auth";
 import {
   auth,
-  divisionDoc,
-  divisionsCol,
   useAuthUser,
   useUserProfile,
   updateUserProfile,
-} from '@tennis/firebase-client';
+  useDivisionOptions,
+} from "@tennis/firebase-client";
 import {
-  DAYS_OF_WEEK,
   DAY_LABELS,
+  addAvailabilitySlot,
+  buildUserProfileUpdates,
+  cycleAvailabilitySlotDay,
+  removeAvailabilitySlot,
+  updateAvailabilitySlot,
+  validateAvailabilitySlots,
   type AvailabilitySlot,
-} from '@tennis/shared';
-import { useAppStore } from '../../store/appStore';
-
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+} from "@tennis/shared";
+import { useAppStore } from "../../store/appStore";
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
@@ -34,9 +35,9 @@ export default function ProfileScreen() {
   const { setUser } = useAppStore();
 
   const [editing, setEditing] = useState(false);
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [allowEmail, setAllowEmail] = useState(true);
   const [allowSMS, setAllowSMS] = useState(false);
   const [allowInApp, setAllowInApp] = useState(true);
@@ -44,140 +45,73 @@ export default function ProfileScreen() {
   const [availabilitySlots, setAvailabilitySlots] = useState<
     AvailabilitySlot[]
   >([]);
-  const [availabilityNote, setAvailabilityNote] = useState('');
-  const [divisionOptions, setDivisionOptions] = useState<
-    Array<{ id: string; name: string }>
-  >([]);
-  const [selectedDivisionId, setSelectedDivisionId] = useState('');
+  const [availabilityNote, setAvailabilityNote] = useState("");
+  const divisionOptions = useDivisionOptions(
+    firebaseUser?.uid,
+    profile?.divisionId,
+  );
+  const [selectedDivisionId, setSelectedDivisionId] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!profile) return;
-    setDisplayName(profile.displayName ?? '');
-    setEmail(profile.email ?? '');
-    setPhone(profile.phone ?? '');
+    setDisplayName(profile.displayName ?? "");
+    setEmail(profile.email ?? "");
+    setPhone(profile.phone ?? "");
     setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
     setAllowSMS(profile.contactPreferences?.allowSMS ?? false);
     setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
     setTipsEnabled(profile.tipsEnabled ?? true);
     setAvailabilitySlots(profile.availability?.slots ?? []);
-    setAvailabilityNote(profile.availability?.note ?? '');
-    setSelectedDivisionId(profile.divisionId ?? '');
+    setAvailabilityNote(profile.availability?.note ?? "");
+    setSelectedDivisionId(profile.divisionId ?? "");
   }, [profile]);
 
-  useEffect(() => {
-    async function loadDivisionOptions() {
-      const userId = firebaseUser?.uid;
-      if (!userId) {
-        setDivisionOptions([]);
-        return;
-      }
-
-      const divisionById = new Map<string, { id: string; name: string }>();
-      const addDivisionOption = (id: string, name?: string) => {
-        const trimmedName = name?.trim();
-        divisionById.set(id, { id, name: trimmedName || id });
-      };
-
-      try {
-        const [playerSnap, leaderSnap, currentDivisionSnap] = await Promise.all(
-          [
-            getDocs(
-              query(
-                divisionsCol(),
-                where('playerIds', 'array-contains', userId),
-              ),
-            ),
-            getDocs(
-              query(
-                divisionsCol(),
-                where('leaderIds', 'array-contains', userId),
-              ),
-            ),
-            profile?.divisionId
-              ? getDoc(divisionDoc(profile.divisionId))
-              : null,
-          ],
-        );
-
-        for (const docSnap of [...playerSnap.docs, ...leaderSnap.docs]) {
-          addDivisionOption(
-            docSnap.id,
-            docSnap.data().name as string | undefined,
-          );
-        }
-
-        if (profile?.divisionId) {
-          addDivisionOption(
-            profile.divisionId,
-            currentDivisionSnap?.data()?.name as string | undefined,
-          );
-        }
-
-        setDivisionOptions(Array.from(divisionById.values()));
-      } catch {
-        setDivisionOptions([]);
-      }
-    }
-    void loadDivisionOptions();
-  }, [firebaseUser?.uid, profile?.divisionId]);
-
   function addSlot() {
-    setAvailabilitySlots((s) => [
-      ...s,
-      { day: 'mon', from: '18:00', to: '21:00' },
-    ]);
+    setAvailabilitySlots(addAvailabilitySlot);
   }
   function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
-    setAvailabilitySlots((slots) =>
-      slots.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
-    );
+    setAvailabilitySlots((slots) => updateAvailabilitySlot(slots, idx, patch));
   }
   function removeSlot(idx: number) {
-    setAvailabilitySlots((slots) => slots.filter((_, i) => i !== idx));
+    setAvailabilitySlots((slots) => removeAvailabilitySlot(slots, idx));
   }
   function cycleDay(idx: number) {
-    setAvailabilitySlots((slots) =>
-      slots.map((s, i) => {
-        if (i !== idx) return s;
-        const next =
-          DAYS_OF_WEEK[(DAYS_OF_WEEK.indexOf(s.day) + 1) % DAYS_OF_WEEK.length];
-        return { ...s, day: next };
-      }),
-    );
+    setAvailabilitySlots((slots) => cycleAvailabilitySlotDay(slots, idx));
   }
 
   async function handleSave() {
     if (!firebaseUser) return;
-    for (const slot of availabilitySlots) {
-      if (!TIME_RE.test(slot.from) || !TIME_RE.test(slot.to)) {
-        Alert.alert('Invalid time', 'Times must be in HH:MM 24-hour format.');
-        return;
-      }
-      if (slot.from >= slot.to) {
-        Alert.alert('Invalid slot', 'Each slot must end after it starts.');
-        return;
-      }
+    const validation = validateAvailabilitySlots(availabilitySlots);
+    if (!validation.valid) {
+      Alert.alert(
+        validation.reason === "invalid_time" ? "Invalid time" : "Invalid slot",
+        validation.message,
+      );
+      return;
     }
     setSaving(true);
     try {
-      await updateUserProfile(firebaseUser.uid, {
-        displayName: displayName.trim(),
-        email: email.trim().toLowerCase() || undefined,
-        phone: phone.trim() || undefined,
-        contactPreferences: { allowEmail, allowSMS, allowInApp },
-        tipsEnabled,
-        availability: {
-          slots: availabilitySlots,
-          ...(availabilityNote.trim() && { note: availabilityNote.trim() }),
-        },
-        divisionId: selectedDivisionId || undefined,
-      });
+      await updateUserProfile(
+        firebaseUser.uid,
+        buildUserProfileUpdates({
+          displayName,
+          email,
+          phone,
+          allowEmail,
+          allowSMS,
+          allowInApp,
+          tipsEnabled,
+          availabilitySlots,
+          availabilityNote,
+          selectedDivisionId,
+        }),
+      );
       setEditing(false);
     } catch (e) {
       Alert.alert(
-        'Could not save profile',
-        (e as { message?: string }).message || 'Please try again.',
+        "Could not save profile",
+        (e as { message?: string }).message || "Please try again.",
       );
     } finally {
       setSaving(false);
@@ -185,11 +119,11 @@ export default function ProfileScreen() {
   }
 
   async function handleSignOut() {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: 'Sign Out',
-        style: 'destructive',
+        text: "Sign Out",
+        style: "destructive",
         onPress: async () => {
           await signOut(auth);
           setUser(null);
@@ -212,14 +146,14 @@ export default function ProfileScreen() {
         <Text style={styles.avatarText}>
           {(profile.displayName ||
             firebaseUser?.displayName ||
-            '?')[0].toUpperCase()}
+            "?")[0].toUpperCase()}
         </Text>
       </View>
       <Text style={styles.name}>
-        {profile.displayName || firebaseUser?.displayName || 'Unknown'}
+        {profile.displayName || firebaseUser?.displayName || "Unknown"}
       </Text>
       <Text style={styles.email}>
-        {profile.email || firebaseUser?.email || ''}
+        {profile.email || firebaseUser?.email || ""}
       </Text>
 
       <View style={styles.section}>
@@ -256,16 +190,16 @@ export default function ProfileScreen() {
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Display name</Text>
               <Text style={styles.rowValue}>
-                {profile.displayName ?? 'Not set'}
+                {profile.displayName ?? "Not set"}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Email</Text>
-              <Text style={styles.rowValue}>{profile.email ?? 'Not set'}</Text>
+              <Text style={styles.rowValue}>{profile.email ?? "Not set"}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Phone</Text>
-              <Text style={styles.rowValue}>{profile.phone ?? 'Not set'}</Text>
+              <Text style={styles.rowValue}>{profile.phone ?? "Not set"}</Text>
             </View>
           </>
         )}
@@ -281,14 +215,14 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={[
                 styles.divisionOption,
-                selectedDivisionId === '' && styles.divisionOptionActive,
+                selectedDivisionId === "" && styles.divisionOptionActive,
               ]}
-              onPress={() => setSelectedDivisionId('')}
+              onPress={() => setSelectedDivisionId("")}
             >
               <Text
                 style={[
                   styles.divisionOptionText,
-                  selectedDivisionId === '' && styles.divisionOptionTextActive,
+                  selectedDivisionId === "" && styles.divisionOptionTextActive,
                 ]}
               >
                 No division
@@ -322,7 +256,7 @@ export default function ProfileScreen() {
               (division) => division.id === profile.divisionId,
             )?.name ??
               profile.divisionId ??
-              'No division'}
+              "No division"}
           </Text>
         )}
       </View>
@@ -339,7 +273,7 @@ export default function ProfileScreen() {
             value={allowEmail}
             onValueChange={setAllowEmail}
             disabled={!editing}
-            trackColor={{ true: '#1a472a', false: '#ccc' }}
+            trackColor={{ true: "#1a472a", false: "#ccc" }}
           />
         </View>
         <View style={styles.toggleRow}>
@@ -348,7 +282,7 @@ export default function ProfileScreen() {
             value={allowSMS}
             onValueChange={setAllowSMS}
             disabled={!editing}
-            trackColor={{ true: '#1a472a', false: '#ccc' }}
+            trackColor={{ true: "#1a472a", false: "#ccc" }}
           />
         </View>
         <View style={styles.toggleRow}>
@@ -357,7 +291,7 @@ export default function ProfileScreen() {
             value={allowInApp}
             onValueChange={setAllowInApp}
             disabled={!editing}
-            trackColor={{ true: '#1a472a', false: '#ccc' }}
+            trackColor={{ true: "#1a472a", false: "#ccc" }}
           />
         </View>
       </View>
@@ -434,7 +368,7 @@ export default function ProfileScreen() {
             value={tipsEnabled}
             onValueChange={setTipsEnabled}
             disabled={!editing}
-            trackColor={{ true: '#1a472a', false: '#ccc' }}
+            trackColor={{ true: "#1a472a", false: "#ccc" }}
           />
         </View>
       </View>
@@ -448,7 +382,7 @@ export default function ProfileScreen() {
               disabled={saving}
             >
               <Text style={styles.saveBtnText}>
-                {saving ? 'Saving…' : 'Save Changes'}
+                {saving ? "Saving…" : "Save Changes"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -475,139 +409,139 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f0' },
+  container: { flex: 1, backgroundColor: "#f5f5f0" },
   content: { padding: 24 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#1a472a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
+    backgroundColor: "#1a472a",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
     marginBottom: 12,
   },
-  avatarText: { color: '#fff', fontSize: 32, fontWeight: '700' },
+  avatarText: { color: "#fff", fontSize: 32, fontWeight: "700" },
   name: {
     fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    textAlign: 'center',
+    fontWeight: "700",
+    color: "#1a1a1a",
+    textAlign: "center",
   },
-  email: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 32 },
+  email: { fontSize: 14, color: "#888", textAlign: "center", marginBottom: 32 },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#1a472a',
+    fontWeight: "700",
+    color: "#1a472a",
     marginBottom: 4,
   },
-  sectionSubtitle: { fontSize: 12, color: '#999', marginBottom: 12 },
+  sectionSubtitle: { fontSize: 12, color: "#999", marginBottom: 12 },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingVertical: 8,
   },
-  rowLabel: { color: '#666', fontSize: 14 },
-  rowValue: { color: '#333', fontSize: 14, fontWeight: '500' },
+  rowLabel: { color: "#666", fontSize: 14 },
+  rowValue: { color: "#333", fontSize: 14, fontWeight: "500" },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
   },
   toggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
-  toggleLabel: { color: '#444', fontSize: 14, flex: 1, marginRight: 16 },
+  toggleLabel: { color: "#444", fontSize: 14, flex: 1, marginRight: 16 },
   actions: { gap: 12 },
   editBtn: {
-    backgroundColor: '#1a472a',
+    backgroundColor: "#1a472a",
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  editBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  editBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   saveBtn: {
-    backgroundColor: '#1a472a',
+    backgroundColor: "#1a472a",
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   cancelBtn: {
     padding: 16,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
   },
-  cancelBtnText: { color: '#555', fontWeight: '600', fontSize: 15 },
-  signOutBtn: { padding: 16, borderRadius: 12, alignItems: 'center' },
-  signOutBtnText: { color: '#c0392b', fontWeight: '600', fontSize: 15 },
+  cancelBtnText: { color: "#555", fontWeight: "600", fontSize: 15 },
+  signOutBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
+  signOutBtnText: { color: "#c0392b", fontWeight: "600", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
   divisionList: { gap: 8 },
   divisionOption: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  divisionOptionActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
-  divisionOptionText: { color: '#444', fontSize: 14, fontWeight: '600' },
-  divisionOptionTextActive: { color: '#1a472a' },
+  divisionOptionActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  divisionOptionText: { color: "#444", fontSize: 14, fontWeight: "600" },
+  divisionOptionTextActive: { color: "#1a472a" },
   slotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     marginBottom: 8,
   },
   slotDay: {
-    backgroundColor: '#1a472a',
+    backgroundColor: "#1a472a",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     minWidth: 56,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  slotDayText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  slotDayText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   slotTime: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 14,
     width: 70,
-    textAlign: 'center',
+    textAlign: "center",
   },
-  slotDash: { color: '#888', fontSize: 14 },
+  slotDash: { color: "#888", fontSize: 14 },
   slotDisabled: { opacity: 0.6 },
   slotRemove: { padding: 6 },
-  slotRemoveText: { color: '#c0392b', fontSize: 16, fontWeight: '700' },
+  slotRemoveText: { color: "#c0392b", fontSize: 16, fontWeight: "700" },
   addSlotBtn: {
     borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#1a472a',
+    borderStyle: "dashed",
+    borderColor: "#1a472a",
     borderRadius: 8,
     padding: 10,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 4,
   },
-  addSlotBtnText: { color: '#1a472a', fontWeight: '700', fontSize: 13 },
-  emptyHint: { color: '#999', fontSize: 13, paddingVertical: 4 },
-  noteText: { color: '#444', fontSize: 13, marginTop: 8, fontStyle: 'italic' },
+  addSlotBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
+  emptyHint: { color: "#999", fontSize: 13, paddingVertical: 4 },
+  noteText: { color: "#444", fontSize: 13, marginTop: 8, fontStyle: "italic" },
 });
