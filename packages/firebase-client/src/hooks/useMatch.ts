@@ -334,20 +334,23 @@ export async function startMatch(
   await updateDoc(matchDoc(matchId), updates);
 }
 
+export type PointAttribution = 'ace' | 'winner' | 'opponent_error';
+
 export async function scorePoint(
   matchId: string,
   _match: Match,
   scorer: 'player1' | 'player2',
+  pointAttribution?: PointAttribution,
 ): Promise<{
   nextScore: LiveScore;
   matchWinner?: 'player1' | 'player2';
   tips: TipTrigger[];
 }> {
   const callable = httpsCallable<
-    { matchId: string; scorer: 'player1' | 'player2' },
+    { matchId: string; scorer: 'player1' | 'player2'; pointAttribution?: PointAttribution },
     { nextScore: LiveScore; matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }
   >(functions, 'scoreMatchPoint');
-  const result = await callable({ matchId, scorer });
+  const result = await callable({ matchId, scorer, ...(pointAttribution && { pointAttribution }) });
   return result.data;
 }
 
