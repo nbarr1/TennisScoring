@@ -32,6 +32,7 @@ import {
   submitGuestReport,
   linkGuestOpponent,
   searchDivisionPlayers,
+  type PointAttribution,
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
@@ -103,8 +104,8 @@ function getStatusState(match: Match): { label: string; player?: 'player1' | 'pl
   const p2SetPoint = p2CanWinGame && currentSet.player2Games + 1 >= match.format.gamesPerSet && currentSet.player2Games + 1 - currentSet.player1Games >= 2;
   const p1MatchPoint = p1SetPoint && score.player1SetsWon === match.format.setsToWin - 1;
   const p2MatchPoint = p2SetPoint && score.player2SetsWon === match.format.setsToWin - 1;
-  const totalGames = score.sets.reduce((sum, set) => sum + set.player1Games + set.player2Games, 0);
-  const sideChange = totalGames > 0 && totalGames % 2 === 1;
+  const totalGamesInSet = currentSet.player1Games + currentSet.player2Games;
+  const sideChange = totalGamesInSet % 2 === 1;
 
   if (score.isTiebreak) {
     return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
@@ -415,11 +416,11 @@ export default function MatchScreen() {
     }
   }
 
-  async function handlePoint(player: 'player1' | 'player2') {
+  async function handlePoint(player: 'player1' | 'player2', pointAttribution?: PointAttribution) {
     if (!match || !id || scoring) return;
     setScoring(true);
     try {
-      const result = await scorePoint(id, match, player);
+      const result = await scorePoint(id, match, player, pointAttribution);
       const p1 = match.player1Name ?? 'Player 1';
       const p2 = match.player2Name ?? 'Player 2';
       await sendScoreToWear(result.nextScore, {
@@ -451,6 +452,23 @@ export default function MatchScreen() {
     } finally {
       setScoring(false);
     }
+  }
+
+
+  function showPointTypeMenu(player: 'player1' | 'player2') {
+    if (!match?.advancedStatsEnabled) {
+      void handlePoint(player);
+      return;
+    }
+
+    Alert.alert('Point type', 'Attribute this point for advanced stats.', [
+      { text: 'Ace', onPress: () => void handlePoint(player, 'ace') },
+      { text: 'Winner', onPress: () => void handlePoint(player, 'winner') },
+      {
+        text: 'Opponent error',
+        onPress: () => void handlePoint(player, 'opponent_error'),
+      },
+    ]);
   }
 
   function openManage() {
@@ -926,7 +944,7 @@ export default function MatchScreen() {
                 <Pressable
                   style={({ pressed }) => [styles.tapZone, styles.tapZoneP1, pressed && styles.tapZonePressed]}
                   onPress={() => handlePoint('player1')}
-                  onLongPress={() => Alert.alert('Point type', 'Choose attribution', ['Ace', 'Winner', 'Rally', 'Opponent error'].map((text) => ({ text })))}
+                  onLongPress={() => showPointTypeMenu('player1')}
                   disabled={scoring}
                   accessibilityRole="button"
                   accessibilityLabel={`Log point for ${p1Name}`}
@@ -941,7 +959,7 @@ export default function MatchScreen() {
                 <Pressable
                   style={({ pressed }) => [styles.tapZone, styles.tapZoneP2, pressed && styles.tapZonePressed]}
                   onPress={() => handlePoint('player2')}
-                  onLongPress={() => Alert.alert('Point type', 'Choose attribution', ['Ace', 'Winner', 'Rally', 'Opponent error'].map((text) => ({ text })))}
+                  onLongPress={() => showPointTypeMenu('player2')}
                   disabled={scoring}
                   accessibilityRole="button"
                   accessibilityLabel={`Log point for ${p2Name}`}

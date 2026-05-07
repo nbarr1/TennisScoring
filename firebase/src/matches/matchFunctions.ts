@@ -72,7 +72,9 @@ function canWinGameOnNextPoint(match: Match, player: Player): boolean {
   return mine === 'Ad' || (mine === '40' && theirs !== '40' && theirs !== 'Ad');
 }
 
-function applyBasicPointStats(match: Match, scorer: Player): Match['stats'] {
+type PointAttribution = 'ace' | 'winner' | 'opponent_error';
+
+function applyBasicPointStats(match: Match, scorer: Player, pointAttribution?: PointAttribution): Match['stats'] {
   const stats = cloneStats(match.stats);
   const server = match.liveScore.server;
   const receiver = oppositePlayer(server);
@@ -93,6 +95,18 @@ function applyBasicPointStats(match: Match, scorer: Player): Match['stats'] {
     serverStats.breakPointsFaced += 1;
     if (scorer === receiver) {
       receiverStats.breakPointsWon += 1;
+    }
+  }
+
+  if (match.advancedStatsEnabled) {
+    const scorerStats = stats[scorer] as PlayerMatchStats;
+    const opponentStats = stats[oppositePlayer(scorer)] as PlayerMatchStats;
+    if (pointAttribution === 'ace') {
+      scorerStats.aces += 1;
+    } else if (pointAttribution === 'winner') {
+      scorerStats.winners += 1;
+    } else if (pointAttribution === 'opponent_error') {
+      opponentStats.unforcedErrors += 1;
     }
   }
 
@@ -391,6 +405,7 @@ async function notifyLeaderOfDispute(
 type ScoreMatchPointInput = {
   matchId?: string;
   scorer?: 'player1' | 'player2';
+  pointAttribution?: PointAttribution;
 };
 
 export const scoreMatchPoint = functions.https.onCall(async (request) => {
@@ -398,12 +413,17 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { matchId, scorer } = (request.data ?? {}) as ScoreMatchPointInput;
+  const { matchId, scorer, pointAttribution } = (request.data ?? {}) as ScoreMatchPointInput;
   const safeMatchId = typeof matchId === 'string' ? matchId.trim() : undefined;
-  if (!safeMatchId || (scorer !== 'player1' && scorer !== 'player2')) {
+  const hasValidAttribution =
+    pointAttribution === undefined ||
+    pointAttribution === 'ace' ||
+    pointAttribution === 'winner' ||
+    pointAttribution === 'opponent_error';
+  if (!safeMatchId || (scorer !== 'player1' && scorer !== 'player2') || !hasValidAttribution) {
     throw new functions.https.HttpsError(
       'invalid-argument',
-      'matchId and scorer are required',
+      'matchId, scorer, and valid point attribution are required',
     );
   }
 
@@ -435,7 +455,7 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
 
     const result = applyPoint(match.liveScore, scorer, match.format);
     const now = Date.now();
-    const nextStats = applyBasicPointStats(match, scorer);
+    const nextStats = applyBasicPointStats(match, scorer, pointAttribution);
     const nextScore = result.setCompleted
       ? stampSetTiming(match, result.nextScore, now)
       : result.nextScore;
