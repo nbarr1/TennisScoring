@@ -4,7 +4,7 @@ import type { LiveScore, MatchStatus } from '@tennis/shared';
 const WearOsNative = NativeModules.WearOs;
 const emitter = WearOsNative ? new NativeEventEmitter(WearOsNative) : null;
 
-export type WearScoreInputEvent = { player: 'player1' | 'player2' };
+export type WearScoreInputEvent = { player?: 'player1' | 'player2'; action?: 'point' | 'undo' };
 export type WearSubscription = { remove: () => void };
 
 export type WearScorePayload = {

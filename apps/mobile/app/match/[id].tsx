@@ -12,6 +12,7 @@ import {
   Animated,
   TextInput,
   FlatList,
+  Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -44,6 +45,93 @@ import {
   sendScoreToWear,
 } from '../../modules/wear-os';
 import type { Match, TipTrigger, User } from '@tennis/shared';
+
+
+const COURT = {
+  court: '#2A6F7E',
+  courtDark: '#1F525C',
+  scoreboard: '#0E1418',
+  line: '#F2EFE6',
+  amber: '#FFB44A',
+  pA: '#1E88FF',
+  pB: '#FF5A4E',
+  ad: '#FFD23F',
+  bp: '#FF7A47',
+  mp: '#FF3B5C',
+  ok: '#4ADE80',
+};
+
+function formatFormatLabel(match: Match): string {
+  if (match.format.setsToWin >= 3) return 'Best of 5';
+  if (!match.format.finalSetTiebreak) return 'Best of 3 · play-out final set';
+  return 'Best of 3';
+}
+
+function getPointValue(match: Match, player: 'player1' | 'player2'): string {
+  if (match.liveScore.isTiebreak && match.liveScore.tiebreakScore) {
+    return String(
+      player === 'player1'
+        ? match.liveScore.tiebreakScore.player1Points
+        : match.liveScore.tiebreakScore.player2Points,
+    );
+  }
+  return match.liveScore.currentGame[player] === 'Ad'
+    ? 'AD'
+    : match.liveScore.currentGame[player] === '0'
+      ? '0'
+      : match.liveScore.currentGame[player];
+}
+
+function getStatusState(match: Match): { label: string; player?: 'player1' | 'player2'; color: string; tone: string; sideChange: boolean; flags: Partial<Record<'player1' | 'player2', string>> } {
+  const score = match.liveScore;
+  const currentSet = score.sets[score.currentSet];
+  const p1Point = score.currentGame.player1;
+  const p2Point = score.currentGame.player2;
+  const isP1Ad = p1Point === 'Ad';
+  const isP2Ad = p2Point === 'Ad';
+  const isDeuce = !score.isTiebreak && p1Point === '40' && p2Point === '40';
+  const leader = isP1Ad ? 'player1' : isP2Ad ? 'player2' : undefined;
+  const p1CanWinGame = score.isTiebreak
+    ? false
+    : p1Point === '40' || p1Point === 'Ad';
+  const p2CanWinGame = score.isTiebreak
+    ? false
+    : p2Point === '40' || p2Point === 'Ad';
+  const p1Break = p1CanWinGame && score.server === 'player2';
+  const p2Break = p2CanWinGame && score.server === 'player1';
+  const p1SetPoint = p1CanWinGame && currentSet.player1Games + 1 >= match.format.gamesPerSet && currentSet.player1Games + 1 - currentSet.player2Games >= 2;
+  const p2SetPoint = p2CanWinGame && currentSet.player2Games + 1 >= match.format.gamesPerSet && currentSet.player2Games + 1 - currentSet.player1Games >= 2;
+  const p1MatchPoint = p1SetPoint && score.player1SetsWon === match.format.setsToWin - 1;
+  const p2MatchPoint = p2SetPoint && score.player2SetsWon === match.format.setsToWin - 1;
+  const totalGames = score.sets.reduce((sum, set) => sum + set.player1Games + set.player2Games, 0);
+  const sideChange = totalGames > 0 && totalGames % 2 === 1;
+
+  if (score.isTiebreak) {
+    return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+  }
+  if (p1MatchPoint || p2MatchPoint) {
+    const player = p1MatchPoint ? 'player1' : 'player2';
+    return { label: 'Match point', player, color: COURT.mp, tone: 'mp', sideChange, flags: { [player]: 'MP' } };
+  }
+  if (p1SetPoint || p2SetPoint) {
+    const player = p1SetPoint ? 'player1' : 'player2';
+    return { label: 'Set point', player, color: COURT.ad, tone: 'sp', sideChange, flags: { [player]: 'SP' } };
+  }
+  if (p1Break || p2Break) {
+    const player = p1Break ? 'player1' : 'player2';
+    return { label: 'Break point', player, color: COURT.bp, tone: 'bp', sideChange, flags: { [player]: 'BP' } };
+  }
+  if (leader) {
+    return { label: 'Advantage', player: leader, color: COURT.ad, tone: 'ad', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+  }
+  if (isDeuce) {
+    return { label: 'Deuce', player: undefined, color: COURT.line, tone: 'deuce', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+  }
+  if (sideChange) {
+    return { label: 'Side change', player: undefined, color: COURT.ok, tone: 'ok', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+  }
+  return { label: 'Live', player: undefined, color: COURT.line, tone: 'live', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+}
 
 function TipOverlay({
   tip,
@@ -648,7 +736,11 @@ export default function MatchScreen() {
   useEffect(() => {
     if (!isParticipant || match?.status !== 'in_progress') return;
     const subscription = addWearScoreInputListener((event) => {
-      void handlePoint(event.player);
+      if (event.action === 'undo') {
+        void handleUndo();
+        return;
+      }
+      if (event.player) void handlePoint(event.player);
     });
     return () => subscription.remove();
   }, [isParticipant, match?.status, handlePoint]);
@@ -663,7 +755,6 @@ export default function MatchScreen() {
 
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
-  const setsDisplay = `${match.liveScore.player1SetsWon} – ${match.liveScore.player2SetsWon}`;
   const p1Name = match.player1Name ?? 'Player 1';
   const p2Name = match.player2Name ?? 'Player 2';
   const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
@@ -671,10 +762,24 @@ export default function MatchScreen() {
   const canEditScore =
     canManage &&
     (match.status === 'pending_report' || match.status === 'completed');
-  const serverLabel =
+  const currentSetLabel = `Set ${match.liveScore.currentSet + 1} · ${formatFormatLabel(match)}`;
+  const p1Point = getPointValue(match, 'player1');
+  const p2Point = getPointValue(match, 'player2');
+  const statusState = getStatusState(match);
+  const statusPlayerName =
+    statusState.player === 'player1'
+      ? p1Name
+      : statusState.player === 'player2'
+        ? p2Name
+        : undefined;
+  const p1ServeState =
     match.liveScore.server === 'player1'
-      ? `● ${p1Name} Serves`
-      : `● ${p2Name} Serves`;
+      ? `Serving · ${match.liveScore.serviceSide === 'advantage' ? 'Ad' : 'Deuce'} court`
+      : 'Receiving';
+  const p2ServeState =
+    match.liveScore.server === 'player2'
+      ? `Serving · ${match.liveScore.serviceSide === 'advantage' ? 'Ad' : 'Deuce'} court`
+      : 'Receiving';
   const elapsedMs =
     match.matchDurationMs ??
     (match.startedAt && match.status === 'in_progress'
@@ -684,136 +789,214 @@ export default function MatchScreen() {
     match.status === 'in_progress' && match.currentSetStartedAt
       ? clockTick - match.currentSetStartedAt
       : match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
+  const totalPoints = p1Stats.servicePointsTotal + p1Stats.receivingPointsTotal;
+  const winnerName = match.winner === 'player1' ? p1Name : match.winner === 'player2' ? p2Name : undefined;
+  const scoreRows = match.liveScore.sets
+    .filter((set) => set.winner !== undefined || set.setNumber === match.liveScore.currentSet)
+    .slice(0, 3);
+  const showCourtSurface = isParticipant && match.status === 'in_progress';
+  const showSetupSurface = isParticipant && match.status === 'scheduled';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Score board */}
-      <View style={styles.scoreBoard}>
-        <View style={styles.setRow}>
-          <Text style={styles.setsLabel}>Sets</Text>
-          <Text style={styles.setsScore}>{setsDisplay}</Text>
-        </View>
-        <Text style={styles.scoreMain}>{scoreDisplay}</Text>
-        <Text style={styles.gameScore}>{gameDisplay}</Text>
-        {match.status === 'in_progress' && (
-          <>
-            <Text style={styles.serverLabel}>{serverLabel}</Text>
-            <Text style={styles.serviceSide}>
-              {match.liveScore.serviceSide} court · Set {formatDuration(currentSetElapsedMs)} · Match {formatDuration(elapsedMs)}
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* Player names row */}
-      <View style={styles.playerNamesRow}>
-        <Text style={styles.playerNameLabel}>{p1Name}</Text>
-        <Text style={styles.playerVsLabel}>vs</Text>
-        <View style={styles.playerNameRight}>
-          <Text style={styles.playerNameLabel}>{p2Name}</Text>
-          {match.player2IsGuest && <Text style={styles.guestBadge}>Guest</Text>}
-        </View>
-      </View>
-
-      {/* Match management */}
-      {canManage && match.status !== 'cancelled' && (
-        <TouchableOpacity style={styles.manageBtn} onPress={openManage}>
-          <Text style={styles.manageBtnText}>⋯ Options</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Status badge */}
-      {match.status === 'in_progress' && (
-        <View style={styles.liveBadge}>
-          <Text style={styles.liveBadgeText}>● LIVE</Text>
-        </View>
-      )}
-
-      {/* Server selection — shown before match starts */}
-      {isParticipant && match.status === 'scheduled' && (
-        <View style={styles.serverSelectSection}>
-          <Text style={styles.serverSelectTitle}>Who is serving first?</Text>
-          <View style={styles.statToggleRow}>
+      {showSetupSurface ? (
+        <View style={styles.setupSurface}>
+          <View style={styles.setupTopRow}>
+            <Text style={styles.setupEyebrow}>NEW MATCH</Text>
+            <Text style={styles.setupNoLogin}>No login required</Text>
+          </View>
+          <Text style={styles.setupHero}>{`Score first.\nSave later.`}</Text>
+          <Text style={styles.setupSectionLabel}>PLAYERS</Text>
+          <View style={styles.setupPlayersRow}>
+            <Pressable
+              style={[styles.setupPlayerCard, styles.setupPlayerCardP1]}
+              onPress={() => startMatch(id!, 'player1', advancedStatsEnabled, match.liveScore)}
+              accessibilityRole="button"
+              accessibilityLabel={`${p1Name} serves first`}
+            >
+              <Text style={styles.setupPlayerRole}>SERVES FIRST</Text>
+              <Text style={styles.setupPlayerName}>{p1Name}</Text>
+              <View style={[styles.setupPlayerLine, { backgroundColor: COURT.pA }]} />
+            </Pressable>
+            <Text style={styles.setupVs}>VS</Text>
+            <Pressable
+              style={styles.setupPlayerCard}
+              onPress={() => startMatch(id!, 'player2', advancedStatsEnabled, match.liveScore)}
+              accessibilityRole="button"
+              accessibilityLabel={`${p2Name} serves first`}
+            >
+              <Text style={styles.setupPlayerRole}>PLAYER</Text>
+              <Text style={styles.setupPlayerName}>{p2Name}</Text>
+              <View style={[styles.setupPlayerLine, { backgroundColor: COURT.pB }]} />
+            </Pressable>
+          </View>
+          <Text style={styles.setupHint}>TAP A NAME TO PICK SERVER</Text>
+          <Text style={styles.setupSectionLabel}>FORMAT</Text>
+          <View style={styles.formatRow}>
+            <View style={[styles.formatCard, styles.formatCardActive]}>
+              <Text style={styles.formatTitle}>{formatFormatLabel(match)}</Text>
+              <Text style={styles.formatSubtitle}>Standard</Text>
+            </View>
+            <View style={styles.formatCard}>
+              <Text style={styles.formatTitleMuted}>Best of 5</Text>
+              <Text style={styles.formatSubtitleMuted}>Long match</Text>
+            </View>
+            <View style={styles.formatCard}>
+              <Text style={styles.formatTitleMuted}>Bo3 + MTB</Text>
+              <Text style={styles.formatSubtitleMuted}>10-pt 3rd set</Text>
+            </View>
+          </View>
+          <Text style={styles.setupSectionLabel}>OPTIONS</Text>
+          <View style={styles.courtOptionRow}>
             <View style={styles.statToggleCopy}>
-              <Text style={styles.statToggleTitle}>Track advanced stats?</Text>
-              <Text style={styles.statToggleHint}>Adds aces, double faults, winners, and unforced errors to the report. Basic stats and match timing are always tracked.</Text>
+              <Text style={styles.statToggleTitle}>Track advanced stats</Text>
+              <Text style={styles.statToggleHint}>Adds aces, winners, and errors to the report.</Text>
             </View>
             <Switch
               value={advancedStatsEnabled}
               onValueChange={setAdvancedStatsEnabled}
-              trackColor={{ true: '#ffdc60', false: '#ccc' }}
-              thumbColor={advancedStatsEnabled ? '#1a472a' : '#f4f3f4'}
+              trackColor={{ true: COURT.ok, false: '#2B3338' }}
+              thumbColor="#F2EFE6"
             />
-          </View>
-          <View style={styles.serverSelectBtns}>
-            <TouchableOpacity
-              style={styles.serverSelectBtn}
-              onPress={() => startMatch(id!, 'player1', advancedStatsEnabled, match.liveScore)}
-            >
-              <Text style={styles.serverSelectBtnText}>{p1Name}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.serverSelectBtn}
-              onPress={() => startMatch(id!, 'player2', advancedStatsEnabled, match.liveScore)}
-            >
-              <Text style={styles.serverSelectBtnText}>{p2Name}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Score input buttons */}
-      {isParticipant && match.status === 'in_progress' && (
-        <>
-          <View style={styles.scoreButtons}>
-            <TouchableOpacity
-              style={[
-                styles.pointBtn,
-                styles.pointBtnP1,
-                scoring && styles.pointBtnDisabled,
-              ]}
-              onPress={() => handlePoint('player1')}
-              disabled={scoring}
-            >
-              <Text style={styles.pointBtnText}>
-                {p1Name}
-                {'\n'}Point
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.pointBtn,
-                styles.pointBtnP2,
-                scoring && styles.pointBtnDisabled,
-              ]}
-              onPress={() => handlePoint('player2')}
-              disabled={scoring}
-            >
-              <Text style={styles.pointBtnText}>
-                {p2Name}
-                {'\n'}Point
-              </Text>
-            </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={[
-              styles.undoBtn,
-              (!match.undoSnapshot || scoring) && styles.undoBtnDisabled,
-            ]}
-            onPress={handleUndo}
-            disabled={!match.undoSnapshot || scoring}
+            style={styles.startMatchKey}
+            onPress={() => startMatch(id!, 'player1', advancedStatsEnabled, match.liveScore)}
           >
-            <Text style={styles.undoBtnText}>↩ Undo Last Point</Text>
+            <Text style={styles.startMatchKeyText}>START MATCH</Text>
           </TouchableOpacity>
-
-          <View style={styles.tipsRow}>
-            <Text style={styles.tipsLabel}>Live Tips</Text>
-            <Switch
-              value={match.tipsEnabled}
-              onValueChange={toggleTips}
-              trackColor={{ true: '#1a472a', false: '#ccc' }}
-            />
+          <Text style={styles.setupFooter}>1 tap · 0 navigation · Live in &lt; 5 sec</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.courtHeaderRow}>
+            <View>
+              <Text style={styles.courtTitle}>Live scoring</Text>
+              <Text style={styles.courtSubtitle}>{match.status === 'pending_report' ? 'Final' : currentSetLabel}</Text>
+            </View>
+            {canManage && match.status !== 'cancelled' && (
+              <TouchableOpacity style={styles.courtOptionsBtn} onPress={openManage}>
+                <Text style={styles.courtOptionsText}>⋮</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          <View style={styles.scoreboardPanel}>
+            <View style={styles.scoreboardMetaRow}>
+              <Text style={styles.livePanelLabel}>● LIVE</Text>
+              <Text style={styles.panelTimer}>{formatDuration(elapsedMs)}</Text>
+            </View>
+            {['player1', 'player2'].map((player) => {
+              const isP1 = player === 'player1';
+              return (
+                <View key={player} style={[styles.panelScoreRow, !isP1 && styles.panelScoreRowDivider]}>
+                  <View style={styles.panelNameCell}>
+                    {match.liveScore.server === player && <Text style={styles.serverDot}>●</Text>}
+                    <View style={[styles.panelColorBar, { backgroundColor: isP1 ? COURT.pA : COURT.pB }]} />
+                    <Text style={styles.panelNameText} numberOfLines={1}>{isP1 ? p1Name : p2Name}</Text>
+                  </View>
+                  <View style={styles.panelSetsCell}>
+                    {scoreRows.map((set) => (
+                      <Text key={set.setNumber} style={styles.panelSetNumber}>
+                        {isP1 ? set.player1Games : set.player2Games}
+                      </Text>
+                    ))}
+                  </View>
+                  <Text
+                    style={[styles.panelPointNumber, (isP1 ? p1Point : p2Point) === 'AD' && styles.panelAdNumber]}
+                    accessibilityLabel={`${isP1 ? p1Name : p2Name} score ${isP1 ? p1Point : p2Point}`}
+                  >
+                    {isP1 ? p1Point : p2Point}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {showCourtSurface && (
+            <View style={styles.courtSurface}>
+              <View style={styles.courtLineVerticalLeft} />
+              <View style={styles.courtLineVerticalCenter} />
+              <View style={styles.courtLineVerticalRight} />
+              <View style={styles.courtLineHorizontal} />
+              <View style={[styles.statusPill, { borderColor: statusState.color, backgroundColor: `${statusState.color}22` }]}>
+                <Text style={[styles.statusPillText, { color: statusState.color }]}>• {statusState.label}{statusPlayerName ? ` · ${statusPlayerName}` : ''}</Text>
+              </View>
+              <View style={styles.tapZonesRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.tapZone, styles.tapZoneP1, pressed && styles.tapZonePressed]}
+                  onPress={() => handlePoint('player1')}
+                  onLongPress={() => Alert.alert('Point type', 'Choose attribution', ['Ace', 'Winner', 'Rally', 'Opponent error'].map((text) => ({ text })))}
+                  disabled={scoring}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Log point for ${p1Name}`}
+                >
+                  {statusState.flags.player1 && <Text style={[styles.flagPill, { backgroundColor: statusState.color }]}>{statusState.flags.player1}</Text>}
+                  <Text style={styles.tapZoneName}>{p1Name}</Text>
+                  <Text style={styles.tapZoneScore}>{p1Point}</Text>
+                  <Text style={styles.tapZoneSub}>{p1ServeState}</Text>
+                  <Text style={styles.tapZoneFooter}>Tap · won point</Text>
+                </Pressable>
+                <View style={styles.netCord}><Text style={styles.vsKnot}>VS</Text></View>
+                <Pressable
+                  style={({ pressed }) => [styles.tapZone, styles.tapZoneP2, pressed && styles.tapZonePressed]}
+                  onPress={() => handlePoint('player2')}
+                  onLongPress={() => Alert.alert('Point type', 'Choose attribution', ['Ace', 'Winner', 'Rally', 'Opponent error'].map((text) => ({ text })))}
+                  disabled={scoring}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Log point for ${p2Name}`}
+                >
+                  {statusState.flags.player2 && <Text style={[styles.flagPill, styles.flagPillRight, { backgroundColor: statusState.color }]}>{statusState.flags.player2}</Text>}
+                  <Text style={styles.tapZoneName}>{p2Name}</Text>
+                  <Text style={styles.tapZoneScore}>{p2Point}</Text>
+                  <Text style={styles.tapZoneSub}>{p2ServeState}</Text>
+                  <Text style={styles.tapZoneFooter}>Tap · won point</Text>
+                </Pressable>
+              </View>
+              <View style={styles.bottomCourtBar}>
+                <Text style={styles.bottomIcon}>↺</Text>
+                <Text style={styles.bottomIcon}>⇄</Text>
+                <TouchableOpacity
+                  style={[styles.holdUndoKey, (!match.undoSnapshot || scoring) && styles.holdUndoDisabled]}
+                  onLongPress={handleUndo}
+                  delayLongPress={1000}
+                  disabled={!match.undoSnapshot || scoring}
+                  accessibilityRole="button"
+                  accessibilityLabel="Hold to undo the last point"
+                >
+                  <Text style={styles.holdUndoTitle}>↩  {match.undoSnapshot ? 'Hold to undo' : 'Nothing to undo'}</Text>
+                  <Text style={styles.holdUndoHint}>{match.undoSnapshot ? `Current score · ${gameDisplay}` : 'Last-point reversal unavailable'}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.tipsRowCourt}>
+                <Text style={styles.tipsLabel}>Live tips</Text>
+                <Switch
+                  value={match.tipsEnabled}
+                  onValueChange={toggleTips}
+                  trackColor={{ true: COURT.amber, false: '#2B3338' }}
+                  thumbColor="#F2EFE6"
+                />
+              </View>
+            </View>
+          )}
+
+          {match.status === 'pending_report' && winnerName && (
+            <View style={styles.matchCompleteCard}>
+              <Text style={styles.matchCompleteIcon}>✓</Text>
+              <Text style={styles.matchCompleteLabel}>MATCH COMPLETE</Text>
+              <Text style={styles.matchCompleteWinner}>{winnerName}</Text>
+              <Text style={styles.matchCompleteScore}>{scoreDisplay}</Text>
+              <Text style={styles.matchCompleteMeta}>{formatDuration(elapsedMs)} · {totalPoints || '—'} points</Text>
+              <View style={styles.matchCompleteActions}>
+                <TouchableOpacity style={styles.summaryShareBtn} onPress={handleShareReport}>
+                  <Text style={styles.summaryShareText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.summaryNewBtn} onPress={() => router.back()}>
+                  <Text style={styles.summaryNewText}>New match</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </>
       )}
 
@@ -1222,9 +1405,91 @@ export default function MatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a472a' },
-  content: { padding: 24, paddingBottom: 48 },
+  container: { flex: 1, backgroundColor: '#081014' },
+  content: { padding: 18, paddingBottom: 48 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  setupSurface: { gap: 18, paddingBottom: 24 },
+  setupTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  setupEyebrow: { color: COURT.amber, fontSize: 13, fontWeight: '900', letterSpacing: 5 },
+  setupNoLogin: { color: 'rgba(242,239,230,0.74)', fontSize: 14, fontWeight: '700' },
+  setupHero: { color: COURT.line, fontSize: 48, lineHeight: 54, fontWeight: '900', letterSpacing: -2 },
+  setupSectionLabel: { color: 'rgba(242,239,230,0.72)', fontSize: 13, fontWeight: '900', letterSpacing: 5, marginTop: 8 },
+  setupPlayersRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  setupPlayerCard: { flex: 1, minHeight: 112, borderRadius: 18, borderWidth: 2, borderColor: 'rgba(242,239,230,0.16)', backgroundColor: '#0B1114', padding: 18, justifyContent: 'space-between' },
+  setupPlayerCardP1: { backgroundColor: '#061A2B', borderColor: COURT.pA },
+  setupPlayerRole: { color: 'rgba(255,180,74,0.7)', fontSize: 12, fontWeight: '900', letterSpacing: 4 },
+  setupPlayerName: { color: COURT.line, fontSize: 25, fontWeight: '900' },
+  setupPlayerLine: { height: 5, borderRadius: 999 },
+  setupVs: { color: 'rgba(242,239,230,0.55)', fontSize: 21, fontWeight: '900' },
+  setupHint: { color: 'rgba(242,239,230,0.52)', textAlign: 'center', fontSize: 12, fontWeight: '900', letterSpacing: 3 },
+  formatRow: { flexDirection: 'row', gap: 10 },
+  formatCard: { flex: 1, borderRadius: 14, borderWidth: 2, borderColor: 'rgba(242,239,230,0.14)', padding: 14, minHeight: 76, justifyContent: 'center' },
+  formatCardActive: { backgroundColor: 'rgba(255,180,74,0.22)', borderColor: 'rgba(255,180,74,0.5)' },
+  formatTitle: { color: COURT.line, fontWeight: '900', fontSize: 15 },
+  formatSubtitle: { color: 'rgba(242,239,230,0.65)', fontWeight: '700', marginTop: 6 },
+  formatTitleMuted: { color: 'rgba(242,239,230,0.42)', fontWeight: '900', fontSize: 15 },
+  formatSubtitleMuted: { color: 'rgba(242,239,230,0.35)', fontWeight: '700', marginTop: 6 },
+  courtOptionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(242,239,230,0.13)', borderRadius: 16, padding: 16, backgroundColor: '#0B1114' },
+  startMatchKey: { marginTop: 140, backgroundColor: COURT.line, borderRadius: 18, paddingVertical: 24, alignItems: 'center', shadowColor: COURT.amber, shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
+  startMatchKeyText: { color: '#081014', fontSize: 18, fontWeight: '900', letterSpacing: 4 },
+  setupFooter: { textAlign: 'center', color: 'rgba(242,239,230,0.45)', fontWeight: '700' },
+  courtHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  courtTitle: { color: COURT.line, fontSize: 34, fontWeight: '900', letterSpacing: -1 },
+  courtSubtitle: { color: 'rgba(242,239,230,0.72)', fontSize: 17, fontWeight: '700' },
+  courtOptionsBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  courtOptionsText: { color: COURT.line, fontSize: 32, fontWeight: '900' },
+  scoreboardPanel: { backgroundColor: COURT.scoreboard, borderRadius: 26, borderWidth: 1, borderColor: 'rgba(242,239,230,0.16)', padding: 14, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  scoreboardMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  livePanelLabel: { color: 'rgba(242,239,230,0.76)', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  panelTimer: { color: 'rgba(242,239,230,0.7)', fontSize: 14, fontWeight: '800', fontFamily: 'monospace' },
+  panelScoreRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center' },
+  panelScoreRowDivider: { borderTopWidth: 1, borderTopColor: 'rgba(242,239,230,0.09)' },
+  panelNameCell: { flex: 1.3, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  serverDot: { color: COURT.amber, textShadowColor: COURT.amber, textShadowRadius: 10, fontSize: 18 },
+  panelColorBar: { width: 5, height: 32, borderRadius: 999 },
+  panelNameText: { flex: 1, color: COURT.line, fontSize: 19, fontWeight: '900' },
+  panelSetsCell: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
+  panelSetNumber: { minWidth: 28, textAlign: 'center', color: COURT.line, fontSize: 28, fontWeight: '800', fontFamily: 'monospace' },
+  panelPointNumber: { minWidth: 64, textAlign: 'right', color: COURT.line, fontSize: 36, fontWeight: '900', fontFamily: 'monospace' },
+  panelAdNumber: { color: COURT.ad },
+  courtSurface: { position: 'relative', minHeight: 620, paddingTop: 48, marginBottom: 18 },
+  courtLineVerticalLeft: { position: 'absolute', top: 0, bottom: 92, left: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtLineVerticalCenter: { position: 'absolute', top: 0, bottom: 92, left: '50%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtLineVerticalRight: { position: 'absolute', top: 0, bottom: 92, right: '24%', width: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  courtLineHorizontal: { position: 'absolute', left: 8, right: 8, top: '54%', height: 2, backgroundColor: 'rgba(242,239,230,0.07)' },
+  statusPill: { alignSelf: 'center', borderWidth: 2, borderRadius: 13, paddingHorizontal: 18, paddingVertical: 6, marginBottom: 24, minHeight: 34 },
+  statusPillText: { fontSize: 18, fontWeight: '900' },
+  tapZonesRow: { flexDirection: 'row', flex: 1, minHeight: 470 },
+  tapZone: { flex: 1, borderRadius: 26, padding: 22, justifyContent: 'space-between', alignItems: 'center', minHeight: 470, shadowColor: '#000', shadowOpacity: 0.36, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 7 },
+  tapZoneP1: { backgroundColor: COURT.pA, borderTopColor: COURT.amber, borderTopWidth: 5 },
+  tapZoneP2: { backgroundColor: COURT.pB, borderTopColor: COURT.amber, borderTopWidth: 5 },
+  tapZonePressed: { transform: [{ translateY: 2 }, { scale: 0.99 }], opacity: 0.92 },
+  tapZoneName: { alignSelf: 'flex-end', color: COURT.line, fontSize: 18, fontWeight: '900' },
+  tapZoneScore: { color: '#FFFFFF', fontSize: 116, fontWeight: '900', fontFamily: 'monospace', letterSpacing: -4, textShadowColor: 'rgba(0,0,0,0.22)', textShadowRadius: 10, minWidth: 150, textAlign: 'center' },
+  tapZoneSub: { color: 'rgba(255,255,255,0.72)', fontSize: 16, fontWeight: '900', textAlign: 'center' },
+  tapZoneFooter: { color: 'rgba(255,255,255,0.58)', fontSize: 15, fontWeight: '900' },
+  netCord: { width: 8, backgroundColor: 'rgba(242,239,230,0.82)', marginHorizontal: 4, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  vsKnot: { width: 42, height: 42, borderRadius: 21, overflow: 'hidden', backgroundColor: 'rgba(14,20,24,0.62)', color: 'rgba(242,239,230,0.72)', fontSize: 12, fontWeight: '900', textAlign: 'center', textAlignVertical: 'center' },
+  flagPill: { position: 'absolute', top: 22, left: 18, overflow: 'hidden', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 3 },
+  flagPillRight: { left: undefined, right: 18 },
+  bottomCourtBar: { flexDirection: 'row', gap: 14, alignItems: 'center', marginTop: 18 },
+  bottomIcon: { color: COURT.line, fontSize: 34, fontWeight: '800', width: 48, textAlign: 'center' },
+  holdUndoKey: { flex: 1, backgroundColor: '#FFD9A3', borderRadius: 20, minHeight: 76, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  holdUndoDisabled: { opacity: 0.48 },
+  holdUndoTitle: { color: '#14100B', fontSize: 22, fontWeight: '900' },
+  holdUndoHint: { color: 'rgba(20,16,11,0.62)', fontSize: 14, fontWeight: '700', marginTop: 4 },
+  tipsRowCourt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6, paddingTop: 12 },
+  matchCompleteCard: { backgroundColor: '#202B30', borderRadius: 28, padding: 26, alignItems: 'center', gap: 12, marginBottom: 18, borderLeftWidth: 5, borderLeftColor: COURT.pA, borderRightWidth: 5, borderRightColor: COURT.pB },
+  matchCompleteIcon: { width: 76, height: 76, borderRadius: 38, overflow: 'hidden', backgroundColor: 'rgba(74,222,128,0.18)', color: '#8BF0AC', textAlign: 'center', textAlignVertical: 'center', fontSize: 46, fontWeight: '900' },
+  matchCompleteLabel: { color: '#8BF0AC', fontSize: 14, fontWeight: '900', letterSpacing: 3 },
+  matchCompleteWinner: { color: COURT.line, fontSize: 42, fontWeight: '900' },
+  matchCompleteScore: { color: COURT.line, fontSize: 28, fontWeight: '800', fontFamily: 'monospace' },
+  matchCompleteMeta: { color: 'rgba(242,239,230,0.72)', fontSize: 16, fontWeight: '700' },
+  matchCompleteActions: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 8 },
+  summaryShareBtn: { flex: 1, borderWidth: 2, borderColor: 'rgba(242,239,230,0.28)', borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
+  summaryShareText: { color: COURT.amber, fontSize: 18, fontWeight: '900' },
+  summaryNewBtn: { flex: 1, backgroundColor: COURT.amber, borderRadius: 999, paddingVertical: 14, alignItems: 'center' },
+  summaryNewText: { color: '#2B1A00', fontSize: 18, fontWeight: '900' },
   scoreBoard: { alignItems: 'center', paddingVertical: 32 },
   setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   setsLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 16, marginRight: 12 },
