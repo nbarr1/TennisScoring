@@ -122,7 +122,7 @@ function getStatusState(match: Match): { label: string; player?: 'player1' | 'pl
       const player = p1CanWinTiebreak ? 'player1' : 'player2';
       return { label: 'Set point', player, color: COURT.ad, tone: 'sp', sideChange, flags: { [player]: 'SP' } };
     }
-    return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
+    return { label: 'Tiebreak', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
   }
   if (p1MatchPoint || p2MatchPoint) {
     const player = p1MatchPoint ? 'player1' : 'player2';
