@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot } from 'firebase/firestore';
-import { rankingsQuery, completedDivisionMatchesQuery } from '../collections';
+import { onSnapshot, query, where } from 'firebase/firestore';
+import { rankingsQuery, completedDivisionMatchesQuery, usersCol } from '../collections';
 import { computeRankings, extractMatchTotals } from '@tennis/shared';
-import type { PlayerRanking, Match, HeadToHead } from '@tennis/shared';
+import type { PlayerRanking, Match, HeadToHead, User } from '@tennis/shared';
 
 function hasRankingStats(ranking: PlayerRanking): boolean {
   return (
@@ -14,6 +14,54 @@ function hasRankingStats(ranking: PlayerRanking): boolean {
     ranking.gamesWon > 0 ||
     ranking.gamesLost > 0
   );
+}
+
+function rankingFromRosterUser(user: User, divisionId: string): PlayerRanking {
+  const summary =
+    user.rankingSummary?.divisionId === divisionId ? user.rankingSummary : null;
+  const gamesWon = summary?.gamesWon ?? 0;
+  const gamesLost = summary?.gamesLost ?? 0;
+
+  return {
+    userId: user.id,
+    displayName: user.displayName || user.email || user.id,
+    divisionId,
+    season: 'current',
+    rank: summary?.rank ?? 0,
+    matchesPlayed: summary?.matchesPlayed ?? 0,
+    matchesWon: summary?.matchesWon ?? 0,
+    matchesLost: summary?.matchesLost ?? 0,
+    setsWon: summary?.setsWon ?? 0,
+    setsLost: summary?.setsLost ?? 0,
+    gamesWon,
+    gamesLost,
+    gameDifferential: summary?.gameDifferential ?? gamesWon - gamesLost,
+    updatedAt: summary?.updatedAt ?? user.updatedAt ?? 0,
+  };
+}
+
+function mergeRankingSources(
+  primaryRankings: PlayerRanking[],
+  fallbackRankings: PlayerRanking[],
+  rosterRankings: PlayerRanking[],
+): PlayerRanking[] {
+  const byUserId = new Map<string, PlayerRanking>();
+  [primaryRankings, fallbackRankings, rosterRankings].forEach((source) => {
+    source.forEach((ranking) => {
+      if (!byUserId.has(ranking.userId)) {
+        byUserId.set(ranking.userId, ranking);
+      }
+    });
+  });
+
+  return [...byUserId.values()]
+    .sort((a, b) => {
+      const aRank = a.rank > 0 ? a.rank : Number.MAX_SAFE_INTEGER;
+      const bRank = b.rank > 0 ? b.rank : Number.MAX_SAFE_INTEGER;
+      if (aRank !== bRank) return aRank - bRank;
+      return a.displayName.localeCompare(b.displayName);
+    })
+    .map((ranking, index) => ({ ...ranking, rank: index + 1 }));
 }
 
 function normalizeIdentity(value?: string): string | null {
@@ -197,37 +245,44 @@ export function useRankings(divisionId: string | null) {
 
     let firestoreRankings: PlayerRanking[] = [];
     let computedRankings: PlayerRanking[] = [];
+    let rosterRankings: PlayerRanking[] = [];
     let countedMatchCount = 0;
     let rankingsReady = false;
     let matchesReady = false;
+    let rosterReady = false;
 
     const syncRankings = () => {
       let nextRankings: PlayerRanking[];
       const hasFirestoreStats = firestoreRankings.some(hasRankingStats);
       if (hasFirestoreStats) {
-        // Prefer server-calculated standings when present. These are computed
-        // from canonical user IDs and are less prone to local identity drift.
-        nextRankings = firestoreRankings;
+        // Prefer server-calculated standings when present, but merge in
+        // locally computed and roster-only fallbacks so a missing ranking
+        // document or user.rankingSummary does not hide an active player.
+        nextRankings = mergeRankingSources(
+          firestoreRankings,
+          computedRankings,
+          rosterRankings,
+        );
       } else if (computedRankings.length > 0) {
         // Fallback to local computation only before server standings exist.
         const computedIds = new Set(computedRankings.map((r) => r.userId));
-        const unplayed = firestoreRankings
+        const unplayed = [...firestoreRankings, ...rosterRankings]
           .filter((r) => !computedIds.has(r.userId) && !hasRankingStats(r))
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
-        nextRankings = [...computedRankings, ...unplayed].map((r, index) => ({
+        nextRankings = mergeRankingSources(computedRankings, unplayed, []).map((r, index) => ({
           ...r,
           rank: index + 1,
         }));
       } else if (matchesReady && countedMatchCount === 0) {
-        nextRankings = firestoreRankings
+        nextRankings = [...firestoreRankings, ...rosterRankings]
           .filter((r) => !hasRankingStats(r))
           .sort((a, b) => a.displayName.localeCompare(b.displayName))
           .map((r, index) => ({ ...r, rank: index + 1 }));
       } else {
-        nextRankings = firestoreRankings;
+        nextRankings = mergeRankingSources(firestoreRankings, [], rosterRankings);
       }
       setRankings(nextRankings);
-      if (rankingsReady && matchesReady) {
+      if (rankingsReady && matchesReady && rosterReady) {
         setLoading(false);
       }
     };
@@ -268,9 +323,27 @@ export function useRankings(divisionId: string | null) {
       },
     );
 
+    const unsubRoster = onSnapshot(
+      query(usersCol(), where('divisionId', '==', divisionId)),
+      (snap) => {
+        rosterRankings = snap.docs.map((d) =>
+          rankingFromRosterUser({ ...(d.data() as User), id: d.id }, divisionId),
+        );
+        rosterReady = true;
+        syncRankings();
+      },
+      (err) => {
+        setError(err);
+        rosterRankings = [];
+        rosterReady = true;
+        syncRankings();
+      },
+    );
+
     return () => {
       unsubRankings();
       unsubMatches();
+      unsubRoster();
     };
   }, [divisionId]);
 
