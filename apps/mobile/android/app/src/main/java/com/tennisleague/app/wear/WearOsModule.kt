@@ -70,10 +70,13 @@ class WearOsModule(
 
   override fun onMessageReceived(event: MessageEvent) {
     if (event.path != POINT_PATH) return
-    val player = String(event.data)
+    val command = String(event.data)
+    val payload =
+      if (command == "undo") mapOf("action" to "undo")
+      else mapOf("action" to "point", "player" to command)
     reactContext
       .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-      .emit("onWearScoreInput", mapOf("player" to player))
+      .emit("onWearScoreInput", payload)
   }
 
   private fun registerListener() {
