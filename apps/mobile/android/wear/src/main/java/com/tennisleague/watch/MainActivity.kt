@@ -10,6 +10,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -207,8 +208,8 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       val server = score.optString("server", "player1")
       val serviceSide = score.optString("serviceSide", "deuce")
 
-      player1Name.text = p1Name.trim().split(" ").firstOrNull()?.take(10) ?: "P1"
-      player2Name.text = p2Name.trim().split(" ").firstOrNull()?.take(10) ?: "P2"
+      player1Name.text = p1Name.take(10)
+      player2Name.text = p2Name.take(10)
       player1Button.text = pointButtonLabel(p1Name, if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0")))
       player2Button.text = pointButtonLabel(p2Name, if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0")))
       setsScore.text = "Sets $p1Sets-$p2Sets"
@@ -236,7 +237,8 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
         feedbackTitle.text = root.optString("feedbackTitle", "Game")
         feedbackBody.text = root.optString("feedbackBody", "Tap a plinth for point. Long-press to undo.")
       }
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+      Log.e(TAG, "Error rendering payload", e)
       feedbackTitle.text = "Sync error"
       feedbackBody.text = "Could not read latest score."
     }
@@ -337,6 +339,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   }
 
   companion object {
+    private const val TAG = "TennisWatch"
     private const val SCORE_PATH = "/tennis/score"
     private const val POINT_PATH = "/tennis/point"
     private const val DOUBLE_PRESS_MS = 300L

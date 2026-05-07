@@ -104,10 +104,24 @@ function getStatusState(match: Match): { label: string; player?: 'player1' | 'pl
   const p2SetPoint = p2CanWinGame && currentSet.player2Games + 1 >= match.format.gamesPerSet && currentSet.player2Games + 1 - currentSet.player1Games >= 2;
   const p1MatchPoint = p1SetPoint && score.player1SetsWon === match.format.setsToWin - 1;
   const p2MatchPoint = p2SetPoint && score.player2SetsWon === match.format.setsToWin - 1;
-  const totalGamesInSet = currentSet.player1Games + currentSet.player2Games;
-  const sideChange = totalGamesInSet % 2 === 1;
+  const totalGames = score.sets.reduce((sum, set) => sum + set.player1Games + set.player2Games, 0);
+  const sideChange = totalGames > 0 && totalGames % 2 === 1;
 
-  if (score.isTiebreak) {
+  if (score.isTiebreak && score.tiebreakScore) {
+    const tb = score.tiebreakScore;
+    const p1CanWinTiebreak = tb.player1Points >= 6 && tb.player1Points > tb.player2Points;
+    const p2CanWinTiebreak = tb.player2Points >= 6 && tb.player2Points > tb.player1Points;
+    const p1TbMatchPoint = p1CanWinTiebreak && score.player1SetsWon === match.format.setsToWin - 1;
+    const p2TbMatchPoint = p2CanWinTiebreak && score.player2SetsWon === match.format.setsToWin - 1;
+
+    if (p1TbMatchPoint || p2TbMatchPoint) {
+      const player = p1TbMatchPoint ? 'player1' : 'player2';
+      return { label: 'Match point', player, color: COURT.mp, tone: 'mp', sideChange, flags: { [player]: 'MP' } };
+    }
+    if (p1CanWinTiebreak || p2CanWinTiebreak) {
+      const player = p1CanWinTiebreak ? 'player1' : 'player2';
+      return { label: 'Set point', player, color: COURT.ad, tone: 'sp', sideChange, flags: { [player]: 'SP' } };
+    }
     return { label: 'Tiebreak · First to 7', player: undefined, color: COURT.amber, tone: 'tb', sideChange, flags: {} as Partial<Record<'player1' | 'player2', string>> };
   }
   if (p1MatchPoint || p2MatchPoint) {
