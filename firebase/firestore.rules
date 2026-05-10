@@ -258,6 +258,15 @@ service cloud.firestore {
 
 
 
+    // ---------- Feedback ----------
+    match /feedback/{feedbackId} {
+      allow read: if isAuth() && (
+        isAdmin() ||
+        getUserData().role == 'division_leader'
+      );
+      allow create, update, delete: if false; // Cloud Functions only
+    }
+
     // ---------- Invites ----------
     match /invites/{inviteId} {
       allow read, write: if false; // Accessed only through Cloud Functions
