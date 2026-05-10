@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { signOut } from "firebase/auth";
+import { useRouter } from "expo-router";
 import {
   auth,
   useAuthUser,
@@ -33,6 +34,7 @@ export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
   const { profile, loading } = useUserProfile(firebaseUser?.uid ?? null);
   const { setUser } = useAppStore();
+  const router = useRouter();
 
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -116,6 +118,10 @@ export default function ProfileScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleFeedback() {
+    router.push({ pathname: "/feedback", params: { from: "/(tabs)/profile" } });
   }
 
   async function handleSignOut() {
@@ -400,6 +406,9 @@ export default function ProfileScreen() {
             <Text style={styles.editBtnText}>Edit Profile</Text>
           </TouchableOpacity>
         )}
+        <TouchableOpacity style={styles.feedbackBtn} onPress={handleFeedback}>
+          <Text style={styles.feedbackBtnText}>Provide feedback</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutBtnText}>Sign Out</Text>
         </TouchableOpacity>
@@ -489,6 +498,15 @@ const styles = StyleSheet.create({
     borderColor: "#ddd",
   },
   cancelBtnText: { color: "#555", fontWeight: "600", fontSize: 15 },
+  feedbackBtn: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#1a472a",
+    backgroundColor: "#fff",
+  },
+  feedbackBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
   signOutBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
   signOutBtnText: { color: "#c0392b", fontWeight: "600", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },

@@ -258,6 +258,15 @@ service cloud.firestore {
 
 
 
+    // ---------- Feedback ----------
+    match /feedback/{feedbackId} {
+      allow read: if isAuth() && (
+        isAdmin() ||
+        getUserData().role == 'division_leader'
+      );
+      allow create, update, delete: if false; // Cloud Functions only
+    }
+
     // ---------- Invites ----------
     match /invites/{inviteId} {
       allow read, write: if false; // Accessed only through Cloud Functions
@@ -266,6 +275,39 @@ service cloud.firestore {
     // Optional Firebase Trigger Email extension queue
     match /mail/{mailId} {
       allow read, write: if false; // Cloud Functions / extension only
+    }
+
+    // ---------- Feedback ----------
+    match /feedback/{feedbackId} {
+      function feedbackFields() {
+        return [
+          'userId',
+          'userEmail',
+          'userDisplayName',
+          'category',
+          'message',
+          'source',
+          'platform',
+          'appVersion',
+          'nativeAppVersion',
+          'nativeBuildVersion',
+          'screen',
+          'screenContext',
+          'status',
+          'createdAt'
+        ];
+      }
+
+      allow read: if isAdmin();
+      allow create: if isAuth() &&
+        request.resource.data.keys().hasOnly(feedbackFields()) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.category is string &&
+        request.resource.data.message is string &&
+        request.resource.data.source in ['mobile', 'web'] &&
+        request.resource.data.status == 'new' &&
+        request.resource.data.createdAt is number;
+      allow update, delete: if false;
     }
 
     // ---------- Channels ----------
