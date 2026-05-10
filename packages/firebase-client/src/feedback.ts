@@ -1,39 +1,40 @@
-import { httpsCallable } from 'firebase/functions';
-import { functions } from './config';
+import { addDoc, collection } from "firebase/firestore";
+import { db } from "./config";
 
-export type FeedbackCategory = 'bug' | 'feature' | 'match_scoring' | 'account' | 'other';
-
-export interface SubmitFeedbackInput {
-  category: FeedbackCategory;
+export interface FeedbackSubmission {
+  userId: string;
+  userEmail?: string | null;
+  userDisplayName?: string | null;
+  category: string;
   message: string;
-  allowContact: boolean;
-  source: 'web' | 'mobile';
-  path?: string;
-  userAgent?: string;
-  metadata?: Record<string, string>;
-  user?: {
-    uid: string;
-    displayName?: string | null;
-    email?: string | null;
-    divisionId?: string | null;
-  };
+  source: "mobile" | "web";
+  platform?: string | null;
+  appVersion?: string | null;
+  nativeAppVersion?: string | null;
+  nativeBuildVersion?: string | null;
+  screen?: string | null;
+  screenContext?: Record<string, unknown> | null;
 }
 
-export interface SubmitFeedbackResult {
-  success: boolean;
-  issueUrl?: string;
+function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  ) as T;
 }
 
 export async function submitFeedback(
-  feedback: SubmitFeedbackInput,
-): Promise<SubmitFeedbackResult> {
-  const callable = httpsCallable<SubmitFeedbackInput, SubmitFeedbackResult>(
-    functions,
-    'submitFeedback',
+  submission: FeedbackSubmission,
+): Promise<string> {
+  const ref = await addDoc(
+    collection(db, "feedback"),
+    withoutUndefined({
+      ...submission,
+      category: submission.category.trim(),
+      message: submission.message.trim(),
+      status: "new",
+      createdAt: Date.now(),
+    }),
   );
-  const result = await callable({
-    ...feedback,
-    message: feedback.message.trim(),
-  });
-  return result.data;
+
+  return ref.id;
 }
