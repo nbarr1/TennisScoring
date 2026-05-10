@@ -31,6 +31,25 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 Replace `DEPLOYER_SA@PROJECT_ID.iam.gserviceaccount.com` with the service account whose key is stored in `FIREBASE_SERVICE_ACCOUNT_JSON`.
 
+
+## GitHub feedback integration
+
+Feedback issue creation is handled only by the `submitFeedback` Cloud Function. Keep all GitHub credentials out of `apps/web` and `apps/mobile`; do not add `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*` variables for GitHub tokens, private keys, or installation tokens.
+
+Configure the repository target as Functions params/config and store the token in Functions secret storage:
+
+```bash
+firebase functions:secrets:set GITHUB_TOKEN
+
+# Params consumed by firebase/src/feedback/submitFeedback.ts
+# Store these with your Functions environment/params for the target project.
+GITHUB_OWNER="your-github-org-or-user"
+GITHUB_REPO="your-feedback-repo"
+GITHUB_FEEDBACK_LABELS="feedback"
+```
+
+The `GITHUB_TOKEN` secret can be a fine-grained personal access token or an app installation token with permission to create issues in the configured repository.
+
 ## Workflow secrets
 
 - `FIREBASE_PROJECT_ID`

@@ -1,194 +1,172 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { createHash } from 'node:crypto';
+import { logger } from 'firebase-functions/v2';
+import { defineSecret, defineString } from 'firebase-functions/params';
 
 if (!getApps().length) initializeApp();
 
-const callableOptions = { cors: true } as const;
-const MAX_MESSAGE_LENGTH = 4_000;
-const RATE_LIMIT_MAX_SUBMISSIONS = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1_000;
-const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1_000;
-const RECENT_FEEDBACK_HISTORY_LIMIT = 20;
+const githubToken = defineSecret('GITHUB_TOKEN');
+const githubOwner = defineString('GITHUB_OWNER');
+const githubRepo = defineString('GITHUB_REPO');
+const githubApiUrl = defineString('GITHUB_API_URL', {
+  default: 'https://api.github.com',
+});
+const githubFeedbackLabels = defineString('GITHUB_FEEDBACK_LABELS', {
+  default: 'feedback',
+});
 
-const ALLOWED_CATEGORIES = [
-  'bug',
-  'feature_request',
-  'scoring_issue',
-  'account_issue',
-  'general',
-] as const;
+const callableOptions = {
+  cors: true,
+  secrets: [githubToken],
+};
 
-const allowedCategorySet = new Set<string>(ALLOWED_CATEGORIES);
+const MAX_TITLE_LENGTH = 120;
+const MAX_BODY_LENGTH = 8_000;
+const MAX_METADATA_LENGTH = 1_000;
+const MAX_LABELS = 10;
 
-type FeedbackCategory = (typeof ALLOWED_CATEGORIES)[number];
-
-type SubmitFeedbackInput = {
-  category?: unknown;
-  message?: unknown;
-  page?: unknown;
+export type SubmitFeedbackInput = {
+  title?: unknown;
+  body?: unknown;
+  labels?: unknown;
   metadata?: unknown;
 };
 
-type RateLimitSubmission = {
-  submittedAt: number;
+export type SubmitFeedbackResult = {
+  issueNumber: number;
+  issueUrl: string;
 };
 
-type RecentFeedbackEntry = {
-  category: FeedbackCategory;
-  messageHash: string;
-  submittedAt: number;
+type GitHubIssueResponse = {
+  number?: unknown;
+  html_url?: unknown;
+  message?: unknown;
 };
 
-type FeedbackRateLimitData = {
-  submissions?: RateLimitSubmission[];
-  recentFeedback?: RecentFeedbackEntry[];
-};
-
-function normalizeMessage(message: string): string {
-  return message.trim().replace(/\s+/g, ' ');
+function requireNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new HttpsError('invalid-argument', `${field} is required.`);
+  }
+  return value.trim();
 }
 
-function messageHashFor(category: FeedbackCategory, message: string): string {
-  return createHash('sha256')
-    .update(category)
-    .update('\0')
-    .update(message.toLowerCase())
-    .digest('hex');
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }
 
-function validateFeedbackInput(data: SubmitFeedbackInput) {
-  const rawMessage = data.message;
-  if (typeof rawMessage !== 'string') {
-    throw new HttpsError('invalid-argument', 'Feedback message is required.');
-  }
-
-  const message = normalizeMessage(rawMessage);
-  if (!message) {
-    throw new HttpsError('invalid-argument', 'Feedback message is required.');
-  }
-
-  if (message.length > MAX_MESSAGE_LENGTH) {
+function getConfiguredValue(param: ReturnType<typeof defineString>, name: string): string {
+  const value = param.value().trim();
+  if (!value) {
     throw new HttpsError(
-      'invalid-argument',
-      `Feedback message must be ${MAX_MESSAGE_LENGTH} characters or fewer.`,
-      { maxLength: MAX_MESSAGE_LENGTH },
+      'failed-precondition',
+      `${name} must be configured in Firebase Functions config/params.`,
+    );
+  }
+  return value;
+}
+
+function normalizeLabels(labels: unknown): string[] {
+  const configuredLabels = githubFeedbackLabels
+    .value()
+    .split(',')
+    .map((label) => label.trim())
+    .filter(Boolean);
+
+  const requestedLabels = Array.isArray(labels)
+    ? labels.filter((label): label is string => typeof label === 'string')
+    : [];
+
+  return Array.from(
+    new Set(
+      [...configuredLabels, ...requestedLabels]
+        .map((label) => label.trim())
+        .filter(Boolean)
+        .map((label) => truncate(label, 50)),
+    ),
+  ).slice(0, MAX_LABELS);
+}
+
+function formatMetadata(metadata: unknown, uid?: string): string {
+  const lines = ['---', 'Submitted via Firebase Functions.'];
+  if (uid) lines.push(`Firebase Auth UID: ${uid}`);
+
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const entries = Object.entries(metadata as Record<string, unknown>)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .slice(0, 20)
+      .map(([key, value]) => {
+        const safeKey = truncate(key.trim(), 80);
+        const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+        return `- ${safeKey}: ${truncate(serialized, MAX_METADATA_LENGTH)}`;
+      });
+
+    if (entries.length) {
+      lines.push('', 'Metadata:', ...entries);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function buildIssueBody(body: string, metadata: unknown, uid?: string): string {
+  return `${truncate(body, MAX_BODY_LENGTH)}\n\n${formatMetadata(metadata, uid)}`;
+}
+
+export const submitFeedback = onCall(callableOptions, async (request): Promise<SubmitFeedbackResult> => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to submit feedback.');
+  }
+
+  const data = (request.data ?? {}) as SubmitFeedbackInput;
+  const title = truncate(requireNonEmptyString(data.title, 'Feedback title'), MAX_TITLE_LENGTH);
+  const body = requireNonEmptyString(data.body, 'Feedback body');
+  const owner = getConfiguredValue(githubOwner, 'GITHUB_OWNER');
+  const repo = getConfiguredValue(githubRepo, 'GITHUB_REPO');
+  const token = githubToken.value().trim();
+
+  if (!token) {
+    throw new HttpsError(
+      'failed-precondition',
+      'GITHUB_TOKEN must be stored in Firebase Functions secret storage.',
     );
   }
 
-  const rawCategory = data.category;
-  if (typeof rawCategory !== 'string' || !allowedCategorySet.has(rawCategory)) {
-    throw new HttpsError(
-      'invalid-argument',
-      'Feedback category is required and must be one of the allowed values.',
-      { allowedCategories: ALLOWED_CATEGORIES },
-    );
+  const apiBaseUrl = githubApiUrl.value().replace(/\/+$/, '');
+  const response = await fetch(
+    `${apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'tennis-scoring-firebase-functions',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({
+        title,
+        body: buildIssueBody(body, data.metadata, request.auth.uid),
+        labels: normalizeLabels(data.labels),
+      }),
+    },
+  );
+
+  const responseBody = (await response.json().catch(() => ({}))) as GitHubIssueResponse;
+  if (!response.ok) {
+    logger.error('GitHub issue creation failed', {
+      status: response.status,
+      message: responseBody.message,
+    });
+    throw new HttpsError('internal', 'Could not submit feedback. Please try again later.');
   }
 
-  const page = typeof data.page === 'string' && data.page.trim()
-    ? data.page.trim().slice(0, 500)
-    : null;
+  if (typeof responseBody.number !== 'number' || typeof responseBody.html_url !== 'string') {
+    logger.error('GitHub issue creation returned an unexpected payload', responseBody);
+    throw new HttpsError('internal', 'Feedback was submitted but GitHub returned an unexpected response.');
+  }
 
   return {
-    category: rawCategory as FeedbackCategory,
-    message,
-    page,
-    metadata: data.metadata && typeof data.metadata === 'object' ? data.metadata : null,
+    issueNumber: responseBody.number,
+    issueUrl: responseBody.html_url,
   };
-}
-
-function validSubmission(value: unknown): value is RateLimitSubmission {
-  return !!value
-    && typeof value === 'object'
-    && typeof (value as RateLimitSubmission).submittedAt === 'number';
-}
-
-function validRecentFeedback(value: unknown): value is RecentFeedbackEntry {
-  const entry = value as RecentFeedbackEntry;
-  return !!entry
-    && typeof entry === 'object'
-    && typeof entry.submittedAt === 'number'
-    && typeof entry.messageHash === 'string'
-    && allowedCategorySet.has(entry.category);
-}
-
-export const submitFeedback = onCall(callableOptions, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError(
-      'unauthenticated',
-      'You must be signed in to submit feedback.',
-    );
-  }
-
-  const feedback = validateFeedbackInput((request.data ?? {}) as SubmitFeedbackInput);
-  const { uid, token } = request.auth;
-  const db = getFirestore();
-  const feedbackRef = db.collection('feedback').doc();
-  const rateLimitRef = db.collection('feedbackRateLimits').doc(uid);
-  const nowMs = Date.now();
-  const rateLimitCutoffMs = nowMs - RATE_LIMIT_WINDOW_MS;
-  const duplicateCutoffMs = nowMs - DUPLICATE_WINDOW_MS;
-  const messageHash = messageHashFor(feedback.category, feedback.message);
-
-  await db.runTransaction(async (tx) => {
-    const rateLimitSnap = await tx.get(rateLimitRef);
-    const rateLimitData = rateLimitSnap.data() as FeedbackRateLimitData | undefined;
-    const recentSubmissions = (rateLimitData?.submissions ?? [])
-      .filter(validSubmission)
-      .filter((entry) => entry.submittedAt > rateLimitCutoffMs);
-
-    if (recentSubmissions.length >= RATE_LIMIT_MAX_SUBMISSIONS) {
-      throw new HttpsError(
-        'resource-exhausted',
-        `You can submit up to ${RATE_LIMIT_MAX_SUBMISSIONS} feedback messages per hour. Please try again later.`,
-        {
-          maxSubmissions: RATE_LIMIT_MAX_SUBMISSIONS,
-          windowSeconds: RATE_LIMIT_WINDOW_MS / 1_000,
-        },
-      );
-    }
-
-    const recentFeedback = (rateLimitData?.recentFeedback ?? [])
-      .map(validateFeedbackCompleteness)
-      .filter((entry): entry is RecentFeedback => entry !== undefined)
-      .filter((entry) => entry.submittedAt > duplicateCutoffMs);
-
-    if (recentFeedback.some((entry) => entry.category === feedback.category && entry.messageHash === messageHash)) {
-      throw new HttpsError(
-        'already-exists',
-        'This feedback has already been submitted recently.',
-        { duplicateWindowSeconds: DUPLICATE_WINDOW_MS / 1_000 },
-      );
-    }
-
-    tx.set(feedbackRef, {
-      userId: uid,
-      userEmail: token.email ?? null,
-      userName: token.name ?? null,
-      category: feedback.category,
-      message: feedback.message,
-      page: feedback.page,
-      metadata: feedback.metadata,
-      messageLength: feedback.message.length,
-      messageHash,
-      submittedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
-    tx.set(rateLimitRef, {
-      userId: uid,
-      submissions: [
-        ...recentSubmissions,
-        { submittedAt: nowMs },
-      ],
-      recentFeedback: [
-        { category: feedback.category, messageHash, submittedAt: nowMs },
-        ...recentFeedback,
-      ].slice(0, RECENT_FEEDBACK_HISTORY_LIMIT),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-  });
-
-  return { success: true, feedbackId: feedbackRef.id };
 });

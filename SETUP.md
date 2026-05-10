@@ -34,7 +34,13 @@ Fill in Firebase config values and PingID OIDC credentials.
 
 **Mobile** uses `EXPO_PUBLIC_*` prefix.
 **Web** uses `NEXT_PUBLIC_*` prefix.
-**Firebase Functions** reads env at runtime via `process.env.*`.
+**Firebase Functions** reads runtime configuration from Functions params/config and secrets.
+
+Never put GitHub credentials in `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*` variables. Web and mobile feedback submissions must call the `submitFeedback` Firebase Function, and only that function may call the GitHub API. Store the GitHub token or app installation token in Functions secret storage:
+
+```bash
+firebase functions:secrets:set GITHUB_TOKEN
+```
 
 Set Cloud Functions env config:
 

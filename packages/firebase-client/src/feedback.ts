@@ -1,40 +1,30 @@
-import { addDoc, collection } from "firebase/firestore";
-import { db } from "./config";
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './config';
 
-export interface FeedbackSubmission {
-  userId: string;
-  userEmail?: string | null;
-  userDisplayName?: string | null;
-  category: string;
-  message: string;
-  source: "mobile" | "web";
-  platform?: string | null;
-  appVersion?: string | null;
-  nativeAppVersion?: string | null;
-  nativeBuildVersion?: string | null;
-  screen?: string | null;
-  screenContext?: Record<string, unknown> | null;
-}
+export type SubmitFeedbackPayload = {
+  title: string;
+  body: string;
+  labels?: string[];
+  metadata?: Record<string, unknown>;
+};
 
-function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as T;
-}
+export type SubmitFeedbackResponse = {
+  issueNumber: number;
+  issueUrl: string;
+};
 
 export async function submitFeedback(
-  submission: FeedbackSubmission,
-): Promise<string> {
-  const ref = await addDoc(
-    collection(db, "feedback"),
-    withoutUndefined({
-      ...submission,
-      category: submission.category.trim(),
-      message: submission.message.trim(),
-      status: "new",
-      createdAt: Date.now(),
-    }),
+  payload: SubmitFeedbackPayload,
+): Promise<SubmitFeedbackResponse> {
+  const callable = httpsCallable<SubmitFeedbackPayload, SubmitFeedbackResponse>(
+    functions,
+    'submitFeedback',
   );
-
-  return ref.id;
+  const result = await callable({
+    title: payload.title.trim(),
+    body: payload.body.trim(),
+    labels: payload.labels,
+    metadata: payload.metadata,
+  });
+  return result.data;
 }
