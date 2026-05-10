@@ -130,7 +130,7 @@ export default function FeedbackPage(): React.JSX.Element {
             {issueUrl && (
               <p style={styles.helper}>
                 GitHub issue: {" "}
-                <a href={issueUrl} target="_blank" rel="noreferrer">
+                <a href={issueUrl} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>
                   {issueUrl}
                 </a>
               </p>
