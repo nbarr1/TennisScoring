@@ -55,6 +55,7 @@ export default function RootLayout() {
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Provide Feedback' }} />
             <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
           </Stack>
         </AuthGuard>
