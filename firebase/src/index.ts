@@ -18,3 +18,4 @@ export {
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,
 } from './divisions/divisionFunctions';
+export { submitFeedback } from './feedback/submitFeedback';
