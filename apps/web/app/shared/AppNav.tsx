@@ -4,6 +4,7 @@ export type AppNavSection =
   | "dashboard"
   | "matches"
   | "messages"
+  | "feedback"
   | "profile"
   | "admin";
 
@@ -15,6 +16,7 @@ const NAV_ITEMS: Array<{
   { section: "dashboard", href: "/dashboard", label: "Rankings" },
   { section: "matches", href: "/matches", label: "Matches" },
   { section: "messages", href: "/messages", label: "Messages" },
+  { section: "feedback", href: "/feedback", label: "Feedback" },
   { section: "profile", href: "/profile", label: "Profile" },
   { section: "admin", href: "/admin", label: "Admin" },
 ];
