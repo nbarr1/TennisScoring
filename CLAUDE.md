@@ -241,7 +241,13 @@ NEXTAUTH_SECRET, NEXTAUTH_URL
 
 # Cloud Functions only
 FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY
+GITHUB_OWNER, GITHUB_REPO, GITHUB_FEEDBACK_LABELS
+
+# Firebase Functions secret storage only
+GITHUB_TOKEN
 ```
+
+GitHub credentials must never use `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*`; web and mobile feedback code calls Firebase Functions only, and `firebase/src/feedback/submitFeedback.ts` is the single GitHub API integration point.
 
 See `.env.example` at the root for the full list.
 
