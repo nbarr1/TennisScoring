@@ -150,9 +150,9 @@ export const submitFeedback = onCall(callableOptions, async (request) => {
     }
 
     const recentFeedback = (rateLimitData?.recentFeedback ?? [])
-      .filter(validRecentFeedback)
-      .filter((entry) => entry.submittedAt > duplicateCutoffMs)
-      .slice(0, RECENT_FEEDBACK_HISTORY_LIMIT);
+      .map(validateFeedbackCompleteness)
+      .filter((entry): entry is RecentFeedback => entry !== undefined)
+      .filter((entry) => entry.submittedAt > duplicateCutoffMs);
 
     if (recentFeedback.some((entry) => entry.category === feedback.category && entry.messageHash === messageHash)) {
       throw new HttpsError(
