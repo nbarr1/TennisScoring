@@ -17,6 +17,11 @@ import {
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 
+type ConfirmAction =
+  | { type: 'cancel' }
+  | { type: 'postpone'; newTime: number }
+  | { type: 'delete'; message: string };
+
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
   const router = useRouter();
