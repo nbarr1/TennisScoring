@@ -22,6 +22,7 @@ import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
+  getMatchStatusMetadata,
 } from "@tennis/shared";
 import type { Match, User, Availability } from "@tennis/shared";
 
@@ -35,6 +36,19 @@ function formatScheduledAt(ts?: number): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function StatusBadge({ status }: { status: Match["status"] }) {
+  const metadata = getMatchStatusMetadata(status);
+
+  return (
+    <span
+      aria-label={metadata.accessibilityLabel}
+      style={{ ...styles.statusBadge, color: metadata.color }}
+    >
+      <span aria-hidden="true">{metadata.icon}</span> {metadata.label}
+    </span>
+  );
 }
 
 function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
@@ -1326,6 +1340,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 10,
   },
+<<<<<<< codex/conduct-ui/ux-review-of-codebase
+=======
+  statusBadge: { fontWeight: 700, fontSize: 13 },
+>>>>>>> claude/setup-tennis-scoring-app-H7r7V
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,
