@@ -27,13 +27,14 @@ export function AppNav({
   active?: AppNavSection;
 }): React.JSX.Element {
   return (
-    <nav style={styles.nav}>
+    <nav aria-label="Primary" style={styles.nav}>
       <span style={styles.navBrand}>🎾 Tennis League</span>
       <div style={styles.navLinks}>
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.section}
             href={item.href}
+            aria-current={active === item.section ? "page" : undefined}
             style={{
               ...styles.navLink,
               ...(active === item.section ? styles.navLinkActive : {}),
