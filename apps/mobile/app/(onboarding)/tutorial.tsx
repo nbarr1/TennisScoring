@@ -132,11 +132,18 @@ export default function TutorialScreen() {
       {/* Actions */}
       <View style={styles.actions}>
         {!isLast && (
-          <TouchableOpacity onPress={finish} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Skip tutorial"
+            onPress={finish}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={styles.skip}>Skip</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={isLast ? 'Get started' : 'Next tutorial slide'}
           style={[styles.nextBtn, isLast && styles.nextBtnLast]}
           onPress={next}
         >

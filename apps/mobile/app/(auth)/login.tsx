@@ -120,6 +120,7 @@ export default function LoginScreen() {
             <View style={styles.field}>
               <Text style={styles.label}>Display Name</Text>
               <TextInput
+                accessibilityLabel="Display name"
                 style={styles.input}
                 value={displayName}
                 onChangeText={setDisplayName}
@@ -133,6 +134,7 @@ export default function LoginScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>
             <TextInput
+              accessibilityLabel="Email"
               style={styles.input}
               value={email}
               onChangeText={setEmail}
@@ -147,6 +149,7 @@ export default function LoginScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Password</Text>
             <TextInput
+              accessibilityLabel="Password"
               style={styles.input}
               value={password}
               onChangeText={setPassword}
@@ -158,6 +161,9 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'signin' ? 'Sign in' : 'Create account'}
+            accessibilityState={{ disabled: loading, busy: loading }}
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleSubmit}
             disabled={loading}
@@ -172,6 +178,8 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={mode === 'signin' ? 'Create an account' : 'Sign in instead'}
             style={styles.toggleBtn}
             onPress={() => {
               setMode(mode === 'signin' ? 'signup' : 'signin');
