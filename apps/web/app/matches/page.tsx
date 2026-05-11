@@ -21,28 +21,9 @@ import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
+  getMatchStatusMetadata,
 } from "@tennis/shared";
 import type { Match, User, Availability } from "@tennis/shared";
-
-const STATUS_COLOR: Record<string, string> = {
-  in_progress: "#27ae60",
-  pending_report: "#e67e22",
-  completed: "#555",
-  disputed: "#c0392b",
-  scheduled: "#1a472a",
-  proposed: "#8e44ad",
-  cancelled: "#999",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  in_progress: "● LIVE",
-  pending_report: "Pending Report",
-  completed: "Final",
-  disputed: "⚠ Disputed",
-  scheduled: "Scheduled",
-  proposed: "Proposed",
-  cancelled: "Cancelled",
-};
 
 function formatScheduledAt(ts?: number): string {
   if (!ts) return "Time TBD";
@@ -54,6 +35,19 @@ function formatScheduledAt(ts?: number): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function StatusBadge({ status }: { status: Match["status"] }) {
+  const metadata = getMatchStatusMetadata(status);
+
+  return (
+    <span
+      aria-label={metadata.accessibilityLabel}
+      style={{ ...styles.statusBadge, color: metadata.color }}
+    >
+      <span aria-hidden="true">{metadata.icon}</span> {metadata.label}
+    </span>
+  );
 }
 
 function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
@@ -69,9 +63,7 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
       style={{ ...styles.card, ...(isLive ? styles.cardLive : {}) }}
     >
       <div style={styles.cardTop}>
-        <span style={{ ...styles.statusDot, color: STATUS_COLOR[m.status] }}>
-          {STATUS_LABEL[m.status] ?? m.status}
-        </span>
+        <StatusBadge status={m.status} />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
           {m.status === "completed" && m.winner && (
@@ -1315,7 +1307,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 10,
   },
-  statusDot: { fontWeight: 700, fontSize: 13 },
+  statusBadge: { fontWeight: 700, fontSize: 13 },
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,

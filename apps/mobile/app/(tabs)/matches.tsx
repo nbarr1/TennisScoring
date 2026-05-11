@@ -26,6 +26,7 @@ import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
+  getMatchStatusMetadata,
 } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 import type { Match, User, Availability } from '@tennis/shared';
@@ -48,25 +49,18 @@ function formatScheduledAt(ts?: number): string {
   });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  in_progress: '#27ae60',
-  pending_report: '#e67e22',
-  completed: '#555',
-  disputed: '#c0392b',
-  scheduled: '#1a472a',
-  proposed: '#8e44ad',
-  cancelled: '#bbb',
-};
+function StatusBadge({ status }: { status: Match['status'] }) {
+  const metadata = getMatchStatusMetadata(status);
 
-const STATUS_LABEL: Record<string, string> = {
-  in_progress: '● LIVE',
-  pending_report: 'Pending Report',
-  completed: 'Final',
-  disputed: '⚠ Dispute',
-  scheduled: 'Scheduled',
-  proposed: 'Proposed',
-  cancelled: 'Cancelled',
-};
+  return (
+    <Text
+      accessibilityLabel={metadata.accessibilityLabel}
+      style={[styles.status, { color: metadata.color }]}
+    >
+      {metadata.icon} {metadata.label}
+    </Text>
+  );
+}
 
 function MatchCard({
   match,
@@ -93,14 +87,7 @@ function MatchCard({
       onPress={onPress}
     >
       <View style={styles.cardHeader}>
-        <Text
-          style={[
-            styles.status,
-            { color: STATUS_COLOR[match.status] ?? '#888' },
-          ]}
-        >
-          {STATUS_LABEL[match.status] ?? match.status}
-        </Text>
+        <StatusBadge status={match.status} />
         {match.winner && (
           <Text style={styles.winnerBadge}>
             {match.winner === 'player1'
