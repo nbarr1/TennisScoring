@@ -105,17 +105,20 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   async function handleConfirmAction() {
     if (!confirmAction) return;
     const action = confirmAction;
-    setConfirmAction(null);
-    if (action.type === 'cancel') {
-      await withLoading(() => cancelMatch(id));
-      setShowManage(false);
-    } else if (action.type === 'postpone') {
-      await withLoading(() => postponeMatch(id, action.newTime));
-      setShowManage(false);
-      setShowPostponeOptions(false);
-    } else {
+
+    if (action.type === 'delete') {
       await withLoading(() => deleteMatch(id));
       router.push('/matches');
+    } else {
+      if (action.type === 'cancel') {
+        await withLoading(() => cancelMatch(id));
+        setShowManage(false);
+      } else if (action.type === 'postpone') {
+        await withLoading(() => postponeMatch(id, action.newTime));
+        setShowManage(false);
+        setShowPostponeOptions(false);
+      }
+      setConfirmAction(null);
     }
   }
 
