@@ -758,7 +758,7 @@ function RecordPastMatchModal({
           </>
         )}
 
-        {error && <div style={modalStyles.error}>{error}</div>}
+        {error && <div role="alert" style={modalStyles.error}>{error}</div>}
 
         <div style={modalStyles.actions}>
           <button
@@ -968,7 +968,7 @@ function ProposeMatchModal({
           </div>
         )}
 
-        {error && <div style={modalStyles.error}>{error}</div>}
+        {error && <div role="alert" style={modalStyles.error}>{error}</div>}
 
         <div style={modalStyles.actions}>
           <button

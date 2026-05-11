@@ -180,8 +180,8 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
         {canManage && (
           <div style={styles.manageWrap}>
-            <button type="button" aria-label="Manage match options" style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
-              … Options
+            <button type="button" style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
+              ⋯ Options
             </button>
           </div>
         )}

@@ -121,7 +121,7 @@ export default function LoginPage(): React.JSX.Element {
             />
           </div>
 
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <p role="alert" style={styles.error}>{error}</p>}
 
           <button style={{ ...styles.button, ...(loading ? styles.buttonDisabled : {}) }} type="submit" disabled={loading}>
             {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}

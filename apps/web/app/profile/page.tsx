@@ -294,14 +294,14 @@ export default function ProfilePage(): React.JSX.Element {
           </button>
         </div>
 
-        {error && <div style={styles.error}>{error}</div>}
+        {error && <div role="alert" style={styles.error}>{error}</div>}
 
         <div style={styles.actions}>
           <button style={styles.saveBtn} onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save changes"}
           </button>
           {savedAt && (
-            <span style={styles.saved}>
+            <span role="status" aria-live="polite" style={styles.saved}>
               Saved · {new Date(savedAt).toLocaleTimeString()}
             </span>
           )}

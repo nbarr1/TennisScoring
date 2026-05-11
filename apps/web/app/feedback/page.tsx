@@ -122,7 +122,7 @@ export default function FeedbackPage(): React.JSX.Element {
             </Link>
           </div>
         ) : submitted ? (
-          <div style={styles.successCard}>
+          <div role="status" aria-live="polite" style={styles.successCard}>
             <h2 style={styles.sectionTitle}>Thanks for the feedback!</h2>
             <p style={styles.helper}>
               Your note was sent to the Tennis League team.
@@ -188,7 +188,7 @@ export default function FeedbackPage(): React.JSX.Element {
               browser user agent, and available build metadata.
             </div>
 
-            {error && <div style={styles.error}>{error}</div>}
+            {error && <div role="alert" style={styles.error}>{error}</div>}
 
             <button
               type="submit"
