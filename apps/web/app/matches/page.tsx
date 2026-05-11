@@ -509,11 +509,18 @@ function RecordPastMatchModal({
 
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
-      <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
-        <h2 style={modalStyles.title}>Record Past Match</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="record-past-match-title"
+        style={modalStyles.card}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="record-past-match-title" style={modalStyles.title}>Record Past Match</h2>
 
         <div style={modalStyles.modeToggle}>
           <button
+            type="button"
             style={{
               ...modalStyles.modeBtn,
               ...(entryMode === "single" ? modalStyles.modeBtnActive : {}),
@@ -523,6 +530,7 @@ function RecordPastMatchModal({
             Single Match
           </button>
           <button
+            type="button"
             style={{
               ...modalStyles.modeBtn,
               ...(entryMode === "bulk" ? modalStyles.modeBtnActive : {}),
@@ -541,6 +549,7 @@ function RecordPastMatchModal({
           <>
             <div style={modalStyles.modeToggle}>
               <button
+                type="button"
                 style={{
                   ...modalStyles.modeBtn,
                   ...(opponentMode === "search"
@@ -555,6 +564,7 @@ function RecordPastMatchModal({
                 Search Player
               </button>
               <button
+                type="button"
                 style={{
                   ...modalStyles.modeBtn,
                   ...(opponentMode === "guest"
@@ -596,6 +606,7 @@ function RecordPastMatchModal({
                   </div>
                 </div>
                 <button
+                  type="button"
                   style={modalStyles.changeBtn}
                   onClick={() => {
                     setSelectedOpponent(null);
@@ -623,6 +634,8 @@ function RecordPastMatchModal({
                     {searchResults.map((u) => (
                       <button
                         key={u.id}
+                        type="button"
+                        aria-label={`Select ${u.displayName}`}
                         style={modalStyles.resultRow}
                         onClick={() => {
                           setSelectedOpponent(u);
@@ -707,6 +720,7 @@ function RecordPastMatchModal({
                     />
                     {sets.length > 1 && (
                       <button
+                        type="button"
                         style={modalStyles.removeSet}
                         aria-label={`Remove set ${i + 1}`}
                         onClick={() => setSets(sets.filter((_, j) => j !== i))}
@@ -718,6 +732,7 @@ function RecordPastMatchModal({
                 ))}
                 {sets.length < 5 && (
                   <button
+                    type="button"
                     style={modalStyles.addSet}
                     onClick={() => setSets([...sets, { p1: "", p2: "" }])}
                   >
@@ -737,7 +752,11 @@ function RecordPastMatchModal({
                 line; guest opponents only).
               </div>
             </div>
+            <label htmlFor="bulk-match-import" style={modalStyles.label}>
+              Bulk match lines
+            </label>
             <textarea
+              id="bulk-match-import"
               style={modalStyles.textarea}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
@@ -762,6 +781,7 @@ function RecordPastMatchModal({
 
         <div style={modalStyles.actions}>
           <button
+            type="button"
             style={modalStyles.cancelBtn}
             onClick={onClose}
             disabled={submitting}
@@ -769,6 +789,7 @@ function RecordPastMatchModal({
             Cancel
           </button>
           <button
+            type="button"
             style={{
               ...modalStyles.submitBtn,
               ...((entryMode === "single" && !opponentReady) || submitting
@@ -890,8 +911,14 @@ function ProposeMatchModal({
 
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
-      <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
-        <h2 style={modalStyles.title}>Propose a Match</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="propose-match-title"
+        style={modalStyles.card}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="propose-match-title" style={modalStyles.title}>Propose a Match</h2>
 
         {selectedOpponent ? (
           <>
@@ -905,6 +932,7 @@ function ProposeMatchModal({
                 </div>
               </div>
               <button
+                type="button"
                 style={modalStyles.changeBtn}
                 onClick={() => {
                   setSelectedOpponent(null);
@@ -934,6 +962,8 @@ function ProposeMatchModal({
                 {searchResults.map((u) => (
                   <button
                     key={u.id}
+                    type="button"
+                    aria-label={`Select ${u.displayName}`}
                     style={modalStyles.resultRow}
                     onClick={() => {
                       setSelectedOpponent(u);
@@ -972,6 +1002,7 @@ function ProposeMatchModal({
 
         <div style={modalStyles.actions}>
           <button
+            type="button"
             style={modalStyles.cancelBtn}
             onClick={onClose}
             disabled={submitting}
@@ -979,6 +1010,7 @@ function ProposeMatchModal({
             Cancel
           </button>
           <button
+            type="button"
             style={{
               ...modalStyles.submitBtn,
               ...(!selectedOpponent || !scheduledAt || submitting
