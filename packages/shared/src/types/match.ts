@@ -4,6 +4,72 @@ export type MatchFormat = 'best-of-3' | 'best-of-5' | 'pro-set';
 // completed: report confirmed by both players — rankings are updated from this state only
 // disputed: the non-submitting player rejected the report — awaits division leader resolution
 export type MatchStatus = 'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled';
+export type MatchStatusTone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'accent';
+
+export interface MatchStatusMetadata {
+  label: string;
+  icon: string;
+  color: string;
+  tone: MatchStatusTone;
+  accessibilityLabel: string;
+}
+
+export const MATCH_STATUS_METADATA: Record<MatchStatus, MatchStatusMetadata> = {
+  proposed: {
+    label: 'Proposed',
+    icon: '○',
+    color: '#8e44ad',
+    tone: 'accent',
+    accessibilityLabel: 'Match proposed',
+  },
+  scheduled: {
+    label: 'Scheduled',
+    icon: '●',
+    color: '#1a472a',
+    tone: 'primary',
+    accessibilityLabel: 'Match scheduled',
+  },
+  in_progress: {
+    label: 'Live',
+    icon: '●',
+    color: '#27ae60',
+    tone: 'success',
+    accessibilityLabel: 'Match live',
+  },
+  pending_report: {
+    label: 'Pending Report',
+    icon: '◐',
+    color: '#e67e22',
+    tone: 'warning',
+    accessibilityLabel: 'Match pending report',
+  },
+  completed: {
+    label: 'Final',
+    icon: '✓',
+    color: '#555',
+    tone: 'neutral',
+    accessibilityLabel: 'Match final',
+  },
+  disputed: {
+    label: 'Disputed',
+    icon: '⚠',
+    color: '#c0392b',
+    tone: 'danger',
+    accessibilityLabel: 'Match disputed',
+  },
+  cancelled: {
+    label: 'Cancelled',
+    icon: '×',
+    color: '#777',
+    tone: 'neutral',
+    accessibilityLabel: 'Match cancelled',
+  },
+};
+
+export function getMatchStatusMetadata(status: MatchStatus): MatchStatusMetadata {
+  return MATCH_STATUS_METADATA[status];
+}
+
 export type ServiceSide = 'deuce' | 'advantage';
 export type Player = 'player1' | 'player2';
 

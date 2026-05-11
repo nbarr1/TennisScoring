@@ -121,7 +121,7 @@ export default function LoginPage(): React.JSX.Element {
             />
           </div>
 
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <p role="alert" style={styles.error}>{error}</p>}
 
           <button style={{ ...styles.button, ...(loading ? styles.buttonDisabled : {}) }} type="submit" disabled={loading}>
             {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
@@ -145,7 +145,7 @@ const styles: Record<string, React.CSSProperties> = {
   form: { display: 'flex', flexDirection: 'column' as const, gap: 16 },
   field: { display: 'flex', flexDirection: 'column' as const, gap: 6 },
   label: { fontSize: 13, fontWeight: 600, color: '#444' },
-  input: { border: '1px solid #ddd', borderRadius: 10, padding: '12px 14px', fontSize: 15, color: '#111', outline: 'none' },
+  input: { border: '1px solid #ddd', borderRadius: 10, padding: '12px 14px', fontSize: 15, color: '#111' },
   error: { fontSize: 13, color: '#c0392b', textAlign: 'center' as const },
   button: { background: 'var(--green-dark)', color: 'white', border: 'none', borderRadius: 12, padding: '15px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginTop: 8 },
   buttonDisabled: { opacity: 0.6, cursor: 'not-allowed' },
