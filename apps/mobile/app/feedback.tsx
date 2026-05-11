@@ -115,6 +115,7 @@ export default function FeedbackScreen() {
         <View style={styles.section}>
           <Text style={styles.label}>Category</Text>
           <TextInput
+            accessibilityLabel="Feedback category"
             style={styles.input}
             value={category}
             onChangeText={setCategory}
@@ -125,6 +126,7 @@ export default function FeedbackScreen() {
 
           <Text style={styles.label}>Message</Text>
           <TextInput
+            accessibilityLabel="Feedback message"
             style={[styles.input, styles.messageInput]}
             value={message}
             onChangeText={setMessage}
@@ -147,6 +149,9 @@ export default function FeedbackScreen() {
         </View>
 
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Send feedback"
+          accessibilityState={{ disabled: submitting, busy: submitting }}
           style={[styles.submitBtn, submitting && styles.btnDisabled]}
           onPress={handleSubmit}
           disabled={submitting}
