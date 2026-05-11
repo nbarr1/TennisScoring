@@ -43,6 +43,8 @@ export default function MessagesPage(): React.JSX.Element {
             <h2 style={styles.sidebarTitle}>Channels</h2>
             {profile?.divisionId && (
               <button
+                type="button"
+                aria-label="New direct message"
                 style={styles.newDmBtn}
                 onClick={() => setShowNewDm(true)}
                 title="New direct message"
@@ -163,12 +165,22 @@ function NewDmModal({
 
   return (
     <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-        <h2 style={styles.modalTitle}>New Direct Message</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-dm-title"
+        style={styles.modalCard}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="new-dm-title" style={styles.modalTitle}>New Direct Message</h2>
         <p style={styles.modalHint}>
           Search for a player in your division to start a conversation.
         </p>
+        <label htmlFor="new-dm-search" style={styles.label}>
+          Search people
+        </label>
         <input
+          id="new-dm-search"
           style={styles.modalInput}
           autoFocus
           value={searchText}
@@ -181,6 +193,8 @@ function NewDmModal({
             {results.map((u) => (
               <button
                 key={u.id}
+                type="button"
+                aria-label={`Start conversation with ${u.displayName}`}
                 style={styles.resultRow}
                 onClick={() => handlePick(u)}
                 disabled={creating}
@@ -194,8 +208,9 @@ function NewDmModal({
         {searchText.trim().length > 0 && !searching && results.length === 0 && (
           <div style={styles.muted}>No players found.</div>
         )}
-        {error && <div style={styles.error}>{error}</div>}
+        {error && <div role="alert" style={styles.error}>{error}</div>}
         <button
+          type="button"
           style={styles.modalCancel}
           onClick={onClose}
           disabled={creating}
@@ -260,13 +275,22 @@ function ChatPane({
       </div>
 
       <form style={styles.inputRow} onSubmit={handleSend}>
+        <label htmlFor="message-composer" style={styles.srOnly}>
+          Message
+        </label>
         <input
+          id="message-composer"
           style={styles.input}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type a message…"
         />
-        <button type="submit" style={styles.sendBtn} disabled={!text.trim()}>
+        <button
+          type="submit"
+          aria-label="Send message"
+          style={styles.sendBtn}
+          disabled={!text.trim()}
+        >
           Send
         </button>
       </form>
@@ -381,6 +405,24 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   modalHint: { fontSize: 13, color: "#666", marginBottom: 14 },
+  label: {
+    display: "block",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#444",
+    marginBottom: 6,
+  },
+  srOnly: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: "hidden",
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+    border: 0,
+  },
   modalInput: {
     width: "100%",
     border: "1px solid #ddd",
@@ -389,7 +431,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
   },
   results: {
     maxHeight: 240,
@@ -528,7 +569,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 24,
     padding: "10px 16px",
     fontSize: 14,
-    outline: "none",
   },
   sendBtn: {
     background: "var(--green-dark)",

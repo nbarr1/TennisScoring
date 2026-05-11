@@ -8,7 +8,12 @@ import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch,
 } from '@tennis/firebase-client';
-import { EMPTY_STATS, formatScoreDisplay, formatGameScore } from '@tennis/shared';
+import {
+  EMPTY_STATS,
+  formatScoreDisplay,
+  formatGameScore,
+  getMatchStatusMetadata,
+} from '@tennis/shared';
 import Link from 'next/link';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
@@ -50,12 +55,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     const seconds = totalSeconds % 60;
     return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
-  const statusLabel = match.status === 'in_progress' ? '● LIVE'
-    : match.status === 'completed' ? 'Final'
-    : match.status === 'pending_report' ? 'Pending Report'
-    : match.status === 'disputed' ? '⚠ Disputed'
-    : match.status === 'cancelled' ? 'Cancelled'
-    : 'Scheduled';
+  const statusMetadata = getMatchStatusMetadata(match.status);
 
   async function withLoading(fn: () => Promise<void>) {
     setActionLoading(true);
@@ -119,8 +119,12 @@ export default function MatchPage({ params }: { params: { id: string } }): React
       <main style={styles.main}>
         <div style={styles.scoreboard}>
           <div style={styles.badgeRow}>
-            <span style={{ ...styles.statusBadge, color: match.status === 'in_progress' ? '#ff6b6b' : '#a8d5a2' }}>
-              {statusLabel}
+            <span
+              aria-label={statusMetadata.accessibilityLabel}
+              style={{ ...styles.statusBadge, color: statusMetadata.color }}
+            >
+              <span aria-hidden="true">{statusMetadata.icon}</span>{' '}
+              {statusMetadata.label}
             </span>
             {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
           </div>
