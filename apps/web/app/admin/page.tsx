@@ -739,7 +739,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     padding: "10px 14px",
     fontSize: 14,
-    outline: "none",
   },
   btn: {
     background: "var(--green-dark)",

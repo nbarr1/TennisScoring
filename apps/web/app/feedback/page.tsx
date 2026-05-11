@@ -266,7 +266,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 14px",
     fontSize: 15,
     color: "#111",
-    outline: "none",
     background: "#fff",
   },
   textarea: {
@@ -275,7 +274,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 14px",
     fontSize: 15,
     color: "#111",
-    outline: "none",
     minHeight: 160,
     resize: "vertical",
     fontFamily: "inherit",

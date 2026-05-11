@@ -389,7 +389,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
   },
   results: {
     maxHeight: 240,
@@ -528,7 +527,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 24,
     padding: "10px 16px",
     fontSize: 14,
-    outline: "none",
   },
   sendBtn: {
     background: "var(--green-dark)",

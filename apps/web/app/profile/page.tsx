@@ -145,30 +145,34 @@ export default function ProfilePage(): React.JSX.Element {
 
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>Account</h2>
-          <Field label="Display name">
+          <Field label="Display name" id="profile-display-name">
             <input
+              id="profile-display-name"
               style={styles.input}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </Field>
-          <Field label="Email">
+          <Field label="Email" id="profile-email">
             <input
+              id="profile-email"
               style={styles.input}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone" id="profile-phone">
             <input
+              id="profile-phone"
               style={styles.input}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="Optional, e.g. +1 555-0100"
             />
           </Field>
-          <Field label="Division">
+          <Field label="Division" id="profile-division">
             <select
+              id="profile-division"
               style={styles.input}
               value={selectedDivisionId}
               onChange={(e) => setSelectedDivisionId(e.target.value)}
@@ -218,6 +222,7 @@ export default function ProfilePage(): React.JSX.Element {
           {availabilitySlots.map((slot, idx) => (
             <div key={idx} style={styles.slotRow}>
               <select
+                aria-label={`Availability slot ${idx + 1} day`}
                 style={styles.slotDay}
                 value={slot.day}
                 onChange={(e) =>
@@ -231,6 +236,7 @@ export default function ProfilePage(): React.JSX.Element {
                 ))}
               </select>
               <input
+                aria-label={`Availability slot ${idx + 1} start time`}
                 style={styles.slotTime}
                 type="time"
                 value={slot.from}
@@ -238,6 +244,7 @@ export default function ProfilePage(): React.JSX.Element {
               />
               <span style={styles.slotDash}>–</span>
               <input
+                aria-label={`Availability slot ${idx + 1} end time`}
                 style={styles.slotTime}
                 type="time"
                 value={slot.to}
@@ -246,6 +253,7 @@ export default function ProfilePage(): React.JSX.Element {
               <button
                 type="button"
                 style={styles.slotRemove}
+                aria-label={`Remove availability slot ${idx + 1}`}
                 onClick={() => removeSlot(idx)}
               >
                 ✕
@@ -255,8 +263,9 @@ export default function ProfilePage(): React.JSX.Element {
           <button type="button" style={styles.addSlotBtn} onClick={addSlot}>
             + Add slot
           </button>
-          <Field label="Note">
+          <Field label="Note" id="profile-availability-note">
             <textarea
+              id="profile-availability-note"
               style={{ ...styles.input, minHeight: 64, resize: "vertical" }}
               value={availabilityNote}
               onChange={(e) => setAvailabilityNote(e.target.value)}
@@ -304,14 +313,16 @@ export default function ProfilePage(): React.JSX.Element {
 
 function Field({
   label,
+  id,
   children,
 }: {
   label: string;
+  id: string;
   children: React.ReactNode;
 }) {
   return (
     <div style={styles.field}>
-      <label style={styles.label}>{label}</label>
+      <label htmlFor={id} style={styles.label}>{label}</label>
       {children}
     </div>
   );
@@ -376,7 +387,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 14px",
     fontSize: 14,
     boxSizing: "border-box",
-    outline: "none",
   },
   helper: { fontSize: 12, color: "#888", marginTop: 6 },
   checkboxRow: {

@@ -581,12 +581,18 @@ function RecordPastMatchModal({
             </div>
 
             {opponentMode === "guest" ? (
-              <input
-                style={modalStyles.input}
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                placeholder="Guest name…"
-              />
+              <>
+                <label htmlFor="record-match-guest-name" style={modalStyles.label}>
+                  Guest name
+                </label>
+                <input
+                  id="record-match-guest-name"
+                  style={modalStyles.input}
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="Guest name…"
+                />
+              </>
             ) : selectedOpponent ? (
               <div style={modalStyles.selectedRow}>
                 <div>
@@ -609,7 +615,11 @@ function RecordPastMatchModal({
               </div>
             ) : (
               <>
+                <label htmlFor="record-match-opponent-search" style={modalStyles.label}>
+                  Search opponent
+                </label>
                 <input
+                  id="record-match-opponent-search"
                   style={modalStyles.input}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
@@ -671,6 +681,7 @@ function RecordPastMatchModal({
                   <div key={i} style={modalStyles.setRow}>
                     <span style={modalStyles.setLabel}>Set {i + 1}</span>
                     <input
+                      aria-label={`Set ${i + 1} your games`}
                       style={modalStyles.setInput}
                       value={s.p1}
                       onChange={(e) => {
@@ -687,6 +698,7 @@ function RecordPastMatchModal({
                     />
                     <span style={modalStyles.setDash}>–</span>
                     <input
+                      aria-label={`Set ${i + 1} opponent games`}
                       style={modalStyles.setInput}
                       value={s.p2}
                       onChange={(e) => {
@@ -704,6 +716,7 @@ function RecordPastMatchModal({
                     {sets.length > 1 && (
                       <button
                         style={modalStyles.removeSet}
+                        aria-label={`Remove set ${i + 1}`}
                         onClick={() => setSets(sets.filter((_, j) => j !== i))}
                       >
                         ✕
@@ -913,7 +926,11 @@ function ProposeMatchModal({
           </>
         ) : (
           <>
+            <label htmlFor="proposal-opponent-search" style={modalStyles.label}>
+              Search opponent
+            </label>
             <input
+              id="proposal-opponent-search"
               style={modalStyles.input}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
@@ -947,8 +964,10 @@ function ProposeMatchModal({
 
         {selectedOpponent && (
           <div style={{ marginTop: 14 }}>
-            <div style={modalStyles.label}>When?</div>
+            <label htmlFor="proposal-scheduled-at" style={modalStyles.label}>When?</label>
             <input
+              id="proposal-scheduled-at"
+              aria-label="Match date and time"
               style={modalStyles.input}
               type="datetime-local"
               value={scheduledAt}
@@ -1032,7 +1051,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
   },
   textarea: {
     width: "100%",
@@ -1042,7 +1060,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
     resize: "vertical" as const,
   },
   results: {
