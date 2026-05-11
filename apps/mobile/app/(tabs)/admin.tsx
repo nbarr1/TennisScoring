@@ -356,6 +356,7 @@ export default function AdminScreen() {
             started.
           </Text>
           <TextInput
+            accessibilityLabel="Division name"
             style={styles.input}
             value={newDivisionName}
             onChangeText={setNewDivisionName}
@@ -364,6 +365,9 @@ export default function AdminScreen() {
             autoCapitalize="words"
           />
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Create division"
+            accessibilityState={{ disabled: !newDivisionName.trim() || creating, busy: creating }}
             style={[
               styles.btn,
               (!newDivisionName.trim() || creating) && styles.btnDisabled,
@@ -388,6 +392,7 @@ export default function AdminScreen() {
 
             <Text style={styles.subTitle}>Add Player</Text>
             <TextInput
+              accessibilityLabel="New player full name"
               style={styles.input}
               value={newPlayerName}
               onChangeText={setNewPlayerName}
@@ -396,6 +401,7 @@ export default function AdminScreen() {
               autoCapitalize="words"
             />
             <TextInput
+              accessibilityLabel="New player email"
               style={styles.input}
               value={newPlayerEmail}
               onChangeText={(t) => {
@@ -408,8 +414,15 @@ export default function AdminScreen() {
               autoCapitalize="none"
               autoCorrect={false}
             />
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error ? (
+              <Text accessibilityLiveRegion="assertive" style={styles.errorText}>
+                {error}
+              </Text>
+            ) : null}
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Add player"
+              accessibilityState={{ disabled: !newPlayerName.trim() || adding, busy: adding }}
               style={[
                 styles.btn,
                 (!newPlayerName.trim() || adding) && styles.btnDisabled,
@@ -433,6 +446,7 @@ export default function AdminScreen() {
                   reassigned to this newly added player.
                 </Text>
                 <TextInput
+                  accessibilityLabel="Updated player email"
                   style={styles.input}
                   value={editEmail}
                   onChangeText={setEditEmail}
@@ -450,6 +464,9 @@ export default function AdminScreen() {
                   .map((p) => (
                     <TouchableOpacity
                       key={p.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${p.displayName} as source player`}
+                      accessibilityState={{ selected: mergeSourceUserId === p.id }}
                       style={[
                         styles.mergeCandidate,
                         mergeSourceUserId === p.id &&
@@ -469,6 +486,9 @@ export default function AdminScreen() {
                     return (
                       <TouchableOpacity
                         key={match.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${selected ? 'Deselect' : 'Select'} ${match.player1Name || 'P1'} versus ${match.player2Name || 'P2'}`}
+                        accessibilityState={{ selected }}
                         style={[
                           styles.matchCandidate,
                           selected && styles.mergeCandidateActive,
@@ -495,6 +515,9 @@ export default function AdminScreen() {
                   </Text>
                 )}
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Link selected matches"
+                  accessibilityState={{ disabled: selectedMatchIds.length === 0 || merging, busy: merging }}
                   style={[
                     styles.btn,
                     (selectedMatchIds.length === 0 || merging) &&
@@ -510,6 +533,9 @@ export default function AdminScreen() {
                   )}
                 </TouchableOpacity>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Update player email"
+                  accessibilityState={{ disabled: !editEmail.trim() || merging, busy: merging }}
                   style={[
                     styles.secondaryBtn,
                     (!editEmail.trim() || merging) && styles.btnDisabled,
@@ -530,6 +556,9 @@ export default function AdminScreen() {
               without deleting match history.
             </Text>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Repair rankings"
+              accessibilityState={{ disabled: repairingRankings, busy: repairingRankings }}
               style={[styles.btn, repairingRankings && styles.btnDisabled]}
               onPress={repairRankings}
               disabled={repairingRankings}
@@ -541,7 +570,7 @@ export default function AdminScreen() {
               )}
             </TouchableOpacity>
             {repairMessage ? (
-              <Text style={styles.successText}>{repairMessage}</Text>
+              <Text accessibilityLiveRegion="polite" style={styles.successText}>{repairMessage}</Text>
             ) : null}
           </View>
 

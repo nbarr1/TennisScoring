@@ -133,7 +133,7 @@ function AcceptInviteContent(): React.JSX.Element {
           <p style={styles.muted}>Loading invite…</p>
         ) : error && !preview ? (
           <>
-            <p style={styles.error}>{error}</p>
+            <p role="alert" style={styles.error}>{error}</p>
             <Link href="/login" style={styles.link}>Go to login</Link>
           </>
         ) : preview ? (
@@ -177,8 +177,8 @@ function AcceptInviteContent(): React.JSX.Element {
           </>
         ) : null}
 
-        {error && preview && <p style={styles.error}>{error}</p>}
-        {success && <p style={styles.success}>{success}</p>}
+        {error && preview && <p role="alert" style={styles.error}>{error}</p>}
+        {success && <p role="status" aria-live="polite" style={styles.success}>{success}</p>}
       </div>
     </main>
   );
