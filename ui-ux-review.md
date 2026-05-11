@@ -263,3 +263,238 @@ function Field({ label, children }: { label: string; children: (id: string) => R
 - Screen reader behavior for emoji tab icons, status emojis, and mobile touchable announcements.
 - Keyboard focus order and trapping inside web modals.
 - Real-device layout/touch target verification for profile availability rows, score entry controls, admin tables, and match-detail stats.
+
+## Remediation Plan: Impact/Effort Sequencing
+
+This plan sequences the recommendations with a combined impact/effort model so the team can improve accessibility and consistency without destabilizing scoring, scheduling, messaging, or admin workflows. Each work item includes targeted verification to run immediately after that change, plus a broader regression check for the affected app.
+
+### Prioritization model
+
+| Score | Impact | Effort | Use when |
+| --- | --- | --- | --- |
+| P0 | Critical user access or data-loss risk | Low/Medium | Blocks keyboard/screen-reader users or affects destructive match actions. |
+| P1 | High user-facing consistency/accessibility gain | Low/Medium | Improves repeated controls, navigation, forms, or status comprehension. |
+| P2 | High strategic value | Medium/High | Establishes tokens/primitives needed for many future fixes. |
+| P3 | Important but lower urgency | Medium/High | Requires runtime/device validation, fixtures, or larger extraction work. |
+
+### Phase 0 — Baseline safety net before UI changes
+
+- **Priority**: P0
+- **Effort**: Small
+- **Impact**: High, because later visual/a11y changes should not break scoring/profile/match behavior.
+- **Scope**:
+  - Capture current passing state for web, mobile, and shared packages.
+  - Decide which checks are required for every PR versus heavier checks reserved for larger refactors.
+  - Add a checklist item to PR templates or review notes if one exists in the future.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/shared test -- --runInBand`
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+- **Manual verification**:
+  - Smoke-test login, rankings, match list, match detail, messages, profile save, feedback, and admin access in local/dev environments.
+
+### Phase 1 — Restore keyboard-visible focus and navigation semantics
+
+- **Priority**: P0
+- **Effort**: Small
+- **Impact**: Very high for keyboard and low-vision users.
+- **Scope**:
+  - Add a global `:focus-visible` style in `apps/web/app/globals.css`.
+  - Remove `outline: none` from web input styles unless a replacement focus ring is applied.
+  - Add `aria-label="Primary"` to the shared web navigation landmark.
+  - Add `aria-current="page"` to the active web nav link.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - Add or update a component/unit test if a web component test harness is introduced.
+- **Manual verification**:
+  - Use only the keyboard to tab through `/login`, `/dashboard`, `/matches`, `/profile`, and `/admin`.
+  - Confirm focus is visible on links, buttons, inputs, selects, and textareas.
+  - Confirm the active nav item is announced as the current page by a screen reader.
+
+### Phase 2 — Fix form labeling and icon-only control names
+
+- **Priority**: P0/P1
+- **Effort**: Small to Medium
+- **Impact**: High for screen-reader users and mobile users interacting with dense forms.
+- **Scope**:
+  - Update web profile fields so labels are associated with controls via `htmlFor`/`id` or an accessible field primitive.
+  - Add labels for profile availability day/time controls.
+  - Replace placeholder-only labels in match proposal and record-past-match modals with visible or visually hidden labels.
+  - Add `aria-label` to web icon-only remove controls.
+  - Add `accessibilityRole`, `accessibilityLabel`, and `accessibilityState` to mobile touchables, starting with auth, feedback, rankings, matches, profile, and onboarding.
+  - Add `accessibilityLabel` to mobile `TextInput` controls that currently rely only on adjacent visual `Text` labels.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+- **Manual verification**:
+  - Run VoiceOver/TalkBack through mobile login, feedback, rankings, profile, match proposal, and onboarding flows.
+  - Run a screen reader through web login, profile, match proposal, and record-past-match modals.
+  - Confirm every icon-only remove action has a meaningful announced name, such as “Remove availability slot” or “Remove set 2.”
+
+### Phase 3 — Introduce shared status badges before broad visual refactors
+
+- **Priority**: P1
+- **Effort**: Medium
+- **Impact**: High because match status drives action availability and user confidence.
+- **Scope**:
+  - Create a web `StatusBadge` and a mobile `StatusBadge` with the same status API.
+  - Centralize status label, icon, color, and accessibility text for `in_progress`, `pending_report`, `completed`, `disputed`, `scheduled`, `proposed`, and `cancelled`.
+  - Replace duplicated status constants in web and mobile match lists/details.
+  - Ensure statuses communicate via text + icon/shape, not color alone.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - Add unit tests for status-to-label/icon/color mapping if a test harness is available.
+- **Manual verification**:
+  - Verify all match states in web `/matches`, web `/matches/[id]`, mobile Matches tab, and mobile match detail.
+  - Check WCAG AA contrast for each status badge in light and dark contexts.
+
+### Phase 4 — Establish design tokens and migrate the highest-reuse styles
+
+- **Priority**: P2
+- **Effort**: Medium
+- **Impact**: High strategic impact; enables safer consistency fixes across both apps.
+- **Scope**:
+  - Create a shared token source for color, spacing, radius, typography, elevation, status colors, and focus rings.
+  - Export platform-friendly forms: CSS variables for web and TypeScript objects for mobile.
+  - Migrate `globals.css`, `AppNav`, login, profile cards/forms, match cards, and feedback screens first.
+  - Keep initial token migration intentionally narrow to avoid large visual regressions.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - `pnpm --filter @tennis/shared test -- --runInBand` if tokens are placed in or consumed by shared packages.
+- **Manual verification**:
+  - Compare before/after screenshots for login, dashboard, matches, profile, feedback, and mobile rankings/feedback.
+  - Verify brand colors, text contrast, disabled states, and dark live-scoring surfaces.
+
+### Phase 5 — Build UI primitives and migrate repeated controls
+
+- **Priority**: P2
+- **Effort**: Medium to Large
+- **Impact**: High; reduces duplicate styling and accessibility drift.
+- **Scope**:
+  - Build platform-specific primitives with aligned APIs: `Button`, `IconButton`, `TextField`, `SelectField`, `Checkbox`, `Card`, `InlineAlert`, `EmptyState`, and `LoadingState`.
+  - Enforce minimum touch target sizes in `Button` and `IconButton`.
+  - Add built-in disabled/loading/accessibility state handling.
+  - Migrate one vertical slice first, ideally Profile or Feedback, then expand to Matches and Admin.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - Add component tests or fixture snapshots for primitive variants once the test harness exists.
+- **Manual verification**:
+  - Confirm touch targets are at least 44×44 CSS/device-independent pixels where applicable.
+  - Validate keyboard and screen-reader behavior for every primitive variant.
+
+### Phase 6 — Replace modal overlays and native confirms with accessible dialogs
+
+- **Priority**: P1/P2
+- **Effort**: Medium to Large
+- **Impact**: Very high for destructive actions and keyboard/screen-reader users.
+- **Scope**:
+  - Build or adopt an accessible web `Dialog` with `role="dialog"`, `aria-modal`, labeling, initial focus, Escape close, focus trap, and focus restoration.
+  - Build a consistent mobile confirmation/sheet pattern for destructive and high-impact actions.
+  - Replace custom overlays in matches/messages and native `confirm()` flows in match detail.
+  - Prioritize cancel, postpone, delete, dispute, proposal, and new-message flows.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - Add focused tests for dialog open/close, Escape handling, and destructive-action callbacks if a web test harness is available.
+- **Manual verification**:
+  - Keyboard-test opening, tabbing within, Escape closing, overlay closing, and focus restoration for every dialog.
+  - Screen-reader-test dialog title, body, and action buttons.
+  - Confirm destructive actions require explicit confirmation and have clear primary/destructive hierarchy.
+
+### Phase 7 — Standardize loading, empty, success, and error states
+
+- **Priority**: P2
+- **Effort**: Medium
+- **Impact**: Medium to High; improves perceived reliability and comprehension.
+- **Scope**:
+  - Introduce shared `LoadingState`, `EmptyState`, and `InlineAlert` primitives.
+  - Use web `role="alert"` or `aria-live` for async errors/success messages.
+  - Use mobile accessibility announcements for critical async outcomes where appropriate.
+  - Migrate rankings, profile save, feedback submit, match proposal/report modals, messages, and admin operations.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+- **Manual verification**:
+  - Trigger loading, empty, success, and error states for each migrated flow.
+  - Confirm async errors are announced or visibly connected to the triggering form/action.
+
+### Phase 8 — Responsive and large-text audit with targeted layout fixes
+
+- **Priority**: P3
+- **Effort**: Medium to Large
+- **Impact**: High for real-world court-side mobile use and desktop admin usability.
+- **Scope**:
+  - Audit web at common widths: 320, 375, 390, 768, 1024, and desktop.
+  - Audit mobile with system font scaling / dynamic type enabled.
+  - Convert dense tables to stacked cards where horizontal scrolling is not essential.
+  - Rework profile availability rows, match stats, admin tables, score-entry controls, and messages for small screens.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - Add visual regression checks if the project adopts Storybook/fixtures.
+- **Manual verification**:
+  - Capture screenshots before/after for key breakpoints and mobile devices.
+  - Confirm no critical action falls below minimum touch target size.
+  - Confirm no text is clipped at larger text settings.
+
+### Phase 9 — Component extraction and UI-state coverage
+
+- **Priority**: P3
+- **Effort**: Large
+- **Impact**: High long-term maintainability and safer future UI work.
+- **Scope**:
+  - Extract route-level monoliths into smaller components, starting with match cards, match modals, message threads, admin tables, scoring panels, and profile form sections.
+  - Add Storybook or lightweight component fixtures for key UI states.
+  - Add automated a11y checks for web fixtures when feasible.
+  - Add regression coverage for status badges, dialogs, buttons, form fields, empty states, and match cards.
+- **Recommended tests after this change**:
+  - `pnpm --filter @tennis/web typecheck`
+  - `pnpm --filter @tennis/mobile typecheck`
+  - `pnpm --filter @tennis/web lint`
+  - `pnpm --filter @tennis/mobile lint`
+  - `pnpm --filter @tennis/shared test -- --runInBand`
+  - Run Storybook/fixture build and a11y checks once introduced.
+- **Manual verification**:
+  - Smoke-test all extracted flows after each extraction, not only after the full phase.
+  - Compare route behavior before/after extraction to ensure no data or action regressions.
+
+### Suggested first three PRs
+
+1. **PR 1: Web focus and navigation semantics**
+   - Implement Phase 1 only.
+   - Run web typecheck/lint and keyboard smoke tests.
+2. **PR 2: Form labels and icon-only control names**
+   - Implement Phase 2 for web first, then mobile in the same PR only if scope remains small.
+   - Run web/mobile typecheck/lint and screen-reader spot checks.
+3. **PR 3: Shared status badge**
+   - Implement Phase 3 for web and mobile match status displays.
+   - Run web/mobile typecheck/lint and contrast verification.
+
+### Definition of done for each remediation PR
+
+- The PR states which phase and finding(s) it addresses.
+- Related automated checks have been run and results are documented.
+- Keyboard-only verification is documented for web interactive changes.
+- Screen-reader verification is documented for accessibility changes, or explicitly marked as needing device/runtime verification.
+- Visual changes include before/after screenshots when they affect a runnable screen.
+- No unrelated UI cleanup is bundled with the change.
