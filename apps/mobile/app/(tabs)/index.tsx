@@ -55,11 +55,19 @@ export default function RankingsScreen() {
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>No Rankings Yet</Text>
           <Text style={styles.emptyBody}>Complete matches to see the standings.</Text>
-          <TouchableOpacity style={styles.ctaButton} onPress={() => router.push('/(tabs)/matches')}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Start a match"
+            style={styles.ctaButton}
+            onPress={() => router.push('/(tabs)/matches')}
+          >
             <Text style={styles.ctaText}>Start a Match</Text>
           </TouchableOpacity>
           {canRecalculate && (
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Recalculate rankings"
+              accessibilityState={{ disabled: recalculating, busy: recalculating }}
               style={[styles.recalcBtn, recalculating && styles.recalcBtnDisabled]}
               onPress={handleRecalculate}
               disabled={recalculating}
@@ -81,6 +89,9 @@ export default function RankingsScreen() {
               <Text style={styles.tableSubHeader}>Sorted: W · Sets · Games · Diff · H2H</Text>
               {canRecalculate && (
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Recalculate rankings"
+                  accessibilityState={{ disabled: recalculating, busy: recalculating }}
                   style={[styles.recalcBtn, recalculating && styles.recalcBtnDisabled]}
                   onPress={handleRecalculate}
                   disabled={recalculating}
