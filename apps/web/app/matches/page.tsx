@@ -21,28 +21,9 @@ import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
+  getMatchStatusMetadata,
 } from "@tennis/shared";
 import type { Match, User, Availability } from "@tennis/shared";
-
-const STATUS_COLOR: Record<string, string> = {
-  in_progress: "#27ae60",
-  pending_report: "#e67e22",
-  completed: "#555",
-  disputed: "#c0392b",
-  scheduled: "#1a472a",
-  proposed: "#8e44ad",
-  cancelled: "#999",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  in_progress: "● LIVE",
-  pending_report: "Pending Report",
-  completed: "Final",
-  disputed: "⚠ Disputed",
-  scheduled: "Scheduled",
-  proposed: "Proposed",
-  cancelled: "Cancelled",
-};
 
 function formatScheduledAt(ts?: number): string {
   if (!ts) return "Time TBD";
@@ -54,6 +35,19 @@ function formatScheduledAt(ts?: number): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function StatusBadge({ status }: { status: Match["status"] }) {
+  const metadata = getMatchStatusMetadata(status);
+
+  return (
+    <span
+      aria-label={metadata.accessibilityLabel}
+      style={{ ...styles.statusBadge, color: metadata.color }}
+    >
+      <span aria-hidden="true">{metadata.icon}</span> {metadata.label}
+    </span>
+  );
 }
 
 function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
@@ -69,9 +63,7 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
       style={{ ...styles.card, ...(isLive ? styles.cardLive : {}) }}
     >
       <div style={styles.cardTop}>
-        <span style={{ ...styles.statusDot, color: STATUS_COLOR[m.status] }}>
-          {STATUS_LABEL[m.status] ?? m.status}
-        </span>
+        <StatusBadge status={m.status} />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
           {m.status === "completed" && m.winner && (
@@ -581,12 +573,18 @@ function RecordPastMatchModal({
             </div>
 
             {opponentMode === "guest" ? (
-              <input
-                style={modalStyles.input}
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                placeholder="Guest name…"
-              />
+              <>
+                <label htmlFor="record-match-guest-name" style={modalStyles.label}>
+                  Guest name
+                </label>
+                <input
+                  id="record-match-guest-name"
+                  style={modalStyles.input}
+                  value={guestName}
+                  onChange={(e) => setGuestName(e.target.value)}
+                  placeholder="Guest name…"
+                />
+              </>
             ) : selectedOpponent ? (
               <div style={modalStyles.selectedRow}>
                 <div>
@@ -609,7 +607,11 @@ function RecordPastMatchModal({
               </div>
             ) : (
               <>
+                <label htmlFor="record-match-opponent-search" style={modalStyles.label}>
+                  Search opponent
+                </label>
                 <input
+                  id="record-match-opponent-search"
                   style={modalStyles.input}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
@@ -671,6 +673,7 @@ function RecordPastMatchModal({
                   <div key={i} style={modalStyles.setRow}>
                     <span style={modalStyles.setLabel}>Set {i + 1}</span>
                     <input
+                      aria-label={`Set ${i + 1} your games`}
                       style={modalStyles.setInput}
                       value={s.p1}
                       onChange={(e) => {
@@ -687,6 +690,7 @@ function RecordPastMatchModal({
                     />
                     <span style={modalStyles.setDash}>–</span>
                     <input
+                      aria-label={`Set ${i + 1} opponent games`}
                       style={modalStyles.setInput}
                       value={s.p2}
                       onChange={(e) => {
@@ -704,6 +708,7 @@ function RecordPastMatchModal({
                     {sets.length > 1 && (
                       <button
                         style={modalStyles.removeSet}
+                        aria-label={`Remove set ${i + 1}`}
                         onClick={() => setSets(sets.filter((_, j) => j !== i))}
                       >
                         ✕
@@ -913,7 +918,11 @@ function ProposeMatchModal({
           </>
         ) : (
           <>
+            <label htmlFor="proposal-opponent-search" style={modalStyles.label}>
+              Search opponent
+            </label>
             <input
+              id="proposal-opponent-search"
               style={modalStyles.input}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
@@ -947,8 +956,10 @@ function ProposeMatchModal({
 
         {selectedOpponent && (
           <div style={{ marginTop: 14 }}>
-            <div style={modalStyles.label}>When?</div>
+            <label htmlFor="proposal-scheduled-at" style={modalStyles.label}>When?</label>
             <input
+              id="proposal-scheduled-at"
+              aria-label="Match date and time"
               style={modalStyles.input}
               type="datetime-local"
               value={scheduledAt}
@@ -1032,7 +1043,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
   },
   textarea: {
     width: "100%",
@@ -1042,7 +1052,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     marginBottom: 12,
     boxSizing: "border-box" as const,
-    outline: "none",
     resize: "vertical" as const,
   },
   results: {
@@ -1298,7 +1307,7 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 10,
   },
-  statusDot: { fontWeight: 700, fontSize: 13 },
+  statusBadge: { fontWeight: 700, fontSize: 13 },
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,
