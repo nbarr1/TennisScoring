@@ -447,8 +447,8 @@ export default function AdminPage(): React.JSX.Element {
                   {adding ? "Saving…" : "Add Member"}
                 </button>
               </div>
-              {inviteMessage && <p style={styles.success}>{inviteMessage}</p>}
-              {error && <p style={styles.error}>{error}</p>}
+              {inviteMessage && <p role="status" aria-live="polite" style={styles.success}>{inviteMessage}</p>}
+              {error && <p role="alert" style={styles.error}>{error}</p>}
             </div>
 
             <div style={styles.card}>
@@ -464,7 +464,7 @@ export default function AdminPage(): React.JSX.Element {
               >
                 {repairingRankings ? "Repairing..." : "Repair Rankings"}
               </button>
-              {repairMessage && <p style={styles.success}>{repairMessage}</p>}
+              {repairMessage && <p role="status" aria-live="polite" style={styles.success}>{repairMessage}</p>}
             </div>
 
             <div style={styles.card}>
@@ -739,7 +739,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     padding: "10px 14px",
     fontSize: 14,
-    outline: "none",
   },
   btn: {
     background: "var(--green-dark)",
