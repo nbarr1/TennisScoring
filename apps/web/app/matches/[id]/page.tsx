@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch,
@@ -12,7 +13,6 @@ import {
   EMPTY_STATS,
   formatScoreDisplay,
   formatGameScore,
-  getMatchStatusMetadata,
 } from '@tennis/shared';
 import Link from 'next/link';
 
@@ -61,7 +61,6 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     const seconds = totalSeconds % 60;
     return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
-  const statusMetadata = getMatchStatusMetadata(match.status);
 
   async function withLoading(fn: () => Promise<void>) {
     setActionLoading(true);
@@ -105,20 +104,17 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   async function handleConfirmAction() {
     if (!confirmAction) return;
     const action = confirmAction;
-
-    if (action.type === 'delete') {
+    setConfirmAction(null);
+    if (action.type === 'cancel') {
+      await withLoading(() => cancelMatch(id));
+      setShowManage(false);
+    } else if (action.type === 'postpone') {
+      await withLoading(() => postponeMatch(id, action.newTime));
+      setShowManage(false);
+      setShowPostponeOptions(false);
+    } else {
       await withLoading(() => deleteMatch(id));
       router.push('/matches');
-    } else {
-      if (action.type === 'cancel') {
-        await withLoading(() => cancelMatch(id));
-        setShowManage(false);
-      } else if (action.type === 'postpone') {
-        await withLoading(() => postponeMatch(id, action.newTime));
-        setShowManage(false);
-        setShowPostponeOptions(false);
-      }
-      setConfirmAction(null);
     }
   }
 
@@ -152,13 +148,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
       <main style={styles.main}>
         <div style={styles.scoreboard}>
           <div style={styles.badgeRow}>
-            <span
-              aria-label={statusMetadata.accessibilityLabel}
-              style={{ ...styles.statusBadge, color: statusMetadata.color }}
-            >
-              <span aria-hidden="true">{statusMetadata.icon}</span>{' '}
-              {statusMetadata.label}
-            </span>
+            <StatusBadge status={match.status} />
             {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
           </div>
           <div style={styles.setsRow}>
@@ -409,7 +399,6 @@ const styles: Record<string, React.CSSProperties> = {
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
   badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
-  statusBadge: { fontWeight: 700, fontSize: 13 },
   historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
   playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
   playerNameLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 600 },

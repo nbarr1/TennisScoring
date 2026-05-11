@@ -29,6 +29,7 @@ import {
   getMatchStatusMetadata,
 } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
+import { StatusBadge } from '../../components/StatusBadge';
 import type { Match, User, Availability } from '@tennis/shared';
 
 type ActionKind = 'pending' | 'awaiting' | null;
@@ -47,19 +48,6 @@ function formatScheduledAt(ts?: number): string {
     hour: 'numeric',
     minute: '2-digit',
   });
-}
-
-function StatusBadge({ status }: { status: Match['status'] }) {
-  const metadata = getMatchStatusMetadata(status);
-
-  return (
-    <Text
-      accessibilityLabel={metadata.accessibilityLabel}
-      style={[styles.status, { color: metadata.color }]}
-    >
-      {metadata.icon} {metadata.label}
-    </Text>
-  );
 }
 
 function MatchCard({
@@ -1062,7 +1050,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  status: { fontWeight: '700', fontSize: 13 },
   winnerBadge: {
     fontSize: 11,
     fontWeight: '600',

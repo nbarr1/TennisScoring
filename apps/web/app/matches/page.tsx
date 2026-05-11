@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { StatusBadge } from "../shared/StatusBadge";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { onSnapshot } from "firebase/firestore";
@@ -1339,7 +1340,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 10,
   },
+<<<<<<< codex/conduct-ui/ux-review-of-codebase
+=======
   statusBadge: { fontWeight: 700, fontSize: 13 },
+>>>>>>> claude/setup-tennis-scoring-app-H7r7V
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,
