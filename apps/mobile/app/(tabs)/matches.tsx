@@ -26,8 +26,10 @@ import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
+  getMatchStatusMetadata,
 } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
+import { StatusBadge } from '../../components/StatusBadge';
 import type { Match, User, Availability } from '@tennis/shared';
 
 type ActionKind = 'pending' | 'awaiting' | null;
@@ -48,26 +50,6 @@ function formatScheduledAt(ts?: number): string {
   });
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  in_progress: '#27ae60',
-  pending_report: '#e67e22',
-  completed: '#555',
-  disputed: '#c0392b',
-  scheduled: '#1a472a',
-  proposed: '#8e44ad',
-  cancelled: '#bbb',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  in_progress: '● LIVE',
-  pending_report: 'Pending Report',
-  completed: 'Final',
-  disputed: '⚠ Dispute',
-  scheduled: 'Scheduled',
-  proposed: 'Proposed',
-  cancelled: 'Cancelled',
-};
-
 function MatchCard({
   match,
   onPress,
@@ -86,21 +68,22 @@ function MatchCard({
   const isLive = match.status === 'in_progress';
   const isUpcoming =
     match.status === 'scheduled' || match.status === 'proposed';
+  const metadata = getMatchStatusMetadata(match.status);
+  const player1Name = match.player1Name ?? 'Player 1';
+  const player2Name = match.player2Name ?? 'Player 2';
+  const cardAccessibilityLabel = `${player1Name} versus ${player2Name}, ${metadata.accessibilityLabel}${
+    isUpcoming ? `, ${formatScheduledAt(match.scheduledAt)}` : ''
+  }`;
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={cardAccessibilityLabel}
       style={[styles.card, isLive && styles.cardLive]}
       onPress={onPress}
     >
       <View style={styles.cardHeader}>
-        <Text
-          style={[
-            styles.status,
-            { color: STATUS_COLOR[match.status] ?? '#888' },
-          ]}
-        >
-          {STATUS_LABEL[match.status] ?? match.status}
-        </Text>
+        <StatusBadge status={match.status} />
         {match.winner && (
           <Text style={styles.winnerBadge}>
             {match.winner === 'player1'
@@ -136,7 +119,7 @@ function MatchCard({
             match.winner === 'player1' && styles.winner,
           ]}
         >
-          {match.player1Name ?? 'Player 1'}
+          {player1Name}
         </Text>
         <Text style={styles.vs}>vs</Text>
         <View style={styles.playerRight}>
@@ -146,7 +129,7 @@ function MatchCard({
               match.winner === 'player2' && styles.winner,
             ]}
           >
-            {match.player2Name ?? 'Player 2'}
+            {player2Name}
           </Text>
           {match.player2IsGuest && <Text style={styles.guestBadge}>Guest</Text>}
         </View>
@@ -161,17 +144,32 @@ function MatchCard({
 
       {actionKind === 'pending' && (
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.acceptBtn} onPress={onAccept}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Accept match proposal from ${player2Name}`}
+            style={styles.acceptBtn}
+            onPress={onAccept}
+          >
             <Text style={styles.acceptBtnText}>✓ Accept</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.declineBtn} onPress={onDecline}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Decline match proposal from ${player2Name}`}
+            style={styles.declineBtn}
+            onPress={onDecline}
+          >
             <Text style={styles.declineBtnText}>✕ Decline</Text>
           </TouchableOpacity>
         </View>
       )}
       {actionKind === 'awaiting' && (
         <View style={styles.cardActions}>
-          <TouchableOpacity style={styles.declineBtn} onPress={onWithdraw}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Cancel match proposal to ${player2Name}`}
+            style={styles.declineBtn}
+            onPress={onWithdraw}
+          >
             <Text style={styles.declineBtnText}>Cancel proposal</Text>
           </TouchableOpacity>
         </View>
@@ -458,6 +456,8 @@ export default function MatchesScreen() {
 
       <View style={styles.fabGroup}>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Record a past match"
           style={[styles.fab, styles.fabSecondary]}
           onPress={() => {
             setCreateMode('historic');
@@ -467,12 +467,16 @@ export default function MatchesScreen() {
           <Text style={styles.fabSecondaryText}>📋 Past</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Propose a match"
           style={[styles.fab, styles.fabSecondary]}
           onPress={() => setShowPropose(true)}
         >
           <Text style={styles.fabSecondaryText}>📅 Propose</Text>
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Start a live match"
           style={styles.fab}
           onPress={() => {
             setCreateMode('live');
@@ -503,6 +507,9 @@ export default function MatchesScreen() {
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Search for an existing player"
+                accessibilityState={{ selected: opponentMode === 'search' }}
                 style={[
                   styles.modeBtn,
                   opponentMode === 'search' && styles.modeBtnActive,
@@ -522,6 +529,9 @@ export default function MatchesScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Enter a guest opponent"
+                accessibilityState={{ selected: opponentMode === 'guest' }}
                 style={[
                   styles.modeBtn,
                   opponentMode === 'guest' && styles.modeBtnActive,
@@ -547,6 +557,7 @@ export default function MatchesScreen() {
             {/* Opponent picker */}
             {opponentMode === 'guest' ? (
               <TextInput
+                accessibilityLabel="Guest opponent name"
                 style={styles.input}
                 value={guestName}
                 onChangeText={setGuestName}
@@ -565,6 +576,8 @@ export default function MatchesScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
                   onPress={() => {
                     setSelectedOpponent(null);
                     setSearchText('');
@@ -578,6 +591,7 @@ export default function MatchesScreen() {
                 <Text style={styles.modalLabel}>Search for opponent</Text>
                 <View style={styles.searchRow}>
                   <TextInput
+                    accessibilityLabel="Search for opponent"
                     style={[styles.input, styles.searchInput]}
                     value={searchText}
                     onChangeText={setSearchText}
@@ -600,6 +614,8 @@ export default function MatchesScreen() {
                     keyboardShouldPersistTaps="handled"
                     renderItem={({ item }) => (
                       <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${item.displayName}`}
                         style={styles.resultRow}
                         onPress={() => {
                           setSelectedOpponent(item);
@@ -635,6 +651,7 @@ export default function MatchesScreen() {
                     <View key={i} style={styles.setRow}>
                       <Text style={styles.setLabel}>Set {i + 1}</Text>
                       <TextInput
+                        accessibilityLabel={`Set ${i + 1} your games`}
                         style={styles.setInput}
                         value={s.p1}
                         onChangeText={(v) => {
@@ -648,6 +665,7 @@ export default function MatchesScreen() {
                       />
                       <Text style={styles.setDash}>–</Text>
                       <TextInput
+                        accessibilityLabel={`Set ${i + 1} opponent games`}
                         style={styles.setInput}
                         value={s.p2}
                         onChangeText={(v) => {
@@ -661,6 +679,8 @@ export default function MatchesScreen() {
                       />
                       {historicSets.length > 1 && (
                         <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove set ${i + 1}`}
                           onPress={() =>
                             setHistoricSets(
                               historicSets.filter((_, j) => j !== i),
@@ -674,6 +694,8 @@ export default function MatchesScreen() {
                   ))}
                   {historicSets.length < 5 && (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Add another set"
                       onPress={() =>
                         setHistoricSets([...historicSets, { p1: '', p2: '' }])
                       }
@@ -686,12 +708,26 @@ export default function MatchesScreen() {
 
             <View style={styles.modalActions}>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel match creation"
                 style={styles.cancelBtn}
                 onPress={resetCreateModal}
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={
+                  createMode === 'historic' ? 'Record past match' : 'Create live match'
+                }
+                accessibilityState={{
+                  disabled:
+                    creating ||
+                    (opponentMode === 'search'
+                      ? !selectedOpponent
+                      : !guestName.trim()),
+                  busy: creating,
+                }}
                 style={[
                   styles.createBtn,
                   (creating ||
@@ -820,6 +856,8 @@ function ProposeMatchModal({
                   </Text>
                 </View>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
                   onPress={() => {
                     setSelectedOpponent(null);
                     setSearchText('');
@@ -832,6 +870,7 @@ function ProposeMatchModal({
 
               <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
               <TextInput
+                accessibilityLabel="Match date"
                 style={styles.input}
                 value={date}
                 onChangeText={setDate}
@@ -842,6 +881,7 @@ function ProposeMatchModal({
               />
               <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
               <TextInput
+                accessibilityLabel="Match time"
                 style={styles.input}
                 value={time}
                 onChangeText={setTime}
@@ -856,6 +896,7 @@ function ProposeMatchModal({
               <Text style={styles.modalLabel}>Search for opponent</Text>
               <View style={styles.searchRow}>
                 <TextInput
+                  accessibilityLabel="Search for opponent"
                   style={[styles.input, styles.searchInput]}
                   value={searchText}
                   onChangeText={setSearchText}
@@ -878,6 +919,8 @@ function ProposeMatchModal({
                   keyboardShouldPersistTaps="handled"
                   renderItem={({ item }) => (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${item.displayName}`}
                       style={styles.resultRow}
                       onPress={() => {
                         setSelectedOpponent(item);
@@ -899,10 +942,21 @@ function ProposeMatchModal({
           )}
 
           <View style={styles.modalActions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Cancel match proposal"
+              style={styles.cancelBtn}
+              onPress={onClose}
+            >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Send match proposal"
+              accessibilityState={{
+                disabled: submitting || !selectedOpponent || !date || !time,
+                busy: submitting,
+              }}
               style={[
                 styles.createBtn,
                 (submitting || !selectedOpponent || !date || !time) &&
@@ -996,7 +1050,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  status: { fontWeight: '700', fontSize: 13 },
   winnerBadge: {
     fontSize: 11,
     fontWeight: '600',

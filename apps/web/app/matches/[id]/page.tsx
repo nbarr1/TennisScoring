@@ -4,12 +4,18 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch,
 } from '@tennis/firebase-client';
-import { EMPTY_STATS, formatScoreDisplay, formatGameScore } from '@tennis/shared';
+import {
+  EMPTY_STATS,
+  formatScoreDisplay,
+  formatGameScore,
+} from '@tennis/shared';
 import Link from 'next/link';
+import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
@@ -20,6 +26,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const [actionLoading, setActionLoading] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [showPostponeOptions, setShowPostponeOptions] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -50,12 +57,6 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     const seconds = totalSeconds % 60;
     return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`;
   };
-  const statusLabel = match.status === 'in_progress' ? '● LIVE'
-    : match.status === 'completed' ? 'Final'
-    : match.status === 'pending_report' ? 'Pending Report'
-    : match.status === 'disputed' ? '⚠ Disputed'
-    : match.status === 'cancelled' ? 'Cancelled'
-    : 'Scheduled';
 
   async function withLoading(fn: () => Promise<void>) {
     setActionLoading(true);
@@ -78,36 +79,46 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     await withLoading(() => disputeMatchReport(id, uid));
   }
 
-  async function handleCancel() {
-    if (!confirm('Cancel this match? It will be marked as cancelled.')) return;
-    await withLoading(() => cancelMatch(id));
-    setShowManage(false);
+  function handleCancel() {
+    setConfirmAction({ type: 'cancel' });
   }
 
-  async function handlePostponeBy(ms: number) {
+  function handlePostponeBy(ms: number) {
     if (!match) return;
     const base = match.scheduledAt ?? Date.now();
-    const newTime = base + ms;
-    if (!confirm(`Postpone to ${new Date(newTime).toLocaleString()}?`)) return;
-    await withLoading(() => postponeMatch(id, newTime));
-    setShowManage(false);
-    setShowPostponeOptions(false);
+    setConfirmAction({ type: 'postpone', newTime: base + ms });
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!match) return;
-    const msg = match.status === 'completed'
+    const message = match.status === 'completed'
       ? 'Deleting a completed match will not reverse its effect on rankings. Continue?'
       : 'This match and all its data will be permanently deleted.';
-    if (!confirm(msg)) return;
-    await withLoading(() => deleteMatch(id));
-    router.push('/matches');
+    setConfirmAction({ type: 'delete', message });
+  }
+
+  async function handleConfirmAction() {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action.type === 'cancel') {
+      await withLoading(() => cancelMatch(id));
+      setShowManage(false);
+    } else if (action.type === 'postpone') {
+      await withLoading(() => postponeMatch(id, action.newTime));
+      setShowManage(false);
+      setShowPostponeOptions(false);
+    } else {
+      await withLoading(() => deleteMatch(id));
+      router.push('/matches');
+    }
   }
 
   const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
   const canPostpone = match.status === 'scheduled';
   const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
   const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
+  const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
 
   return (
     <div style={styles.page}>
@@ -119,9 +130,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
       <main style={styles.main}>
         <div style={styles.scoreboard}>
           <div style={styles.badgeRow}>
-            <span style={{ ...styles.statusBadge, color: match.status === 'in_progress' ? '#ff6b6b' : '#a8d5a2' }}>
-              {statusLabel}
-            </span>
+            <StatusBadge status={match.status} />
             {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
           </div>
           <div style={styles.setsRow}>
@@ -146,7 +155,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
         {canManage && (
           <div style={styles.manageWrap}>
-            <button style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
+            <button type="button" style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
               ⋯ Options
             </button>
           </div>
@@ -197,12 +206,17 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         {/* Dispute confirmation modal */}
         {showDisputeConfirm && (
           <div style={styles.modalOverlay}>
-            <div style={styles.modal}>
-              <h3 style={styles.modalTitle}>Dispute this report?</h3>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="dispute-report-title"
+              style={styles.modal}
+            >
+              <h3 id="dispute-report-title" style={styles.modalTitle}>Dispute this report?</h3>
               <p style={styles.modalBody}>This will escalate to your division leader to resolve. Only dispute if the score shown is incorrect.</p>
               <div style={styles.modalBtns}>
-                <button style={styles.modalCancel} onClick={() => setShowDisputeConfirm(false)}>Cancel</button>
-                <button style={styles.modalConfirm} onClick={handleDispute} disabled={actionLoading}>
+                <button type="button" style={styles.modalCancel} onClick={() => setShowDisputeConfirm(false)}>Cancel</button>
+                <button type="button" style={styles.modalConfirm} onClick={handleDispute} disabled={actionLoading}>
                   {actionLoading ? '…' : 'Yes, Dispute'}
                 </button>
               </div>
@@ -265,19 +279,25 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
         {showManage && (
           <div style={styles.modalOverlay} onClick={() => setShowManage(false)}>
-            <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-              <h3 style={styles.modalTitle}>{showPostponeOptions ? 'Postpone by…' : 'Manage Match'}</h3>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="manage-match-title"
+              style={styles.modal}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="manage-match-title" style={styles.modalTitle}>{showPostponeOptions ? 'Postpone by…' : 'Manage Match'}</h3>
               {actionLoading && <p style={styles.modalBody}>Working…</p>}
               {!actionLoading && !showPostponeOptions && (
                 <div style={styles.manageOptions}>
                   {canPostpone && (
-                    <button style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
+                    <button type="button" style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
                   )}
                   {canCancel && (
-                    <button style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
+                    <button type="button" style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
                   )}
                   {canDelete && (
-                    <button style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
+                    <button type="button" style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
                   )}
                   {!canPostpone && !canCancel && !canDelete && (
                     <p style={styles.modalBody}>No actions available for this match status.</p>
@@ -292,15 +312,51 @@ export default function MatchPage({ params }: { params: { id: string } }): React
                     { label: '+2 hours',    ms: 2 * 60 * 60 * 1000 },
                     { label: '+1 day',      ms: 24 * 60 * 60 * 1000 },
                   ].map(({ label, ms }) => (
-                    <button key={label} style={styles.manageOption} onClick={() => handlePostponeBy(ms)}>{label}</button>
+                    <button key={label} type="button" style={styles.manageOption} onClick={() => handlePostponeBy(ms)}>{label}</button>
                   ))}
-                  <button style={styles.manageOptionGhost} onClick={() => setShowPostponeOptions(false)}>← Back</button>
+                  <button type="button" style={styles.manageOptionGhost} onClick={() => setShowPostponeOptions(false)}>← Back</button>
                 </div>
               )}
-              <button style={styles.manageOptionGhost} onClick={() => setShowManage(false)}>Close</button>
+              <button type="button" style={styles.manageOptionGhost} onClick={() => setShowManage(false)}>Close</button>
             </div>
           </div>
         )}
+
+        {confirmAction && (
+          <div style={styles.modalOverlay}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-action-title"
+              style={styles.modal}
+            >
+              <h3 id="confirm-action-title" style={styles.modalTitle}>{confirmTitle}</h3>
+              <p style={styles.modalBody}>{confirmBody}</p>
+              <div style={styles.modalBtns}>
+                <button
+                  type="button"
+                  style={styles.modalCancel}
+                  onClick={() => setConfirmAction(null)}
+                  disabled={actionLoading}
+                >
+                  Keep Match
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    ...styles.modalConfirm,
+                    ...(confirmAction.type !== 'delete' ? styles.modalConfirmNeutral : {}),
+                  }}
+                  onClick={handleConfirmAction}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Working…' : confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
     </div>
   );
@@ -325,7 +381,6 @@ const styles: Record<string, React.CSSProperties> = {
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
   badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
-  statusBadge: { fontWeight: 700, fontSize: 13 },
   historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
   playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
   playerNameLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 600 },
@@ -373,4 +428,5 @@ const styles: Record<string, React.CSSProperties> = {
   modalBtns: { display: 'flex', gap: 12, justifyContent: 'flex-end' },
   modalCancel: { background: '#f0f0f0', color: '#333', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
   modalConfirm: { background: '#c0392b', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
+  modalConfirmNeutral: { background: '#1a472a' },
 };
