@@ -42,12 +42,23 @@ jobs:
         run: pnpm --filter @tennis/firebase-functions build:targeted-deploy
         working-directory: .
 
-      - name: Write service account credentials
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gcp-sa.json"
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify feedback secret access
+        run: >-
+          gcloud secrets describe GITHUB_TOKEN
+          --project "$FIREBASE_PROJECT_ID"
+          --format='value(name)'
         working-directory: .
         env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
@@ -57,8 +68,7 @@ jobs:
       - name: Deploy updated functions
         run: >-
           npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf
+          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
