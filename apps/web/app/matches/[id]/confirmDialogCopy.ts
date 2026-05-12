@@ -26,7 +26,7 @@ export function getConfirmDialogCopy(
     case 'postpone':
       return {
         confirmTitle: 'Postpone this match?',
-        confirmBody: `Postpone to ${new Date(confirmAction.newTime).toLocaleString()}?`,
+        confirmBody: "Postpone to " + new Date(confirmAction.newTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) + "?",
         confirmLabel: 'Postpone Match',
       };
     case 'delete':

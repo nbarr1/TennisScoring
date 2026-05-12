@@ -1340,7 +1340,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: 10,
   },
->>>>>> claude/setup-tennis-scoring-app-H7r7V
   winnerBadge: {
     fontSize: 12,
     fontWeight: 600,
@@ -1357,7 +1356,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#27ae60",
     marginLeft: 10,
   },
-  players: { display: "flex", alignItems: "center", gap: 10 },
+  players: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
   playerName: { fontSize: 15, fontWeight: 500, color: "#555" },
   winnerName: { fontSize: 15, fontWeight: 700, color: "var(--green-dark)" },
   vs: { fontSize: 12, color: "#bbb" },

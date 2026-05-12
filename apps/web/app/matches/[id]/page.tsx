@@ -17,11 +17,6 @@ import {
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 
-type ConfirmAction =
-  | { type: 'cancel' }
-  | { type: 'postpone'; newTime: number }
-  | { type: 'delete'; message: string };
-
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
   const router = useRouter();
@@ -105,7 +100,6 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   async function handleConfirmAction() {
     if (!confirmAction) return;
     const action = confirmAction;
-    setConfirmAction(null);
     if (action.type === 'cancel') {
       await withLoading(() => cancelMatch(id));
       setShowManage(false);
@@ -117,6 +111,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
       await withLoading(() => deleteMatch(id));
       router.push('/matches');
     }
+    setConfirmAction(null);
   }
 
   const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
