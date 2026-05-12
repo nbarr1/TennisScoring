@@ -11,7 +11,7 @@ At minimum, ensure:
 - Cloud Functions/Admin deploy permissions (project-level, e.g. `roles/cloudfunctions.developer` or `roles/cloudfunctions.admin`)
 - Cloud Build permissions (e.g. `roles/cloudbuild.builds.editor`)
 - Artifact Registry permissions (e.g. `roles/artifactregistry.writer`)
-- Secret Manager access for feedback deployment preflight and secret binding (e.g. `roles/secretmanager.secretAccessor` on the `GITHUB_TOKEN` secret)
+- Secret Manager deploy-time secret binding permissions on `GITHUB_TOKEN` (e.g. `roles/secretmanager.admin` on only the `GITHUB_TOKEN` secret so Firebase CLI can update the secret IAM policy for the Functions runtime service account)
 - **Service Account User** on the runtime service account used by Functions:
   - `roles/iam.serviceAccountUser` on `PROJECT_NUMBER-compute@developer.gserviceaccount.com` (or your custom runtime SA)
 
@@ -31,6 +31,27 @@ gcloud iam service-accounts add-iam-policy-binding \
 ```
 
 Replace `DEPLOYER_SA@PROJECT_ID.iam.gserviceaccount.com` with the service account whose key is stored in `FIREBASE_SERVICE_ACCOUNT_JSON`.
+
+## Fix for `secretmanager.secrets.setIamPolicy` 403
+
+If deploy fails while Firebase CLI is ensuring runtime access to the feedback token secret:
+
+- `Permission 'secretmanager.secrets.setIamPolicy' denied for resource 'projects/PROJECT_ID/secrets/GITHUB_TOKEN'`
+
+The root cause is that the deployer principal can read the secret but cannot update the `GITHUB_TOKEN` secret IAM policy. When a function declares `defineSecret('GITHUB_TOKEN')`, Firebase CLI verifies that the Functions runtime service account can access that secret. If the runtime service account is not already bound correctly, Firebase CLI updates the secret IAM policy during deploy. The principal represented by `FIREBASE_SERVICE_ACCOUNT_JSON` therefore needs `secretmanager.secrets.setIamPolicy` on `GITHUB_TOKEN`.
+
+Recommended Console fix with the narrowest resource scope:
+
+1. Open **Google Cloud Console** and select the project used by `FIREBASE_PROJECT_ID`.
+2. Go to **Security > Secret Manager**.
+3. Open the `GITHUB_TOKEN` secret. If it does not exist, create it first with the GitHub token value.
+4. Open the secret **Permissions** tab, or open the right-side **Info panel**.
+5. Click **Grant access**.
+6. Add the service account whose key is stored in the GitHub secret `FIREBASE_SERVICE_ACCOUNT_JSON` as the principal, for example `firebase-adminsdk-fbsvc@PROJECT_ID.iam.gserviceaccount.com`.
+7. Grant **Secret Manager Admin** (`roles/secretmanager.admin`) on this `GITHUB_TOKEN` secret.
+8. Save and rerun the deploy workflow.
+
+Do not grant this at the project level unless you intentionally want the deployer to administer every secret in the project.
 
 
 ## GitHub feedback integration
