@@ -3,13 +3,13 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { StatusBadge } from "../shared/StatusBadge";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { onSnapshot } from "firebase/firestore";
 import {
   divisionMatchesQuery,
   recordHistoricMatch,
+  recordMatchOnBehalf,
   searchDivisionPlayers,
   proposeMatch,
   acceptMatchProposal,
@@ -176,6 +176,10 @@ export default function MatchesPage(): React.JSX.Element {
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
   const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
+  const canRecordOnBehalf =
+    profile?.role === "admin" ||
+    profile?.role === "division_leader" ||
+    profile?.role === "app_developer";
 
   return (
     <div style={styles.page}>
@@ -309,6 +313,7 @@ export default function MatchesPage(): React.JSX.Element {
           <RecordPastMatchModal
             currentUser={profile}
             divisionId={divisionId}
+            canRecordOnBehalf={canRecordOnBehalf}
             onClose={() => setShowRecord(false)}
           />
         )}
@@ -328,16 +333,25 @@ export default function MatchesPage(): React.JSX.Element {
 function RecordPastMatchModal({
   currentUser,
   divisionId,
+  canRecordOnBehalf,
   onClose,
 }: {
   currentUser: User;
   divisionId: string;
+  canRecordOnBehalf: boolean;
   onClose: () => void;
 }) {
+  const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">(
+    "self",
+  );
   const [opponentMode, setOpponentMode] = useState<"search" | "guest">(
     "search",
   );
   const [guestName, setGuestName] = useState("");
+  const [player1SearchText, setPlayer1SearchText] = useState("");
+  const [player1SearchResults, setPlayer1SearchResults] = useState<User[]>([]);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<User | null>(null);
+  const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
@@ -350,6 +364,31 @@ function RecordPastMatchModal({
   const [bulkText, setBulkText] = useState("");
 
   useEffect(() => {
+    if (recordingMode !== "onBehalf" || !player1SearchText.trim() || selectedPlayer1) {
+      setPlayer1SearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearchingPlayer1(true);
+      try {
+        const results = await searchDivisionPlayers(divisionId, player1SearchText);
+        setPlayer1SearchResults(results.filter((u) => u.id !== selectedOpponent?.id));
+      } catch {
+        setPlayer1SearchResults([]);
+      } finally {
+        setSearchingPlayer1(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [
+    player1SearchText,
+    divisionId,
+    selectedPlayer1,
+    selectedOpponent?.id,
+    recordingMode,
+  ]);
+
+  useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
       setSearchResults([]);
       return;
@@ -358,7 +397,8 @@ function RecordPastMatchModal({
       setSearching(true);
       try {
         const results = await searchDivisionPlayers(divisionId, searchText);
-        setSearchResults(results.filter((u) => u.id !== currentUser.id));
+        const player1Id = recordingMode === "onBehalf" ? selectedPlayer1?.id : currentUser.id;
+        setSearchResults(results.filter((u) => u.id !== player1Id));
       } catch {
         setSearchResults([]);
       } finally {
@@ -366,12 +406,21 @@ function RecordPastMatchModal({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [searchText, divisionId, selectedOpponent, currentUser.id]);
+  }, [
+    searchText,
+    divisionId,
+    selectedOpponent,
+    currentUser.id,
+    recordingMode,
+    selectedPlayer1?.id,
+  ]);
 
+  const activePlayer1 = recordingMode === "onBehalf" ? selectedPlayer1 : currentUser;
   const isGuestOpponent = opponentMode === "guest";
   const opponentReady = isGuestOpponent
     ? guestName.trim().length > 0
     : !!selectedOpponent;
+  const player1Ready = recordingMode === "self" || !!selectedPlayer1;
 
   function parseSetToken(token: string): { p1: number; p2: number } | null {
     const m = token.trim().match(/^(\d{1,2})\s*[-:]\s*(\d{1,2})$/);
@@ -471,31 +520,46 @@ function RecordPastMatchModal({
     setSubmitting(true);
     try {
       const isGuest = opponentMode === "guest";
-      await recordHistoricMatch(
-        isGuest
-          ? {
-              player1Id: currentUser.id,
-              player2Id: "guest",
-              player1Name: currentUser.displayName,
-              player2Name: guestName.trim(),
-              player2IsGuest: true,
-              divisionId,
-              createdBy: currentUser.id,
-              sets: parsed,
-              isDivisionMatch,
-            }
-          : {
-              player1Id: currentUser.id,
-              player2Id: selectedOpponent!.id,
-              player1Name: currentUser.displayName,
-              player2Name: selectedOpponent!.displayName,
-              player2IsGuest: false, // EXPLICIT: Real division player
-              divisionId,
-              createdBy: currentUser.id,
-              sets: parsed,
-              isDivisionMatch,
-            },
-      );
+      if (recordingMode === "onBehalf") {
+        if (isGuest) {
+          setError("Select a registered division player for both sides when recording on behalf of players.");
+          return;
+        }
+        await recordMatchOnBehalf({
+          player1Id: activePlayer1!.id,
+          player2Id: selectedOpponent!.id,
+          divisionId,
+          sets: parsed,
+          isDivisionMatch,
+          notifyPlayers: true,
+        });
+      } else {
+        await recordHistoricMatch(
+          isGuest
+            ? {
+                player1Id: currentUser.id,
+                player2Id: "guest",
+                player1Name: currentUser.displayName,
+                player2Name: guestName.trim(),
+                player2IsGuest: true,
+                divisionId,
+                createdBy: currentUser.id,
+                sets: parsed,
+                isDivisionMatch,
+              }
+            : {
+                player1Id: currentUser.id,
+                player2Id: selectedOpponent!.id,
+                player1Name: currentUser.displayName,
+                player2Name: selectedOpponent!.displayName,
+                player2IsGuest: false, // EXPLICIT: Real division player
+                divisionId,
+                createdBy: currentUser.id,
+                sets: parsed,
+                isDivisionMatch,
+              },
+        );
+      }
       onClose();
     } catch (e) {
       setError(
@@ -519,6 +583,104 @@ function RecordPastMatchModal({
       >
         <h2 id="record-past-match-title" style={modalStyles.title}>Record Past Match</h2>
 
+        {canRecordOnBehalf && entryMode === "single" && (
+          <>
+            <div style={modalStyles.modeToggle}>
+              <button
+                type="button"
+                style={{
+                  ...modalStyles.modeBtn,
+                  ...(recordingMode === "self" ? modalStyles.modeBtnActive : {}),
+                }}
+                onClick={() => {
+                  setRecordingMode("self");
+                  setSelectedPlayer1(null);
+                  setPlayer1SearchText("");
+                  setPlayer1SearchResults([]);
+                }}
+              >
+                My Match
+              </button>
+              <button
+                type="button"
+                style={{
+                  ...modalStyles.modeBtn,
+                  ...(recordingMode === "onBehalf" ? modalStyles.modeBtnActive : {}),
+                }}
+                onClick={() => {
+                  setRecordingMode("onBehalf");
+                  setOpponentMode("search");
+                  setGuestName("");
+                  setSelectedOpponent(null);
+                  setSearchText("");
+                  setSearchResults([]);
+                }}
+              >
+                Any Two Players
+              </button>
+            </div>
+
+            {recordingMode === "onBehalf" && (
+              selectedPlayer1 ? (
+                <div style={modalStyles.selectedRow}>
+                  <div>
+                    <div style={modalStyles.selectedName}>{selectedPlayer1.displayName}</div>
+                    <div style={modalStyles.selectedEmail}>{selectedPlayer1.email}</div>
+                  </div>
+                  <button
+                    type="button"
+                    style={modalStyles.changeBtn}
+                    onClick={() => {
+                      setSelectedPlayer1(null);
+                      setPlayer1SearchText("");
+                    }}
+                  >
+                    Change first player
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="record-match-player1-search" style={modalStyles.label}>
+                    Search first player
+                  </label>
+                  <input
+                    id="record-match-player1-search"
+                    style={modalStyles.input}
+                    value={player1SearchText}
+                    onChange={(e) => setPlayer1SearchText(e.target.value)}
+                    placeholder="Search first player by name or email…"
+                  />
+                  {searchingPlayer1 && <div style={modalStyles.muted}>Searching…</div>}
+                  {player1SearchResults.length > 0 && (
+                    <div style={modalStyles.results}>
+                      {player1SearchResults.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          aria-label={`Select ${u.displayName} as first player`}
+                          style={modalStyles.resultRow}
+                          onClick={() => {
+                            setSelectedPlayer1(u);
+                            setPlayer1SearchResults([]);
+                          }}
+                        >
+                          <div style={modalStyles.resultName}>{u.displayName}</div>
+                          <div style={modalStyles.resultEmail}>{u.email}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {player1SearchText.trim().length > 0 &&
+                    !searchingPlayer1 &&
+                    player1SearchResults.length === 0 && (
+                      <div style={modalStyles.muted}>No players found.</div>
+                    )}
+                </>
+              )
+            )}
+          </>
+        )}
+
         <div style={modalStyles.modeToggle}>
           <button
             type="button"
@@ -538,6 +700,7 @@ function RecordPastMatchModal({
             }}
             onClick={() => {
               setEntryMode("bulk");
+              setRecordingMode("self");
               setOpponentMode("guest");
               setSelectedOpponent(null);
             }}
@@ -564,23 +727,25 @@ function RecordPastMatchModal({
               >
                 Search Player
               </button>
-              <button
-                type="button"
-                style={{
-                  ...modalStyles.modeBtn,
-                  ...(opponentMode === "guest"
-                    ? modalStyles.modeBtnActive
-                    : {}),
-                }}
-                onClick={() => {
-                  setOpponentMode("guest");
-                  setSelectedOpponent(null);
-                  setSearchText("");
-                  setSearchResults([]);
-                }}
-              >
-                Guest / No Account
-              </button>
+              {recordingMode === "self" && (
+                <button
+                  type="button"
+                  style={{
+                    ...modalStyles.modeBtn,
+                    ...(opponentMode === "guest"
+                      ? modalStyles.modeBtnActive
+                      : {}),
+                  }}
+                  onClick={() => {
+                    setOpponentMode("guest");
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                    setSearchResults([]);
+                  }}
+                >
+                  Guest / No Account
+                </button>
+              )}
             </div>
 
             {opponentMode === "guest" ? (
@@ -620,14 +785,18 @@ function RecordPastMatchModal({
             ) : (
               <>
                 <label htmlFor="record-match-opponent-search" style={modalStyles.label}>
-                  Search opponent
+                  {recordingMode === "onBehalf" ? "Search second player" : "Search opponent"}
                 </label>
                 <input
                   id="record-match-opponent-search"
                   style={modalStyles.input}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search opponent by name or email…"
+                  placeholder={
+                    recordingMode === "onBehalf"
+                      ? "Search second player by name or email…"
+                      : "Search opponent by name or email…"
+                  }
                 />
                 {searching && <div style={modalStyles.muted}>Searching…</div>}
                 {searchResults.length > 0 && (
@@ -659,7 +828,7 @@ function RecordPastMatchModal({
               </>
             )}
 
-            {entryMode === "single" && opponentReady && (
+            {entryMode === "single" && player1Ready && opponentReady && (
               <div style={modalStyles.toggleSection}>
                 <label style={modalStyles.checkboxLabel}>
                   <input
@@ -678,16 +847,16 @@ function RecordPastMatchModal({
               </div>
             )}
 
-            {entryMode === "single" && opponentReady && (
+            {entryMode === "single" && player1Ready && opponentReady && (
               <div style={modalStyles.setsBlock}>
                 <div style={modalStyles.label}>
-                  Set scores (your games first)
+                  Set scores ({recordingMode === "onBehalf" ? "first player's" : "your"} games first)
                 </div>
                 {sets.map((s, i) => (
                   <div key={i} style={modalStyles.setRow}>
                     <span style={modalStyles.setLabel}>Set {i + 1}</span>
                     <input
-                      aria-label={`Set ${i + 1} your games`}
+                      aria-label={`Set ${i + 1} ${recordingMode === "onBehalf" ? "first player's" : "your"} games`}
                       style={modalStyles.setInput}
                       value={s.p1}
                       onChange={(e) => {
@@ -698,7 +867,7 @@ function RecordPastMatchModal({
                         };
                         setSets(next);
                       }}
-                      placeholder="You"
+                      placeholder={recordingMode === "onBehalf" ? "P1" : "You"}
                       inputMode="numeric"
                       maxLength={2}
                     />
@@ -715,7 +884,7 @@ function RecordPastMatchModal({
                         };
                         setSets(next);
                       }}
-                      placeholder="Opp"
+                      placeholder={recordingMode === "onBehalf" ? "P2" : "Opp"}
                       inputMode="numeric"
                       maxLength={2}
                     />
@@ -793,12 +962,12 @@ function RecordPastMatchModal({
             type="button"
             style={{
               ...modalStyles.submitBtn,
-              ...((entryMode === "single" && !opponentReady) || submitting
+              ...((entryMode === "single" && (!player1Ready || !opponentReady)) || submitting
                 ? modalStyles.btnDisabled
                 : {}),
             }}
             onClick={handleSubmit}
-            disabled={(entryMode === "single" && !opponentReady) || submitting}
+            disabled={(entryMode === "single" && (!player1Ready || !opponentReady)) || submitting}
           >
             {submitting
               ? "Recording…"
@@ -856,7 +1025,6 @@ function ProposeMatchModal({
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
       setSearchResults([]);
