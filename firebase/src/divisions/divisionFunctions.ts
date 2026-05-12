@@ -444,7 +444,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
   }
 });
 
-export const mergeDivisionPlayerRecords = onCall(callableOptions(), async (request) => {
+export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
