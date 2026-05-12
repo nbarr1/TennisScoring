@@ -299,7 +299,7 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
 });
 
 
-export const addDivisionMemberPlaceholder = onCall(callableOptions(), async (request) => {
+export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
   try {
     if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
     const uid = request.auth.uid;
