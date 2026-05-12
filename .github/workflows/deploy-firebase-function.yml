@@ -35,8 +35,8 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      - name: Build shared + functions bundle
-        run: pnpm --filter @tennis/firebase-functions build
+      - name: Build targeted functions bundle
+        run: pnpm --filter @tennis/firebase-functions build:targeted-deploy
         working-directory: .
 
       - name: Write service account credentials
