@@ -113,7 +113,7 @@ function buildIssueBody(body: string, metadata: unknown, uid?: string): string {
   return `${truncate(body, MAX_BODY_LENGTH)}\n\n${formatMetadata(metadata, uid)}`;
 }
 
-export const submitFeedback = onCall(callableOptions(), async (request): Promise<SubmitFeedbackResult> => {
+export const submitFeedback = onCall(callableOptions, async (request): Promise<SubmitFeedbackResult> => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to submit feedback.');
   }
