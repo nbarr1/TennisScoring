@@ -33,7 +33,7 @@ function validateUserCompleteness(value: unknown): UserCoreFields | undefined {
     && typeof contact.allowInApp === 'boolean';
 
   if (
-    user.role !== 'player' && user.role !== 'division_leader' && user.role !== 'admin'
+    user.role !== 'player' && user.role !== 'division_leader' && user.role !== 'admin' && user.role !== 'app_developer'
   ) return undefined;
   if (!user.createdAt) return undefined;
   if (!contactValid) return undefined;
