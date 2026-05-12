@@ -1,6 +1,7 @@
 export {
   onMatchUpdate,
   scoreMatchPoint,
+  recordMatchOnBehalf,
   resolveDisputedReport,
   recalculateDivisionRankings,
   repairAllDivisionRankings,

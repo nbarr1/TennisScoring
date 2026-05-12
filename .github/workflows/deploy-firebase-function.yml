@@ -35,8 +35,8 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      - name: Build shared + functions bundle
-        run: pnpm --filter @tennis/firebase-functions build
+      - name: Build targeted functions bundle
+        run: pnpm --filter @tennis/firebase-functions build:targeted-deploy
         working-directory: .
 
       - name: Write service account credentials
@@ -54,7 +54,7 @@ jobs:
       - name: Deploy updated functions
         run: >-
           npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint
+          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
