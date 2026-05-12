@@ -301,7 +301,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
   submitBtn: {
-    background: "var(--green)",
+    background: "var(--green-dark)",
     color: "#fff",
     border: "none",
     borderRadius: 10,
@@ -313,7 +313,7 @@ const styles: Record<string, React.CSSProperties> = {
   submitBtnDisabled: { opacity: 0.65, cursor: "not-allowed" },
   secondaryBtn: {
     alignSelf: "flex-start",
-    border: "1px solid var(--green)",
+    border: "1px solid var(--green-dark)",
     background: "#fff",
     color: "var(--green-dark)",
     borderRadius: 10,
@@ -323,7 +323,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   loginLink: {
     alignSelf: "flex-start",
-    background: "var(--green)",
+    background: "var(--green-dark)",
     color: "#fff",
     borderRadius: 10,
     padding: "12px 16px",
