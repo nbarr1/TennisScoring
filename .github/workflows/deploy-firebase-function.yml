@@ -51,14 +51,47 @@ jobs:
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Verify feedback secret access
-        run: >-
-          gcloud secrets describe GITHUB_TOKEN
-          --project "$FIREBASE_PROJECT_ID"
-          --format='value(name)'
+      - name: Verify feedback GitHub configuration
+        run: |
+          set -euo pipefail
+
+          : "${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID is required}"
+          : "${GITHUB_OWNER:?Set the GITHUB_OWNER GitHub Actions variable}"
+          : "${GITHUB_REPO:?Set the GITHUB_REPO GitHub Actions variable}"
+
+          gcloud secrets describe GITHUB_TOKEN \
+            --project "$FIREBASE_PROJECT_ID" \
+            --format='value(name)' > /dev/null
+
+          token="$(gcloud secrets versions access latest \
+            --secret GITHUB_TOKEN \
+            --project "$FIREBASE_PROJECT_ID")"
+
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --location \
+            --request POST \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $token" \
+            --header 'Content-Type: application/json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data '{}' \
+            "${GITHUB_API_URL%/}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues")"
+
+          if [ "$status" != "422" ]; then
+            echo "GitHub token could not reach ${GITHUB_OWNER}/${GITHUB_REPO} issue creation validation (HTTP ${status})." >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          echo "Verified GITHUB_TOKEN can authenticate to ${GITHUB_OWNER}/${GITHUB_REPO} issue creation endpoint without creating an issue."
         working-directory: .
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO }}
+          GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
@@ -72,3 +105,7 @@ jobs:
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO }}
+          GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
+          GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
