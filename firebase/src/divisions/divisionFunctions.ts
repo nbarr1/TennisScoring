@@ -2,12 +2,15 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
+import { defineString } from 'firebase-functions/params';
 import { randomInt } from 'node:crypto';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
-const callableOptions = { cors: true } as const;
+const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
+
+const callableOptions = () => ({ cors: appBaseUrl.value() });
 
 type CreateDivisionInput = {
   name?: string;
@@ -73,7 +76,7 @@ function isEligibleForNameToIdLink(match: MatchLike): boolean {
 function randomInviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     code += alphabet[randomInt(0, alphabet.length)];
   }
   return code;
@@ -139,7 +142,7 @@ async function requireDivisionLeaderOrAdmin(
   return divisionSnap;
 }
 
-export const createDivision = onCall(callableOptions, async (request) => {
+export const createDivision = onCall(callableOptions(), async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -196,7 +199,7 @@ export const createDivision = onCall(callableOptions, async (request) => {
   return { divisionId: divisionRef.id, inviteCode };
 });
 
-export const joinDivisionByCode = onCall(callableOptions, async (request) => {
+export const joinDivisionByCode = onCall(callableOptions(), async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -244,7 +247,7 @@ export const joinDivisionByCode = onCall(callableOptions, async (request) => {
   return { divisionId: divisionRef.id, divisionName: division.name };
 });
 
-export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request) => {
+export const addPlayerToDivisionByEmail = onCall(callableOptions(), async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -296,7 +299,7 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
 });
 
 
-export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
+export const addDivisionMemberPlaceholder = onCall(callableOptions(), async (request) => {
   try {
     if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
     const uid = request.auth.uid;
@@ -441,7 +444,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
   }
 });
 
-export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request) => {
+export const mergeDivisionPlayerRecords = onCall(callableOptions(), async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
@@ -671,7 +674,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   return { success: true, updatedMatches };
 });
 
-export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {
+export const updateDivisionPlayerEmail = onCall(callableOptions(), async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }

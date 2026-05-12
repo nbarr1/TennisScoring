@@ -53,9 +53,9 @@ export default function LoginPage(): React.JSX.Element {
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError('Incorrect email or password.');
       } else if (code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists.');
+        setError('Sign in to your existing account, or use a different email address.');
       } else if (code === 'auth/weak-password') {
-        setError('Password must be at least 6 characters.');
+        setError('Password must be at least 8 characters.');
       } else if (code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
       } else {
@@ -117,6 +117,7 @@ export default function LoginPage(): React.JSX.Element {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              minLength={mode === 'signup' ? 8 : undefined}
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
             />
           </div>

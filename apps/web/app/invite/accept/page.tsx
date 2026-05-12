@@ -10,7 +10,7 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth, functions, useAuthUser } from '@tennis/firebase-client';
 
 type InvitePreview = {
-  email: string;
+  email?: string; // only present when caller is authenticated as the invited address
   name: string;
   divisionId: string | null;
 };
@@ -42,6 +42,7 @@ function AcceptInviteContent(): React.JSX.Element {
   const token = useMemo(() => params.get('token')?.trim() ?? '', [params]);
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -89,10 +90,16 @@ function AcceptInviteContent(): React.JSX.Element {
     e.preventDefault();
     if (!preview || !token) return;
 
+    const targetEmail = preview.email ?? email.trim();
+    if (!targetEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+
     setAccepting(true);
     setError('');
     try {
-      const credential = await createUserWithEmailAndPassword(auth, preview.email, password);
+      const credential = await createUserWithEmailAndPassword(auth, targetEmail, password);
       await updateProfile(credential.user, { displayName: preview.name });
 
       const acceptCallable = httpsCallable(functions, 'acceptInvite');
@@ -111,7 +118,7 @@ function AcceptInviteContent(): React.JSX.Element {
       if (code === 'auth/email-already-in-use') {
         setError('An account already exists for this email. Sign in, then reopen this invite link.');
       } else if (code === 'auth/weak-password') {
-        setError('Password must be at least 6 characters.');
+        setError('Password must be at least 8 characters.');
       } else {
         const message = (e as { message?: string }).message;
         setError(message || 'Unable to complete invite acceptance.');
@@ -139,7 +146,8 @@ function AcceptInviteContent(): React.JSX.Element {
         ) : preview ? (
           <>
             <p style={styles.muted}>
-              You were invited as <strong>{preview.name}</strong> ({preview.email}).
+              You were invited as <strong>{preview.name}</strong>
+              {preview.email ? ` (${preview.email})` : ''}.
             </p>
 
             {signedInMatchesInvite ? (
@@ -152,7 +160,19 @@ function AcceptInviteContent(): React.JSX.Element {
                 <input value={preview.name} readOnly style={{ ...styles.input, background: '#f7f7f7' }} />
 
                 <label style={styles.label}>Email</label>
-                <input value={preview.email} readOnly style={{ ...styles.input, background: '#f7f7f7' }} />
+                {preview.email ? (
+                  <input value={preview.email} readOnly style={{ ...styles.input, background: '#f7f7f7' }} />
+                ) : (
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    style={styles.input}
+                    required
+                    placeholder="your@email.com"
+                    autoComplete="email"
+                  />
+                )}
 
                 <label style={styles.label}>Create password</label>
                 <input
@@ -161,11 +181,11 @@ function AcceptInviteContent(): React.JSX.Element {
                   onChange={(e) => setPassword(e.target.value)}
                   style={styles.input}
                   required
-                  minLength={6}
+                  minLength={8}
                   autoComplete="new-password"
                 />
 
-                <button style={styles.button} type="submit" disabled={accepting || password.length < 6}>
+                <button style={styles.button} type="submit" disabled={accepting || password.length < 8}>
                   {accepting ? 'Creating account…' : 'Create account & accept invite'}
                 </button>
               </form>

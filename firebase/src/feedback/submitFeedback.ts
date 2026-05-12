@@ -14,11 +14,12 @@ const githubApiUrl = defineString('GITHUB_API_URL', {
 const githubFeedbackLabels = defineString('GITHUB_FEEDBACK_LABELS', {
   default: 'feedback',
 });
+const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
 
-const callableOptions = {
-  cors: true,
+const callableOptions = () => ({
+  cors: appBaseUrl.value(),
   secrets: [githubToken],
-};
+});
 
 const MAX_TITLE_LENGTH = 120;
 const MAX_BODY_LENGTH = 8_000;
@@ -112,7 +113,7 @@ function buildIssueBody(body: string, metadata: unknown, uid?: string): string {
   return `${truncate(body, MAX_BODY_LENGTH)}\n\n${formatMetadata(metadata, uid)}`;
 }
 
-export const submitFeedback = onCall(callableOptions, async (request): Promise<SubmitFeedbackResult> => {
+export const submitFeedback = onCall(callableOptions(), async (request): Promise<SubmitFeedbackResult> => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to submit feedback.');
   }

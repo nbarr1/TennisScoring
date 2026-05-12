@@ -3,27 +3,27 @@ import { authMiddleware } from 'next-firebase-auth-edge';
 
 const privateKey = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? '').replace(/\\n/g, '\n');
 const cookieSecret = process.env.NEXTAUTH_SECRET;
-const developmentCookieSecret = 'development-only-cookie-secret';
+
+if (!cookieSecret && process.env.NODE_ENV === 'production') {
+  throw new Error('NEXTAUTH_SECRET environment variable is required in production');
+}
+
+const effectiveCookieSecret = cookieSecret ?? 'development-only-cookie-secret-do-not-use-in-prod';
 
 export async function middleware(request: NextRequest) {
-  if (process.env.NODE_ENV === 'production' && !cookieSecret) {
-    console.error('[authMiddleware] NEXTAUTH_SECRET is required in production');
-    return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
-  }
-
   try {
     return await authMiddleware(request, {
       loginPath: '/api/auth/login',
       logoutPath: '/api/auth/logout',
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
       cookieName: 'tennis-auth',
-      cookieSignatureKeys: [cookieSecret ?? developmentCookieSecret],
+      cookieSignatureKeys: [effectiveCookieSecret],
       cookieSerializeOptions: {
         path: '/',
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax' as const,
-        maxAge: 12 * 60 * 60 * 24 * 1000,
+        maxAge: 12 * 24 * 60 * 60, // 12 days in seconds
       },
       serviceAccount: {
         projectId: process.env.FIREBASE_ADMIN_PROJECT_ID ?? '',
@@ -50,7 +50,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Excludes: login page, the logout endpoint, Next.js internals, and static assets.
+  // Excludes: login, invite/accept (unauthenticated new-user flow), the logout endpoint,
+  // Next.js internals, and static assets.
   // /api/auth/login is intentionally NOT excluded so authMiddleware can set the session cookie.
-  matcher: ['/((?!login|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
+  matcher: ['/((?!login|invite/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
 };
