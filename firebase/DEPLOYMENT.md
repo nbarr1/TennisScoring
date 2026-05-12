@@ -56,6 +56,7 @@ Before deploying from CI, the workflow runs a preflight check that:
 1. Resolves the Firebase params from GitHub Actions variables, defaulting to the current workflow repository owner/name when `GITHUB_OWNER` or `GITHUB_REPO` are unset.
 2. Confirms the deployer service account can describe and access the latest `GITHUB_TOKEN` Secret Manager version.
 3. Uses the secret value to call the configured GitHub issue creation endpoint with an intentionally invalid payload. A `422` response verifies authentication/authorization reached GitHub validation without creating an issue.
+4. Writes the non-secret params to `.env.$FIREBASE_PROJECT_ID` before `firebase deploy` so Firebase CLI non-interactive mode can resolve `defineString` params without prompting.
 
 You can run the same check locally after authenticating with `gcloud`:
 
@@ -94,7 +95,7 @@ test "$status" = "422"
 
 ## Workflow variables
 
-These GitHub Actions variables are passed to Firebase as Functions params during deploy:
+These GitHub Actions variables are written to `.env.$FIREBASE_PROJECT_ID` and passed as Firebase Functions params during deploy:
 
 - `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
 - `GITHUB_REPO` (optional; defaults to the current workflow repository name)
