@@ -674,7 +674,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   return { success: true, updatedMatches };
 });
 
-export const updateDivisionPlayerEmail = onCall(callableOptions(), async (request) => {
+export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
