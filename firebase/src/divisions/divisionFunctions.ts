@@ -142,7 +142,7 @@ async function requireDivisionLeaderOrAdmin(
   return divisionSnap;
 }
 
-export const createDivision = onCall(callableOptions(), async (request) => {
+export const createDivision = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
