@@ -53,7 +53,7 @@ The `GITHUB_TOKEN` secret can be a fine-grained personal access token or an app 
 
 Before deploying from CI, the workflow runs a preflight check that:
 
-1. Fails if required GitHub Actions variables for the Firebase params are empty.
+1. Resolves the Firebase params from GitHub Actions variables, defaulting to the current workflow repository owner/name when `GITHUB_OWNER` or `GITHUB_REPO` are unset.
 2. Confirms the deployer service account can describe and access the latest `GITHUB_TOKEN` Secret Manager version.
 3. Uses the secret value to call the configured GitHub issue creation endpoint with an intentionally invalid payload. A `422` response verifies authentication/authorization reached GitHub validation without creating an issue.
 
@@ -61,8 +61,8 @@ You can run the same check locally after authenticating with `gcloud`:
 
 ```bash
 export FIREBASE_PROJECT_ID="your-firebase-project"
-export GITHUB_OWNER="your-github-org-or-user"
-export GITHUB_REPO="your-feedback-repo"
+export GITHUB_OWNER="your-github-org-or-user" # defaults to github.repository_owner in CI
+export GITHUB_REPO="your-feedback-repo"      # defaults to github.event.repository.name in CI
 export GITHUB_API_URL="https://api.github.com"
 
 gcloud secrets describe GITHUB_TOKEN \
@@ -96,7 +96,7 @@ test "$status" = "422"
 
 These GitHub Actions variables are passed to Firebase as Functions params during deploy:
 
-- `GITHUB_OWNER`
-- `GITHUB_REPO`
+- `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
+- `GITHUB_REPO` (optional; defaults to the current workflow repository name)
 - `GITHUB_API_URL` (optional; defaults to `https://api.github.com`)
 - `GITHUB_FEEDBACK_LABELS` (optional; defaults to `feedback`)

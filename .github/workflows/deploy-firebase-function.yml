@@ -56,8 +56,8 @@ jobs:
           set -euo pipefail
 
           : "${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID is required}"
-          : "${GITHUB_OWNER:?Set the GITHUB_OWNER GitHub Actions variable}"
-          : "${GITHUB_REPO:?Set the GITHUB_REPO GitHub Actions variable}"
+          : "${GITHUB_OWNER:?GITHUB_OWNER could not be resolved}"
+          : "${GITHUB_REPO:?GITHUB_REPO could not be resolved}"
 
           gcloud secrets describe GITHUB_TOKEN \
             --project "$FIREBASE_PROJECT_ID" \
@@ -89,8 +89,8 @@ jobs:
         working-directory: .
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          GITHUB_OWNER: ${{ vars.GITHUB_OWNER }}
-          GITHUB_REPO: ${{ vars.GITHUB_REPO }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
 
       - name: Remove workspace-only dependency before deploy packaging
@@ -105,7 +105,7 @@ jobs:
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          GITHUB_OWNER: ${{ vars.GITHUB_OWNER }}
-          GITHUB_REPO: ${{ vars.GITHUB_REPO }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
