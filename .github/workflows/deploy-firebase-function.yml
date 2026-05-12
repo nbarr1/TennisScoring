@@ -9,6 +9,9 @@ on:
       - "packages/shared/**"
       - ".github/workflows/deploy-firebase-function.yml"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
