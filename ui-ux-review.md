@@ -498,3 +498,7 @@ This plan sequences the recommendations with a combined impact/effort model so t
 - Screen-reader verification is documented for accessibility changes, or explicitly marked as needing device/runtime verification.
 - Visual changes include before/after screenshots when they affect a runnable screen.
 - No unrelated UI cleanup is bundled with the change.
+
+## PR recreation note
+
+This accessibility and status metadata work was reviewed from the current `work` branch after prior PRs were closed. The branch was checked for unresolved Git conflict markers before recreating the PR so the new review starts from a clean branch state.

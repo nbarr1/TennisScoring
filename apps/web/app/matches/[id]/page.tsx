@@ -15,6 +15,7 @@ import {
   formatGameScore,
 } from '@tennis/shared';
 import Link from 'next/link';
+import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 
 type ConfirmAction =
   | { type: 'cancel' }
@@ -122,21 +123,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const canPostpone = match.status === 'scheduled';
   const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
   const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
-  const confirmTitle = confirmAction?.type === 'cancel'
-    ? 'Cancel this match?'
-    : confirmAction?.type === 'postpone'
-      ? 'Postpone this match?'
-      : 'Delete this match?';
-  const confirmBody = confirmAction?.type === 'cancel'
-    ? 'This match will be marked as cancelled.'
-    : confirmAction?.type === 'postpone'
-      ? `Postpone to ${new Date(confirmAction.newTime).toLocaleString()}?`
-      : confirmAction?.message;
-  const confirmLabel = confirmAction?.type === 'cancel'
-    ? 'Cancel Match'
-    : confirmAction?.type === 'postpone'
-      ? 'Postpone Match'
-      : 'Delete Match';
+  const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
 
   return (
     <div style={styles.page}>
