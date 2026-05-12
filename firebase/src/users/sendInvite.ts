@@ -107,6 +107,7 @@ export const sendInvite = onCall(async (request) => {
   const htmlName = escapeHtml(safeName);
   const htmlLink = escapeHtml(inviteLink);
 
+  const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
   await db
     .collection('invites')
     .doc(token)
@@ -116,6 +117,7 @@ export const sendInvite = onCall(async (request) => {
       name: safeName,
       invitedBy: inviterId,
       invitedAt: FieldValue.serverTimestamp(),
+      expiresAt: Date.now() + INVITE_TTL_MS,
       accepted: false,
       ...(divisionId ? { divisionId } : {}),
     });
@@ -154,14 +156,23 @@ export const getInvitePreview = onCall(async (request) => {
 
   const invite = inviteSnap.data();
   if (!invite || invite.accepted) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Invite has already been used.',
-    );
+    throw new HttpsError('failed-precondition', 'Invite has already been used.');
+  }
+  if (invite.expiresAt && Date.now() > invite.expiresAt) {
+    throw new HttpsError('failed-precondition', 'This invite link has expired.');
   }
 
+  // Only return the email when the caller is authenticated as the invited address.
+  // Unauthenticated callers (new users landing on the accept page) receive name only;
+  // email is pre-filled by the invite email they received, not from this response.
+  const callerEmail = request.auth?.token.email
+    ? normalizeEmail(request.auth.token.email)
+    : null;
+  const inviteEmail = normalizeEmail(invite.email ?? '');
+  const showEmail = callerEmail !== null && callerEmail === inviteEmail;
+
   return {
-    email: invite.email,
+    ...(showEmail ? { email: invite.email } : {}),
     name: invite.name,
     divisionId: invite.divisionId ?? null,
   };
@@ -204,6 +215,9 @@ export const acceptInvite = onCall(async (request) => {
   }
   if (inviteData.accepted) {
     throw new HttpsError('already-exists', 'Invite already accepted.');
+  }
+  if (inviteData.expiresAt && Date.now() > inviteData.expiresAt) {
+    throw new HttpsError('failed-precondition', 'This invite link has expired.');
   }
   if (normalizeEmail(inviteData.email ?? '') !== authEmail) {
     throw new HttpsError(

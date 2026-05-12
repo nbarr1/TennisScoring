@@ -2,12 +2,15 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
+import { defineString } from 'firebase-functions/params';
 import { randomInt } from 'node:crypto';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
-const callableOptions = { cors: true } as const;
+const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
+
+const callableOptions = { cors: appBaseUrl };
 
 type CreateDivisionInput = {
   name?: string;
@@ -73,7 +76,7 @@ function isEligibleForNameToIdLink(match: MatchLike): boolean {
 function randomInviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     code += alphabet[randomInt(0, alphabet.length)];
   }
   return code;

@@ -86,10 +86,10 @@ export default function LoginScreen() {
       } else if (code === 'auth/email-already-in-use') {
         Alert.alert(
           'Email Taken',
-          'An account with this email already exists.',
+          'Sign in to your existing account, or use a different email address.',
         );
       } else if (code === 'auth/weak-password') {
-        Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+        Alert.alert('Weak Password', 'Password must be at least 8 characters.');
       } else if (code === 'auth/invalid-email') {
         Alert.alert('Invalid Email', 'Please enter a valid email address.');
       } else {

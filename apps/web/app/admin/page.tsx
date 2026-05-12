@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
 import {
   divisionsCol,
@@ -23,8 +24,11 @@ import type { Division, User } from "@tennis/shared";
 import type { Match, PlayerRanking } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 
+const PRIVILEGED_ROLES = new Set(['admin', 'division_leader', 'app_developer']);
+
 export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
+  const router = useRouter();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
   const [memberName, setMemberName] = useState("");
@@ -55,6 +59,17 @@ export default function AdminPage(): React.JSX.Element {
     targetUserId: string;
     message: string;
   } | null>(null);
+
+  // Gate: redirect players who are not leaders/admins away from this page.
+  useEffect(() => {
+    if (!firebaseUser) return;
+    getDoc(userDoc(firebaseUser.uid)).then((snap) => {
+      const role = snap.data()?.role as string | undefined;
+      if (!role || !PRIVILEGED_ROLES.has(role)) {
+        router.replace('/dashboard');
+      }
+    });
+  }, [firebaseUser, router]);
 
   // Resolve the division context for leaders and admins.
   useEffect(() => {
