@@ -42,12 +42,94 @@ jobs:
         run: pnpm --filter @tennis/firebase-functions build:targeted-deploy
         working-directory: .
 
-      - name: Write service account credentials
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify feedback GitHub configuration
         run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/gcp-sa.json"
+          set -euo pipefail
+
+          : "${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID is required}"
+          : "${GITHUB_OWNER:?GITHUB_OWNER could not be resolved}"
+          : "${GITHUB_REPO:?GITHUB_REPO could not be resolved}"
+
+          gcloud secrets describe GITHUB_TOKEN \
+            --project "$FIREBASE_PROJECT_ID" \
+            --format='value(name)' > /dev/null
+
+          token="$(gcloud secrets versions access latest \
+            --secret GITHUB_TOKEN \
+            --project "$FIREBASE_PROJECT_ID")"
+
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --location \
+            --request POST \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $token" \
+            --header 'Content-Type: application/json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data '{}' \
+            "${GITHUB_API_URL%/}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues")"
+
+          if [ "$status" != "422" ]; then
+            echo "GitHub token could not reach ${GITHUB_OWNER}/${GITHUB_REPO} issue creation validation (HTTP ${status})." >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+          echo "Verified GITHUB_TOKEN can authenticate to ${GITHUB_OWNER}/${GITHUB_REPO} issue creation endpoint without creating an issue."
         working-directory: .
         env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
+          GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
+
+      - name: Write Firebase params dotenv
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const required = [
+            'FIREBASE_PROJECT_ID',
+            'GITHUB_OWNER',
+            'GITHUB_REPO',
+            'GITHUB_API_URL',
+            'GITHUB_FEEDBACK_LABELS',
+          ];
+
+          for (const name of required) {
+            if (!process.env[name]) {
+              throw new Error(`${name} could not be resolved`);
+            }
+          }
+
+          const escapeDotenvValue = (value) => JSON.stringify(value);
+          const lines = [
+            `GITHUB_OWNER=${escapeDotenvValue(process.env.GITHUB_OWNER)}`,
+            `GITHUB_REPO=${escapeDotenvValue(process.env.GITHUB_REPO)}`,
+            `GITHUB_API_URL=${escapeDotenvValue(process.env.GITHUB_API_URL)}`,
+            `GITHUB_FEEDBACK_LABELS=${escapeDotenvValue(process.env.GITHUB_FEEDBACK_LABELS)}`,
+          ];
+
+          fs.writeFileSync(`.env.${process.env.FIREBASE_PROJECT_ID}`, `${lines.join('\n')}\n`);
+          NODE
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
+          GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
+          GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
@@ -57,8 +139,11 @@ jobs:
       - name: Deploy updated functions
         run: >-
           npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf
+          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/gcp-sa.json
+          GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}
+          GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
+          GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
+          GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
