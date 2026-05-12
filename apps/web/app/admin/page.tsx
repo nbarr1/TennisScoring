@@ -65,7 +65,7 @@ export default function AdminPage(): React.JSX.Element {
     if (!firebaseUser) return;
     getDoc(userDoc(firebaseUser.uid)).then((snap) => {
       const role = snap.data()?.role as string | undefined;
-      if (role && !PRIVILEGED_ROLES.has(role)) {
+      if (!role || !PRIVILEGED_ROLES.has(role)) {
         router.replace('/dashboard');
       }
     });
