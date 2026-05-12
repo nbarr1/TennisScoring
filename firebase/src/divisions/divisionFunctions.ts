@@ -199,7 +199,7 @@ export const createDivision = onCall(callableOptions, async (request) => {
   return { divisionId: divisionRef.id, inviteCode };
 });
 
-export const joinDivisionByCode = onCall(callableOptions(), async (request) => {
+export const joinDivisionByCode = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
