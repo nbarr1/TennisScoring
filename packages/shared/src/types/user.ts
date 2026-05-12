@@ -1,4 +1,4 @@
-export type UserRole = 'player' | 'division_leader' | 'admin';
+export type UserRole = 'player' | 'division_leader' | 'admin' | 'app_developer';
 
 export interface ContactPreferences {
   allowEmail: boolean;

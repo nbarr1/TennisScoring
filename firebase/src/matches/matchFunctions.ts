@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { EMPTY_STATS, applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
+import { DEFAULT_FORMAT, EMPTY_STATS, applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
 import type { Match, HeadToHead, Player, PlayerMatchStats, ReportSubmission } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
@@ -765,6 +765,259 @@ export async function recalculateRankings(
   await writer.close();
   return result;
 }
+
+
+type RecordMatchOnBehalfInput = {
+  divisionId?: string;
+  player1Id?: string;
+  player2Id?: string;
+  sets?: { p1?: number; p2?: number }[];
+  isDivisionMatch?: boolean;
+  notifyPlayers?: boolean;
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function matchLinkForId(matchId: string): string {
+  const appUrl = process.env.APP_BASE_URL ?? 'http://localhost:3000';
+  return `${appUrl.replace(/\/$/, '')}/matches/${encodeURIComponent(matchId)}`;
+}
+
+function buildManualCompletedScore(sets: { p1: number; p2: number }[]): {
+  score: Match['liveScore'];
+  winner: Player;
+} {
+  if (!sets.length) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'At least one set is required',
+    );
+  }
+
+  let p1Sets = 0;
+  let p2Sets = 0;
+  const builtSets: Match['liveScore']['sets'] = sets.map((set, index) => {
+    if (
+      !Number.isInteger(set.p1) ||
+      !Number.isInteger(set.p2) ||
+      set.p1 < 0 ||
+      set.p2 < 0 ||
+      set.p1 === set.p2
+    ) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Each set must have non-negative game counts and a clear winner',
+      );
+    }
+    const winner: Player = set.p1 > set.p2 ? 'player1' : 'player2';
+    if (winner === 'player1') p1Sets += 1;
+    else p2Sets += 1;
+    return {
+      setNumber: index,
+      player1Games: set.p1,
+      player2Games: set.p2,
+      winner,
+    };
+  });
+
+  if (p1Sets === p2Sets) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'The match must have a clear winner',
+    );
+  }
+
+  return {
+    winner: p1Sets > p2Sets ? 'player1' : 'player2',
+    score: {
+      sets: builtSets,
+      currentSet: sets.length - 1,
+      currentGame: { player1: '0', player2: '0' },
+      isTiebreak: false,
+      server: 'player1',
+      serviceSide: 'deuce',
+      player1SetsWon: p1Sets,
+      player2SetsWon: p2Sets,
+    },
+  };
+}
+
+function isPrivilegedRole(role: unknown): boolean {
+  return role === 'admin' || role === 'division_leader' || role === 'app_developer';
+}
+
+async function notifyPlayersMatchRecorded(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string,
+  recorderName: string,
+): Promise<void> {
+  const userSnaps = await Promise.all([
+    db.collection('users').doc(match.player1Id).get(),
+    db.collection('users').doc(match.player2Id).get(),
+  ]);
+  const playerNames = `${match.player1Name ?? 'Player 1'} vs ${match.player2Name ?? 'Player 2'}`;
+  const link = matchLinkForId(matchId);
+  const htmlLink = escapeHtml(link);
+  const htmlRecorder = escapeHtml(recorderName);
+  const htmlPlayers = escapeHtml(playerNames);
+
+  await Promise.all(
+    userSnaps.map(async (snap) => {
+      const user = snap.data();
+      if (!user) return;
+
+      const tokens = Array.isArray(user.fcmTokens) ? user.fcmTokens : [];
+      if (tokens.length) {
+        await getMessaging().sendEachForMulticast({
+          tokens,
+          notification: {
+            title: 'Match Recorded',
+            body: `${recorderName} recorded ${playerNames} on your behalf.`,
+          },
+          data: { type: 'match_recorded_on_behalf', matchId },
+          android: { priority: 'high' },
+          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        });
+      }
+
+      const email = typeof user.email === 'string' ? user.email.trim() : '';
+      const allowEmail = user.contactPreferences?.allowEmail !== false;
+      if (email && allowEmail) {
+        await db.collection('mail').add({
+          to: [email],
+          message: {
+            subject: 'A tennis match was recorded for you',
+            text: `${recorderName} recorded ${playerNames} on your behalf. View the match: ${link}`,
+            html: `<p>${htmlRecorder} recorded <strong>${htmlPlayers}</strong> on your behalf.</p><p><a href="${htmlLink}">View the match</a></p>`,
+          },
+          metadata: {
+            type: 'match_recorded_on_behalf',
+            matchId,
+            userId: snap.id,
+          },
+        });
+      }
+    }),
+  );
+}
+
+/**
+ * HTTPS callable: admins, app developers, and division leaders can record a
+ * completed match between any two players in a division.
+ */
+export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+
+  const { divisionId, player1Id, player2Id, sets, isDivisionMatch, notifyPlayers } =
+    (request.data ?? {}) as RecordMatchOnBehalfInput;
+  const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
+  const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
+  const safePlayer2Id = typeof player2Id === 'string' ? player2Id.trim() : '';
+  const safeSets = Array.isArray(sets)
+    ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
+    : [];
+
+  if (!safeDivisionId || !safePlayer1Id || !safePlayer2Id) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'divisionId, player1Id, and player2Id are required',
+    );
+  }
+  if (safePlayer1Id === safePlayer2Id) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Choose two different players',
+    );
+  }
+
+  const db = getFirestore();
+  const [actorSnap, divisionSnap, player1Snap, player2Snap] = await Promise.all([
+    db.collection('users').doc(request.auth.uid).get(),
+    db.collection('divisions').doc(safeDivisionId).get(),
+    db.collection('users').doc(safePlayer1Id).get(),
+    db.collection('users').doc(safePlayer2Id).get(),
+  ]);
+
+  const actor = actorSnap.data();
+  const division = divisionSnap.data();
+  const leaderIds: string[] = Array.isArray(division?.leaderIds) ? division.leaderIds : [];
+  const isAdminOrDeveloper = actor?.role === 'admin' || actor?.role === 'app_developer';
+  const isLeader = leaderIds.includes(request.auth.uid) || division?.leaderId === request.auth.uid;
+
+  if (!isPrivilegedRole(actor?.role) || (!isAdminOrDeveloper && !isLeader)) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only admins, app developers, and division leaders can record matches for other players',
+    );
+  }
+  if (!divisionSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Division not found');
+  }
+  if (!player1Snap.exists || !player2Snap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Both players must exist');
+  }
+
+  const playerIds: string[] = Array.isArray(division?.playerIds) ? division.playerIds : [];
+  const isInDivision = (id: string, data: Record<string, unknown> | undefined) =>
+    data?.divisionId === safeDivisionId || playerIds.includes(id) || leaderIds.includes(id);
+  if (!isInDivision(safePlayer1Id, player1Snap.data()) || !isInDivision(safePlayer2Id, player2Snap.data())) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Both players must belong to the selected division',
+    );
+  }
+
+  const { score, winner } = buildManualCompletedScore(safeSets);
+  const now = Date.now();
+  const actorName = actor?.displayName ?? actor?.email ?? 'A league administrator';
+  const player1 = player1Snap.data();
+  const player2 = player2Snap.data();
+  const matchData: Omit<Match, 'id'> = {
+    divisionId: safeDivisionId,
+    player1Id: safePlayer1Id,
+    player2Id: safePlayer2Id,
+    player1Name: player1?.displayName ?? safePlayer1Id,
+    player2Name: player2?.displayName ?? safePlayer2Id,
+    player2IsGuest: false,
+    playerIds: [safePlayer1Id, safePlayer2Id],
+    format: DEFAULT_FORMAT,
+    status: 'completed',
+    liveScore: score,
+    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    advancedStatsEnabled: false,
+    winner,
+    tipsEnabled: false,
+    source: 'manual',
+    isDivisionMatch: isDivisionMatch ?? true,
+    createdBy: request.auth.uid,
+    completedAt: now,
+    createdAt: now,
+    reportSubmission: {
+      submittedBy: request.auth.uid,
+      submittedAt: now,
+      status: 'confirmed',
+      confirmedBy: request.auth.uid,
+      confirmedAt: now,
+    },
+  };
+
+  const matchRef = await db.collection('matches').add(matchData);
+  if (notifyPlayers !== false) {
+    await notifyPlayersMatchRecorded(db, { id: matchRef.id, ...matchData }, matchRef.id, actorName);
+  }
+
+  return { success: true, matchId: matchRef.id };
+});
 
 /**
  * HTTPS callable: division leader resolves a disputed report.

@@ -16,7 +16,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuth() && getUserData().role == 'admin';
+      return isAuth() && (getUserData().role == 'admin' || getUserData().role == 'app_developer');
     }
 
     function isDivisionMember(divisionId) {

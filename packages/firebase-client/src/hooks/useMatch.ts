@@ -197,6 +197,23 @@ export async function recordHistoricMatch(params: {
   return ref.id;
 }
 
+
+export async function recordMatchOnBehalf(params: {
+  player1Id: string;
+  player2Id: string;
+  divisionId: string;
+  sets: { p1: number; p2: number }[];
+  isDivisionMatch?: boolean;
+  notifyPlayers?: boolean;
+}): Promise<string> {
+  const callable = httpsCallable<
+    typeof params,
+    { success: boolean; matchId: string }
+  >(functions, 'recordMatchOnBehalf');
+  const result = await callable(params);
+  return result.data.matchId;
+}
+
 /**
  * For guest matches: submitting auto-confirms since there's no opponent to review.
  */
