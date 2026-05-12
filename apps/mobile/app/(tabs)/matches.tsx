@@ -17,6 +17,7 @@ import {
   divisionMatchesQuery,
   createMatch,
   recordHistoricMatch,
+  recordMatchOnBehalf,
   searchDivisionPlayers,
   proposeMatch,
   acceptMatchProposal,
@@ -185,10 +186,17 @@ export default function MatchesScreen() {
   const [showCreate, setShowCreate] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
   const [createMode, setCreateMode] = useState<'live' | 'historic'>('live');
+  const [recordingMode, setRecordingMode] = useState<'self' | 'onBehalf'>(
+    'self',
+  );
   const [opponentMode, setOpponentMode] = useState<'search' | 'guest'>(
     'search',
   );
   const [guestName, setGuestName] = useState('');
+  const [player1SearchText, setPlayer1SearchText] = useState('');
+  const [player1SearchResults, setPlayer1SearchResults] = useState<User[]>([]);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<User | null>(null);
+  const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
@@ -210,6 +218,43 @@ export default function MatchesScreen() {
   }, [divisionId]);
 
   useEffect(() => {
+    if (
+      !divisionId ||
+      createMode !== 'historic' ||
+      recordingMode !== 'onBehalf' ||
+      !player1SearchText.trim() ||
+      selectedPlayer1
+    ) {
+      setPlayer1SearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchingPlayer1(true);
+      try {
+        const results = await searchDivisionPlayers(
+          divisionId,
+          player1SearchText,
+        );
+        setPlayer1SearchResults(
+          results.filter((u) => u.id !== selectedOpponent?.id),
+        );
+      } catch {
+        setPlayer1SearchResults([]);
+      } finally {
+        setSearchingPlayer1(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [
+    createMode,
+    divisionId,
+    player1SearchText,
+    recordingMode,
+    selectedOpponent?.id,
+    selectedPlayer1,
+  ]);
+
+  useEffect(() => {
     if (!divisionId || !searchText.trim() || selectedOpponent) {
       setSearchResults([]);
       return;
@@ -218,7 +263,11 @@ export default function MatchesScreen() {
       setSearching(true);
       try {
         const results = await searchDivisionPlayers(divisionId, searchText);
-        setSearchResults(results.filter((u) => u.id !== user?.id));
+        const player1Id =
+          createMode === 'historic' && recordingMode === 'onBehalf'
+            ? selectedPlayer1?.id
+            : user?.id;
+        setSearchResults(results.filter((u) => u.id !== player1Id));
       } catch {
         setSearchResults([]);
       } finally {
@@ -226,13 +275,25 @@ export default function MatchesScreen() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchText, divisionId, selectedOpponent]);
+  }, [
+    createMode,
+    divisionId,
+    recordingMode,
+    searchText,
+    selectedOpponent,
+    selectedPlayer1?.id,
+    user?.id,
+  ]);
 
   function resetCreateModal() {
     setShowCreate(false);
     setCreateMode('live');
+    setRecordingMode('self');
     setOpponentMode('search');
     setGuestName('');
+    setPlayer1SearchText('');
+    setPlayer1SearchResults([]);
+    setSelectedPlayer1(null);
     setSearchText('');
     setSearchResults([]);
     setSelectedOpponent(null);
@@ -277,6 +338,7 @@ export default function MatchesScreen() {
 
   async function handleRecordHistoric() {
     if (!user || !divisionId) return;
+    if (recordingMode === 'onBehalf' && !selectedPlayer1) return;
     if (opponentMode === 'search' && !selectedOpponent) return;
     if (opponentMode === 'guest' && !guestName.trim()) return;
 
@@ -313,34 +375,54 @@ export default function MatchesScreen() {
     setCreating(true);
     try {
       const isGuest = opponentMode === 'guest';
-      await recordHistoricMatch(
-        isGuest
-          ? {
-              player1Id: user.id,
-              player2Id: 'guest',
-              player1Name: user.displayName,
-              player2Name: guestName.trim(),
-              player2IsGuest: true,
-              divisionId,
-              createdBy: user.id,
-              sets: parsed,
-            }
-          : {
-              player1Id: user.id,
-              player2Id: selectedOpponent!.id,
-              player1Name: user.displayName,
-              player2Name: selectedOpponent!.displayName,
-              divisionId,
-              createdBy: user.id,
-              sets: parsed,
-            },
-      );
+      if (recordingMode === 'onBehalf') {
+        if (isGuest) {
+          Alert.alert(
+            'Select players',
+            'Choose a registered division player for both sides when recording on behalf of players.',
+          );
+          return;
+        }
+        await recordMatchOnBehalf({
+          player1Id: selectedPlayer1!.id,
+          player2Id: selectedOpponent!.id,
+          divisionId,
+          sets: parsed,
+          notifyPlayers: true,
+        });
+      } else {
+        await recordHistoricMatch(
+          isGuest
+            ? {
+                player1Id: user.id,
+                player2Id: 'guest',
+                player1Name: user.displayName,
+                player2Name: guestName.trim(),
+                player2IsGuest: true,
+                divisionId,
+                createdBy: user.id,
+                sets: parsed,
+              }
+            : {
+                player1Id: user.id,
+                player2Id: selectedOpponent!.id,
+                player1Name: user.displayName,
+                player2Name: selectedOpponent!.displayName,
+                divisionId,
+                createdBy: user.id,
+                sets: parsed,
+              },
+        );
+      }
+      const recordedOnBehalf = recordingMode === 'onBehalf';
       resetCreateModal();
       Alert.alert(
         'Match Recorded',
-        isGuest
-          ? 'Match saved. You can link your opponent to their account later.'
-          : 'Match saved and standings will update automatically.',
+        recordedOnBehalf
+          ? 'Match saved and both players will be notified when contact information is available.'
+          : isGuest
+            ? 'Match saved. You can link your opponent to their account later.'
+            : 'Match saved and standings will update automatically.',
       );
     } catch {
       Alert.alert('Error', 'Could not record match. Please try again.');
@@ -383,6 +465,10 @@ export default function MatchesScreen() {
   const otherMatches = matches
     .filter((m) => !otherStatuses.has(m.status))
     .map((m) => toItem(m));
+  const canRecordOnBehalf =
+    user?.role === 'admin' ||
+    user?.role === 'division_leader' ||
+    user?.role === 'app_developer';
 
   const sections: { title: string; data: MatchItem[] }[] = [
     ...(liveMatches.length > 0
@@ -504,6 +590,137 @@ export default function MatchesScreen() {
                 : 'New Live Match'}
             </Text>
 
+            {createMode === 'historic' && canRecordOnBehalf && (
+              <>
+                <View style={styles.modeToggle}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Record one of my matches"
+                    accessibilityState={{ selected: recordingMode === 'self' }}
+                    style={[
+                      styles.modeBtn,
+                      recordingMode === 'self' && styles.modeBtnActive,
+                    ]}
+                    onPress={() => {
+                      setRecordingMode('self');
+                      setSelectedPlayer1(null);
+                      setPlayer1SearchText('');
+                      setPlayer1SearchResults([]);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        recordingMode === 'self' && styles.modeBtnTextActive,
+                      ]}
+                    >
+                      My Match
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Record a match between any two players"
+                    accessibilityState={{ selected: recordingMode === 'onBehalf' }}
+                    style={[
+                      styles.modeBtn,
+                      recordingMode === 'onBehalf' && styles.modeBtnActive,
+                    ]}
+                    onPress={() => {
+                      setRecordingMode('onBehalf');
+                      setOpponentMode('search');
+                      setGuestName('');
+                      setSelectedOpponent(null);
+                      setSearchText('');
+                      setSearchResults([]);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        recordingMode === 'onBehalf' && styles.modeBtnTextActive,
+                      ]}
+                    >
+                      Any Two
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {recordingMode === 'onBehalf' &&
+                  (selectedPlayer1 ? (
+                    <View style={styles.selectedPlayer}>
+                      <View style={styles.playerChip}>
+                        <Text style={styles.playerChipName}>
+                          {selectedPlayer1.displayName}
+                        </Text>
+                        <Text style={styles.playerChipEmail}>
+                          {selectedPlayer1.email}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Change first player"
+                        onPress={() => {
+                          setSelectedPlayer1(null);
+                          setPlayer1SearchText('');
+                        }}
+                      >
+                        <Text style={styles.changeText}>Change</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.modalLabel}>Search first player</Text>
+                      <View style={styles.searchRow}>
+                        <TextInput
+                          accessibilityLabel="Search first player"
+                          style={[styles.input, styles.searchInput]}
+                          value={player1SearchText}
+                          onChangeText={setPlayer1SearchText}
+                          placeholder="Name or email..."
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        {searchingPlayer1 && (
+                          <ActivityIndicator
+                            style={styles.searchSpinner}
+                            color="#1a472a"
+                          />
+                        )}
+                      </View>
+                      {player1SearchResults.length > 0 && (
+                        <FlatList
+                          data={player1SearchResults}
+                          keyExtractor={(u) => u.id}
+                          style={styles.resultsList}
+                          keyboardShouldPersistTaps="handled"
+                          renderItem={({ item }) => (
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`Select ${item.displayName} as first player`}
+                              style={styles.resultRow}
+                              onPress={() => {
+                                setSelectedPlayer1(item);
+                                setPlayer1SearchResults([]);
+                              }}
+                            >
+                              <Text style={styles.resultName}>
+                                {item.displayName}
+                              </Text>
+                              <Text style={styles.resultEmail}>{item.email}</Text>
+                            </TouchableOpacity>
+                          )}
+                        />
+                      )}
+                      {player1SearchText.trim().length > 0 &&
+                        !searchingPlayer1 &&
+                        player1SearchResults.length === 0 && (
+                          <Text style={styles.noResults}>No players found.</Text>
+                        )}
+                    </>
+                  ))}
+              </>
+            )}
+
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
               <TouchableOpacity
@@ -528,30 +745,32 @@ export default function MatchesScreen() {
                   Search Player
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Enter a guest opponent"
-                accessibilityState={{ selected: opponentMode === 'guest' }}
-                style={[
-                  styles.modeBtn,
-                  opponentMode === 'guest' && styles.modeBtnActive,
-                ]}
-                onPress={() => {
-                  setOpponentMode('guest');
-                  setSelectedOpponent(null);
-                  setSearchText('');
-                  setSearchResults([]);
-                }}
-              >
-                <Text
+              {(createMode !== 'historic' || recordingMode === 'self') && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Enter a guest opponent"
+                  accessibilityState={{ selected: opponentMode === 'guest' }}
                   style={[
-                    styles.modeBtnText,
-                    opponentMode === 'guest' && styles.modeBtnTextActive,
+                    styles.modeBtn,
+                    opponentMode === 'guest' && styles.modeBtnActive,
                   ]}
+                  onPress={() => {
+                    setOpponentMode('guest');
+                    setSelectedOpponent(null);
+                    setSearchText('');
+                    setSearchResults([]);
+                  }}
                 >
-                  Guest / No Account
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.modeBtnText,
+                      opponentMode === 'guest' && styles.modeBtnTextActive,
+                    ]}
+                  >
+                    Guest / No Account
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Opponent picker */}
@@ -588,10 +807,18 @@ export default function MatchesScreen() {
               </View>
             ) : (
               <>
-                <Text style={styles.modalLabel}>Search for opponent</Text>
+                <Text style={styles.modalLabel}>
+                  {createMode === 'historic' && recordingMode === 'onBehalf'
+                    ? 'Search second player'
+                    : 'Search for opponent'}
+                </Text>
                 <View style={styles.searchRow}>
                   <TextInput
-                    accessibilityLabel="Search for opponent"
+                    accessibilityLabel={
+                      createMode === 'historic' && recordingMode === 'onBehalf'
+                        ? 'Search second player'
+                        : 'Search for opponent'
+                    }
                     style={[styles.input, styles.searchInput]}
                     value={searchText}
                     onChangeText={setSearchText}
@@ -640,18 +867,23 @@ export default function MatchesScreen() {
 
             {/* Historic set-score entry */}
             {createMode === 'historic' &&
+              (recordingMode === 'self' || selectedPlayer1) &&
               (opponentMode === 'guest'
                 ? guestName.trim()
                 : selectedOpponent) && (
                 <View style={styles.setsContainer}>
                   <Text style={styles.modalLabel}>
-                    Enter set scores (your games first)
+                    {recordingMode === 'onBehalf'
+                      ? "Enter set scores (first player's games first)"
+                      : 'Enter set scores (your games first)'}
                   </Text>
                   {historicSets.map((s, i) => (
                     <View key={i} style={styles.setRow}>
                       <Text style={styles.setLabel}>Set {i + 1}</Text>
                       <TextInput
-                        accessibilityLabel={`Set ${i + 1} your games`}
+                        accessibilityLabel={`Set ${i + 1} ${
+                          recordingMode === 'onBehalf' ? "first player's" : 'your'
+                        } games`}
                         style={styles.setInput}
                         value={s.p1}
                         onChangeText={(v) => {
@@ -661,7 +893,7 @@ export default function MatchesScreen() {
                         }}
                         keyboardType="number-pad"
                         maxLength={2}
-                        placeholder="You"
+                        placeholder={recordingMode === 'onBehalf' ? 'P1' : 'You'}
                       />
                       <Text style={styles.setDash}>–</Text>
                       <TextInput
@@ -675,7 +907,7 @@ export default function MatchesScreen() {
                         }}
                         keyboardType="number-pad"
                         maxLength={2}
-                        placeholder="Opp"
+                        placeholder={recordingMode === 'onBehalf' ? 'P2' : 'Opp'}
                       />
                       {historicSets.length > 1 && (
                         <TouchableOpacity
@@ -723,6 +955,9 @@ export default function MatchesScreen() {
                 accessibilityState={{
                   disabled:
                     creating ||
+                    (createMode === 'historic' &&
+                      recordingMode === 'onBehalf' &&
+                      !selectedPlayer1) ||
                     (opponentMode === 'search'
                       ? !selectedOpponent
                       : !guestName.trim()),
@@ -731,6 +966,9 @@ export default function MatchesScreen() {
                 style={[
                   styles.createBtn,
                   (creating ||
+                    (createMode === 'historic' &&
+                      recordingMode === 'onBehalf' &&
+                      !selectedPlayer1) ||
                     (opponentMode === 'search'
                       ? !selectedOpponent
                       : !guestName.trim())) &&
@@ -743,6 +981,9 @@ export default function MatchesScreen() {
                 }
                 disabled={
                   creating ||
+                  (createMode === 'historic' &&
+                    recordingMode === 'onBehalf' &&
+                    !selectedPlayer1) ||
                   (opponentMode === 'search'
                     ? !selectedOpponent
                     : !guestName.trim())
