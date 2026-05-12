@@ -247,7 +247,7 @@ export const joinDivisionByCode = onCall(callableOptions(), async (request) => {
   return { divisionId: divisionRef.id, divisionName: division.name };
 });
 
-export const addPlayerToDivisionByEmail = onCall(callableOptions(), async (request) => {
+export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
