@@ -100,7 +100,6 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   async function handleConfirmAction() {
     if (!confirmAction) return;
     const action = confirmAction;
-    setConfirmAction(null);
     if (action.type === 'cancel') {
       await withLoading(() => cancelMatch(id));
       setShowManage(false);
@@ -112,6 +111,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
       await withLoading(() => deleteMatch(id));
       router.push('/matches');
     }
+    setConfirmAction(null);
   }
 
   const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
