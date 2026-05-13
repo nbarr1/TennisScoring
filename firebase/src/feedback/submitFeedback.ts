@@ -16,10 +16,10 @@ const githubFeedbackLabels = defineString('GITHUB_FEEDBACK_LABELS', {
 });
 const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
 
-const callableOptions = () => ({
+const callableOptions = {
   cors: appBaseUrl.value(),
   secrets: [githubToken],
-});
+};
 
 const MAX_TITLE_LENGTH = 120;
 const MAX_BODY_LENGTH = 8_000;

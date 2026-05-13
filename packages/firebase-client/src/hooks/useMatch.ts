@@ -154,8 +154,16 @@ export async function recordHistoricMatch(params: {
     Omit<typeof params, 'createdBy'>,
     { success: boolean; matchId: string; status: Match['status'] }
   >(functions, 'recordHistoricMatch');
-  const { createdBy: _createdBy, ...serverParams } = params;
-  const result = await callable(serverParams);
+  const result = await callable({
+    player1Id: params.player1Id,
+    player2Id: params.player2Id,
+    player1Name: params.player1Name,
+    player2Name: params.player2Name,
+    player2IsGuest: params.player2IsGuest,
+    divisionId: params.divisionId,
+    sets: params.sets,
+    isDivisionMatch: params.isDivisionMatch,
+  });
   return result.data.matchId;
 }
 

@@ -1,6 +1,10 @@
 # Firebase Functions deployment prerequisites
 
-This project deploys Cloud Functions with `firebase-tools` from CI.
+This project deploys Cloud Functions with `firebase-tools` from CI. These notes reflect the Version 1.0.0 baseline and the targeted Functions deploy workflow in `.github/workflows/deploy-firebase-function.yml`.
+
+## Version 1.0.0 deployment status
+
+The v1 targeted deployment workflow currently builds `firebase/src/targetedDeployIndex.ts` and deploys selected Functions used by the web/mobile baseline, including division placeholder/merge/email tools, match update/scoring/reporting hooks, and feedback submission. Full backend deploys can still be run manually with the Firebase CLI when rules, indexes, or all Functions need to be refreshed.
 
 ## Required IAM for the deployer principal
 

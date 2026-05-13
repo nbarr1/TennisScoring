@@ -10,7 +10,7 @@ if (!getApps().length) initializeApp();
 
 const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
 
-const callableOptions = { cors: appBaseUrl };
+const callableOptions = { cors: appBaseUrl.value() };
 
 type CreateDivisionInput = {
   name?: string;

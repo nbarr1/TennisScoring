@@ -1,6 +1,6 @@
 {
   "name": "@tennis/web",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@9.15.5",
   "scripts": {
@@ -13,7 +13,7 @@
   "dependencies": {
     "@tennis/shared": "workspace:*",
     "@tennis/firebase-client": "workspace:*",
-    "next": "14.2.25",
+    "next": "14.2.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "next-auth": "^4.24.0",
@@ -28,6 +28,6 @@
     "@types/react-dom": "18.2.22",
     "typescript": "^6.0.0",
     "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.25"
+    "eslint-config-next": "14.2.0"
   }
 }
