@@ -19,6 +19,8 @@ export {
   addDivisionMemberPlaceholder,
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,
+  upsertDivisionLevel,
+  exportDivisionCsv,
 } from './divisions/divisionFunctions';
 
 export { submitFeedback } from './feedback/submitFeedback';

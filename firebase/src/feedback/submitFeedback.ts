@@ -14,10 +14,7 @@ const githubApiUrl = defineString('GITHUB_API_URL', {
 const githubFeedbackLabels = defineString('GITHUB_FEEDBACK_LABELS', {
   default: 'feedback',
 });
-const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
-
 const callableOptions = {
-  cors: appBaseUrl.value(),
   secrets: [githubToken],
 };
 
