@@ -1,5 +1,7 @@
 # Pre-distribution Security Review (2026-05-12)
 
+> **Version 1.0.0 note (2026-05-13):** This remains the point-in-time security review for the v1 baseline. Re-run the checklist before production-facing releases or when auth, Firebase rules, dependencies, feedback integration, or deployment workflows change.
+
 ## Scope and method
 
 Reviewed the Firebase-backed web/mobile Tennis Scoring application, including Next.js web routes, Expo/React Native mobile screens, Firebase Functions, Firestore/Storage rules, shared client hooks, dependency manifests, and repository configuration. Commands run included `rg --files`, targeted `rg` code searches, manual line-by-line review with `nl -ba`, `pnpm audit --audit-level low`, `npx --yes osv-scanner --version`, and git-history secret regex scans using `git grep` across all revisions.

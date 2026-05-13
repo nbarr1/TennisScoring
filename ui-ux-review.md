@@ -1,5 +1,7 @@
 # UI/UX Review — TennisScoring
 
+> **Version 1.0.0 note (2026-05-13):** This remains the point-in-time UI/UX and accessibility review for the v1 baseline. Use it as the remediation backlog when extending the web and mobile applications.
+
 _Date reviewed: 2026-05-11_
 
 ## Executive Summary

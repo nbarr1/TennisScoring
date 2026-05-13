@@ -4,9 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Full-stack tennis league scoring application with real-time scoring, ranking calculations, match report workflows, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, and Firebase backend.
+Full-stack tennis league scoring application at the Version 1.0.0 baseline with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
-**Prerequisites:** Node.js 20+, pnpm 9.15.4+, Firebase CLI, Expo CLI.
+**Prerequisites:** Node.js 20+ for local web/mobile/CI parity, Node.js 22 for Firebase Functions runtime/deploy parity, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
+
+
+## Version 1.0.0 baseline
+
+- Treat `v1.0.0` as the first functional/deployable repository baseline.
+- Update README, SETUP, VERSION_1_BASELINE, and package/app version markers whenever a future feature changes setup, deployment, data shape, or user-visible capabilities.
+- A Git tag named `v1.0.0` should point at the baseline commit.
 
 ## Commands
 
@@ -50,8 +57,9 @@ cd firebase && pnpm serve                  # Firestore :8080, Auth :9099, Functi
 ### Firebase deployment
 
 ```bash
-firebase deploy --only functions,firestore,storage,hosting
+firebase deploy --only firestore,storage
 pnpm --filter @tennis/firebase-functions deploy   # Functions only
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
 ```
 
 ### Branch cleanup
@@ -67,7 +75,7 @@ scripts/cleanup-branches.sh --remote      # Also prunes remote-tracking refs
 ### Monorepo layout
 
 ```text
-apps/web/          # Next.js 14.2 web app (@tennis/web)
+apps/web/          # Next.js 14.2.0 web app (@tennis/web)
 apps/mobile/       # Expo 51 / React Native 0.74 mobile app (@tennis/mobile)
 packages/shared/   # Core business logic (scoring, ranking, types) — no framework deps (@tennis/shared)
 packages/firebase-client/  # Firebase SDK wrapper with React hooks (@tennis/firebase-client)
@@ -99,7 +107,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/types/`** — all shared types; import from `@tennis/shared`, never duplicate in apps:
 
-- `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match`, `DEFAULT_FORMAT`, etc.
+- `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match`, `DEFAULT_FORMAT`, etc.
 - `ranking.ts` — `PlayerRanking`, `HeadToHead`.
 - `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability` and `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc).
 - `message.ts` — `Channel`, `Message`, `MatchReport`.
@@ -150,9 +158,9 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 ### Auth flow
 
-**Web**: `next-firebase-auth-edge` middleware in `apps/web/middleware.ts` validates the Firebase session cookie (`tennis-auth`, httpOnly, maxAge 12 days) on every request. Unauthenticated requests redirect to `/login`. PingID OIDC is the identity provider; callback at `/api/auth/login`, logout at `/api/auth/logout`.
+**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`.
 
-**Mobile**: `AuthGuard` in `apps/mobile/app/_layout.tsx` enforces: auth → division selection → tutorial → main tabs. Expo Auth Session handles the PingID OIDC flow. State lives in Zustand (`apps/mobile/src/store/appStore.ts`): `{ user: User | null, divisionId: string | null }`.
+**Mobile**: Firebase email/password authentication is handled in `apps/mobile/app/(auth)/login.tsx`. `AuthGuard` in `apps/mobile/app/_layout.tsx` enforces: auth → division selection → tutorial → main tabs. State lives in Zustand (`apps/mobile/store/appStore.ts`): `{ user: User | null, divisionId: string | null }`.
 
 ### Web routes (`apps/web/app/`)
 
@@ -166,7 +174,7 @@ messages/              # Messaging
 profile/               # User profile (includes availability editor)
 admin/                 # Admin panel
 onboarding/tutorial/   # Onboarding tutorial
-api/auth/login/        # PingID OIDC callback (route.ts)
+api/auth/login/        # Session-cookie login endpoint intercepted by auth middleware (route.ts fallback returns 401)
 api/auth/logout/       # Logout handler (route.ts)
 ```
 
@@ -183,7 +191,7 @@ match/           # Match detail screens
 
 ### Match scheduling and report workflow
 
-Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_report` → `confirmed` (or `disputed`):
+Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_report` → `completed` (or `disputed`; cancelled proposals/matches use `cancelled`):
 
 1. Proposer calls `proposeMatch()` — creates a match with `status: 'proposed'`, sends FCM to opponent.
 2. Opponent calls `acceptMatchProposal()` (→ `scheduled`) or `declineMatchProposal()` (→ `cancelled`). Proposer can also withdraw via `declineMatchProposal()`.
@@ -233,10 +241,7 @@ NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET / EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID / EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID / EXPO_PUBLIC_FIREBASE_APP_ID
 
-# PingID / OIDC SSO
-PINGID_ISSUER_URL, PINGID_CLIENT_ID, PINGID_CLIENT_SECRET
-
-# Web (Next.js)
+# Web session cookie / Next.js
 NEXTAUTH_SECRET, NEXTAUTH_URL
 
 # Cloud Functions only
@@ -249,12 +254,12 @@ GITHUB_TOKEN
 
 GitHub credentials must never use `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*`; web and mobile feedback code calls Firebase Functions only, and `firebase/src/feedback/submitFeedback.ts` is the single GitHub API integration point.
 
-See `.env.example` at the root for the full list.
+See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setup list. Note that Version 1.0.0 uses Firebase email/password auth; legacy PingID/OIDC placeholders in older local env files should not be treated as active app requirements unless that auth flow is intentionally reintroduced.
 
 ### Testing
 
 - Tests live in `packages/shared/src/**/__tests__/` following `*.test.ts` naming.
-- Test files: `scoreEngine.test.ts` and `rankingEngine.test.ts`.
+- Test files cover score engine, ranking engine, profile utilities, and match status metadata.
 - Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes to `main` or `claude/**` branches.
 - Test runner: Jest 29 + ts-jest. Build tool: tsup 8.
 - Add tests when modifying scoring or ranking logic — the score engine is extensively tested.
@@ -263,6 +268,8 @@ See `.env.example` at the root for the full list.
 
 Defined in `.github/workflows/ci.yml`. Triggers: push to `main`/`claude/**`, PRs to `main`. Node 20, pnpm 9.
 
-Pipeline: install (`--frozen-lockfile`) → typecheck → lint → test (`@tennis/shared` only). All three checks must pass before merging to `main`.
+Pipeline: install (`--frozen-lockfile`) → dependency audit (`pnpm audit --audit-level=high`) → typecheck → lint → test (`@tennis/shared` only). All three checks must pass before merging to `main`.
 
-`.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android preview builds via EAS. Pre-builds `@tennis/shared` and `@tennis/firebase-client` before invoking `eas build --platform android --profile preview`. Firebase env vars come from GitHub secrets.
+`.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android mobile or Wear OS preview APK builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets.
+
+`.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.

@@ -1,196 +1,291 @@
-# Tennis League App — Setup Guide
+# TennisScoring Setup Guide
+
+This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
+
+---
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 9+
-- Firebase CLI (`npm i -g firebase-tools`)
-- Expo CLI (`npm i -g eas-cli`)
-- Xcode 15+ (for iOS / Apple Watch builds)
-- Android Studio (for Android / Wear OS builds)
+- Node.js 20+ for local web/mobile development and CI parity.
+- Node.js 22 for Firebase Functions runtime/deploy parity.
+- pnpm 9.15.5 or newer.
+- Firebase CLI (`npm i -g firebase-tools`) for emulators, rules, and Functions deployment.
+- EAS CLI (`npm i -g eas-cli`) for mobile cloud builds.
+- Android Studio for Android and Wear OS builds.
+- Xcode 15+ and Apple developer tooling for iOS/Apple Watch builds.
+- Google Cloud CLI (`gcloud`) when validating Firebase deployer IAM and Secret Manager access.
 
-## 1. Firebase Project
+---
 
-1. Create a Firebase project at console.firebase.google.com
-2. Enable **Firestore**, **Authentication**, **Storage**, **Cloud Functions**
-3. In Authentication → Sign-in methods, add **OIDC provider** for PingID:
-   - Provider name: PingID
-   - Client ID / Secret from your PingID application
-   - Issuer URL: your PingID tenant URL
-4. Download `google-services.json` → `apps/mobile/android/app/`
-5. Download `GoogleService-Info.plist` → `apps/mobile/ios/TennisScoring/`
+## 1. Install Dependencies
 
-## 2. Environment Variables
-
-Copy `.env.example` to `.env.local` in each app:
-
-```
-cp .env.example apps/mobile/.env
-cp .env.example apps/web/.env.local
-cp .env.example firebase/.env
-```
-
-Fill in Firebase config values and PingID OIDC credentials.
-
-**Mobile** uses `EXPO_PUBLIC_*` prefix.
-**Web** uses `NEXT_PUBLIC_*` prefix.
-**Firebase Functions** reads runtime configuration from Functions params/config and secrets.
-
-Never put GitHub credentials in `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*` variables. Web and mobile feedback submissions must call the `submitFeedback` Firebase Function, and only that function may call the GitHub API. Store the GitHub token or app installation token in Functions secret storage:
+From the repository root:
 
 ```bash
-firebase functions:secrets:set GITHUB_TOKEN
-```
-
-Set Cloud Functions env config:
-
-```bash
-firebase functions:config:set pingid.issuer_url="..." pingid.client_id="..."
-```
-
-## Shared Package Guidelines
-
-`packages/shared` is the canonical workspace for cross-platform tennis domain logic. Use it for types, scoring/ranking utilities, tips, and reusable profile helpers such as availability slot updates, validation, and profile update normalization. Import these helpers from `@tennis/shared` in web, mobile, Firebase client, and Cloud Functions code instead of copying equivalent logic into each app.
-
-The web app keeps repeated top-level navigation markup and styles in `apps/web/app/shared/AppNav.tsx`.
-
-## 3. Install & Build
-
-```bash
-# Install all dependencies
 pnpm install
-
-# Build shared + firebase-client packages
-pnpm build --filter @tennis/shared --filter @tennis/firebase-client
-
-# Deploy Firestore rules + indexes
-cd firebase && firebase deploy --only firestore
-
-# Deploy Storage rules
-firebase deploy --only storage
-
-# Deploy Cloud Functions
-firebase deploy --only functions
 ```
 
-## 4. Run Locally
+Useful baseline checks:
 
 ```bash
-# Start Firebase emulators (Firestore + Auth + Functions + Storage)
-cd firebase && firebase emulators:start
-
-# In another terminal — web app
-pnpm --filter @tennis/web dev
-
-# In another terminal — mobile app (requires Expo Go or simulator)
-pnpm --filter @tennis/mobile start
-```
-
-## 5. Mobile Build (EAS)
-
-```bash
-# Configure EAS project (first time)
-cd apps/mobile && eas init
-
-# Build for iOS
-eas build --platform ios
-
-# Build for Android
-eas build --platform android
-
-# Submit to stores
-eas submit --platform ios
-eas submit --platform android
-```
-
-## 6. Apple Watch Extension
-
-The Watch app is a WatchKit Extension target inside the Xcode project at
-`apps/mobile/ios/TennisScoring.xcworkspace`. After running `expo prebuild`:
-
-```bash
-cd apps/mobile && npx expo prebuild
-```
-
-Open the workspace in Xcode, add the `TennisScoringWatch` target, and link
-`WatchSessionManager.swift` + `ScoreView.swift`. Build and run on a paired
-Apple Watch simulator.
-
-## 7. Wear OS Module
-
-After `expo prebuild`, the Android project is at `apps/mobile/android/`.
-The `:wear` Gradle module at `apps/mobile/android/wear/` builds the Wear OS APK.
-
-```bash
-cd apps/mobile/android
-./gradlew :wear:assembleDebug
-# Install on a paired Wear OS emulator or physical watch via Android Studio
-```
-
-## 8. PingID SSO Configuration
-
-Register two redirect URIs in your PingID application:
-
-- **Mobile**: `tennisleague://` (custom scheme for `expo-auth-session`)
-- **Web**: `https://your-domain.com/api/auth/callback`
-
-## 9. Web Deployment
-
-```bash
-cd apps/web && pnpm build
-firebase deploy --only hosting
-```
-
-## Verification Commands
-
-```bash
-# Shared package unit tests
 pnpm --filter @tennis/shared test -- --runInBand
-
-# Full workspace type checking, linting, and tests
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
 
-## Branch Cleanup (Repository Maintenance)
+---
 
-To identify and remove stale local branches that are already merged:
+## 2. Firebase Project Setup
+
+Create or select a Firebase project, then enable:
+
+1. **Authentication** with the **Email/Password** provider.
+2. **Cloud Firestore**.
+3. **Cloud Storage**.
+4. **Cloud Functions**.
+5. **Firebase Cloud Messaging** for push notification support.
+
+Download platform config files:
+
+- Android: download `google-services.json` and place it at `apps/mobile/android/app/google-services.json`. A root-level `apps/mobile/google-services.json` is also present for Expo tooling compatibility.
+- iOS: download `GoogleService-Info.plist` and place it at `apps/mobile/GoogleService-Info.plist` or the path expected by the active native iOS project configuration.
+- Web: copy the Firebase web app config values into `NEXT_PUBLIC_FIREBASE_*` variables.
+
+---
+
+## 3. Environment Variables
+
+### Web app (`apps/web/.env.local`)
 
 ```bash
-# Preview merged branches (dry run)
-./scripts/cleanup-branches.sh --default-branch work
+NEXT_PUBLIC_FIREBASE_API_KEY=""
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=""
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=""
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=""
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=""
+NEXT_PUBLIC_FIREBASE_APP_ID=""
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=""
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=""
 
-# Delete merged branches
-./scripts/cleanup-branches.sh --default-branch work --delete
+NEXTAUTH_SECRET="replace-with-a-long-random-string"
+NEXTAUTH_URL="http://localhost:3000"
 
-# Optional: prune stale remote-tracking refs first
-./scripts/cleanup-branches.sh --default-branch work --remote --delete
+FIREBASE_ADMIN_PROJECT_ID=""
+FIREBASE_ADMIN_CLIENT_EMAIL=""
+FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
-> Tip: change `--default-branch` to `main`/`master` if your local default branch name differs.
+`NEXTAUTH_SECRET` signs the `tennis-auth` httpOnly session cookie used by `next-firebase-auth-edge` middleware. Do not reuse the development fallback value in production.
 
-## Architecture Overview
+### Mobile app (`apps/mobile/.env`)
 
-```
-Expo (React Native) mobile app
-  ↕ Firestore real-time listeners (onSnapshot)
-  ↕ Firebase Auth (PingID OIDC)
-  ↕ Cloud Functions (rankings, reports, conflict resolution)
-  ↕ WatchConnectivity / Wearable Data Layer
-    → Apple Watch (SwiftUI/WatchKit)
-    → Galaxy Watch (Wear OS / Jetpack Compose)
-
-Next.js web app
-  ↕ Same Firebase backend
-  ↕ PingID OIDC callback → Firebase custom token
-  ↕ next-firebase-auth-edge session management
+```bash
+EXPO_PUBLIC_FIREBASE_API_KEY=""
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=""
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=""
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=""
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=""
+EXPO_PUBLIC_FIREBASE_APP_ID=""
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=""
 ```
 
-## Tiebreaker Order (Rankings)
+`EXPO_PUBLIC_*` values are bundled into the mobile app and must not contain secrets.
 
-1. Matches won
-2. Sets won
-3. Games won
-4. Game differential (gamesWon − gamesLost)
-5. Head-to-head record
+### Firebase Functions params (`firebase/.env.<PROJECT_ID>`)
+
+```bash
+APP_BASE_URL="https://your-web-domain.example"
+ALLOWED_EMAIL_DOMAIN="" # optional; set to a corporate domain to restrict signup/invites where functions enforce it
+GITHUB_OWNER="your-github-org-or-user"
+GITHUB_REPO="your-feedback-repo"
+GITHUB_API_URL="https://api.github.com"
+GITHUB_FEEDBACK_LABELS="feedback"
+```
+
+Store the feedback token in Secret Manager only:
+
+```bash
+firebase functions:secrets:set GITHUB_TOKEN
+```
+
+Never put GitHub credentials in `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*` variables. Web and mobile feedback submissions call the `submitFeedback` Firebase Function, and only that function calls the GitHub API.
+
+---
+
+## 4. Local Development
+
+### Web
+
+```bash
+pnpm --filter @tennis/web dev
+```
+
+The web app runs on `http://localhost:3000` by default.
+
+### Mobile
+
+```bash
+pnpm --filter @tennis/mobile start
+pnpm --filter @tennis/mobile android
+pnpm --filter @tennis/mobile ios
+```
+
+Expo Router handles the mobile auth/onboarding/tab route flow.
+
+### Firebase emulators
+
+```bash
+cd firebase
+pnpm serve
+```
+
+Configured emulator ports:
+
+- Auth: `9099`
+- Functions: `5001`
+- Firestore: `8080`
+- Storage: `9199`
+- Emulator UI: `4000`
+
+If you want web/mobile to point to emulators, add emulator connection code or environment-specific initialization before relying on local data. The v1 client config primarily initializes against configured Firebase project values.
+
+---
+
+## 5. Firebase Rules, Indexes, and Functions
+
+Deploy Firestore rules/indexes and Storage rules from the `firebase` directory or repository root with Firebase CLI:
+
+```bash
+firebase deploy --only firestore
+firebase deploy --only storage
+```
+
+Build Functions locally:
+
+```bash
+pnpm --filter @tennis/firebase-functions build
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
+```
+
+Deploy Functions manually:
+
+```bash
+pnpm --filter @tennis/firebase-functions deploy
+```
+
+See [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) for IAM, Secret Manager, and targeted GitHub Actions deploy details.
+
+---
+
+## 6. Web Deployment
+
+The web app is a standard Next.js app under `apps/web`.
+
+Recommended deployment steps:
+
+1. Build shared packages first when your platform does not automatically run Turbo dependency builds.
+2. Set all `NEXT_PUBLIC_FIREBASE_*`, `NEXTAUTH_*`, and `FIREBASE_ADMIN_*` variables in the hosting provider.
+3. Configure Firebase Auth authorized domains for the deployed URL.
+4. Run:
+
+```bash
+pnpm --filter @tennis/web build
+pnpm --filter @tennis/web start
+```
+
+The repository includes `apps/web/vercel.json` for Vercel output/build behavior.
+
+---
+
+## 7. Mobile and Wearable Builds
+
+Mobile app metadata currently identifies v1 as:
+
+- Expo version: `1.0.0`
+- iOS build number: `1`
+- Android version code: `1`
+
+Build with EAS:
+
+```bash
+pnpm --filter @tennis/mobile build:android
+pnpm --filter @tennis/mobile build:ios
+```
+
+The `apps/mobile/eas.json` profiles run this prebuild command before cloud builds:
+
+```bash
+pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+```
+
+Wear OS preview APK builds use the `wear-preview` EAS profile. The GitHub Actions `EAS Build (Android APKs)` workflow can build either the mobile APK or Wear OS APK through the `target` input.
+
+---
+
+## 8. GitHub Actions and CI/CD
+
+### CI
+
+`.github/workflows/ci.yml` runs on pushes to `main`/`claude/**` and pull requests to `main`:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm audit --audit-level=high
+pnpm typecheck
+pnpm lint
+pnpm --filter @tennis/shared test
+```
+
+### Targeted Firebase Functions deploy
+
+`.github/workflows/deploy-firebase-function.yml` runs on pushes to `main` that touch Firebase/shared/function workflow paths and on manual dispatch. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+
+Required GitHub Actions secrets:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+
+Optional/recommended GitHub Actions variables:
+
+- `GITHUB_OWNER`
+- `GITHUB_REPO`
+- `GITHUB_API_URL`
+- `GITHUB_FEEDBACK_LABELS`
+
+### EAS Android APK workflow
+
+`.github/workflows/eas-build.yml` is manually triggered and requires:
+
+- `EXPO_TOKEN`
+- Firebase public config secrets mapped into `EXPO_PUBLIC_FIREBASE_*` environment variables.
+
+---
+
+## 9. Version 1 Baseline Commands
+
+After setup, use these commands to confirm a working baseline before feature work:
+
+```bash
+pnpm --filter @tennis/shared test -- --runInBand
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+If cloud credentials are configured, also validate:
+
+```bash
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
+pnpm --filter @tennis/mobile build:android
+```
+
+---
+
+## 10. Troubleshooting Notes
+
+- If web auth redirects to `/login` after sign in, verify `FIREBASE_ADMIN_*`, `NEXTAUTH_SECRET`, `NEXT_PUBLIC_FIREBASE_API_KEY`, and Firebase Auth authorized domains.
+- If feedback submission fails, verify `GITHUB_TOKEN` exists in Secret Manager and the `GITHUB_OWNER`/`GITHUB_REPO` params point to a repository where the token can create issues.
+- If Functions deploy fails with `iam.serviceaccounts.actAs` or Secret Manager IAM errors, use the remediation steps in `firebase/DEPLOYMENT.md`.
+- If EAS builds cannot resolve workspace packages, confirm the EAS profile prebuild command completed and that pnpm 9.15.5 is available in the build environment.
