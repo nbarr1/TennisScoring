@@ -20,6 +20,7 @@ export {
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
+  upsertDivisionMembership,
   exportDivisionCsv,
 } from './divisions/divisionFunctions';
 

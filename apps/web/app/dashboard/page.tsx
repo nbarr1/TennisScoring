@@ -3,14 +3,16 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useRankings,
   useAuthUser,
   useUserProfile,
   useActiveDivisionId,
+  useDivisionLevels,
 } from "@tennis/firebase-client";
+import { currentSeasonForDate, defaultSeasonOptions } from "@tennis/shared";
 import type { PlayerRanking } from "@tennis/shared";
 
 export default function DashboardPage(): React.JSX.Element {
@@ -23,7 +25,23 @@ export default function DashboardPage(): React.JSX.Element {
     firebaseUser?.uid ?? null,
     profile?.divisionId,
   );
-  const { rankings, loading } = useRankings(divisionId);
+  const currentSeason = useMemo(() => currentSeasonForDate(), []);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(currentSeason.id);
+  const [selectedLevelId, setSelectedLevelId] = useState("all");
+  const { levels: divisionLevels } = useDivisionLevels(divisionId);
+  const seasonLevels = divisionLevels.filter(
+    (level) => level.seasonId === selectedSeasonId,
+  );
+  const activeLevelId =
+    selectedLevelId !== "all" &&
+    seasonLevels.some((level) => level.id === selectedLevelId)
+      ? selectedLevelId
+      : undefined;
+  const { rankings, loading } = useRankings(divisionId, {
+    seasonId: selectedSeasonId,
+    divisionLevelId: activeLevelId,
+  });
 
   useEffect(() => {
     if (profileLoading || !profile) return;
@@ -41,6 +59,41 @@ export default function DashboardPage(): React.JSX.Element {
         <p style={styles.subtitle}>
           Sorted by: Matches Won · Sets · Games · Differential · Head-to-Head
         </p>
+
+        <div style={styles.filterBar} aria-label="Standings filters">
+          <label style={styles.filterLabel}>
+            Season
+            <select
+              style={styles.select}
+              value={selectedSeasonId}
+              onChange={(e) => {
+                setSelectedSeasonId(e.target.value);
+                setSelectedLevelId("all");
+              }}
+            >
+              {seasonOptions.map((season) => (
+                <option key={season.id} value={season.id}>
+                  {season.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={styles.filterLabel}>
+            Division
+            <select
+              style={styles.select}
+              value={activeLevelId ?? "all"}
+              onChange={(e) => setSelectedLevelId(e.target.value)}
+            >
+              <option value="all">All divisions</option>
+              {seasonLevels.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {!profileLoading && !divisionLoading && !divisionId ? (
           <div style={styles.empty}>
@@ -127,7 +180,34 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--green-dark)",
     marginBottom: 8,
   },
-  subtitle: { fontSize: 13, color: "var(--muted)", marginBottom: 32 },
+  subtitle: { fontSize: 13, color: "var(--muted)", marginBottom: 18 },
+  filterBar: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+    alignItems: "end",
+    marginBottom: 24,
+  },
+  filterLabel: {
+    display: "grid",
+    gap: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#555",
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.4,
+  },
+  select: {
+    minWidth: 180,
+    border: "1px solid #ddd",
+    borderRadius: 10,
+    padding: "10px 12px",
+    background: "#fff",
+    color: "var(--text)",
+    fontSize: 14,
+    textTransform: "none" as const,
+    letterSpacing: 0,
+  },
   loading: { textAlign: "center", color: "var(--muted)", padding: 40 },
   empty: {
     textAlign: "center",

@@ -12,7 +12,10 @@ import {
   getOrCreateDM,
   searchDivisionPlayers,
   useUserProfile,
+  userDoc,
+  deleteDirectChannel,
 } from "@tennis/firebase-client";
+import { getDoc } from "firebase/firestore";
 import type { Channel, Message, User } from "@tennis/shared";
 
 export default function MessagesPage(): React.JSX.Element {
@@ -21,13 +24,39 @@ export default function MessagesPage(): React.JSX.Element {
   const { channels } = useChannels(firebaseUser?.uid ?? null);
   const [active, setActive] = useState<Channel | null>(null);
   const [showNewDm, setShowNewDm] = useState(false);
+  const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
+
+
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(channels.flatMap((channel) => channel.participantIds)),
+    ).filter((id) => id && !participantNames[id]);
+    if (ids.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      ids.map(async (id) => {
+        const snap = await getDoc(userDoc(id));
+        const data = snap.data();
+        return [id, data?.displayName || data?.email || id] as const;
+      }),
+    ).then((entries) => {
+      if (!cancelled) {
+        setParticipantNames((current) => ({ ...current, ...Object.fromEntries(entries) }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [channels, participantNames]);
 
   function channelLabel(ch: Channel): string {
     if (ch.name) return ch.name;
     if (ch.type === "division") return "🎾 Division Chat";
     if (ch.type === "direct") {
       const otherId = ch.participantIds.find((id) => id !== firebaseUser?.uid);
-      return otherId ? `💬 ${otherId.slice(0, 6)}…` : "💬 Direct Message";
+      return otherId
+        ? `💬 ${participantNames[otherId] ?? "Direct Message"}`
+        : "💬 Direct Message";
     }
     return ch.type;
   }
@@ -86,6 +115,8 @@ export default function MessagesPage(): React.JSX.Element {
               currentUserName={
                 profile?.displayName ?? firebaseUser?.displayName ?? "You"
               }
+              title={channelLabel(active)}
+              onDeleted={() => setActive(null)}
             />
           ) : (
             <div style={styles.selectPrompt}>
@@ -226,13 +257,19 @@ function ChatPane({
   channel,
   currentUserId,
   currentUserName,
+  title,
+  onDeleted,
 }: {
   channel: Channel;
   currentUserId: string;
   currentUserName: string;
+  title: string;
+  onDeleted: () => void;
 }) {
   const { messages } = useMessages(channel.id);
   const [text, setText] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -252,16 +289,41 @@ function ChatPane({
     });
   }
 
+
+  async function handleDeleteThread() {
+    if (channel.type !== "direct") return;
+    const confirmed = window.confirm(
+      "Delete this chat thread for all participants? This cannot be undone.",
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    setDeleteMessage("");
+    try {
+      await deleteDirectChannel(channel.id);
+      onDeleted();
+    } catch {
+      setDeleteMessage("Could not delete this chat thread. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div style={styles.chatPane}>
       <div style={styles.chatHeader}>
-        <span style={styles.chatTitle}>
-          {channel.name ??
-            (channel.type === "division"
-              ? "🎾 Division Chat"
-              : "💬 Direct Message")}
-        </span>
+        <span style={styles.chatTitle}>{title}</span>
+        {channel.type === "direct" && (
+          <button
+            type="button"
+            style={styles.deleteThreadBtn}
+            onClick={handleDeleteThread}
+            disabled={deleting}
+          >
+            {deleting ? "Deleting…" : "Delete thread"}
+          </button>
+        )}
       </div>
+      {deleteMessage && <div role="alert" style={styles.threadError}>{deleteMessage}</div>}
 
       <div style={styles.messageList}>
         {messages.map((m) => (
@@ -523,6 +585,26 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "14px 24px",
     borderBottom: "1px solid #eee",
     background: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  deleteThreadBtn: {
+    background: "#fff",
+    border: "1px solid #c0392b",
+    color: "#c0392b",
+    borderRadius: 10,
+    padding: "8px 12px",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  threadError: {
+    background: "#fff4f4",
+    color: "#c0392b",
+    padding: "8px 24px",
+    fontSize: 13,
   },
   chatTitle: { fontWeight: 700, fontSize: 16, color: "#222" },
   messageList: {
