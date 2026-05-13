@@ -229,7 +229,10 @@ function buildRankingsFromMatches(
   };
 }
 
-export function useRankings(divisionId: string | null) {
+export function useRankings(
+  divisionId: string | null,
+  filters?: { seasonId?: string; divisionLevelId?: string },
+) {
   const [rankings, setRankings] = useState<PlayerRanking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -287,8 +290,21 @@ export function useRankings(divisionId: string | null) {
       }
     };
 
+    const rankingConstraints = [
+      ...(filters?.seasonId ? [where('seasonId', '==', filters.seasonId)] : []),
+      ...(filters?.divisionLevelId
+        ? [where('divisionLevelId', '==', filters.divisionLevelId)]
+        : []),
+    ];
+    const matchConstraints = [
+      ...(filters?.seasonId ? [where('seasonId', '==', filters.seasonId)] : []),
+      ...(filters?.divisionLevelId
+        ? [where('divisionLevelId', '==', filters.divisionLevelId)]
+        : []),
+    ];
+
     const unsubRankings = onSnapshot(
-      rankingsQuery(divisionId),
+      rankingsQuery(divisionId, ...rankingConstraints),
       (snap) => {
         firestoreRankings = snap.docs.map((d) => d.data() as PlayerRanking);
         rankingsReady = true;
@@ -302,7 +318,7 @@ export function useRankings(divisionId: string | null) {
     );
 
     const unsubMatches = onSnapshot(
-      completedDivisionMatchesQuery(divisionId),
+      completedDivisionMatchesQuery(divisionId, ...matchConstraints),
       (snap) => {
         try {
           const matches = snap.docs.map((d) => d.data() as Match);
@@ -345,7 +361,7 @@ export function useRankings(divisionId: string | null) {
       unsubMatches();
       unsubRoster();
     };
-  }, [divisionId]);
+  }, [divisionId, filters?.divisionLevelId, filters?.seasonId]);
 
   return { rankings, loading, error };
 }

@@ -113,6 +113,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Season/level memberships are managed by Cloud Functions.
+      match /memberships/{membershipId} {
+        allow read: if isAuth() && (
+          isAdmin() ||
+          isLeader(divisionId) ||
+          isDivisionMember(divisionId) ||
+          isDivisionRosterMember(divisionId)
+        );
+        allow write: if false;
+      }
+
       // Rankings sub-collection (written by Cloud Functions)
       match /rankings/{userId} {
         allow read: if isAuth() && (
@@ -366,7 +377,7 @@ service cloud.firestore {
       allow read: if isChannelParticipant(resource.data);
       allow create: if isAuth() && validDirectChannelCreate();
       allow update: if false;
-      allow delete: if false;
+      allow delete: if isAuth() && resource.data.type == 'direct' && isChannelParticipant(resource.data);
 
       match /messages/{messageId} {
         allow read: if isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data);
@@ -389,7 +400,9 @@ service cloud.firestore {
           request.auth.uid in request.resource.data.readBy &&
           request.resource.data.readBy.hasAll(resource.data.readBy) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
-        allow delete: if false;
+        allow delete: if isAuth() &&
+          get(/databases/$(database)/documents/channels/$(channelId)).data.type == 'direct' &&
+          isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data);
       }
     }
   }
