@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
@@ -777,18 +777,37 @@ type ExportedRanking = Record<string, unknown> & {
   updatedAt?: number;
 };
 
-
+function timestampToDate(value: unknown): Date | undefined {
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return new Date(value);
+  }
+  if (value instanceof Timestamp) {
+    return value.toDate();
+  }
+  if (value && typeof value === 'object' && 'toDate' in value) {
+    const { toDate } = value as { toDate?: unknown };
+    if (typeof toDate === 'function') {
+      const date = toDate.call(value);
+      if (date instanceof Date) return date;
+    }
+  }
+  return undefined;
+}
 
 function timestampToIso(value: unknown): string {
-  if (typeof value !== 'number' || Number.isNaN(value)) return '';
-  return new Date(value).toISOString();
+  const date = timestampToDate(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+}
+
+function timestampToMillis(value: unknown): number {
+  return timestampToDate(value)?.getTime() ?? 0;
 }
 
 function validateCompletedExportedMatch(
   doc: FirebaseFirestore.QueryDocumentSnapshot,
 ): ExportedMatch | undefined {
   const data = doc.data();
-  if (data.status !== 'completed' || typeof data.completedAt !== 'number') {
+  if (data.status !== 'completed' || !timestampToIso(data.completedAt)) {
     return undefined;
   }
   return { id: doc.id, ...data } as ExportedMatch;
@@ -886,7 +905,7 @@ export const exportDivisionCsv = onCall(callableOptions, async (request) => {
     const matches = snap.docs
       .map(validateCompletedExportedMatch)
       .filter((match): match is ExportedMatch => match !== undefined)
-      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+      .sort((a, b) => timestampToMillis(b.completedAt) - timestampToMillis(a.completedAt));
     const rows = [
       ['match_id', 'season_id', 'division_level_id', 'match_type', 'status', 'player_or_side_1', 'player_or_side_2', 'winner', 'is_division_match', 'scheduled_at', 'completed_at', 'created_at'],
       ...matches.map((match) => [
@@ -945,7 +964,6 @@ export const exportDivisionCsv = onCall(callableOptions, async (request) => {
   }
 
   const rankings = [...rankingDocsById.values()]
-    .filter((ranking) => !safeSeasonId || ranking.seasonId === safeSeasonId || ranking.season === safeSeasonId)
     .sort((a, b) => (a.rank ?? 999999) - (b.rank ?? 999999));
   const rows = [
     ['rank', 'user_id', 'display_name', 'season', 'season_id', 'division_level_id', 'match_type', 'played', 'won', 'lost', 'sets_won', 'sets_lost', 'games_won', 'games_lost', 'game_differential', 'updated_at'],
