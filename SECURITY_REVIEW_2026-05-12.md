@@ -18,6 +18,17 @@ The codebase has a reasonable Firebase-centric baseline: web sessions are stored
 6. **Medium:** Storage rules allow authenticated users to upload GIF/WebP avatars by content type only; no image re-encoding, malware scan, or extension constraints are evident.
 7. **Medium:** Sensitive operational details and user request data are logged in some failure paths.
 
+
+## Remediation update (2026-05-12)
+
+The Critical/High queue has been worked through as follows:
+
+- **H-01 fixed:** Firestore match-update rules now require `reportSubmission.submittedBy` to equal `request.auth.uid`, preserve the original submitter/timestamp during confirmation or dispute, and require confirmation/dispute actor fields to match the authenticated user.
+- **H-02 fixed:** Firebase Auth before-create now fails closed when `ALLOWED_EMAIL_DOMAIN` is unset, so production self-registration cannot silently remain open by default.
+- **H-03 partially fixed:** Invite send, invite preview, and invite acceptance callables now have Firestore-backed rate limits. Login/signup still rely on Firebase Auth platform abuse controls because the current web/mobile clients authenticate directly with Firebase Auth before the app receives a server-side login request.
+- **H-04 not fixed in this patch:** Division-wide user-document reads still require a schema/client migration to split public profiles from private PII/FCM-token documents. Do not treat this item as remediated.
+- **H-05 fixed:** Direct Firestore match creation is restricted to `scheduled` and `proposed` states, and historic match recording now goes through a Firebase callable. Guest historic matches are auto-confirmed; registered-opponent historic matches are created as `pending_report` and require opponent confirmation before standings update.
+
 ## Findings, ranked by severity
 
 ### High

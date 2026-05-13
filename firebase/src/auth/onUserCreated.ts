@@ -6,20 +6,25 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 if (!getApps().length) initializeApp();
 
 // Set ALLOWED_EMAIL_DOMAIN to restrict self-registration to a single corporate domain
-// (e.g. "@yourcompany.com"). Leave blank to allow any email address.
+// (e.g. "@yourcompany.com"). Production fails closed when this is blank.
 const allowedEmailDomain = defineString('ALLOWED_EMAIL_DOMAIN', { default: '' });
 
 export const onUserCreated = functions.identity.beforeUserCreated(async (event) => {
   const domain = allowedEmailDomain.value().trim().toLowerCase();
-  if (domain) {
-    const email = (event.data?.email ?? '').toLowerCase();
-    const normalizedDomain = domain.startsWith('@') ? domain : `@${domain}`;
-    if (!email.endsWith(normalizedDomain)) {
-      throw new functions.auth.HttpsError(
-        'permission-denied',
-        `Registration is restricted to ${normalizedDomain} email addresses.`,
-      );
-    }
+  if (!domain) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Registration is disabled until ALLOWED_EMAIL_DOMAIN is configured.',
+    );
+  }
+
+  const email = (event.data?.email ?? '').toLowerCase();
+  const normalizedDomain = domain.startsWith('@') ? domain : `@${domain}`;
+  if (!email.endsWith(normalizedDomain)) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      `Registration is restricted to ${normalizedDomain} email addresses.`,
+    );
   }
 
   const db = getFirestore();

@@ -767,6 +767,17 @@ export async function recalculateRankings(
 }
 
 
+type RecordHistoricMatchInput = {
+  player1Id?: string;
+  player2Id?: string;
+  player1Name?: string;
+  player2Name?: string;
+  player2IsGuest?: boolean;
+  divisionId?: string;
+  sets?: { p1?: number; p2?: number }[];
+  isDivisionMatch?: boolean;
+};
+
 type RecordMatchOnBehalfInput = {
   divisionId?: string;
   player1Id?: string;
@@ -908,6 +919,125 @@ async function notifyPlayersMatchRecorded(
     }),
   );
 }
+
+/**
+ * HTTPS callable: regular players can record their own historic matches.
+ * Guest matches are auto-confirmed; registered-opponent matches require the
+ * opponent to confirm before standings update.
+ */
+export const recordHistoricMatch = functions.https.onCall(async (request) => {
+  if (!request.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+
+  const { divisionId, player1Id, player2Id, player1Name, player2Name, player2IsGuest, sets, isDivisionMatch } =
+    (request.data ?? {}) as RecordHistoricMatchInput;
+  const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
+  const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
+  const safePlayer2Id = typeof player2Id === 'string' ? player2Id.trim() : '';
+  const safeSets = Array.isArray(sets)
+    ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
+    : [];
+  const isGuest = player2IsGuest === true;
+
+  if (!safeDivisionId || !safePlayer1Id || !safePlayer2Id) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'divisionId, player1Id, and player2Id are required',
+    );
+  }
+  if (safePlayer1Id !== request.auth.uid) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Players can only record historic matches for themselves',
+    );
+  }
+  if (!isGuest && safePlayer1Id === safePlayer2Id) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Choose two different players',
+    );
+  }
+
+  const db = getFirestore();
+  const [divisionSnap, player1Snap, player2Snap] = await Promise.all([
+    db.collection('divisions').doc(safeDivisionId).get(),
+    db.collection('users').doc(safePlayer1Id).get(),
+    isGuest ? Promise.resolve(null) : db.collection('users').doc(safePlayer2Id).get(),
+  ]);
+
+  if (!divisionSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Division not found');
+  }
+  if (!player1Snap.exists || (!isGuest && !player2Snap?.exists)) {
+    throw new functions.https.HttpsError('not-found', 'Player profile not found');
+  }
+
+  const division = divisionSnap.data();
+  const playerIds: string[] = Array.isArray(division?.playerIds) ? division.playerIds : [];
+  const leaderIds: string[] = Array.isArray(division?.leaderIds) ? division.leaderIds : [];
+  const isInDivision = (id: string, data: Record<string, unknown> | undefined) =>
+    data?.divisionId === safeDivisionId || playerIds.includes(id) || leaderIds.includes(id);
+
+  if (!isInDivision(safePlayer1Id, player1Snap.data())) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'You must belong to the selected division',
+    );
+  }
+  if (!isGuest && !isInDivision(safePlayer2Id, player2Snap?.data())) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Opponent must belong to the selected division',
+    );
+  }
+
+  const { score, winner } = buildManualCompletedScore(safeSets);
+  const now = Date.now();
+  const player1 = player1Snap.data();
+  const player2 = player2Snap?.data();
+  const matchData: Omit<Match, 'id'> = {
+    divisionId: safeDivisionId,
+    player1Id: safePlayer1Id,
+    player2Id: isGuest ? 'guest' : safePlayer2Id,
+    player1Name: typeof player1Name === 'string' && player1Name.trim()
+      ? player1Name.trim()
+      : player1?.displayName ?? safePlayer1Id,
+    player2Name: typeof player2Name === 'string' && player2Name.trim()
+      ? player2Name.trim()
+      : player2?.displayName ?? (isGuest ? 'Guest' : safePlayer2Id),
+    player2IsGuest: isGuest,
+    playerIds: isGuest ? [safePlayer1Id] : [safePlayer1Id, safePlayer2Id],
+    format: DEFAULT_FORMAT,
+    status: isGuest ? 'completed' : 'pending_report',
+    liveScore: score,
+    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+    advancedStatsEnabled: false,
+    winner,
+    tipsEnabled: false,
+    source: 'manual',
+    isDivisionMatch: isDivisionMatch ?? true,
+    createdBy: request.auth.uid,
+    completedAt: now,
+    createdAt: now,
+    reportSubmission: isGuest
+      ? {
+          submittedBy: request.auth.uid,
+          submittedAt: now,
+          status: 'confirmed',
+          confirmedBy: request.auth.uid,
+          confirmedAt: now,
+        }
+      : {
+          submittedBy: request.auth.uid,
+          submittedAt: now,
+          status: 'pending_confirmation',
+        },
+  };
+
+  const matchRef = await db.collection('matches').add(matchData);
+  return { success: true, matchId: matchRef.id, status: matchData.status };
+});
 
 /**
  * HTTPS callable: admins, app developers, and division leaders can record a

@@ -136,19 +136,45 @@ service cloud.firestore {
         changed.hasOnly(['status', 'liveScore', 'stats', 'winner', 'completedAt', 'currentSetStartedAt', 'matchDurationMs', 'undoSnapshot']);
       let isReportSubmit = existing.status == 'pending_report' &&
         incoming.status == existing.status &&
-        changed.hasOnly(['reportSubmission']);
+        changed.hasOnly(['reportSubmission']) &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status']) &&
+        incoming.reportSubmission.submittedBy == request.auth.uid &&
+        incoming.reportSubmission.submittedAt is number &&
+        incoming.reportSubmission.status == 'pending_confirmation';
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
       let hasSubmission = 'reportSubmission' in existing;
       let isNotSubmitter = hasSubmission && request.auth.uid != existing.reportSubmission.submittedBy;
+      let preservesOriginalSubmission = hasSubmission &&
+        incoming.reportSubmission.submittedBy == existing.reportSubmission.submittedBy &&
+        incoming.reportSubmission.submittedAt == existing.reportSubmission.submittedAt;
+      let isValidConfirm = toCompleted &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmedBy', 'confirmedAt']) &&
+        incoming.reportSubmission.status == 'confirmed' &&
+        incoming.reportSubmission.confirmedBy == request.auth.uid &&
+        incoming.reportSubmission.confirmedAt is number;
+      let isValidDispute = toDisputed &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'disputedBy', 'disputedAt']) &&
+        incoming.reportSubmission.status == 'disputed' &&
+        incoming.reportSubmission.disputedBy == request.auth.uid &&
+        incoming.reportSubmission.disputedAt is number;
       let isValidConfirmOrDispute = isConfirmOrDispute &&
+        hasSubmission &&
         existing.reportSubmission.status == 'pending_confirmation' &&
         isNotSubmitter &&
-        changed.hasOnly(['status', 'reportSubmission']);
+        preservesOriginalSubmission &&
+        changed.hasOnly(['status', 'reportSubmission']) &&
+        (isValidConfirm || isValidDispute);
       let isGuestMatch = existing.get('player2IsGuest', false) == true;
       let isGuestFinalize = isGuestMatch && toCompleted &&
-        changed.hasOnly(['status', 'completedAt', 'reportSubmission']);
+        changed.hasOnly(['status', 'completedAt', 'reportSubmission']) &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmedBy', 'confirmedAt']) &&
+        incoming.reportSubmission.submittedBy == request.auth.uid &&
+        incoming.reportSubmission.submittedAt is number &&
+        incoming.reportSubmission.status == 'confirmed' &&
+        incoming.reportSubmission.confirmedBy == request.auth.uid &&
+        incoming.reportSubmission.confirmedAt is number;
       let isLinkGuest = existing.get('player2IsGuest', false) == true &&
         incoming.player2IsGuest == false &&
         changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
@@ -212,6 +238,7 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(matchFields()) &&
         request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.player1Id == request.auth.uid &&
+        request.resource.data.status in ['scheduled', 'proposed'] &&
         (
           isDivisionMember(request.resource.data.divisionId) ||
           isDivisionRosterMember(request.resource.data.divisionId)
