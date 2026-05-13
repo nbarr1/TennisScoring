@@ -289,3 +289,9 @@ pnpm --filter @tennis/mobile build:android
 - If feedback submission fails, verify `GITHUB_TOKEN` exists in Secret Manager and the `GITHUB_OWNER`/`GITHUB_REPO` params point to a repository where the token can create issues.
 - If Functions deploy fails with `iam.serviceaccounts.actAs` or Secret Manager IAM errors, use the remediation steps in `firebase/DEPLOYMENT.md`.
 - If EAS builds cannot resolve workspace packages, confirm the EAS profile prebuild command completed and that pnpm 9.15.5 is available in the build environment.
+
+## Seasons, division levels, and CSV exports
+
+Division leaders can use the Admin screen in both the web and mobile apps to document season-specific division levels. Seasons use canonical IDs such as `spring-2026` and `fall-2026`, and levels record the season, skill level, singles/doubles match type, optional description, ranking flag, and active flag under `divisions/{divisionId}/levels`.
+
+The same Admin screen exposes CSV export actions for match results and ranking rows. CSV generation runs through the protected `exportDivisionCsv` Cloud Function so exports consistently enforce division-leader/admin permissions and can be shared from mobile or downloaded from web.

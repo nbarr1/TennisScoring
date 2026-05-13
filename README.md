@@ -22,6 +22,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 ### League and division management
 
 - Create and join divisions using invite codes.
+- Document Spring/Fall seasons and division levels/flights such as Beginner Singles, Beginner Doubles, Intermediate Singles, and Intermediate Doubles.
 - Add players by email, create placeholder division members, update placeholder/player email records, and merge historical placeholder records into real user accounts.
 - Role-aware admin and division-leader flows for managing divisions and records.
 
@@ -39,6 +40,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 - Shared scoring engine for standard tennis points, deuce/advantage, set completion, tiebreaks, and match completion.
 - Optional advanced stats tracking for aces, winners, opponent errors, and derived serving/receiving totals.
 - Ranking recalculation from completed matches with head-to-head support and denormalized user ranking summaries.
+- Admin CSV export for season-scoped match results and ranking rows so historical records can be preserved outside the app.
 - PDF match report generation from Cloud Functions.
 
 ### Communication, feedback, and notifications
@@ -49,7 +51,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 ### Profiles and onboarding
 
-- Email/password sign in and sign up.
+- Email/password sign in, sign up, and explicit sign out on web and mobile.
 - Division selection/onboarding tutorial gates.
 - Profile editing for display name, phone, avatar URL, contact preferences, weekly availability, and scoring tips preference.
 - Shared profile utility functions for availability validation and profile update payloads.
@@ -96,7 +98,7 @@ design/                   Standalone design previews
 
 The `@tennis/shared` package is the canonical location for reusable domain code. Current exports include:
 
-- Tennis match, user, division, invite, message, feedback, and ranking types.
+- Tennis match, user, division, season, division level, invite, message, feedback, CSV export, and ranking types.
 - `MATCH_STATUS_METADATA` and `getMatchStatusMetadata` for consistent status labels, colors, tones, icons, and accessibility labels.
 - Scoring helpers such as `createInitialScore`, `applyPoint`, `formatScoreDisplay`, and `formatGameScore`.
 - Ranking helpers such as `computeRankings`, `updateRankingWithMatchResult`, and `extractMatchTotals`.

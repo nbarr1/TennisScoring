@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Share,
 } from 'react-native';
 import { onSnapshot, getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
@@ -23,9 +24,22 @@ import {
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
   updateDivisionPlayerEmail,
+  upsertDivisionLevel,
+  exportDivisionCsv,
+  useDivisionLevels,
 } from '@tennis/firebase-client';
 import { useAppStore } from '../../store/appStore';
-import type { Division, Match, PlayerRanking, User } from '@tennis/shared';
+import {
+  currentSeasonForDate,
+  defaultSeasonOptions,
+  formatDivisionLevelName,
+  type Division,
+  type DivisionMatchType,
+  type DivisionSkillLevel,
+  type Match,
+  type PlayerRanking,
+  type User,
+} from '@tennis/shared';
 
 export default function AdminScreen() {
   const { user } = useAppStore();
@@ -51,8 +65,21 @@ export default function AdminScreen() {
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState('');
   const [error, setError] = useState('');
+  const currentSeason = currentSeasonForDate();
+  const seasonOptions = defaultSeasonOptions();
+  const { levels: divisionLevels } = useDivisionLevels(division?.id);
+  const [levelSeasonId, setLevelSeasonId] = useState(currentSeason.id);
+  const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>('beginner');
+  const [levelMatchType, setLevelMatchType] = useState<DivisionMatchType>('singles');
+  const [levelName, setLevelName] = useState(formatDivisionLevelName('beginner', 'singles'));
+  const [levelDescription, setLevelDescription] = useState('');
+  const [savingLevel, setSavingLevel] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'division_leader';
+  const isAdmin =
+    user?.role === 'admin' ||
+    user?.role === 'division_leader' ||
+    user?.role === 'app_developer';
 
   useEffect(() => {
     if (!user?.id) {
@@ -291,6 +318,62 @@ export default function AdminScreen() {
     }
     void loadCandidateMatches();
   }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
+
+  async function handleCreateLevel() {
+    if (!division || !levelName.trim()) return;
+    const selectedSeason =
+      seasonOptions.find((season) => season.id === levelSeasonId) ??
+      currentSeason;
+    setSavingLevel(true);
+    setError('');
+    try {
+      await upsertDivisionLevel({
+        divisionId: division.id,
+        seasonId: selectedSeason.id,
+        year: selectedSeason.year,
+        seasonHalf: selectedSeason.half,
+        name: levelName,
+        skillLevel: levelSkill,
+        matchType: levelMatchType,
+        description: levelDescription,
+        rankingsEnabled: true,
+        active: true,
+        sortOrder: divisionLevels.length + 1,
+      });
+      setLevelDescription('');
+      Alert.alert('Division level saved', `${levelName} is now documented.`);
+    } catch (e) {
+      Alert.alert(
+        'Could not save level',
+        (e as { message?: string }).message || 'Please try again.',
+      );
+    } finally {
+      setSavingLevel(false);
+    }
+  }
+
+  async function handleShareCsv(exportType: 'matches' | 'rankings') {
+    if (!division) return;
+    setExportingCsv(true);
+    try {
+      const result = await exportDivisionCsv({
+        divisionId: division.id,
+        exportType,
+        seasonId: levelSeasonId,
+      });
+      await Share.share({
+        title: result.filename,
+        message: result.csv,
+      });
+    } catch (e) {
+      Alert.alert(
+        'Could not export CSV',
+        (e as { message?: string }).message || 'Please try again.',
+      );
+    } finally {
+      setExportingCsv(false);
+    }
+  }
 
   async function repairRankings() {
     if (!division) return;
@@ -549,6 +632,126 @@ export default function AdminScreen() {
             ) : null}
           </View>
 
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Seasons & Division Levels</Text>
+            <Text style={styles.hint}>
+              Document Beginner, Intermediate, Advanced, or Open singles/doubles levels for Spring and Fall seasons.
+            </Text>
+            <Text style={styles.subTitle}>Season</Text>
+            <View style={styles.chipRow}>
+              {seasonOptions.map((season) => (
+                <TouchableOpacity
+                  key={season.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: levelSeasonId === season.id }}
+                  style={[styles.chip, levelSeasonId === season.id && styles.chipActive]}
+                  onPress={() => setLevelSeasonId(season.id)}
+                >
+                  <Text style={[styles.chipText, levelSeasonId === season.id && styles.chipTextActive]}>
+                    {season.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.subTitle}>Level</Text>
+            <View style={styles.chipRow}>
+              {(['beginner', 'intermediate', 'advanced', 'open'] as DivisionSkillLevel[]).map((skill) => (
+                <TouchableOpacity
+                  key={skill}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: levelSkill === skill }}
+                  style={[styles.chip, levelSkill === skill && styles.chipActive]}
+                  onPress={() => {
+                    setLevelSkill(skill);
+                    setLevelName(formatDivisionLevelName(skill, levelMatchType));
+                  }}
+                >
+                  <Text style={[styles.chipText, levelSkill === skill && styles.chipTextActive]}>
+                    {skill[0].toUpperCase() + skill.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.chipRow}>
+              {(['singles', 'doubles'] as DivisionMatchType[]).map((matchType) => (
+                <TouchableOpacity
+                  key={matchType}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: levelMatchType === matchType }}
+                  style={[styles.chip, levelMatchType === matchType && styles.chipActive]}
+                  onPress={() => {
+                    setLevelMatchType(matchType);
+                    setLevelName(formatDivisionLevelName(levelSkill, matchType));
+                  }}
+                >
+                  <Text style={[styles.chipText, levelMatchType === matchType && styles.chipTextActive]}>
+                    {matchType === 'singles' ? 'Singles' : 'Doubles'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              accessibilityLabel="Division level name"
+              style={styles.input}
+              value={levelName}
+              onChangeText={setLevelName}
+              placeholder="Level name"
+              placeholderTextColor="#aaa"
+            />
+            <TextInput
+              accessibilityLabel="Division level description"
+              style={styles.input}
+              value={levelDescription}
+              onChangeText={setLevelDescription}
+              placeholder="Description or eligibility notes"
+              placeholderTextColor="#aaa"
+            />
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Save division level"
+              accessibilityState={{ disabled: !levelName.trim() || savingLevel, busy: savingLevel }}
+              style={[styles.btn, (!levelName.trim() || savingLevel) && styles.btnDisabled]}
+              onPress={handleCreateLevel}
+              disabled={!levelName.trim() || savingLevel}
+            >
+              {savingLevel ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save Level</Text>}
+            </TouchableOpacity>
+            {divisionLevels.length > 0 ? (
+              <View style={styles.levelList}>
+                {divisionLevels.map((level) => (
+                  <View key={level.id} style={styles.levelItem}>
+                    <Text style={styles.playerName}>{level.name}</Text>
+                    <Text style={styles.playerContact}>
+                      {level.seasonHalf === 'spring' ? 'Spring' : 'Fall'} {level.year} · {level.matchType}
+                    </Text>
+                    {level.description ? <Text style={styles.playerContact}>{level.description}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.hint}>No division levels documented yet.</Text>
+            )}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Share matches CSV"
+              style={[styles.secondaryBtn, exportingCsv && styles.btnDisabled]}
+              onPress={() => handleShareCsv('matches')}
+              disabled={exportingCsv}
+            >
+              <Text style={styles.secondaryBtnText}>Share Matches CSV</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Share rankings CSV"
+              style={[styles.secondaryBtn, exportingCsv && styles.btnDisabled]}
+              onPress={() => handleShareCsv('rankings')}
+              disabled={exportingCsv}
+            >
+              <Text style={styles.secondaryBtnText}>Share Rankings CSV</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Ranking Repair</Text>
             <Text style={styles.hint}>
@@ -689,6 +892,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   mergeCandidateActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  chip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  chipActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
+  chipText: { color: '#555', fontWeight: '600' },
+  chipTextActive: { color: '#1a472a' },
+  levelList: { gap: 8, marginVertical: 12 },
+  levelItem: { borderWidth: 1, borderColor: '#eee', borderRadius: 12, padding: 12 },
   matchCandidate: {
     borderWidth: 1,
     borderColor: '#ddd',

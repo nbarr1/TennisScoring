@@ -6,6 +6,7 @@ export * from "./types/message";
 export * from "./types/division";
 export * from "./types/invite";
 export * from "./types/feedback";
+export * from "./types/export";
 
 // Score engine
 export * from "./scoring/scoreEngine";

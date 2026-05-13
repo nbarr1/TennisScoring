@@ -103,6 +103,16 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'leaderIds', 'playerIds', 'updatedAt']);
       allow delete: if isAdmin();
 
+      // Division levels/flights are managed by Cloud Functions.
+      match /levels/{levelId} {
+        allow read: if isAuth() && (
+          isAdmin() ||
+          isDivisionMember(divisionId) ||
+          isDivisionRosterMember(divisionId)
+        );
+        allow write: if false;
+      }
+
       // Rankings sub-collection (written by Cloud Functions)
       match /rankings/{userId} {
         allow read: if isAuth() && (
@@ -199,6 +209,11 @@ service cloud.firestore {
       function matchFields() {
         return [
           'divisionId',
+          'seasonId',
+          'divisionLevelId',
+          'matchType',
+          'side1',
+          'side2',
           'player1Id',
           'player2Id',
           'player1Name',
