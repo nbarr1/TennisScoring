@@ -1,9 +1,76 @@
 import { useEffect, useState } from 'react';
 import { getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionsCol, usersCol } from './collections';
+import { divisionDoc, divisionLevelsCol, divisionsCol, usersCol } from './collections';
 import { functions } from './config';
-import type { Division, User } from '@tennis/shared';
+import type { CsvExportResult, Division, DivisionLevel, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User } from '@tennis/shared';
+
+export function useDivisionLevels(
+  divisionId: string | null | undefined,
+): { levels: DivisionLevel[]; loading: boolean } {
+  const [levels, setLevels] = useState<DivisionLevel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId) {
+      setLevels([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    return onSnapshot(
+      divisionLevelsCol(divisionId),
+      (snap) => {
+        setLevels(
+          snap.docs
+            .map((docSnap) => ({ ...docSnap.data(), id: docSnap.id }))
+            .sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name)),
+        );
+        setLoading(false);
+      },
+      () => {
+        setLevels([]);
+        setLoading(false);
+      },
+    );
+  }, [divisionId]);
+
+  return { levels, loading };
+}
+
+export async function upsertDivisionLevel(input: {
+  divisionId: string;
+  levelId?: string;
+  seasonId: string;
+  year: number;
+  seasonHalf: SeasonHalf;
+  name: string;
+  skillLevel: DivisionSkillLevel;
+  matchType: DivisionMatchType;
+  description?: string;
+  rankingsEnabled?: boolean;
+  active?: boolean;
+  sortOrder?: number;
+}): Promise<{ levelId: string }> {
+  const callable = httpsCallable<typeof input, { levelId: string }>(functions, 'upsertDivisionLevel');
+  const result = await callable({
+    ...input,
+    name: input.name.trim(),
+    description: input.description?.trim() || undefined,
+  });
+  return result.data;
+}
+
+export async function exportDivisionCsv(input: {
+  divisionId: string;
+  exportType: 'matches' | 'rankings';
+  seasonId?: string;
+  divisionLevelId?: string;
+}): Promise<CsvExportResult> {
+  const callable = httpsCallable<typeof input, CsvExportResult>(functions, 'exportDivisionCsv');
+  const result = await callable(input);
+  return result.data;
+}
 
 export function useActiveDivisionId(
   userId: string | null,

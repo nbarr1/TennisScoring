@@ -2,15 +2,13 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
-import { defineString } from 'firebase-functions/params';
 import { randomInt } from 'node:crypto';
+import { toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
-const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
-
-const callableOptions = { cors: appBaseUrl.value() };
+const callableOptions = {};
 
 type CreateDivisionInput = {
   name?: string;
@@ -716,4 +714,264 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
   }
   await batch.commit();
   return { success: true };
+});
+
+type UpsertDivisionLevelInput = {
+  divisionId?: string;
+  levelId?: string;
+  seasonId?: string;
+  year?: number;
+  seasonHalf?: string;
+  name?: string;
+  skillLevel?: string;
+  matchType?: string;
+  description?: string;
+  rankingsEnabled?: boolean;
+  active?: boolean;
+  sortOrder?: number;
+};
+
+type ExportDivisionCsvInput = {
+  divisionId?: string;
+  exportType?: 'matches' | 'rankings';
+  seasonId?: string;
+  divisionLevelId?: string;
+};
+
+type ExportedMatch = Record<string, unknown> & {
+  id: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: string;
+  status?: string;
+  side1?: { displayName?: string };
+  side2?: { displayName?: string };
+  player1Name?: string;
+  player2Name?: string;
+  player1Id?: string;
+  player2Id?: string;
+  winner?: string;
+  isDivisionMatch?: boolean;
+  scheduledAt?: number;
+  completedAt?: number;
+  createdAt?: number;
+};
+
+type ExportedRanking = Record<string, unknown> & {
+  id: string;
+  rank?: number;
+  userId?: string;
+  displayName?: string;
+  season?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: string;
+  matchesPlayed?: number;
+  matchesWon?: number;
+  matchesLost?: number;
+  setsWon?: number;
+  setsLost?: number;
+  gamesWon?: number;
+  gamesLost?: number;
+  gameDifferential?: number;
+  updatedAt?: number;
+};
+
+
+
+function timestampToIso(value: unknown): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '';
+  return new Date(value).toISOString();
+}
+
+function validateCompletedExportedMatch(
+  doc: FirebaseFirestore.QueryDocumentSnapshot,
+): ExportedMatch | undefined {
+  const data = doc.data();
+  if (data.status !== 'completed' || typeof data.completedAt !== 'number') {
+    return undefined;
+  }
+  return { id: doc.id, ...data } as ExportedMatch;
+}
+
+
+export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage division levels.');
+  }
+
+  const input = (request.data ?? {}) as UpsertDivisionLevelInput;
+  const divisionId = input.divisionId?.trim();
+  const name = input.name?.trim();
+  const seasonId = input.seasonId?.trim();
+  const year = input.year;
+  const seasonHalf = input.seasonHalf;
+  const skillLevel = input.skillLevel;
+  const matchType = input.matchType;
+
+  if (!divisionId || !name || !seasonId || typeof year !== 'number') {
+    throw new HttpsError('invalid-argument', 'Division, season, year, and level name are required.');
+  }
+  if (seasonHalf !== 'spring' && seasonHalf !== 'fall') {
+    throw new HttpsError('invalid-argument', 'Season must be Spring or Fall.');
+  }
+  if (!['beginner', 'intermediate', 'advanced', 'open'].includes(String(skillLevel))) {
+    throw new HttpsError('invalid-argument', 'Choose a supported skill level.');
+  }
+  if (matchType !== 'singles' && matchType !== 'doubles') {
+    throw new HttpsError('invalid-argument', 'Choose singles or doubles.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, divisionId);
+  const now = Date.now();
+  const levelRef = input.levelId?.trim()
+    ? db.collection('divisions').doc(divisionId).collection('levels').doc(input.levelId.trim())
+    : db.collection('divisions').doc(divisionId).collection('levels').doc();
+
+  const levelSnap = await levelRef.get();
+  await levelRef.set(
+    {
+      id: levelRef.id,
+      divisionId,
+      seasonId,
+      year,
+      seasonHalf,
+      name,
+      skillLevel,
+      matchType,
+      ...(input.description?.trim() ? { description: input.description.trim() } : { description: '' }),
+      rankingsEnabled: input.rankingsEnabled ?? true,
+      active: input.active ?? true,
+      sortOrder: typeof input.sortOrder === 'number' ? input.sortOrder : 100,
+      ...(!levelSnap.exists ? { createdAt: now } : {}),
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  await db.collection('divisions').doc(divisionId).set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+  return { levelId: levelRef.id };
+});
+
+export const exportDivisionCsv = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to export division data.');
+  }
+
+  const { divisionId, exportType, seasonId, divisionLevelId } = (request.data ?? {}) as ExportDivisionCsvInput;
+  const safeDivisionId = divisionId?.trim();
+  if (!safeDivisionId || (exportType !== 'matches' && exportType !== 'rankings')) {
+    throw new HttpsError('invalid-argument', 'Division and export type are required.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+
+  const safeSeasonId = seasonId?.trim();
+  const safeDivisionLevelId = divisionLevelId?.trim();
+
+  if (exportType === 'matches') {
+    let matchesQuery: FirebaseFirestore.Query = db
+      .collection('matches')
+      .where('divisionId', '==', safeDivisionId);
+    if (safeSeasonId) {
+      matchesQuery = matchesQuery.where('seasonId', '==', safeSeasonId);
+    }
+    if (safeDivisionLevelId) {
+      matchesQuery = matchesQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+    }
+
+    const snap = await matchesQuery.get();
+    const matches = snap.docs
+      .map(validateCompletedExportedMatch)
+      .filter((match): match is ExportedMatch => match !== undefined)
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+    const rows = [
+      ['match_id', 'season_id', 'division_level_id', 'match_type', 'status', 'player_or_side_1', 'player_or_side_2', 'winner', 'is_division_match', 'scheduled_at', 'completed_at', 'created_at'],
+      ...matches.map((match) => [
+        match.id,
+        match.seasonId ?? '',
+        match.divisionLevelId ?? '',
+        match.matchType ?? '',
+        match.status ?? '',
+        match.side1?.displayName ?? match.player1Name ?? match.player1Id ?? '',
+        match.side2?.displayName ?? match.player2Name ?? match.player2Id ?? '',
+        match.winner ?? '',
+        match.isDivisionMatch ?? false,
+        timestampToIso(match.scheduledAt),
+        timestampToIso(match.completedAt),
+        timestampToIso(match.createdAt),
+      ]),
+    ];
+    return {
+      filename: `matches-${safeDivisionId}${safeSeasonId ? `-${safeSeasonId}` : ''}.csv`,
+      contentType: 'text/csv' as const,
+      csv: toCsv(rows),
+      rowCount: matches.length,
+    };
+  }
+
+  const rankingDocsById = new Map<string, ExportedRanking>();
+  const collectRankings = async (rankingsQuery: FirebaseFirestore.Query) => {
+    const snap = await rankingsQuery.get();
+    snap.docs.forEach((doc) => {
+      rankingDocsById.set(doc.id, { id: doc.id, ...doc.data() } as ExportedRanking);
+    });
+  };
+
+  let rankingsQuery: FirebaseFirestore.Query = db
+    .collection('divisions')
+    .doc(safeDivisionId)
+    .collection('rankings');
+  if (safeSeasonId) {
+    rankingsQuery = rankingsQuery.where('seasonId', '==', safeSeasonId);
+  }
+  if (safeDivisionLevelId) {
+    rankingsQuery = rankingsQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+  }
+  await collectRankings(rankingsQuery);
+
+  if (safeSeasonId) {
+    let legacyRankingsQuery: FirebaseFirestore.Query = db
+      .collection('divisions')
+      .doc(safeDivisionId)
+      .collection('rankings')
+      .where('season', '==', safeSeasonId);
+    if (safeDivisionLevelId) {
+      legacyRankingsQuery = legacyRankingsQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+    }
+    await collectRankings(legacyRankingsQuery);
+  }
+
+  const rankings = [...rankingDocsById.values()]
+    .filter((ranking) => !safeSeasonId || ranking.seasonId === safeSeasonId || ranking.season === safeSeasonId)
+    .sort((a, b) => (a.rank ?? 999999) - (b.rank ?? 999999));
+  const rows = [
+    ['rank', 'user_id', 'display_name', 'season', 'season_id', 'division_level_id', 'match_type', 'played', 'won', 'lost', 'sets_won', 'sets_lost', 'games_won', 'games_lost', 'game_differential', 'updated_at'],
+    ...rankings.map((ranking) => [
+      ranking.rank ?? '',
+      ranking.userId ?? ranking.id,
+      ranking.displayName ?? '',
+      ranking.season ?? '',
+      ranking.seasonId ?? '',
+      ranking.divisionLevelId ?? '',
+      ranking.matchType ?? '',
+      ranking.matchesPlayed ?? 0,
+      ranking.matchesWon ?? 0,
+      ranking.matchesLost ?? 0,
+      ranking.setsWon ?? 0,
+      ranking.setsLost ?? 0,
+      ranking.gamesWon ?? 0,
+      ranking.gamesLost ?? 0,
+      ranking.gameDifferential ?? 0,
+      timestampToIso(ranking.updatedAt),
+    ]),
+  ];
+  return {
+    filename: `rankings-${safeDivisionId}${safeSeasonId ? `-${safeSeasonId}` : ''}.csv`,
+    contentType: 'text/csv' as const,
+    csv: toCsv(rows),
+    rowCount: rankings.length,
+  };
 });

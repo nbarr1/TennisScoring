@@ -18,10 +18,22 @@ import {
   recalculateDivisionRankings,
   addDivisionMemberPlaceholder as addDivisionMemberPlaceholderShared,
   updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
+  upsertDivisionLevel,
+  exportDivisionCsv,
   useAuthUser,
+  useDivisionLevels,
 } from "@tennis/firebase-client";
-import type { Division, User } from "@tennis/shared";
-import type { Match, PlayerRanking } from "@tennis/shared";
+import {
+  currentSeasonForDate,
+  defaultSeasonOptions,
+  formatDivisionLevelName,
+  type Division,
+  type DivisionMatchType,
+  type DivisionSkillLevel,
+  type Match,
+  type PlayerRanking,
+  type User,
+} from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 
 const PRIVILEGED_ROLES = new Set(['admin', 'division_leader', 'app_developer']);
@@ -50,6 +62,17 @@ export default function AdminPage(): React.JSX.Element {
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
+  const currentSeason = currentSeasonForDate();
+  const seasonOptions = defaultSeasonOptions();
+  const { levels: divisionLevels } = useDivisionLevels(division?.id);
+  const [levelSeasonId, setLevelSeasonId] = useState(currentSeason.id);
+  const [levelName, setLevelName] = useState(formatDivisionLevelName("beginner", "singles"));
+  const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>("beginner");
+  const [levelMatchType, setLevelMatchType] = useState<DivisionMatchType>("singles");
+  const [levelDescription, setLevelDescription] = useState("");
+  const [savingLevel, setSavingLevel] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [csvMessage, setCsvMessage] = useState("");
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -351,6 +374,62 @@ export default function AdminPage(): React.JSX.Element {
     loadCandidateMatches();
   }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
 
+  async function handleCreateLevel() {
+    if (!division || !levelName.trim()) return;
+    const selectedSeason = seasonOptions.find((season) => season.id === levelSeasonId) ?? currentSeason;
+    setSavingLevel(true);
+    setError("");
+    try {
+      await upsertDivisionLevel({
+        divisionId: division.id,
+        seasonId: selectedSeason.id,
+        year: selectedSeason.year,
+        seasonHalf: selectedSeason.half,
+        name: levelName,
+        skillLevel: levelSkill,
+        matchType: levelMatchType,
+        description: levelDescription,
+        rankingsEnabled: true,
+        active: true,
+        sortOrder: divisionLevels.length + 1,
+      });
+      setLevelDescription("");
+      setInviteMessage("Division level saved.");
+    } catch (e) {
+      setError((e as { message?: string }).message || "Failed to save division level.");
+    } finally {
+      setSavingLevel(false);
+    }
+  }
+
+  async function handleExportCsv(exportType: "matches" | "rankings") {
+    if (!division) return;
+    setExportingCsv(true);
+    setCsvMessage("");
+    setError("");
+    try {
+      const result = await exportDivisionCsv({
+        divisionId: division.id,
+        exportType,
+        seasonId: levelSeasonId,
+      });
+      const blob = new Blob([result.csv], { type: result.contentType });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = result.filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(href);
+      setCsvMessage(`Exported ${result.rowCount} ${exportType} row${result.rowCount === 1 ? "" : "s"}.`);
+    } catch (e) {
+      setError((e as { message?: string }).message || "Failed to export CSV.");
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
   async function repairRankings() {
     if (!division) return;
     setRepairingRankings(true);
@@ -464,6 +543,99 @@ export default function AdminPage(): React.JSX.Element {
               </div>
               {inviteMessage && <p role="status" aria-live="polite" style={styles.success}>{inviteMessage}</p>}
               {error && <p role="alert" style={styles.error}>{error}</p>}
+            </div>
+
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Seasons & Division Levels</h2>
+              <p style={styles.hint}>
+                Document league levels by Spring/Fall season and mark whether each level is singles or doubles.
+              </p>
+              <div style={styles.row}>
+                <select
+                  style={styles.input}
+                  value={levelSeasonId}
+                  onChange={(e) => setLevelSeasonId(e.target.value)}
+                  aria-label="Season"
+                >
+                  {seasonOptions.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  style={styles.input}
+                  value={levelSkill}
+                  onChange={(e) => {
+                    const skill = e.target.value as DivisionSkillLevel;
+                    setLevelSkill(skill);
+                    setLevelName(formatDivisionLevelName(skill, levelMatchType));
+                  }}
+                  aria-label="Skill level"
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                  <option value="open">Open</option>
+                </select>
+                <select
+                  style={styles.input}
+                  value={levelMatchType}
+                  onChange={(e) => {
+                    const matchType = e.target.value as DivisionMatchType;
+                    setLevelMatchType(matchType);
+                    setLevelName(formatDivisionLevelName(levelSkill, matchType));
+                  }}
+                  aria-label="Match type"
+                >
+                  <option value="singles">Singles</option>
+                  <option value="doubles">Doubles</option>
+                </select>
+              </div>
+              <div style={styles.row}>
+                <input
+                  style={styles.input}
+                  value={levelName}
+                  onChange={(e) => setLevelName(e.target.value)}
+                  placeholder="Level name"
+                />
+                <input
+                  style={styles.input}
+                  value={levelDescription}
+                  onChange={(e) => setLevelDescription(e.target.value)}
+                  placeholder="Description or eligibility notes (optional)"
+                />
+                <button
+                  style={styles.btn}
+                  onClick={handleCreateLevel}
+                  disabled={savingLevel || !levelName.trim()}
+                >
+                  {savingLevel ? "Saving…" : "Save Level"}
+                </button>
+              </div>
+              {divisionLevels.length > 0 ? (
+                <div style={styles.levelGrid}>
+                  {divisionLevels.map((level) => (
+                    <div key={level.id} style={styles.levelPill}>
+                      <strong>{level.name}</strong>
+                      <span>{level.seasonHalf === "spring" ? "Spring" : "Fall"} {level.year} · {level.matchType}</span>
+                      {level.description ? <span>{level.description}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={styles.hint}>No division levels documented yet.</p>
+              )}
+              <div style={styles.editorActions}>
+                <button style={styles.btnSecondary} onClick={() => handleExportCsv("matches")} disabled={exportingCsv}>
+                  Export matches CSV
+                </button>
+                <button style={styles.btnSecondary} onClick={() => handleExportCsv("rankings")} disabled={exportingCsv}>
+                  Export rankings CSV
+                </button>
+                {csvMessage && <p role="status" style={styles.inlineSuccess}>{csvMessage}</p>}
+              </div>
             </div>
 
             <div style={styles.card}>
@@ -747,7 +919,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "1px solid #eee",
     paddingTop: 8,
   },
-  row: { display: "flex", gap: 10, flexWrap: "wrap" },
+  row: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 },
   input: {
     flex: 1,
     border: "1px solid #ddd",
@@ -786,6 +958,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
   },
+  levelGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, margin: "14px 0" },
+  levelPill: { border: "1px solid #e7e7e7", borderRadius: 12, padding: 12, display: "grid", gap: 4, fontSize: 13, color: "#555" },
   tableScroller: { overflowX: "auto" as const, width: "100%" },
   table: {
     width: "100%",

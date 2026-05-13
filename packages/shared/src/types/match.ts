@@ -73,6 +73,11 @@ export function getMatchStatusMetadata(status: MatchStatus): MatchStatusMetadata
 export type ServiceSide = 'deuce' | 'advantage';
 export type Player = 'player1' | 'player2';
 
+export interface MatchSide {
+  playerIds: string[];
+  displayName?: string;
+}
+
 export interface MatchFormat_Config {
   setsToWin: number;       // 2 for best-of-3, 3 for best-of-5
   gamesPerSet: number;     // 6
@@ -192,6 +197,11 @@ export interface UndoSnapshot {
 export interface Match {
   id: string;
   divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: 'singles' | 'doubles';
+  side1?: MatchSide;
+  side2?: MatchSide;
   player1Id: string;
   player2Id: string;
   player1Name?: string;
