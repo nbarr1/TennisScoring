@@ -11,6 +11,8 @@ import {
   ScrollView,
   Share,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { onSnapshot, getDoc, getDocs, query, where } from 'firebase/firestore';
 import {
   divisionsCol,
@@ -361,9 +363,27 @@ export default function AdminScreen() {
         exportType,
         seasonId: levelSeasonId,
       });
-      await Share.share({
-        title: result.filename,
-        message: result.csv,
+      const safeFilename = result.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory) {
+        Alert.alert('Could not export CSV', 'No writable app directory is available on this device.');
+        return;
+      }
+      const fileUri = `${baseDirectory}${safeFilename}`;
+      await FileSystem.writeAsStringAsync(fileUri, result.csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert(
+          'Sharing unavailable',
+          'CSV export was created, but sharing is not available on this device.',
+        );
+        return;
+      }
+      await Sharing.shareAsync(fileUri, {
+        mimeType: result.contentType,
+        dialogTitle: result.filename,
+        UTI: 'public.comma-separated-values-text',
       });
     } catch (e) {
       Alert.alert(

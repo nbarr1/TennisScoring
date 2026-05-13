@@ -39,7 +39,7 @@ const config = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://firebasestorage.googleapis.com",
               "font-src 'self'",
-              "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://fcm.googleapis.com",
+              "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://fcm.googleapis.com https://*.cloudfunctions.net",
               "frame-ancestors 'none'",
             ].join('; '),
           },
