@@ -4,6 +4,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { defineString } from 'firebase-functions/params';
 import { randomInt } from 'node:crypto';
+import { toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
@@ -780,21 +781,22 @@ type ExportedRanking = Record<string, unknown> & {
 };
 
 
-function escapeCsv(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const raw = String(value);
-  if (!/[",\n\r]/.test(raw)) return raw;
-  return `"${raw.replace(/"/g, '""')}"`;
-}
-
-function rowsToCsv(rows: unknown[][]): string {
-  return `${rows.map((row) => row.map(escapeCsv).join(',')).join('\n')}\n`;
-}
 
 function timestampToIso(value: unknown): string {
   if (typeof value !== 'number' || Number.isNaN(value)) return '';
   return new Date(value).toISOString();
 }
+
+function validateCompletedExportedMatch(
+  doc: FirebaseFirestore.QueryDocumentSnapshot,
+): ExportedMatch | undefined {
+  const data = doc.data();
+  if (data.status !== 'completed' || typeof data.completedAt !== 'number') {
+    return undefined;
+  }
+  return { id: doc.id, ...data } as ExportedMatch;
+}
+
 
 export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
   if (!request.auth) {
@@ -869,13 +871,25 @@ export const exportDivisionCsv = onCall(callableOptions, async (request) => {
   const db = getFirestore();
   await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
 
+  const safeSeasonId = seasonId?.trim();
+  const safeDivisionLevelId = divisionLevelId?.trim();
+
   if (exportType === 'matches') {
-    const snap = await db.collection('matches').where('divisionId', '==', safeDivisionId).get();
+    let matchesQuery: FirebaseFirestore.Query = db
+      .collection('matches')
+      .where('divisionId', '==', safeDivisionId);
+    if (safeSeasonId) {
+      matchesQuery = matchesQuery.where('seasonId', '==', safeSeasonId);
+    }
+    if (safeDivisionLevelId) {
+      matchesQuery = matchesQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+    }
+
+    const snap = await matchesQuery.get();
     const matches = snap.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }) as ExportedMatch)
-      .filter((match) => !seasonId || match.seasonId === seasonId)
-      .filter((match) => !divisionLevelId || match.divisionLevelId === divisionLevelId)
-      .sort((a, b) => (b.completedAt ?? b.createdAt ?? 0) - (a.completedAt ?? a.createdAt ?? 0));
+      .map(validateCompletedExportedMatch)
+      .filter((match): match is ExportedMatch => match !== undefined)
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
     const rows = [
       ['match_id', 'season_id', 'division_level_id', 'match_type', 'status', 'player_or_side_1', 'player_or_side_2', 'winner', 'is_division_match', 'scheduled_at', 'completed_at', 'created_at'],
       ...matches.map((match) => [
@@ -894,18 +908,47 @@ export const exportDivisionCsv = onCall(callableOptions, async (request) => {
       ]),
     ];
     return {
-      filename: `matches-${safeDivisionId}${seasonId ? `-${seasonId}` : ''}.csv`,
+      filename: `matches-${safeDivisionId}${safeSeasonId ? `-${safeSeasonId}` : ''}.csv`,
       contentType: 'text/csv' as const,
-      csv: rowsToCsv(rows),
+      csv: toCsv(rows),
       rowCount: matches.length,
     };
   }
 
-  const snap = await db.collection('divisions').doc(safeDivisionId).collection('rankings').get();
-  const rankings = snap.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() }) as ExportedRanking)
-    .filter((ranking) => !seasonId || ranking.seasonId === seasonId || ranking.season === seasonId)
-    .filter((ranking) => !divisionLevelId || ranking.divisionLevelId === divisionLevelId)
+  const rankingDocsById = new Map<string, ExportedRanking>();
+  const collectRankings = async (rankingsQuery: FirebaseFirestore.Query) => {
+    const snap = await rankingsQuery.get();
+    snap.docs.forEach((doc) => {
+      rankingDocsById.set(doc.id, { id: doc.id, ...doc.data() } as ExportedRanking);
+    });
+  };
+
+  let rankingsQuery: FirebaseFirestore.Query = db
+    .collection('divisions')
+    .doc(safeDivisionId)
+    .collection('rankings');
+  if (safeSeasonId) {
+    rankingsQuery = rankingsQuery.where('seasonId', '==', safeSeasonId);
+  }
+  if (safeDivisionLevelId) {
+    rankingsQuery = rankingsQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+  }
+  await collectRankings(rankingsQuery);
+
+  if (safeSeasonId) {
+    let legacyRankingsQuery: FirebaseFirestore.Query = db
+      .collection('divisions')
+      .doc(safeDivisionId)
+      .collection('rankings')
+      .where('season', '==', safeSeasonId);
+    if (safeDivisionLevelId) {
+      legacyRankingsQuery = legacyRankingsQuery.where('divisionLevelId', '==', safeDivisionLevelId);
+    }
+    await collectRankings(legacyRankingsQuery);
+  }
+
+  const rankings = [...rankingDocsById.values()]
+    .filter((ranking) => !safeSeasonId || ranking.seasonId === safeSeasonId || ranking.season === safeSeasonId)
     .sort((a, b) => (a.rank ?? 999999) - (b.rank ?? 999999));
   const rows = [
     ['rank', 'user_id', 'display_name', 'season', 'season_id', 'division_level_id', 'match_type', 'played', 'won', 'lost', 'sets_won', 'sets_lost', 'games_won', 'games_lost', 'game_differential', 'updated_at'],
@@ -929,9 +972,9 @@ export const exportDivisionCsv = onCall(callableOptions, async (request) => {
     ]),
   ];
   return {
-    filename: `rankings-${safeDivisionId}${seasonId ? `-${seasonId}` : ''}.csv`,
+    filename: `rankings-${safeDivisionId}${safeSeasonId ? `-${safeSeasonId}` : ''}.csv`,
     contentType: 'text/csv' as const,
-    csv: rowsToCsv(rows),
+    csv: toCsv(rows),
     rowCount: rankings.length,
   };
 });
