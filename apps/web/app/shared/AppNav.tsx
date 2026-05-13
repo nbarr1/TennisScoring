@@ -43,6 +43,11 @@ export function AppNav({
             {item.label}
           </Link>
         ))}
+        <form method="post" action="/api/auth/logout" style={styles.logoutForm}>
+          <button type="submit" style={styles.logoutButton}>
+            Sign out
+          </button>
+        </form>
       </div>
     </nav>
   );
@@ -66,6 +71,16 @@ export const appNavStyles = {
     color: "#fff",
     borderBottom: "2px solid #ffdc60",
     paddingBottom: 2,
+  },
+  logoutForm: { margin: 0 },
+  logoutButton: {
+    background: "rgba(255,255,255,0.12)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.35)",
+    borderRadius: 999,
+    padding: "6px 12px",
+    fontWeight: 700,
+    cursor: "pointer",
   },
 } satisfies Record<string, React.CSSProperties>;
 
