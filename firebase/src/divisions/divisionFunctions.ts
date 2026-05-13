@@ -821,7 +821,7 @@ export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
   if (!DIVISION_SKILL_LEVELS.includes(skillLevel as any)) {
     throw new HttpsError('invalid-argument', 'Choose a supported skill level.');
   }
-  if (matchType !== 'singles' && matchType !== 'doubles') {
+  if (!DIVISION_MATCH_TYPES.includes(matchType as any)) {
     throw new HttpsError('invalid-argument', 'Choose singles or doubles.');
   }
 
