@@ -818,10 +818,10 @@ export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
   if (seasonHalf !== 'spring' && seasonHalf !== 'fall') {
     throw new HttpsError('invalid-argument', 'Season must be Spring or Fall.');
   }
-  if (!['beginner', 'intermediate', 'advanced', 'open'].includes(String(skillLevel))) {
+  if (!DIVISION_SKILL_LEVELS.includes(skillLevel as any)) {
     throw new HttpsError('invalid-argument', 'Choose a supported skill level.');
   }
-  if (matchType !== 'singles' && matchType !== 'doubles') {
+  if (!DIVISION_MATCH_TYPES.includes(matchType as any)) {
     throw new HttpsError('invalid-argument', 'Choose singles or doubles.');
   }
 

@@ -122,6 +122,7 @@ test "$status" = "422"
 
 These GitHub Actions variables are written to `.env.$FIREBASE_PROJECT_ID` and passed as Firebase Functions params during deploy:
 
+- `APP_BASE_URL` (optional but recommended; defaults to `http://localhost:3000` and is written to `.env.$FIREBASE_PROJECT_ID` so non-interactive deploys can resolve the `APP_BASE_URL` Functions param)
 - `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
 - `GITHUB_REPO` (optional; defaults to the current workflow repository name)
 - `GITHUB_API_URL` (optional; defaults to `https://api.github.com`)
