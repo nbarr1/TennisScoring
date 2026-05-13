@@ -656,7 +656,7 @@ export default function AdminScreen() {
             </View>
             <Text style={styles.subTitle}>Level</Text>
             <View style={styles.chipRow}>
-              {DIVISION_SKILL_LEVELS.map((skill) => (
+              {(['beginner', 'intermediate', 'advanced', 'open'] as DivisionSkillLevel[]).map((skill) => (
                 <TouchableOpacity
                   key={skill}
                   accessibilityRole="button"
@@ -674,7 +674,7 @@ export default function AdminScreen() {
               ))}
             </View>
             <View style={styles.chipRow}>
-              {DIVISION_MATCH_TYPES.map((matchType) => (
+              {(['singles', 'doubles'] as DivisionMatchType[]).map((matchType) => (
                 <TouchableOpacity
                   key={matchType}
                   accessibilityRole="button"

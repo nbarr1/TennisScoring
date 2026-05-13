@@ -2,16 +2,13 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
-import { defineString } from 'firebase-functions/params';
 import { randomInt } from 'node:crypto';
 import { toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
-const appBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:3000' });
-
-const callableOptions = { cors: appBaseUrl.value() };
+const callableOptions = {};
 
 type CreateDivisionInput = {
   name?: string;
@@ -818,10 +815,10 @@ export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
   if (seasonHalf !== 'spring' && seasonHalf !== 'fall') {
     throw new HttpsError('invalid-argument', 'Season must be Spring or Fall.');
   }
-  if (!DIVISION_SKILL_LEVELS.includes(skillLevel as any)) {
+  if (!['beginner', 'intermediate', 'advanced', 'open'].includes(String(skillLevel))) {
     throw new HttpsError('invalid-argument', 'Choose a supported skill level.');
   }
-  if (!DIVISION_MATCH_TYPES.includes(matchType as any)) {
+  if (matchType !== 'singles' && matchType !== 'doubles') {
     throw new HttpsError('invalid-argument', 'Choose singles or doubles.');
   }
 
