@@ -422,7 +422,7 @@ export default function MatchesScreen() {
           ? 'Match saved and both players will be notified when contact information is available.'
           : isGuest
             ? 'Match saved. You can link your opponent to their account later.'
-            : 'Match saved and standings will update automatically.',
+            : 'Match saved. Your opponent must confirm before standings update.',
       );
     } catch {
       Alert.alert('Error', 'Could not record match. Please try again.');

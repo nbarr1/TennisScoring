@@ -150,52 +150,15 @@ export async function recordHistoricMatch(params: {
   sets: { p1: number; p2: number }[];
   isDivisionMatch?: boolean;
 }): Promise<string> {
-  const {
-    player1Id,
-    player2Id,
-    player1Name,
-    player2Name,
-    player2IsGuest,
-    divisionId,
-    createdBy,
-    sets,
-    isDivisionMatch,
-  } = params;
-  const { score, winner } = buildHistoricScore(sets);
-  const now = Date.now();
-
-  const isGuest = player2IsGuest ?? false;
-  const matchData: Omit<Match, 'id'> = {
-    divisionId,
-    player1Id,
-    player2Id,
-    ...(player1Name && { player1Name }),
-    ...(player2Name && { player2Name }),
-    player2IsGuest: isGuest,
-    playerIds: isGuest ? [player1Id] : [player1Id, player2Id],
-    format: defaultFormat,
-    status: 'completed',
-    liveScore: score,
-    stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
-    advancedStatsEnabled: false,
-    winner,
-    tipsEnabled: false,
-    source: 'manual',
-    isDivisionMatch: isDivisionMatch ?? true,
-    createdBy,
-    completedAt: now,
-    createdAt: now,
-    reportSubmission: {
-      submittedBy: createdBy,
-      submittedAt: now,
-      status: 'confirmed',
-      confirmedBy: createdBy,
-      confirmedAt: now,
-    },
-  };
-  const ref = await addDoc(matchesCol(), matchData as Match);
-  return ref.id;
+  const callable = httpsCallable<
+    Omit<typeof params, 'createdBy'>,
+    { success: boolean; matchId: string; status: Match['status'] }
+  >(functions, 'recordHistoricMatch');
+  const { createdBy: _createdBy, ...serverParams } = params;
+  const result = await callable(serverParams);
+  return result.data.matchId;
 }
+
 
 
 export async function recordMatchOnBehalf(params: {

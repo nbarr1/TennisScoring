@@ -1,6 +1,7 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { createHash } from 'node:crypto';
 
 if (!getApps().length) initializeApp();
 
@@ -47,6 +48,54 @@ function validateUserCompleteness(value: unknown): UserCoreFields | undefined {
     tipsEnabled: user.tipsEnabled,
   };
 }
+
+function hashedRateLimitKey(...parts: string[]): string {
+  return createHash('sha256').update(parts.join('|')).digest('hex');
+}
+
+function requestClientKey(request: { auth?: { uid?: string } | null; rawRequest?: { ip?: string; headers?: { [key: string]: unknown } } }): string {
+  const uid = request.auth?.uid;
+  if (uid) return `uid:${uid}`;
+  const forwardedFor = request.rawRequest?.headers?.['x-forwarded-for'];
+  const forwardedIp = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  const ip = typeof forwardedIp === 'string'
+    ? forwardedIp.split(',')[0].trim()
+    : request.rawRequest?.ip;
+  return `ip:${ip || 'unknown'}`;
+}
+
+async function assertRateLimit(
+  db: FirebaseFirestore.Firestore,
+  keyParts: string[],
+  limit: number,
+  windowMs: number,
+): Promise<void> {
+  const now = Date.now();
+  const key = hashedRateLimitKey(...keyParts);
+  const ref = db.collection('rateLimits').doc(key);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.data() as { count?: number; resetAt?: number } | undefined;
+    const resetAt = typeof data?.resetAt === 'number' ? data.resetAt : 0;
+    if (!snap.exists || resetAt <= now) {
+      tx.set(ref, {
+        count: 1,
+        resetAt: now + windowMs,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+    const count = typeof data?.count === 'number' ? data.count : 0;
+    if (count >= limit) {
+      throw new HttpsError('resource-exhausted', 'Too many attempts. Please try again later.');
+    }
+    tx.update(ref, {
+      count: count + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -83,6 +132,7 @@ export const sendInvite = onCall(async (request) => {
 
   const db = getFirestore();
   const inviterId = request.auth.uid;
+  await assertRateLimit(db, ['sendInvite', requestClientKey(request)], 20, 60 * 60 * 1000);
 
   const inviterSnap = await db.collection('users').doc(inviterId).get();
   const inviterRole = inviterSnap.data()?.role;
@@ -149,6 +199,12 @@ export const getInvitePreview = onCall(async (request) => {
   }
 
   const db = getFirestore();
+  await assertRateLimit(
+    db,
+    ['getInvitePreview', requestClientKey(request), safeToken],
+    10,
+    60 * 1000,
+  );
   const inviteSnap = await db.collection('invites').doc(safeToken).get();
   if (!inviteSnap.exists) {
     throw new HttpsError('not-found', 'Invite not found.');
@@ -193,6 +249,12 @@ export const acceptInvite = onCall(async (request) => {
   }
 
   const db = getFirestore();
+  await assertRateLimit(
+    db,
+    ['acceptInvite', requestClientKey(request), safeToken],
+    5,
+    60 * 1000,
+  );
   const uid = request.auth.uid;
   const authEmail = normalizeEmail(request.auth.token.email ?? '');
 
