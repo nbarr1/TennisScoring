@@ -115,7 +115,9 @@ jobs:
           }
 
           const escapeDotenvValue = (value) => JSON.stringify(value);
+          const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
           const lines = [
+            `APP_BASE_URL=${escapeDotenvValue(appBaseUrl)}`,
             `GITHUB_OWNER=${escapeDotenvValue(process.env.GITHUB_OWNER)}`,
             `GITHUB_REPO=${escapeDotenvValue(process.env.GITHUB_REPO)}`,
             `GITHUB_API_URL=${escapeDotenvValue(process.env.GITHUB_API_URL)}`,
@@ -130,6 +132,7 @@ jobs:
           GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
@@ -139,7 +142,7 @@ jobs:
       - name: Deploy updated functions
         run: >-
           npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
+          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:upsertDivisionLevel,functions:exportDivisionCsv,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -147,3 +150,4 @@ jobs:
           GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}

@@ -4,7 +4,7 @@ This project deploys Cloud Functions with `firebase-tools` from CI. These notes 
 
 ## Version 1.0.0 deployment status
 
-The v1 targeted deployment workflow currently builds `firebase/src/targetedDeployIndex.ts` and deploys selected Functions used by the web/mobile baseline, including division placeholder/merge/email tools, match update/scoring/reporting hooks, and feedback submission. Full backend deploys can still be run manually with the Firebase CLI when rules, indexes, or all Functions need to be refreshed.
+The v1 targeted deployment workflow currently builds `firebase/src/targetedDeployIndex.ts` and deploys selected Functions used by the web/mobile baseline, including division placeholder/merge/email tools, season division-level management, CSV export, match update/scoring/reporting hooks, and feedback submission. Full backend deploys can still be run manually with the Firebase CLI when rules, indexes, or all Functions need to be refreshed.
 
 ## Required IAM for the deployer principal
 
@@ -122,6 +122,7 @@ test "$status" = "422"
 
 These GitHub Actions variables are written to `.env.$FIREBASE_PROJECT_ID` and passed as Firebase Functions params during deploy:
 
+- `APP_BASE_URL` (optional but recommended; defaults to `http://localhost:3000` and is written to `.env.$FIREBASE_PROJECT_ID` so non-interactive deploys can resolve the `APP_BASE_URL` Functions param)
 - `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
 - `GITHUB_REPO` (optional; defaults to the current workflow repository name)
 - `GITHUB_API_URL` (optional; defaults to `https://api.github.com`)

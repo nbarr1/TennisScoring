@@ -3,6 +3,9 @@ export interface PlayerRanking {
   displayName: string;
   divisionId: string;
   season: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: 'singles' | 'doubles';
   rank: number;
   matchesPlayed: number;
   matchesWon: number;

@@ -10,7 +10,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from './config';
-import type { User, Match, Division, Channel, Message, PlayerRanking, HeadToHead } from '@tennis/shared';
+import type { User, Match, Division, DivisionLevel, Channel, Message, PlayerRanking, HeadToHead } from '@tennis/shared';
 
 // Typed collection helpers
 export const usersCol = () => collection(db, 'users') as CollectionReference<User>;
@@ -21,6 +21,12 @@ export const divisionDoc = (id: string) => doc(db, 'divisions', id) as DocumentR
 
 export const rankingsCol = (divisionId: string) =>
   collection(db, 'divisions', divisionId, 'rankings') as CollectionReference<PlayerRanking>;
+
+export const divisionLevelsCol = (divisionId: string) =>
+  collection(db, 'divisions', divisionId, 'levels') as CollectionReference<DivisionLevel>;
+
+export const divisionLevelDoc = (divisionId: string, levelId: string) =>
+  doc(db, 'divisions', divisionId, 'levels', levelId) as DocumentReference<DivisionLevel>;
 
 export const matchesCol = () => collection(db, 'matches') as CollectionReference<Match>;
 export const matchDoc = (id: string) => doc(db, 'matches', id) as DocumentReference<Match>;
