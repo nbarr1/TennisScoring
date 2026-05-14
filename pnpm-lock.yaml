@@ -30,6 +30,9 @@ importers:
       firebase:
         specifier: ^10.12.0
         version: 10.14.1(@react-native-async-storage/async-storage@1.23.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@18.3.28)(encoding@0.1.13)(react@18.3.1)))
+      firebase-admin:
+        specifier: ^12.0.0
+        version: 12.7.0(encoding@0.1.13)
       prettier:
         specifier: ^3.2.0
         version: 3.8.3

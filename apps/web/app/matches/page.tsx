@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { onSnapshot, where } from "firebase/firestore";
 import {
   divisionMatchesQuery,
+  divisionMatchesUnorderedQuery,
   recordHistoricMatch,
   recordMatchOnBehalf,
   searchDivisionPlayers,
@@ -159,28 +160,50 @@ export default function MatchesPage(): React.JSX.Element {
       setLoading(false);
       return;
     }
+
+    const applySnapshot = (snap: { docs: Array<{ id: string; data: () => Omit<Match, "id"> }> }) => {
+      const nextMatches = snap.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Match, "id">),
+        }))
+        .filter((match) => match.seasonId === selectedSeasonId)
+        .filter((match) => !activeLevelId || match.divisionLevelId === activeLevelId)
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      setMatches(nextMatches);
+      setLoading(false);
+    };
+
     setLoading(true);
+    let fallbackUnsubscribe: (() => void) | undefined;
     const q = divisionMatchesQuery(
       divisionId,
       where("seasonId", "==", selectedSeasonId),
       ...(activeLevelId ? [where("divisionLevelId", "==", activeLevelId)] : []),
     );
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
-      (snap) => {
-        setMatches(
-          snap.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as Omit<Match, "id">),
-          })),
+      applySnapshot,
+      (error) => {
+        console.warn(
+          "Falling back to unordered division match query after ordered query failed.",
+          error,
         );
-        setLoading(false);
-      },
-      () => {
-        setMatches([]);
-        setLoading(false);
+        fallbackUnsubscribe = onSnapshot(
+          divisionMatchesUnorderedQuery(divisionId),
+          applySnapshot,
+          () => {
+            setMatches([]);
+            setLoading(false);
+          },
+        );
       },
     );
+
+    return () => {
+      unsubscribe();
+      fallbackUnsubscribe?.();
+    };
   }, [divisionId, activeLevelId, selectedSeasonId]);
 
   const uid = firebaseUser?.uid;
