@@ -1,3 +1,16 @@
+const allowUnsafeEval =
+  process.env.NODE_ENV !== 'production' ||
+  process.env.VERCEL_ENV === 'preview' ||
+  process.env.VERCEL_ENV === 'development';
+
+const scriptSrc = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(allowUnsafeEval ? ["'unsafe-eval'"] : []),
+  'https://www.gstatic.com',
+  'https://vercel.live',
+].join(' ');
+
 /** @type {import('next').NextConfig} */
 const config = {
   transpilePackages: ['@tennis/shared', '@tennis/firebase-client'],
@@ -35,7 +48,9 @@ const config = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://vercel.live",
+              // Next.js development and the Vercel preview toolbar can require
+              // string evaluation. Keep unsafe-eval out of production CSP.
+              `script-src ${scriptSrc}`,
               "style-src 'self' 'unsafe-inline' https://vercel.live",
               "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://vercel.live https://vercel.com",
               "font-src 'self' https://vercel.live https://assets.vercel.com",
