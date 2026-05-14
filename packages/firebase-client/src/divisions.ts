@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionLevelsCol, divisionsCol, usersCol } from './collections';
+import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, usersCol } from './collections';
 import { functions } from './config';
-import type { CsvExportResult, Division, DivisionLevel, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User } from '@tennis/shared';
+import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User } from '@tennis/shared';
 
 export function useDivisionLevels(
   divisionId: string | null | undefined,
@@ -38,6 +38,46 @@ export function useDivisionLevels(
   return { levels, loading };
 }
 
+
+export function useDivisionMemberships(
+  divisionId: string | null | undefined,
+  seasonId: string | null | undefined,
+  divisionLevelId?: string | null,
+): { memberships: DivisionMembership[]; loading: boolean } {
+  const [memberships, setMemberships] = useState<DivisionMembership[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId || !seasonId) {
+      setMemberships([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    return onSnapshot(
+      divisionMembershipsQuery(
+        divisionId,
+        seasonId,
+        ...(divisionLevelId ? [where('divisionLevelId', '==', divisionLevelId)] : []),
+      ),
+      (snap) => {
+        setMemberships(
+          snap.docs
+            .map((docSnap) => ({ ...docSnap.data(), id: docSnap.id }))
+            .sort((a, b) => a.displayNameSnapshot.localeCompare(b.displayNameSnapshot)),
+        );
+        setLoading(false);
+      },
+      () => {
+        setMemberships([]);
+        setLoading(false);
+      },
+    );
+  }, [divisionId, divisionLevelId, seasonId]);
+
+  return { memberships, loading };
+}
+
 export async function upsertDivisionLevel(input: {
   divisionId: string;
   levelId?: string;
@@ -59,6 +99,49 @@ export async function upsertDivisionLevel(input: {
     description: input.description?.trim() || undefined,
   });
   return result.data;
+}
+
+
+export async function upsertDivisionMembership(input: {
+  divisionId: string;
+  seasonId: string;
+  divisionLevelId: string;
+  userId?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  sendInvite?: boolean;
+}): Promise<{ membershipId: string; userId: string; createdPlaceholder: boolean }> {
+  const callable = httpsCallable<typeof input, { membershipId: string; userId: string; createdPlaceholder: boolean }>(
+    functions,
+    'upsertDivisionMembership',
+  );
+  const result = await callable({
+    ...input,
+    name: input.name?.trim() || undefined,
+    email: input.email?.trim().toLowerCase() || undefined,
+    phone: input.phone?.trim() || undefined,
+  });
+  return result.data;
+}
+
+
+export async function backfillDivisionSeasonLevel(input: {
+  divisionId: string;
+  seasonId: string;
+  divisionLevelId: string;
+  matchType?: DivisionMatchType;
+  overwriteExisting?: boolean;
+}): Promise<{ updatedMatches: number; membershipsUpserted: number }> {
+  const callable = httpsCallable<
+    typeof input,
+    { success: boolean; updatedMatches: number; membershipsUpserted: number }
+  >(functions, 'backfillDivisionSeasonLevel');
+  const result = await callable(input);
+  return {
+    updatedMatches: result.data.updatedMatches,
+    membershipsUpserted: result.data.membershipsUpserted,
+  };
 }
 
 export async function exportDivisionCsv(input: {
@@ -243,13 +326,14 @@ export async function addDivisionMemberPlaceholder(
   name: string,
   email?: string,
   sendInvite = true,
+  membership?: { seasonId: string; divisionLevelId: string },
 ): Promise<{
   userId: string;
   createdPlaceholder: boolean;
   linkedHistoricalMatches: number;
 }> {
   const callable = httpsCallable<
-    { divisionId: string; name: string; email?: string; sendInvite?: boolean },
+    { divisionId: string; name: string; email?: string; sendInvite?: boolean; seasonId?: string; divisionLevelId?: string },
     {
       success: boolean;
       userId: string;
@@ -262,6 +346,8 @@ export async function addDivisionMemberPlaceholder(
     name: name.trim(),
     email: email?.trim().toLowerCase() || undefined,
     sendInvite,
+    seasonId: membership?.seasonId,
+    divisionLevelId: membership?.divisionLevelId,
   });
   return {
     userId: result.data.userId,
@@ -299,10 +385,16 @@ export async function updateDivisionPlayerEmail(
   divisionId: string,
   userId: string,
   email: string,
+  phone?: string,
 ): Promise<void> {
   const callable = httpsCallable<
-    { divisionId: string; userId: string; email: string },
+    { divisionId: string; userId: string; email: string; phone?: string },
     { success: boolean }
   >(functions, 'updateDivisionPlayerEmail');
-  await callable({ divisionId, userId, email: email.trim().toLowerCase() });
+  await callable({
+    divisionId,
+    userId,
+    email: email.trim().toLowerCase(),
+    phone: phone?.trim() || undefined,
+  });
 }

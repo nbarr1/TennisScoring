@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { onSnapshot, addDoc, getDocs, query, where } from 'firebase/firestore';
-import { channelMessagesQuery, channelsCol, messagesCol, userChannelsQuery } from '../collections';
+import { onSnapshot, addDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { channelDoc, channelMessagesQuery, channelsCol, messagesCol, userChannelsQuery } from '../collections';
+import { db } from '../config';
 import type { Message, Channel } from '@tennis/shared';
 
 export function useMessages(channelId: string | null) {
@@ -89,4 +90,20 @@ export async function getOrCreateDM(user1Id: string, user2Id: string): Promise<C
   };
   const ref = await addDoc(channelsCol(), data as Channel);
   return { id: ref.id, ...data };
+}
+
+
+export async function deleteDirectChannel(channelId: string): Promise<void> {
+  const snap = await getDocs(messagesCol(channelId));
+  const refs = snap.docs.map((docSnap) => docSnap.ref);
+
+  for (let i = 0; i < refs.length; i += 450) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  const finalBatch = writeBatch(db);
+  finalBatch.delete(channelDoc(channelId));
+  await finalBatch.commit();
 }

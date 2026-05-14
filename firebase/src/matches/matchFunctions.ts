@@ -774,12 +774,18 @@ type RecordHistoricMatchInput = {
   player2Name?: string;
   player2IsGuest?: boolean;
   divisionId?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   sets?: { p1?: number; p2?: number }[];
   isDivisionMatch?: boolean;
 };
 
 type RecordMatchOnBehalfInput = {
   divisionId?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   player1Id?: string;
   player2Id?: string;
   sets?: { p1?: number; p2?: number }[];
@@ -930,11 +936,14 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { divisionId, player1Id, player2Id, player1Name, player2Name, player2IsGuest, sets, isDivisionMatch } =
+  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, player1Name, player2Name, player2IsGuest, sets, isDivisionMatch } =
     (request.data ?? {}) as RecordHistoricMatchInput;
   const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
   const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
   const safePlayer2Id = typeof player2Id === 'string' ? player2Id.trim() : '';
+  const safeSeasonId = typeof seasonId === 'string' ? seasonId.trim() : '';
+  const safeDivisionLevelId = typeof divisionLevelId === 'string' ? divisionLevelId.trim() : '';
+  const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
   const safeSets = Array.isArray(sets)
     ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
     : [];
@@ -998,6 +1007,9 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
   const player2 = player2Snap?.data();
   const matchData: Omit<Match, 'id'> = {
     divisionId: safeDivisionId,
+    ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
+    ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
+    ...(safeMatchType ? { matchType: safeMatchType } : {}),
     player1Id: safePlayer1Id,
     player2Id: isGuest ? 'guest' : safePlayer2Id,
     player1Name: typeof player1Name === 'string' && player1Name.trim()
@@ -1048,11 +1060,14 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { divisionId, player1Id, player2Id, sets, isDivisionMatch, notifyPlayers } =
+  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, sets, isDivisionMatch, notifyPlayers } =
     (request.data ?? {}) as RecordMatchOnBehalfInput;
   const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
   const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
   const safePlayer2Id = typeof player2Id === 'string' ? player2Id.trim() : '';
+  const safeSeasonId = typeof seasonId === 'string' ? seasonId.trim() : '';
+  const safeDivisionLevelId = typeof divisionLevelId === 'string' ? divisionLevelId.trim() : '';
+  const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
   const safeSets = Array.isArray(sets)
     ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
     : [];
@@ -1114,6 +1129,9 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
   const player2 = player2Snap.data();
   const matchData: Omit<Match, 'id'> = {
     divisionId: safeDivisionId,
+    ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
+    ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
+    ...(safeMatchType ? { matchType: safeMatchType } : {}),
     player1Id: safePlayer1Id,
     player2Id: safePlayer2Id,
     player1Name: player1?.displayName ?? safePlayer1Id,
