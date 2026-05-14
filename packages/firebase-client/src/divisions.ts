@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  where,
+  type FirestoreError,
+} from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, usersCol } from './collections';
 import { functions } from './config';
@@ -7,17 +14,20 @@ import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, Divi
 
 export function useDivisionLevels(
   divisionId: string | null | undefined,
-): { levels: DivisionLevel[]; loading: boolean } {
+): { levels: DivisionLevel[]; loading: boolean; error: FirestoreError | null } {
   const [levels, setLevels] = useState<DivisionLevel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
     if (!divisionId) {
       setLevels([]);
+      setError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setError(null);
     return onSnapshot(
       divisionLevelsCol(divisionId),
       (snap) => {
@@ -26,16 +36,18 @@ export function useDivisionLevels(
             .map((docSnap) => ({ ...docSnap.data(), id: docSnap.id }))
             .sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name)),
         );
+        setError(null);
         setLoading(false);
       },
-      () => {
+      (snapshotError) => {
         setLevels([]);
+        setError(snapshotError);
         setLoading(false);
       },
     );
   }, [divisionId]);
 
-  return { levels, loading };
+  return { levels, loading, error };
 }
 
 
