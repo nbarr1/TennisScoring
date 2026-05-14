@@ -161,6 +161,26 @@ function cleanString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function numericTimestamp(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function timestampMillis(value) {
+  return typeof value?.toMillis === 'function' ? value.toMillis() : undefined;
+}
+
+function createdAtRepairForMatch(data, docSnap, now) {
+  if (numericTimestamp(data.createdAt)) return {};
+  return {
+    createdAt:
+      numericTimestamp(data.completedAt) ??
+      numericTimestamp(data.scheduledAt) ??
+      numericTimestamp(data.startedAt) ??
+      timestampMillis(docSnap.createTime) ??
+      now,
+  };
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -233,6 +253,7 @@ function validateMatchUpdate(docId, data, update) {
   if (update.seasonId && typeof update.seasonId !== 'string') errors.push(`matches/${docId}: update seasonId is not a string.`);
   if (update.divisionLevelId && typeof update.divisionLevelId !== 'string') errors.push(`matches/${docId}: update divisionLevelId is not a string.`);
   if (update.matchType && !VALID_MATCH_TYPES.has(update.matchType)) errors.push(`matches/${docId}: update matchType is invalid.`);
+  if (update.createdAt && !numericTimestamp(update.createdAt)) errors.push(`matches/${docId}: update createdAt must be a positive number.`);
   if (update.playerIds && (!Array.isArray(update.playerIds) || update.playerIds.some((id) => typeof id !== 'string' || !id.trim()))) {
     errors.push(`matches/${docId}: update playerIds must be a non-empty string array.`);
   }
@@ -323,9 +344,10 @@ async function main() {
     const seasonLevelUpdate = args.overwriteExisting || !data.seasonId || !data.divisionLevelId
       ? { seasonId: args.seasonId, divisionLevelId: args.divisionLevelId, matchType: effectiveMatchType }
       : {};
+    const createdAtUpdate = createdAtRepairForMatch(data, doc, now);
     const { updateData: identityUpdate, linkedUserIds } = matchUpdateForRosterLookup(data, rosterByName);
     linkedUserIds.forEach((id) => rosterUserIds.add(id));
-    const updateData = diff(data, { ...seasonLevelUpdate, ...identityUpdate });
+    const updateData = diff(data, { ...seasonLevelUpdate, ...createdAtUpdate, ...identityUpdate });
     validationErrors.push(...validateMatchUpdate(doc.id, data, updateData));
     if (Object.keys(updateData).length > 0) {
       matchChanges.push({ path: `matches/${doc.id}`, ref: doc.ref, before: jsonSafe(data), updateData: jsonSafe(updateData), rawUpdateData: updateData });

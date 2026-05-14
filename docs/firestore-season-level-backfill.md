@@ -99,7 +99,8 @@ Fields the current pages read:
 | `player2IsGuest` | boolean | Optional | Adds guest label and skips account linking. |
 | `liveScore` | object | Yes for scores | Rendered by score formatting helpers. |
 | `winner` | `player1 \| player2` | Completed matches | Renders winner badge/name styling. |
-| `scheduledAt`, `createdAt`, `startedAt`, `completedAt` | number (Unix ms) | Sorting/display | Missing `scheduledAt` renders `Time TBD`. |
+| `createdAt` | number (Unix ms) | Yes for matches list query | `divisionMatchesQuery` orders by `createdAt desc`; Firestore excludes documents where the ordered field is missing. |
+| `scheduledAt`, `startedAt`, `completedAt` | number (Unix ms) | Sorting/display | Missing `scheduledAt` renders `Time TBD`; these can be used to repair missing `createdAt`. |
 
 ### `divisions/{divisionId}/rankings/{userId}`
 
@@ -146,6 +147,7 @@ The page queries now require season-aware and division-level-aware fields. Exist
 * `matches/{matchId}.seasonId`
 * `matches/{matchId}.divisionLevelId`
 * `matches/{matchId}.matchType`
+* `matches/{matchId}.createdAt` because the matches page orders by this field and Firestore omits documents missing an `orderBy` field
 * `matches/{matchId}.playerIds` and side-specific user IDs when older matches were imported by name only
 * `divisions/{divisionId}/memberships/{membershipId}` for season/level roster views
 * `divisions/{divisionId}/rankings/{rankingId}.seasonId` and `divisionLevelId` for standings
@@ -162,6 +164,7 @@ Use `scripts/backfill-division-season-level.mjs` for a safe one-time backfill. I
 * Logs every match and membership document that would change.
 * Writes a backup/export JSON before mutation.
 * Only updates missing `seasonId`/`divisionLevelId` unless `--overwrite-existing` is supplied.
+* Repairs missing match `createdAt` from `completedAt`, `scheduledAt`, `startedAt`, the Firestore document create time, or the script run timestamp so ordered matches-page queries can include the document.
 * Links match side IDs from roster display names when an older completed match was imported by name.
 * Upserts season/level membership documents for division roster users and linked match users.
 * Uses batched writes and is idempotent; re-running produces no writes once the target fields already match.
@@ -210,8 +213,9 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
 1. Run the dry-run and review the console output plus generated backup JSON.
 2. Run the live command with `--write` if the planned changes are correct.
 3. Open `/matches`, select the target season and division level, and confirm the expected matches now appear.
-4. Open `/dashboard`, select the same filters, and confirm standings. If standings are still empty or stale, run the existing ranking repair/recalculation workflow for that division.
-5. No web redeploy is required for data-only Firestore corrections unless you also deploy code changes.
+4. If `/dashboard` has standings but `/matches` is still empty, rerun the dry-run and confirm whether it plans `createdAt` repairs; the matches page query orders by `createdAt`, while standings can be computed from completed matches without that ordering.
+5. Open `/dashboard`, select the same filters, and confirm standings. If standings are still empty or stale, run the existing ranking repair/recalculation workflow for that division.
+6. No web redeploy is required for data-only Firestore corrections unless you also deploy code changes.
 
 ## Risks and assumptions
 
