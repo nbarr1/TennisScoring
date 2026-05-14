@@ -144,6 +144,7 @@ Required shape:
 
 The page queries now require season-aware and division-level-aware fields. Existing documents that are otherwise valid can be invisible because one or more of these fields are absent, stale, named differently, or have the wrong type:
 
+* `matches/{matchId}.divisionId`
 * `matches/{matchId}.seasonId`
 * `matches/{matchId}.divisionLevelId`
 * `matches/{matchId}.matchType`
@@ -164,6 +165,7 @@ Use `scripts/backfill-division-season-level.mjs` for a safe one-time backfill. I
 * Logs every match and membership document that would change.
 * Writes a backup/export JSON before mutation.
 * Only updates missing `seasonId`/`divisionLevelId` unless `--overwrite-existing` is supplied.
+* Discovers roster-linked match documents that are missing `divisionId` by querying `playerIds`, `player1Id`, and `player2Id`, then repairs `divisionId` only when all attached non-guest player IDs belong to the target roster.
 * Repairs missing match `createdAt` from `completedAt`, `scheduledAt`, `startedAt`, the Firestore document create time, or the script run timestamp so ordered matches-page queries can include the document.
 * Links match side IDs from roster display names when an older completed match was imported by name.
 * Upserts season/level membership documents for division roster users and linked match users.
@@ -210,7 +212,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
 
 ## Verification steps
 
-1. Run the dry-run and review the console output plus generated backup JSON.
+1. Run the dry-run and review the console output plus generated backup JSON. If it reports `0 match document(s)` queued, check the diagnostics line for how many documents already have the target `divisionId` and how many roster-linked documents are missing `divisionId`.
 2. Run the live command with `--write` if the planned changes are correct.
 3. Open `/matches`, select the target season and division level, and confirm the expected matches now appear.
 4. If `/dashboard` has standings but `/matches` is still empty, rerun the dry-run and confirm whether it plans `createdAt` repairs; the matches page query orders by `createdAt`, while standings can be computed from completed matches without that ordering.

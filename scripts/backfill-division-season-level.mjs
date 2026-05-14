@@ -250,6 +250,7 @@ function validateMatchUpdate(docId, data, update) {
   if (!isPlainObject(data)) return [`matches/${docId}: document data is not an object.`];
   const errors = [];
   if (data.divisionId && typeof data.divisionId !== 'string') errors.push(`matches/${docId}: divisionId is not a string.`);
+  if (update.divisionId && typeof update.divisionId !== 'string') errors.push(`matches/${docId}: update divisionId is not a string.`);
   if (update.seasonId && typeof update.seasonId !== 'string') errors.push(`matches/${docId}: update seasonId is not a string.`);
   if (update.divisionLevelId && typeof update.divisionLevelId !== 'string') errors.push(`matches/${docId}: update divisionLevelId is not a string.`);
   if (update.matchType && !VALID_MATCH_TYPES.has(update.matchType)) errors.push(`matches/${docId}: update matchType is invalid.`);
@@ -307,6 +308,77 @@ async function commitInBatches(db, operations) {
   return writes;
 }
 
+function candidateBelongsToRoster(data, rosterUserIds) {
+  const ids = new Set();
+  const add = (value) => {
+    if (typeof value === 'string' && value.trim() && value !== 'guest') ids.add(value.trim());
+  };
+  if (Array.isArray(data.playerIds)) data.playerIds.forEach(add);
+  add(data.player1Id);
+  add(data.player2Id);
+  if (ids.size === 0) return false;
+  return [...ids].every((id) => rosterUserIds.has(id));
+}
+
+async function addQueryResultsToMap(querySnapPromise, docsById) {
+  const snap = await querySnapPromise;
+  snap.docs.forEach((docSnap) => docsById.set(docSnap.id, docSnap));
+}
+
+async function collectMatchDocsForBackfill(db, divisionId, rosterUserIds) {
+  const docsById = new Map();
+  await addQueryResultsToMap(db.collection('matches').where('divisionId', '==', divisionId).get(), docsById);
+  const targetDivisionMatchCount = docsById.size;
+
+  const rosterIds = [...rosterUserIds];
+  for (const userId of rosterIds) {
+    await Promise.all([
+      addQueryResultsToMap(db.collection('matches').where('playerIds', 'array-contains', userId).get(), docsById),
+      addQueryResultsToMap(db.collection('matches').where('player1Id', '==', userId).get(), docsById),
+      addQueryResultsToMap(db.collection('matches').where('player2Id', '==', userId).get(), docsById),
+    ]);
+  }
+
+  const docs = [...docsById.values()].filter((docSnap) => {
+    const data = docSnap.data();
+    if (data.divisionId === divisionId) return true;
+    if (data.divisionId !== undefined && data.divisionId !== null && data.divisionId !== '') return false;
+    return candidateBelongsToRoster(data, rosterUserIds);
+  });
+
+  const orphanCandidateCount = docs.filter((docSnap) => !cleanString(docSnap.data().divisionId)).length;
+  return { docs, targetDivisionMatchCount, orphanCandidateCount };
+}
+
+function summarizeMatchesForSelectedFilters(docs, divisionId, seasonId, divisionLevelId) {
+  const summary = {
+    scanned: docs.length,
+    targetDivision: 0,
+    missingDivisionIdCandidates: 0,
+    selectedSeason: 0,
+    selectedSeasonAndLevel: 0,
+    selectedSeasonAndLevelWithCreatedAt: 0,
+    statusCounts: {},
+  };
+
+  docs.forEach((docSnap) => {
+    const data = docSnap.data();
+    const willBelongToDivision = data.divisionId === divisionId || !cleanString(data.divisionId);
+    if (!willBelongToDivision) return;
+    if (data.divisionId === divisionId) summary.targetDivision += 1;
+    if (!cleanString(data.divisionId)) summary.missingDivisionIdCandidates += 1;
+    if (data.seasonId === seasonId) summary.selectedSeason += 1;
+    if (data.seasonId === seasonId && data.divisionLevelId === divisionLevelId) {
+      summary.selectedSeasonAndLevel += 1;
+      if (numericTimestamp(data.createdAt)) summary.selectedSeasonAndLevelWithCreatedAt += 1;
+      const status = typeof data.status === 'string' && data.status ? data.status : 'missing_status';
+      summary.statusCounts[status] = (summary.statusCounts[status] ?? 0) + 1;
+    }
+  });
+
+  return summary;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
@@ -335,19 +407,21 @@ async function main() {
   if (!effectiveMatchType) throw new Error('No valid match type supplied and selected division level has no valid matchType.');
 
   const { rosterUserIds, userSnapById, rosterByName } = await loadRoster(db, args.divisionId, divisionData);
-  const matchesSnap = await db.collection('matches').where('divisionId', '==', args.divisionId).get();
+  const { docs: matchDocs, targetDivisionMatchCount, orphanCandidateCount } = await collectMatchDocsForBackfill(db, args.divisionId, rosterUserIds);
+  const matchSummary = summarizeMatchesForSelectedFilters(matchDocs, args.divisionId, args.seasonId, args.divisionLevelId);
   const matchChanges = [];
   const validationErrors = [];
 
-  for (const doc of matchesSnap.docs) {
+  for (const doc of matchDocs) {
     const data = doc.data();
+    const divisionUpdate = !cleanString(data.divisionId) ? { divisionId: args.divisionId } : {};
     const seasonLevelUpdate = args.overwriteExisting || !data.seasonId || !data.divisionLevelId
       ? { seasonId: args.seasonId, divisionLevelId: args.divisionLevelId, matchType: effectiveMatchType }
       : {};
     const createdAtUpdate = createdAtRepairForMatch(data, doc, now);
     const { updateData: identityUpdate, linkedUserIds } = matchUpdateForRosterLookup(data, rosterByName);
     linkedUserIds.forEach((id) => rosterUserIds.add(id));
-    const updateData = diff(data, { ...seasonLevelUpdate, ...createdAtUpdate, ...identityUpdate });
+    const updateData = diff(data, { ...divisionUpdate, ...seasonLevelUpdate, ...createdAtUpdate, ...identityUpdate });
     validationErrors.push(...validateMatchUpdate(doc.id, data, updateData));
     if (Object.keys(updateData).length > 0) {
       matchChanges.push({ path: `matches/${doc.id}`, ref: doc.ref, before: jsonSafe(data), updateData: jsonSafe(updateData), rawUpdateData: updateData });
@@ -413,11 +487,21 @@ async function main() {
     options: { ...args, backupDir: undefined, backupFile: undefined, help: undefined },
     division: { path: `divisions/${args.divisionId}`, data: jsonSafe(divisionData) },
     level: { path: `divisions/${args.divisionId}/levels/${args.divisionLevelId}`, data: jsonSafe(levelData) },
+    diagnostics: { targetDivisionMatchCount, orphanCandidateCount, selectedFilterSummary: matchSummary },
     matchChanges: matchChanges.map(({ path: changePath, before, updateData }) => ({ path: changePath, before, updateData })),
     membershipChanges: membershipChanges.map(({ path: changePath, before, updateData, exists }) => ({ path: changePath, before, updateData, exists })),
   };
   writeFileSync(backupPath, `${JSON.stringify(backup, null, 2)}\n`);
 
+  console.log(
+    `Diagnostics: ${targetDivisionMatchCount} match document(s) already have divisionId=${args.divisionId}; ` +
+      `${orphanCandidateCount} roster-linked match document(s) are missing divisionId and are eligible for repair.`,
+  );
+  console.log(
+    `Selected filters among discovered docs before writes: season=${args.seasonId}, level=${args.divisionLevelId}, ` +
+      `${matchSummary.selectedSeasonAndLevelWithCreatedAt}/${matchSummary.selectedSeasonAndLevel} currently have createdAt.`,
+  );
+  console.log(`Status counts for selected season/level before planned repairs: ${JSON.stringify(matchSummary.statusCounts)}`);
   console.log(`${args.dryRun ? 'DRY RUN' : 'WRITE'}: ${matchChanges.length} match document(s), ${membershipChanges.length} membership document(s) queued.`);
   console.log(`Backup/export written to ${backupPath}`);
   matchChanges.forEach((change) => console.log(`${args.dryRun ? 'WOULD UPDATE' : 'UPDATE'} ${change.path}: ${JSON.stringify(change.updateData)}`));
