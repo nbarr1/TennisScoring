@@ -11,16 +11,17 @@ const WRITE_LIMIT = 450;
 
 function usage() {
   return `Usage:
-  pnpm run backfill:season-level -- --division <divisionId> --season <spring-2026> --level <levelId> [options]
+  pnpm backfill:season-level --division <divisionId> --season <spring-2026> --level <levelId> [options]
 
 Also supported:
+  pnpm run backfill:season-level -- --division <divisionId> --season <spring-2026> --level <levelId> [options]
   pnpm backfill:season-level -- --division <divisionId> --season <spring-2026> --level <levelId> [options]
   node scripts/backfill-division-season-level.mjs --division-id <divisionId> --season-id <spring-2026> --division-level-id <levelId> [options]
 
 Note:
-  Use the standalone -- separator when passing options through pnpm. Some pnpm
-  versions treat pnpm backfill:season-level --division ... as a pnpm option and
-  fail with Unknown option: --division before this script starts.
+  This package script includes an internal -- separator, and the parser skips any
+  additional -- separators. If -- or --division is reported as unknown, you are
+  running an older copy of this script; pull the latest branch and rerun --help.
 
 Options:
   --write, --live            Apply changes. Omit for dry-run mode.

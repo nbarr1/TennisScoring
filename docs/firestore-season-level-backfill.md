@@ -169,18 +169,18 @@ Use `scripts/backfill-division-season-level.mjs` for a safe one-time backfill. I
 
 ### Dry-run
 
-Preferred `pnpm run` invocation in GitHub Codespaces:
+Preferred invocation in GitHub Codespaces:
 
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
-  pnpm run backfill:season-level -- \
+  pnpm backfill:season-level \
   --division <divisionId> \
   --season spring-2026 \
   --level <divisionLevelId> \
   --backup-dir "$HOME/firestore-backups"
 ```
 
-The script also accepts the shorter `pnpm` script invocation and the longer aliases, so these are equivalent:
+The package script now includes an internal argument separator, and the script skips any additional `--` separators. These are equivalent:
 
 ```bash
 pnpm backfill:season-level -- \
@@ -189,13 +189,13 @@ pnpm backfill:season-level -- \
   --division-level-id <divisionLevelId>
 ```
 
-If you see `Unknown option: --division`, rerun with the preferred `pnpm run backfill:season-level -- ...` form above. Some pnpm versions parse `pnpm backfill:season-level --division ...` as a pnpm CLI option before the script starts.
+If `--` or `--division` is reported as unknown and `--help` prints the old `node scripts/backfill-division-season-level.mjs --division-id DIVISION_ID` usage, the Codespace is running an older copy of this script. Pull the latest branch and reinstall before retrying.
 
 ### Live update
 
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
-  pnpm run backfill:season-level -- \
+  pnpm backfill:season-level \
   --division <divisionId> \
   --season spring-2026 \
   --level <divisionLevelId> \
