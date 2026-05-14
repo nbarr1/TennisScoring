@@ -11,11 +11,16 @@ const WRITE_LIMIT = 450;
 
 function usage() {
   return `Usage:
-  pnpm backfill:season-level --division <divisionId> --season <spring-2026> --level <levelId> [options]
+  pnpm run backfill:season-level -- --division <divisionId> --season <spring-2026> --level <levelId> [options]
 
 Also supported:
   pnpm backfill:season-level -- --division <divisionId> --season <spring-2026> --level <levelId> [options]
   node scripts/backfill-division-season-level.mjs --division-id <divisionId> --season-id <spring-2026> --division-level-id <levelId> [options]
+
+Note:
+  Use the standalone -- separator when passing options through pnpm. Some pnpm
+  versions treat pnpm backfill:season-level --division ... as a pnpm option and
+  fail with Unknown option: --division before this script starts.
 
 Options:
   --write, --live            Apply changes. Omit for dry-run mode.
