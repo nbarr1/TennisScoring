@@ -169,26 +169,41 @@ Use `scripts/backfill-division-season-level.mjs` for a safe one-time backfill. I
 
 ### Dry-run
 
+Preferred `pnpm` invocation in GitHub Codespaces:
+
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
-  pnpm backfill:season-level -- \
+  pnpm backfill:season-level \
   --division <divisionId> \
   --season spring-2026 \
-  --level <divisionLevelId>
+  --level <divisionLevelId> \
+  --backup-dir "$HOME/firestore-backups"
 ```
+
+The script also accepts the `pnpm` argument separator and the longer aliases, so these are equivalent:
+
+```bash
+pnpm backfill:season-level -- \
+  --division-id <divisionId> \
+  --season-id spring-2026 \
+  --division-level-id <divisionLevelId>
+```
+
+If you see `Unknown option: --`, your Codespace is running an older copy of the script. Pull/rebuild the branch, or use the preferred command above without the standalone `--` separator.
 
 ### Live update
 
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json \
-  pnpm backfill:season-level -- \
+  pnpm backfill:season-level \
   --division <divisionId> \
   --season spring-2026 \
   --level <divisionLevelId> \
+  --backup-dir "$HOME/firestore-backups" \
   --write
 ```
 
-Use `--overwrite-existing` only after reviewing dry-run output and confirming every match in the division should be moved to the target season/level.
+`--live` is accepted as an alias for `--write` for compatibility with older runbooks. Use `--overwrite-existing` only after reviewing dry-run output and confirming every match in the division should be moved to the target season/level.
 
 ## Verification steps
 
