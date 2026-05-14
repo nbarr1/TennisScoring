@@ -147,11 +147,11 @@ export default function MatchesPage(): React.JSX.Element {
   const seasonLevels = divisionLevels.filter(
     (level) => level.seasonId === selectedSeasonId,
   );
-  const activeLevelId =
-    selectedLevelId !== "all" &&
-    seasonLevels.some((level) => level.id === selectedLevelId)
-      ? selectedLevelId
+  const activeLevel =
+    selectedLevelId !== "all"
+      ? seasonLevels.find((level) => level.id === selectedLevelId)
       : undefined;
+  const activeLevelId = activeLevel?.id;
 
   useEffect(() => {
     if (!divisionId) {
@@ -428,6 +428,9 @@ export default function MatchesPage(): React.JSX.Element {
           <RecordPastMatchModal
             currentUser={profile}
             divisionId={divisionId}
+            seasonId={selectedSeasonId}
+            divisionLevelId={activeLevelId}
+            matchType={activeLevel?.matchType}
             canRecordOnBehalf={canRecordOnBehalf}
             onClose={() => setShowRecord(false)}
           />
@@ -437,6 +440,9 @@ export default function MatchesPage(): React.JSX.Element {
           <ProposeMatchModal
             currentUser={profile}
             divisionId={divisionId}
+            seasonId={selectedSeasonId}
+            divisionLevelId={activeLevelId}
+            matchType={activeLevel?.matchType}
             onClose={() => setShowPropose(false)}
           />
         )}
@@ -448,11 +454,17 @@ export default function MatchesPage(): React.JSX.Element {
 function RecordPastMatchModal({
   currentUser,
   divisionId,
+  seasonId,
+  divisionLevelId,
+  matchType,
   canRecordOnBehalf,
   onClose,
 }: {
   currentUser: User;
   divisionId: string;
+  seasonId: string;
+  divisionLevelId?: string;
+  matchType?: "singles" | "doubles";
   canRecordOnBehalf: boolean;
   onClose: () => void;
 }) {
@@ -593,6 +605,9 @@ function RecordPastMatchModal({
             player2Name: item.opponentName,
             player2IsGuest: true,
             divisionId,
+            seasonId,
+            divisionLevelId,
+            matchType,
             createdBy: currentUser.id,
             sets: item.sets,
             isDivisionMatch,
@@ -644,6 +659,9 @@ function RecordPastMatchModal({
           player1Id: activePlayer1!.id,
           player2Id: selectedOpponent!.id,
           divisionId,
+          seasonId,
+          divisionLevelId,
+          matchType,
           sets: parsed,
           isDivisionMatch,
           notifyPlayers: true,
@@ -658,6 +676,9 @@ function RecordPastMatchModal({
                 player2Name: guestName.trim(),
                 player2IsGuest: true,
                 divisionId,
+                seasonId,
+                divisionLevelId,
+                matchType,
                 createdBy: currentUser.id,
                 sets: parsed,
                 isDivisionMatch,
@@ -669,6 +690,9 @@ function RecordPastMatchModal({
                 player2Name: selectedOpponent!.displayName,
                 player2IsGuest: false, // EXPLICIT: Real division player
                 divisionId,
+                seasonId,
+                divisionLevelId,
+                matchType,
                 createdBy: currentUser.id,
                 sets: parsed,
                 isDivisionMatch,
@@ -1127,10 +1151,16 @@ function AvailabilityHint({ availability }: { availability?: Availability }) {
 function ProposeMatchModal({
   currentUser,
   divisionId,
+  seasonId,
+  divisionLevelId,
+  matchType,
   onClose,
 }: {
   currentUser: User;
   divisionId: string;
+  seasonId: string;
+  divisionLevelId?: string;
+  matchType?: "singles" | "doubles";
   onClose: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
@@ -1182,6 +1212,9 @@ function ProposeMatchModal({
         player1Name: currentUser.displayName,
         player2Name: selectedOpponent.displayName,
         divisionId,
+        seasonId,
+        divisionLevelId,
+        matchType,
         createdBy: currentUser.id,
         scheduledAt: ts,
       });

@@ -20,6 +20,7 @@ import {
   updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
   upsertDivisionLevel,
   exportDivisionCsv,
+  backfillDivisionSeasonLevel,
   useAuthUser,
   useDivisionLevels,
   useDivisionMemberships,
@@ -85,6 +86,8 @@ export default function AdminPage(): React.JSX.Element {
   );
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
+  const [backfillMessage, setBackfillMessage] = useState("");
+  const [backfillingLevelId, setBackfillingLevelId] = useState<string | null>(null);
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -518,6 +521,35 @@ export default function AdminPage(): React.JSX.Element {
     }
   }
 
+
+  async function handleBackfillLevel(levelId: string) {
+    if (!division) return;
+    const level = divisionLevels.find((item) => item.id === levelId);
+    if (!level) return;
+    const confirmed = window.confirm(
+      `Link all legacy matches without a season/division level to ${level.name}? Existing season/level assignments will be left unchanged.`,
+    );
+    if (!confirmed) return;
+    setBackfillingLevelId(levelId);
+    setBackfillMessage("");
+    setError("");
+    try {
+      const result = await backfillDivisionSeasonLevel({
+        divisionId: division.id,
+        seasonId: level.seasonId,
+        divisionLevelId: level.id,
+        matchType: level.matchType,
+      });
+      setBackfillMessage(
+        `Linked ${result.updatedMatches} legacy match${result.updatedMatches === 1 ? "" : "es"} and upserted ${result.membershipsUpserted} roster membership${result.membershipsUpserted === 1 ? "" : "s"} for ${level.name}.`,
+      );
+    } catch (e) {
+      setError((e as { message?: string }).message || "Failed to link legacy matches.");
+    } finally {
+      setBackfillingLevelId(null);
+    }
+  }
+
   async function repairRankings() {
     if (!division) return;
     setRepairingRankings(true);
@@ -852,6 +884,7 @@ export default function AdminPage(): React.JSX.Element {
                       <th style={styles.th}>Type</th>
                       <th style={styles.th}>Skill</th>
                       <th style={styles.th}>Description</th>
+                      <th style={styles.th}>Legacy Data</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -861,6 +894,16 @@ export default function AdminPage(): React.JSX.Element {
                         <td style={styles.td}>{level.matchType}</td>
                         <td style={styles.td}>{level.skillLevel}</td>
                         <td style={styles.td}>{level.description || "—"}</td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            style={styles.btnSecondary}
+                            onClick={() => handleBackfillLevel(level.id)}
+                            disabled={backfillingLevelId === level.id}
+                          >
+                            {backfillingLevelId === level.id ? "Linking…" : "Link legacy matches"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -869,6 +912,7 @@ export default function AdminPage(): React.JSX.Element {
               {adminSeasonLevels.length === 0 && (
                 <p style={styles.hint}>No divisions have been configured for this season.</p>
               )}
+              {backfillMessage && <p role="status" style={styles.success}>{backfillMessage}</p>}
             </div>
 
             <div style={styles.card}>

@@ -10,6 +10,7 @@ export {
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
   upsertDivisionMembership,
+  backfillDivisionSeasonLevel,
   exportDivisionCsv,
 } from './divisions/divisionFunctions';
 

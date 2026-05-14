@@ -57,6 +57,9 @@ export async function createMatch(params: {
   player2Name?: string;
   player2IsGuest?: boolean;
   divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   createdBy: string;
   scheduledAt?: number;
   isDivisionMatch?: boolean;
@@ -68,6 +71,9 @@ export async function createMatch(params: {
     player2Name,
     player2IsGuest,
     divisionId,
+    seasonId,
+    divisionLevelId,
+    matchType,
     createdBy,
     scheduledAt,
     isDivisionMatch,
@@ -76,6 +82,9 @@ export async function createMatch(params: {
 
   const matchData: Omit<Match, 'id'> = {
     divisionId,
+    ...(seasonId && { seasonId }),
+    ...(divisionLevelId && { divisionLevelId }),
+    ...(matchType && { matchType }),
     player1Id,
     player2Id,
     ...(player1Name && { player1Name }),
@@ -146,6 +155,9 @@ export async function recordHistoricMatch(params: {
   player2Name?: string;
   player2IsGuest?: boolean;
   divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   createdBy: string;
   sets: { p1: number; p2: number }[];
   isDivisionMatch?: boolean;
@@ -161,6 +173,9 @@ export async function recordHistoricMatch(params: {
     player2Name: params.player2Name,
     player2IsGuest: params.player2IsGuest,
     divisionId: params.divisionId,
+    seasonId: params.seasonId,
+    divisionLevelId: params.divisionLevelId,
+    matchType: params.matchType,
     sets: params.sets,
     isDivisionMatch: params.isDivisionMatch,
   });
@@ -173,6 +188,9 @@ export async function recordMatchOnBehalf(params: {
   player1Id: string;
   player2Id: string;
   divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   sets: { p1: number; p2: number }[];
   isDivisionMatch?: boolean;
   notifyPlayers?: boolean;
@@ -249,6 +267,9 @@ export async function proposeMatch(params: {
   player1Name?: string;
   player2Name?: string;
   divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: Match['matchType'];
   createdBy: string;
   scheduledAt: number;
 }): Promise<string> {
@@ -258,11 +279,17 @@ export async function proposeMatch(params: {
     player1Name,
     player2Name,
     divisionId,
+    seasonId,
+    divisionLevelId,
+    matchType,
     createdBy,
     scheduledAt,
   } = params;
   const matchData: Omit<Match, 'id'> = {
     divisionId,
+    ...(seasonId && { seasonId }),
+    ...(divisionLevelId && { divisionLevelId }),
+    ...(matchType && { matchType }),
     player1Id,
     player2Id,
     ...(player1Name && { player1Name }),

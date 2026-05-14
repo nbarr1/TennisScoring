@@ -142,7 +142,7 @@ jobs:
       - name: Deploy updated functions
         run: >-
           npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:upsertDivisionLevel,functions:upsertDivisionMembership,functions:exportDivisionCsv,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
+          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:upsertDivisionLevel,functions:upsertDivisionMembership,functions:backfillDivisionSeasonLevel,functions:exportDivisionCsv,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
           --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}

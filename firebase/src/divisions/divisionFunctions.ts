@@ -43,6 +43,13 @@ type UpsertDivisionMembershipInput = {
   phone?: string;
   sendInvite?: boolean;
 };
+type BackfillDivisionSeasonLevelInput = {
+  divisionId?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: 'singles' | 'doubles';
+  overwriteExisting?: boolean;
+};
 type MergePlayerRecordsInput = {
   divisionId?: string;
   sourceUserId?: string;
@@ -1096,6 +1103,93 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
   ]);
 
   return { membershipId, userId: targetUserId, createdPlaceholder };
+});
+
+
+export const backfillDivisionSeasonLevel = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to backfill division data.');
+  }
+
+  const { divisionId, seasonId, divisionLevelId, matchType, overwriteExisting } =
+    (request.data ?? {}) as BackfillDivisionSeasonLevelInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSeasonId = seasonId?.trim();
+  const safeDivisionLevelId = divisionLevelId?.trim();
+  const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
+  if (!safeDivisionId || !safeSeasonId || !safeDivisionLevelId) {
+    throw new HttpsError('invalid-argument', 'Division, season, and division level are required.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const level = await assertDivisionLevel(db, safeDivisionId, safeSeasonId, safeDivisionLevelId);
+  const effectiveMatchType = safeMatchType ?? (level?.matchType === 'singles' || level?.matchType === 'doubles' ? level.matchType : undefined);
+
+  const snap = await db.collection('matches').where('divisionId', '==', safeDivisionId).get();
+  const matchesToUpdate = snap.docs.filter((doc) => {
+    const data = doc.data();
+    if (overwriteExisting) return true;
+    return !data.seasonId || !data.divisionLevelId;
+  });
+
+  let updatedMatches = 0;
+  for (let i = 0; i < matchesToUpdate.length; i += 400) {
+    const batch = db.batch();
+    matchesToUpdate.slice(i, i + 400).forEach((doc) => {
+      batch.update(doc.ref, {
+        seasonId: safeSeasonId,
+        divisionLevelId: safeDivisionLevelId,
+        ...(effectiveMatchType ? { matchType: effectiveMatchType } : {}),
+      });
+      updatedMatches += 1;
+    });
+    await batch.commit();
+  }
+
+  const playerIds = new Set<string>();
+  const playerNames = new Map<string, string>();
+  for (const doc of matchesToUpdate) {
+    const data = doc.data();
+    const p1 = typeof data.player1Id === 'string' ? data.player1Id : '';
+    const p2 = typeof data.player2Id === 'string' ? data.player2Id : '';
+    if (p1 && p1 !== 'guest') {
+      playerIds.add(p1);
+      if (typeof data.player1Name === 'string') playerNames.set(p1, data.player1Name);
+    }
+    if (p2 && p2 !== 'guest' && data.player2IsGuest !== true) {
+      playerIds.add(p2);
+      if (typeof data.player2Name === 'string') playerNames.set(p2, data.player2Name);
+    }
+    if (Array.isArray(data.playerIds)) {
+      data.playerIds.filter((id: unknown): id is string => typeof id === 'string' && id !== 'guest').forEach((id) => playerIds.add(id));
+    }
+  }
+
+  let membershipsUpserted = 0;
+  const userSnaps = await Promise.all([...playerIds].map((id) => db.collection('users').doc(id).get()));
+  for (const userSnap of userSnaps) {
+    const user = userSnap.data() ?? {};
+    await upsertMembershipDocument(db, {
+      divisionId: safeDivisionId,
+      seasonId: safeSeasonId,
+      divisionLevelId: safeDivisionLevelId,
+      userId: userSnap.id,
+      displayName: (typeof user.displayName === 'string' && user.displayName) || playerNames.get(userSnap.id) || userSnap.id,
+      email: typeof user.email === 'string' ? user.email : undefined,
+      phone: typeof user.phone === 'string' ? user.phone : undefined,
+      assignedBy: request.auth.uid,
+      source: 'migration',
+      role: 'player',
+    });
+    membershipsUpserted += 1;
+  }
+
+  if (updatedMatches > 0) {
+    await recalculateRankings(safeDivisionId, { normalizeMatches: true });
+  }
+
+  return { success: true, updatedMatches, membershipsUpserted };
 });
 
 export const exportDivisionCsv = onCall(callableOptions, async (request) => {

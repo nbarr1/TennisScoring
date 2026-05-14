@@ -125,6 +125,25 @@ export async function upsertDivisionMembership(input: {
   return result.data;
 }
 
+
+export async function backfillDivisionSeasonLevel(input: {
+  divisionId: string;
+  seasonId: string;
+  divisionLevelId: string;
+  matchType?: DivisionMatchType;
+  overwriteExisting?: boolean;
+}): Promise<{ updatedMatches: number; membershipsUpserted: number }> {
+  const callable = httpsCallable<
+    typeof input,
+    { success: boolean; updatedMatches: number; membershipsUpserted: number }
+  >(functions, 'backfillDivisionSeasonLevel');
+  const result = await callable(input);
+  return {
+    updatedMatches: result.data.updatedMatches,
+    membershipsUpserted: result.data.membershipsUpserted,
+  };
+}
+
 export async function exportDivisionCsv(input: {
   divisionId: string;
   exportType: 'matches' | 'rankings';
