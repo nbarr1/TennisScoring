@@ -33,6 +33,36 @@ export interface DivisionLevel {
   updatedAt: number;
 }
 
+
+export type DivisionMembershipRole = 'player' | 'division_leader';
+export type DivisionMembershipStatus = 'active' | 'waitlisted' | 'removed';
+export type DivisionMembershipSource = 'registered_user' | 'placeholder' | 'imported' | 'migration';
+
+export interface DivisionMembership {
+  id: string;
+  divisionId: string;
+  seasonId: string;
+  divisionLevelId: string;
+  userId: string;
+  displayNameSnapshot: string;
+  emailSnapshot?: string;
+  phoneSnapshot?: string;
+  role: DivisionMembershipRole;
+  status: DivisionMembershipStatus;
+  source: DivisionMembershipSource;
+  assignedBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function divisionMembershipId(
+  seasonId: string,
+  divisionLevelId: string,
+  userId: string,
+): string {
+  return `${seasonId}_${divisionLevelId}_${userId}`;
+}
+
 export interface Division {
   id: string;
   name: string;

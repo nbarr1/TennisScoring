@@ -10,7 +10,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from './config';
-import type { User, Match, Division, DivisionLevel, Channel, Message, PlayerRanking, HeadToHead } from '@tennis/shared';
+import type { User, Match, Division, DivisionLevel, DivisionMembership, Channel, Message, PlayerRanking, HeadToHead } from '@tennis/shared';
 
 // Typed collection helpers
 export const usersCol = () => collection(db, 'users') as CollectionReference<User>;
@@ -27,6 +27,12 @@ export const divisionLevelsCol = (divisionId: string) =>
 
 export const divisionLevelDoc = (divisionId: string, levelId: string) =>
   doc(db, 'divisions', divisionId, 'levels', levelId) as DocumentReference<DivisionLevel>;
+
+export const divisionMembershipsCol = (divisionId: string) =>
+  collection(db, 'divisions', divisionId, 'memberships') as CollectionReference<DivisionMembership>;
+
+export const divisionMembershipDoc = (divisionId: string, membershipId: string) =>
+  doc(db, 'divisions', divisionId, 'memberships', membershipId) as DocumentReference<DivisionMembership>;
 
 export const matchesCol = () => collection(db, 'matches') as CollectionReference<Match>;
 export const matchDoc = (id: string) => doc(db, 'matches', id) as DocumentReference<Match>;
@@ -46,14 +52,17 @@ export const divisionMatchesQuery = (divisionId: string, ...extra: QueryConstrai
 export const liveMatchesQuery = (divisionId: string) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'in_progress'));
 
-export const completedDivisionMatchesQuery = (divisionId: string) =>
-  query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'completed'));
+export const completedDivisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
+  query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'completed'), ...extra);
 
 export const playerMatchesQuery = (playerId: string) =>
   query(matchesCol(), where('playerIds', 'array-contains', playerId), orderBy('createdAt', 'desc'));
 
-export const rankingsQuery = (divisionId: string) =>
-  query(rankingsCol(divisionId), orderBy('rank', 'asc'));
+export const rankingsQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
+  query(rankingsCol(divisionId), orderBy('rank', 'asc'), ...extra);
+
+export const divisionMembershipsQuery = (divisionId: string, seasonId: string, ...extra: QueryConstraint[]) =>
+  query(divisionMembershipsCol(divisionId), where('seasonId', '==', seasonId), ...extra);
 
 export const channelMessagesQuery = (channelId: string, messageLimit = 50) =>
   query(messagesCol(channelId), orderBy('createdAt', 'asc'), limit(messageLimit));

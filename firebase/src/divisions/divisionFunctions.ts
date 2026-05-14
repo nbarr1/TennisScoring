@@ -3,7 +3,7 @@ import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
-import { toCsv } from '@tennis/shared';
+import { divisionMembershipId, toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
@@ -14,6 +14,7 @@ type CreateDivisionInput = {
   name?: string;
   displayName?: string;
   email?: string;
+  phone?: string;
 };
 
 type JoinDivisionInput = {
@@ -29,6 +30,25 @@ type AddPlaceholderInput = {
   name?: string;
   email?: string;
   sendInvite?: boolean;
+  seasonId?: string;
+  divisionLevelId?: string;
+};
+type UpsertDivisionMembershipInput = {
+  divisionId?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  userId?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  sendInvite?: boolean;
+};
+type BackfillDivisionSeasonLevelInput = {
+  divisionId?: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchType?: 'singles' | 'doubles';
+  overwriteExisting?: boolean;
 };
 type MergePlayerRecordsInput = {
   divisionId?: string;
@@ -41,6 +61,7 @@ type UpdateDivisionPlayerEmailInput = {
   divisionId?: string;
   userId?: string;
   email?: string;
+  phone?: string;
 };
 
 function normalizeEmail(email: string): string {
@@ -138,6 +159,71 @@ async function requireDivisionLeaderOrAdmin(
   }
 
   return divisionSnap;
+}
+
+
+async function assertDivisionLevel(
+  db: FirebaseFirestore.Firestore,
+  divisionId: string,
+  seasonId: string,
+  divisionLevelId: string,
+) {
+  const levelSnap = await db
+    .collection('divisions')
+    .doc(divisionId)
+    .collection('levels')
+    .doc(divisionLevelId)
+    .get();
+  const level = levelSnap.data();
+  if (!levelSnap.exists || level?.seasonId !== seasonId) {
+    throw new HttpsError('failed-precondition', 'Selected division level is not available for that season.');
+  }
+  return level;
+}
+
+async function upsertMembershipDocument(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    divisionId: string;
+    seasonId: string;
+    divisionLevelId: string;
+    userId: string;
+    displayName: string;
+    email?: string;
+    phone?: string;
+    assignedBy: string;
+    source: 'registered_user' | 'placeholder' | 'imported' | 'migration';
+    role?: 'player' | 'division_leader';
+  },
+): Promise<string> {
+  await assertDivisionLevel(db, input.divisionId, input.seasonId, input.divisionLevelId);
+  const membershipId = divisionMembershipId(input.seasonId, input.divisionLevelId, input.userId);
+  const ref = db
+    .collection('divisions')
+    .doc(input.divisionId)
+    .collection('memberships')
+    .doc(membershipId);
+  const snap = await ref.get();
+  await ref.set(
+    {
+      id: membershipId,
+      divisionId: input.divisionId,
+      seasonId: input.seasonId,
+      divisionLevelId: input.divisionLevelId,
+      userId: input.userId,
+      displayNameSnapshot: input.displayName,
+      ...(input.email ? { emailSnapshot: normalizeEmail(input.email) } : {}),
+      ...(input.phone ? { phoneSnapshot: input.phone.trim() } : {}),
+      role: input.role ?? 'player',
+      status: 'active',
+      source: input.source,
+      assignedBy: input.assignedBy,
+      createdAt: snap.exists ? snap.data()?.createdAt ?? FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return membershipId;
 }
 
 export const createDivision = onCall(callableOptions, async (request) => {
@@ -301,15 +387,30 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
   try {
     if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
     const uid = request.auth.uid;
-    const { divisionId, name, email, sendInvite } = (request.data ?? {}) as AddPlaceholderInput;
+    const { divisionId, name, email, sendInvite, seasonId, divisionLevelId } = (request.data ?? {}) as AddPlaceholderInput;
     const safeDivisionId = divisionId?.trim();
     const safeName = name?.trim();
     const safeEmail = email ? normalizeEmail(email) : '';
+    const safeSeasonId = seasonId?.trim();
+    const safeDivisionLevelId = divisionLevelId?.trim();
     if (!safeDivisionId || !safeName) {
       throw new HttpsError('invalid-argument', 'Division and name are required.');
     }
     const db = getFirestore();
     await requireDivisionLeaderOrAdmin(db, uid, safeDivisionId);
+    const maybeUpsertMembership = async (targetUserId: string, displayName: string, source: 'registered_user' | 'placeholder') => {
+      if (!safeSeasonId || !safeDivisionLevelId) return undefined;
+      return upsertMembershipDocument(db, {
+        divisionId: safeDivisionId,
+        seasonId: safeSeasonId,
+        divisionLevelId: safeDivisionLevelId,
+        userId: targetUserId,
+        displayName,
+        email: safeEmail,
+        assignedBy: uid,
+        source,
+      });
+    };
     if (safeEmail) {
       const existing = await db.collection('users').where('email', '==', safeEmail).limit(1).get();
       if (!existing.empty) {
@@ -333,7 +434,9 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
           );
         });
         await addUserToDivisionChannel(db, safeDivisionId, existingUserId);
-        return { success: true, userId: existingUserId, createdPlaceholder: false };
+        const existingDisplayName = existing.docs[0].data()?.displayName ?? safeName;
+        const membershipId = await maybeUpsertMembership(existingUserId, existingDisplayName, 'registered_user');
+        return { success: true, userId: existingUserId, createdPlaceholder: false, membershipId };
       }
     }
     const existingByName = await db
@@ -353,7 +456,8 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
         { merge: true },
       );
       await addUserToDivisionChannel(db, safeDivisionId, exactNameMatch.id);
-      return { success: true, userId: exactNameMatch.id, createdPlaceholder: false };
+      const membershipId = await maybeUpsertMembership(exactNameMatch.id, safeName, 'registered_user');
+      return { success: true, userId: exactNameMatch.id, createdPlaceholder: false, membershipId };
     }
     const now = Date.now();
     const placeholderRef = db.collection('users').doc();
@@ -424,12 +528,14 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
     if (matchUpdates.length > 0) {
       await recalculateRankings(safeDivisionId);
     }
+    const membershipId = await maybeUpsertMembership(placeholderRef.id, safeName, 'placeholder');
 
     return {
       success: true,
       userId: placeholderRef.id,
       createdPlaceholder: true,
       linkedHistoricalMatches: matchUpdates.length,
+      membershipId,
     };
   } catch (error) {
     if (error instanceof HttpsError) throw error;
@@ -676,10 +782,11 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
-  const { divisionId, userId, email } = (request.data ?? {}) as UpdateDivisionPlayerEmailInput;
+  const { divisionId, userId, email, phone } = (request.data ?? {}) as UpdateDivisionPlayerEmailInput;
   const safeDivisionId = divisionId?.trim();
   const safeUserId = userId?.trim();
   const safeEmail = typeof email === 'string' ? normalizeEmail(email) : '';
+  const safePhone = typeof phone === 'string' ? phone.trim() : undefined;
   if (!safeDivisionId || !safeUserId || !safeEmail) {
     throw new HttpsError('invalid-argument', 'Division, user, and email are required.');
   }
@@ -702,7 +809,12 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
   const batch = db.batch();
   batch.set(
     db.collection('users').doc(safeUserId),
-    { email: safeEmail, divisionId: safeDivisionId, updatedAt: FieldValue.serverTimestamp() },
+    {
+      email: safeEmail,
+      ...(safePhone !== undefined ? { phone: safePhone } : {}),
+      divisionId: safeDivisionId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
     { merge: true },
   );
   if (!playerIds.includes(safeUserId) && leaderIds.includes(safeUserId)) {
@@ -871,6 +983,213 @@ export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
   await db.collection('divisions').doc(divisionId).set({ updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
   return { levelId: levelRef.id };
+});
+
+
+export const upsertDivisionMembership = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage division memberships.');
+  }
+
+  const { divisionId, seasonId, divisionLevelId, userId, name, email, phone, sendInvite } =
+    (request.data ?? {}) as UpsertDivisionMembershipInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSeasonId = seasonId?.trim();
+  const safeLevelId = divisionLevelId?.trim();
+  const safeUserId = userId?.trim();
+  const safeName = name?.trim();
+  const safeEmail = email ? normalizeEmail(email) : '';
+  const safePhone = phone?.trim();
+  if (!safeDivisionId || !safeSeasonId || !safeLevelId || (!safeUserId && !safeName && !safeEmail)) {
+    throw new HttpsError('invalid-argument', 'Division, season, level, and player are required.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  await assertDivisionLevel(db, safeDivisionId, safeSeasonId, safeLevelId);
+
+  let targetUserId = safeUserId;
+  let createdPlaceholder = false;
+  let displayName = safeName || safeEmail || 'Player';
+  let targetEmail = safeEmail;
+  let targetPhone = safePhone;
+  let source: 'registered_user' | 'placeholder' = 'registered_user';
+
+  if (targetUserId) {
+    const userSnap = await db.collection('users').doc(targetUserId).get();
+    if (!userSnap.exists) throw new HttpsError('not-found', 'Player not found.');
+    const data = userSnap.data() ?? {};
+    displayName = (typeof data.displayName === 'string' && data.displayName.trim()) || displayName;
+    targetEmail = safeEmail || (typeof data.email === 'string' ? data.email : '');
+    targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
+  } else if (safeEmail) {
+    const existing = await db.collection('users').where('email', '==', safeEmail).limit(1).get();
+    if (!existing.empty) {
+      targetUserId = existing.docs[0].id;
+      const data = existing.docs[0].data();
+      displayName = (typeof data.displayName === 'string' && data.displayName.trim()) || displayName;
+      targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
+    }
+  }
+
+  if (!targetUserId && safeName) {
+    const sameDivision = await db.collection('users').where('divisionId', '==', safeDivisionId).get();
+    const exactNameMatch = sameDivision.docs.find((doc) => {
+      const display = doc.data()?.displayName;
+      return typeof display === 'string' && normalizeName(display) === normalizeName(safeName);
+    });
+    if (exactNameMatch) {
+      targetUserId = exactNameMatch.id;
+      const data = exactNameMatch.data();
+      displayName = data.displayName ?? displayName;
+      targetEmail = safeEmail || (typeof data.email === 'string' ? data.email : '');
+      targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
+    }
+  }
+
+  if (!targetUserId) {
+    const now = Date.now();
+    const placeholderRef = db.collection('users').doc();
+    targetUserId = placeholderRef.id;
+    createdPlaceholder = true;
+    source = 'placeholder';
+    await placeholderRef.set({
+      id: targetUserId,
+      displayName,
+      email: targetEmail,
+      ...(targetPhone ? { phone: targetPhone } : { phone: null }),
+      avatarUrl: null,
+      contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+      divisionId: safeDivisionId,
+      role: 'player',
+      fcmTokens: [],
+      tipsEnabled: true,
+      isRegistered: false,
+      inviteStatus: sendInvite && targetEmail ? 'invite_sent' : 'none',
+      invitedAt: sendInvite && targetEmail ? now : null,
+      invitedBy: sendInvite && targetEmail ? request.auth.uid : null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  const membershipId = await upsertMembershipDocument(db, {
+    divisionId: safeDivisionId,
+    seasonId: safeSeasonId,
+    divisionLevelId: safeLevelId,
+    userId: targetUserId,
+    displayName,
+    email: targetEmail,
+    phone: targetPhone,
+    assignedBy: request.auth.uid,
+    source,
+  });
+
+  await Promise.all([
+    db.collection('divisions').doc(safeDivisionId).set(
+      { playerIds: FieldValue.arrayUnion(targetUserId), updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    ),
+    db.collection('users').doc(targetUserId).set(
+      {
+        ...(targetEmail ? { email: targetEmail } : {}),
+        ...(targetPhone ? { phone: targetPhone } : {}),
+        divisionId: safeDivisionId,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    ),
+    addUserToDivisionChannel(db, safeDivisionId, targetUserId),
+  ]);
+
+  return { membershipId, userId: targetUserId, createdPlaceholder };
+});
+
+
+export const backfillDivisionSeasonLevel = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to backfill division data.');
+  }
+
+  const { divisionId, seasonId, divisionLevelId, matchType, overwriteExisting } =
+    (request.data ?? {}) as BackfillDivisionSeasonLevelInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSeasonId = seasonId?.trim();
+  const safeDivisionLevelId = divisionLevelId?.trim();
+  const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
+  if (!safeDivisionId || !safeSeasonId || !safeDivisionLevelId) {
+    throw new HttpsError('invalid-argument', 'Division, season, and division level are required.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const level = await assertDivisionLevel(db, safeDivisionId, safeSeasonId, safeDivisionLevelId);
+  const effectiveMatchType = safeMatchType ?? (level?.matchType === 'singles' || level?.matchType === 'doubles' ? level.matchType : undefined);
+
+  const snap = await db.collection('matches').where('divisionId', '==', safeDivisionId).get();
+  const matchesToUpdate = snap.docs.filter((doc) => {
+    const data = doc.data();
+    if (overwriteExisting) return true;
+    return !data.seasonId || !data.divisionLevelId;
+  });
+
+  let updatedMatches = 0;
+  for (let i = 0; i < matchesToUpdate.length; i += 400) {
+    const batch = db.batch();
+    matchesToUpdate.slice(i, i + 400).forEach((doc) => {
+      batch.update(doc.ref, {
+        seasonId: safeSeasonId,
+        divisionLevelId: safeDivisionLevelId,
+        ...(effectiveMatchType ? { matchType: effectiveMatchType } : {}),
+      });
+      updatedMatches += 1;
+    });
+    await batch.commit();
+  }
+
+  const playerIds = new Set<string>();
+  const playerNames = new Map<string, string>();
+  for (const doc of matchesToUpdate) {
+    const data = doc.data();
+    const p1 = typeof data.player1Id === 'string' ? data.player1Id : '';
+    const p2 = typeof data.player2Id === 'string' ? data.player2Id : '';
+    if (p1 && p1 !== 'guest') {
+      playerIds.add(p1);
+      if (typeof data.player1Name === 'string') playerNames.set(p1, data.player1Name);
+    }
+    if (p2 && p2 !== 'guest' && data.player2IsGuest !== true) {
+      playerIds.add(p2);
+      if (typeof data.player2Name === 'string') playerNames.set(p2, data.player2Name);
+    }
+    if (Array.isArray(data.playerIds)) {
+      data.playerIds.filter((id: unknown): id is string => typeof id === 'string' && id !== 'guest').forEach((id) => playerIds.add(id));
+    }
+  }
+
+  let membershipsUpserted = 0;
+  const userSnaps = await Promise.all([...playerIds].map((id) => db.collection('users').doc(id).get()));
+  for (const userSnap of userSnaps) {
+    const user = userSnap.data() ?? {};
+    await upsertMembershipDocument(db, {
+      divisionId: safeDivisionId,
+      seasonId: safeSeasonId,
+      divisionLevelId: safeDivisionLevelId,
+      userId: userSnap.id,
+      displayName: (typeof user.displayName === 'string' && user.displayName) || playerNames.get(userSnap.id) || userSnap.id,
+      email: typeof user.email === 'string' ? user.email : undefined,
+      phone: typeof user.phone === 'string' ? user.phone : undefined,
+      assignedBy: request.auth.uid,
+      source: 'migration',
+      role: 'player',
+    });
+    membershipsUpserted += 1;
+  }
+
+  if (updatedMatches > 0) {
+    await recalculateRankings(safeDivisionId, { normalizeMatches: true });
+  }
+
+  return { success: true, updatedMatches, membershipsUpserted };
 });
 
 export const exportDivisionCsv = onCall(callableOptions, async (request) => {

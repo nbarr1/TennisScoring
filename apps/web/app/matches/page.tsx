@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { onSnapshot } from "firebase/firestore";
+import { useEffect, useMemo, useState } from "react";
+import { onSnapshot, where } from "firebase/firestore";
 import {
   divisionMatchesQuery,
   recordHistoricMatch,
@@ -17,12 +17,15 @@ import {
   useActiveDivisionId,
   useAuthUser,
   useUserProfile,
+  useDivisionLevels,
 } from "@tennis/firebase-client";
 import {
   formatScoreDisplay,
   formatGameScore,
   DAY_LABELS,
   getMatchStatusMetadata,
+  currentSeasonForDate,
+  defaultSeasonOptions,
 } from "@tennis/shared";
 import type { Match, User, Availability } from "@tennis/shared";
 
@@ -136,6 +139,19 @@ export default function MatchesPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [showRecord, setShowRecord] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
+  const currentSeason = useMemo(() => currentSeasonForDate(), []);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(currentSeason.id);
+  const [selectedLevelId, setSelectedLevelId] = useState("all");
+  const { levels: divisionLevels } = useDivisionLevels(divisionId);
+  const seasonLevels = divisionLevels.filter(
+    (level) => level.seasonId === selectedSeasonId,
+  );
+  const activeLevel =
+    selectedLevelId !== "all"
+      ? seasonLevels.find((level) => level.id === selectedLevelId)
+      : undefined;
+  const activeLevelId = activeLevel?.id;
 
   useEffect(() => {
     if (!divisionId) {
@@ -144,7 +160,11 @@ export default function MatchesPage(): React.JSX.Element {
       return;
     }
     setLoading(true);
-    const q = divisionMatchesQuery(divisionId);
+    const q = divisionMatchesQuery(
+      divisionId,
+      where("seasonId", "==", selectedSeasonId),
+      ...(activeLevelId ? [where("divisionLevelId", "==", activeLevelId)] : []),
+    );
     return onSnapshot(
       q,
       (snap) => {
@@ -161,7 +181,7 @@ export default function MatchesPage(): React.JSX.Element {
         setLoading(false);
       },
     );
-  }, [divisionId]);
+  }, [divisionId, activeLevelId, selectedSeasonId]);
 
   const uid = firebaseUser?.uid;
   const liveMatches = matches.filter((m) => m.status === "in_progress");
@@ -176,6 +196,40 @@ export default function MatchesPage(): React.JSX.Element {
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
   const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
+
+  const levelNameById = new Map(
+    divisionLevels.map((level) => [level.id, level.name] as const),
+  );
+  const playerGroupedMatches = matches.reduce<
+    Array<{ levelId: string; levelName: string; players: Array<{ playerId: string; playerName: string; matches: Match[] }> }>
+  >((groups, match) => {
+    const levelId = match.divisionLevelId ?? "unassigned";
+    const levelName =
+      levelId === "unassigned"
+        ? "Unassigned division"
+        : levelNameById.get(levelId) ?? "Division";
+    let levelGroup = groups.find((group) => group.levelId === levelId);
+    if (!levelGroup) {
+      levelGroup = { levelId, levelName, players: [] };
+      groups.push(levelGroup);
+    }
+    [
+      { id: match.player1Id, name: match.player1Name ?? "Player 1" },
+      { id: match.player2Id, name: match.player2Name ?? "Player 2" },
+    ]
+      .filter((player) => player.id !== "guest")
+      .forEach((player) => {
+        let playerGroup = levelGroup.players.find((group) => group.playerId === player.id);
+        if (!playerGroup) {
+          playerGroup = { playerId: player.id, playerName: player.name, matches: [] };
+          levelGroup.players.push(playerGroup);
+        }
+        if (!playerGroup.matches.some((existing) => existing.id === match.id)) {
+          playerGroup.matches.push(match);
+        }
+      });
+    return groups;
+  }, []);
   const canRecordOnBehalf =
     profile?.role === "admin" ||
     profile?.role === "division_leader" ||
@@ -204,6 +258,41 @@ export default function MatchesPage(): React.JSX.Element {
               </button>
             </div>
           )}
+        </div>
+
+        <div style={styles.filterBar} aria-label="Match filters">
+          <label style={styles.filterLabel}>
+            Season
+            <select
+              style={styles.select}
+              value={selectedSeasonId}
+              onChange={(e) => {
+                setSelectedSeasonId(e.target.value);
+                setSelectedLevelId("all");
+              }}
+            >
+              {seasonOptions.map((season) => (
+                <option key={season.id} value={season.id}>
+                  {season.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={styles.filterLabel}>
+            Division
+            <select
+              style={styles.select}
+              value={activeLevelId ?? "all"}
+              onChange={(e) => setSelectedLevelId(e.target.value)}
+            >
+              <option value="all">All divisions</option>
+              {seasonLevels.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {!divisionLoading && !divisionId ? (
@@ -306,6 +395,32 @@ export default function MatchesPage(): React.JSX.Element {
                 </div>
               </section>
             )}
+
+            {playerGroupedMatches.length > 0 && (
+              <section style={styles.section}>
+                <h2 style={styles.sectionTitle}>Matches by Division & Player</h2>
+                {playerGroupedMatches.map((divisionGroup) => (
+                  <div key={divisionGroup.levelId} style={styles.groupBlock}>
+                    <h3 style={styles.groupTitle}>{divisionGroup.levelName}</h3>
+                    {divisionGroup.players
+                      .sort((a, b) => a.playerName.localeCompare(b.playerName))
+                      .map((playerGroup) => (
+                        <details key={playerGroup.playerId} style={styles.playerGroup}>
+                          <summary style={styles.playerSummary}>
+                            {playerGroup.playerName} · {playerGroup.matches.length} match
+                            {playerGroup.matches.length === 1 ? "" : "es"}
+                          </summary>
+                          <div style={styles.grid}>
+                            {playerGroup.matches.map((m) => (
+                              <MatchCard key={`${playerGroup.playerId}-${m.id}`} m={m} />
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                  </div>
+                ))}
+              </section>
+            )}
           </>
         )}
 
@@ -313,6 +428,9 @@ export default function MatchesPage(): React.JSX.Element {
           <RecordPastMatchModal
             currentUser={profile}
             divisionId={divisionId}
+            seasonId={selectedSeasonId}
+            divisionLevelId={activeLevelId}
+            matchType={activeLevel?.matchType}
             canRecordOnBehalf={canRecordOnBehalf}
             onClose={() => setShowRecord(false)}
           />
@@ -322,6 +440,9 @@ export default function MatchesPage(): React.JSX.Element {
           <ProposeMatchModal
             currentUser={profile}
             divisionId={divisionId}
+            seasonId={selectedSeasonId}
+            divisionLevelId={activeLevelId}
+            matchType={activeLevel?.matchType}
             onClose={() => setShowPropose(false)}
           />
         )}
@@ -333,11 +454,17 @@ export default function MatchesPage(): React.JSX.Element {
 function RecordPastMatchModal({
   currentUser,
   divisionId,
+  seasonId,
+  divisionLevelId,
+  matchType,
   canRecordOnBehalf,
   onClose,
 }: {
   currentUser: User;
   divisionId: string;
+  seasonId: string;
+  divisionLevelId?: string;
+  matchType?: "singles" | "doubles";
   canRecordOnBehalf: boolean;
   onClose: () => void;
 }) {
@@ -478,6 +605,9 @@ function RecordPastMatchModal({
             player2Name: item.opponentName,
             player2IsGuest: true,
             divisionId,
+            seasonId,
+            divisionLevelId,
+            matchType,
             createdBy: currentUser.id,
             sets: item.sets,
             isDivisionMatch,
@@ -529,6 +659,9 @@ function RecordPastMatchModal({
           player1Id: activePlayer1!.id,
           player2Id: selectedOpponent!.id,
           divisionId,
+          seasonId,
+          divisionLevelId,
+          matchType,
           sets: parsed,
           isDivisionMatch,
           notifyPlayers: true,
@@ -543,6 +676,9 @@ function RecordPastMatchModal({
                 player2Name: guestName.trim(),
                 player2IsGuest: true,
                 divisionId,
+                seasonId,
+                divisionLevelId,
+                matchType,
                 createdBy: currentUser.id,
                 sets: parsed,
                 isDivisionMatch,
@@ -554,6 +690,9 @@ function RecordPastMatchModal({
                 player2Name: selectedOpponent!.displayName,
                 player2IsGuest: false, // EXPLICIT: Real division player
                 divisionId,
+                seasonId,
+                divisionLevelId,
+                matchType,
                 createdBy: currentUser.id,
                 sets: parsed,
                 isDivisionMatch,
@@ -1012,10 +1151,16 @@ function AvailabilityHint({ availability }: { availability?: Availability }) {
 function ProposeMatchModal({
   currentUser,
   divisionId,
+  seasonId,
+  divisionLevelId,
+  matchType,
   onClose,
 }: {
   currentUser: User;
   divisionId: string;
+  seasonId: string;
+  divisionLevelId?: string;
+  matchType?: "singles" | "doubles";
   onClose: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
@@ -1067,6 +1212,9 @@ function ProposeMatchModal({
         player1Name: currentUser.displayName,
         player2Name: selectedOpponent.displayName,
         divisionId,
+        seasonId,
+        divisionLevelId,
+        matchType,
         createdBy: currentUser.id,
         scheduledAt: ts,
       });
@@ -1411,6 +1559,13 @@ const modalStyles: Record<string, React.CSSProperties> = {
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
+  filterBar: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
+  filterLabel: { display: "grid", gap: 6, fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
+  select: { minWidth: 180, border: "1px solid #ddd", borderRadius: 10, padding: "10px 12px", background: "#fff", color: "var(--text)", fontSize: 14, textTransform: "none" as const, letterSpacing: 0 },
+  groupBlock: { background: "#fff", borderRadius: 14, padding: 16, marginBottom: 14, boxShadow: "0 1px 6px rgba(0,0,0,0.04)" },
+  groupTitle: { margin: "0 0 10px", color: "var(--green-dark)", fontSize: 16 },
+  playerGroup: { borderTop: "1px solid #f0f0f0", padding: "10px 0" },
+  playerSummary: { cursor: "pointer", fontWeight: 700, color: "#333", marginBottom: 10 },
   main: { maxWidth: 960, margin: "0 auto", padding: "40px 24px" },
   titleRow: {
     display: "flex",

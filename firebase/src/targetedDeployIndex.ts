@@ -9,6 +9,8 @@ export {
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
+  upsertDivisionMembership,
+  backfillDivisionSeasonLevel,
   exportDivisionCsv,
 } from './divisions/divisionFunctions';
 
