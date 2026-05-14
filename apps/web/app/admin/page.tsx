@@ -70,7 +70,11 @@ export default function AdminPage(): React.JSX.Element {
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
   const currentSeason = currentSeasonForDate();
   const seasonOptions = defaultSeasonOptions();
-  const { levels: divisionLevels } = useDivisionLevels(division?.id);
+  const {
+    levels: divisionLevels,
+    loading: loadingDivisionLevels,
+    error: divisionLevelsError,
+  } = useDivisionLevels(division?.id);
   const [levelSeasonId, setLevelSeasonId] = useState(currentSeason.id);
   const [levelName, setLevelName] = useState(formatDivisionLevelName("beginner", "singles"));
   const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>("beginner");
@@ -848,7 +852,14 @@ export default function AdminPage(): React.JSX.Element {
                 </button>
               </div>
               {levelMessage && <p role="status" aria-live="polite" style={styles.success}>{levelMessage}</p>}
-              {divisionLevels.length > 0 ? (
+              {loadingDivisionLevels ? (
+                <p style={styles.hint}>Loading division levels…</p>
+              ) : divisionLevelsError ? (
+                <p role="alert" style={styles.error}>
+                  Unable to load division levels for {division?.name ?? "this division"}.
+                  {" "}{divisionLevelsError.message}
+                </p>
+              ) : divisionLevels.length > 0 ? (
                 <div style={styles.levelGrid}>
                   {divisionLevels.map((level) => (
                     <div key={level.id} style={styles.levelPill}>
@@ -859,7 +870,9 @@ export default function AdminPage(): React.JSX.Element {
                   ))}
                 </div>
               ) : (
-                <p style={styles.hint}>No division levels documented yet.</p>
+                <p style={styles.hint}>
+                  No division levels documented for {division?.name ?? "this division"} yet.
+                </p>
               )}
               <div style={styles.editorActions}>
                 <button style={styles.btnSecondary} onClick={() => handleExportCsv("matches")} disabled={exportingCsv}>
