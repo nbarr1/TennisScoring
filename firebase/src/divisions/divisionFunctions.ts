@@ -92,6 +92,60 @@ function isEligibleForNameToIdLink(match: MatchLike): boolean {
   return true;
 }
 
+
+function addRosterUserToLookup(
+  lookup: Map<string, { userId: string; displayName: string; email?: string; phone?: string }>,
+  userId: string,
+  data: FirebaseFirestore.DocumentData | undefined,
+) {
+  const displayName = typeof data?.displayName === 'string' ? data.displayName.trim() : '';
+  if (!displayName) return;
+  lookup.set(normalizeName(displayName), {
+    userId,
+    displayName,
+    email: typeof data?.email === 'string' ? data.email : undefined,
+    phone: typeof data?.phone === 'string' ? data.phone : undefined,
+  });
+}
+
+function matchUpdateForRosterLookup(
+  data: FirebaseFirestore.DocumentData,
+  rosterByName: Map<string, { userId: string; displayName: string; email?: string; phone?: string }>,
+): { updateData: Record<string, unknown>; linkedUserIds: string[] } {
+  const updateData: Record<string, unknown> = {};
+  const linkedUserIds: string[] = [];
+  const existingPlayerIds = Array.isArray(data.playerIds)
+    ? data.playerIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+    : [];
+  const nextPlayerIds = new Set(existingPlayerIds);
+
+  const maybeLinkSide = (idField: 'player1Id' | 'player2Id', nameField: 'player1Name' | 'player2Name') => {
+    const currentId = typeof data[idField] === 'string' ? data[idField].trim() : '';
+    if (currentId && currentId !== 'guest') {
+      linkedUserIds.push(currentId);
+      nextPlayerIds.add(currentId);
+      return;
+    }
+    const name = typeof data[nameField] === 'string' ? normalizeName(data[nameField]) : '';
+    const rosterUser = name ? rosterByName.get(name) : undefined;
+    if (!rosterUser) return;
+    updateData[idField] = rosterUser.userId;
+    linkedUserIds.push(rosterUser.userId);
+    nextPlayerIds.add(rosterUser.userId);
+  };
+
+  maybeLinkSide('player1Id', 'player1Name');
+  if (data.player2IsGuest !== true) {
+    maybeLinkSide('player2Id', 'player2Name');
+  }
+
+  if (nextPlayerIds.size !== existingPlayerIds.length || [...nextPlayerIds].some((id) => !existingPlayerIds.includes(id))) {
+    updateData.playerIds = [...nextPlayerIds];
+  }
+
+  return { updateData, linkedUserIds };
+}
+
 function randomInviteCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -1122,52 +1176,57 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
   }
 
   const db = getFirestore();
-  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const divisionSnap = await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
   const level = await assertDivisionLevel(db, safeDivisionId, safeSeasonId, safeDivisionLevelId);
   const effectiveMatchType = safeMatchType ?? (level?.matchType === 'singles' || level?.matchType === 'doubles' ? level.matchType : undefined);
 
-  const snap = await db.collection('matches').where('divisionId', '==', safeDivisionId).get();
-  const matchesToUpdate = snap.docs.filter((doc) => {
-    const data = doc.data();
-    if (overwriteExisting) return true;
-    return !data.seasonId || !data.divisionLevelId;
+  const divisionData = divisionSnap.data() ?? {};
+  const rosterByName = new Map<string, { userId: string; displayName: string; email?: string; phone?: string }>();
+  const rosterUserIds = new Set<string>();
+  const divisionPlayerIds = Array.isArray(divisionData.playerIds)
+    ? divisionData.playerIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+    : [];
+  divisionPlayerIds.forEach((id) => rosterUserIds.add(id));
+
+  const rosterSnaps = await Promise.all([
+    ...divisionPlayerIds.map((id) => db.collection('users').doc(id).get()),
+    ...(await db.collection('users').where('divisionId', '==', safeDivisionId).get()).docs,
+  ]);
+  rosterSnaps.forEach((userSnap) => {
+    rosterUserIds.add(userSnap.id);
+    addRosterUserToLookup(rosterByName, userSnap.id, userSnap.data());
   });
 
+  const snap = await db.collection('matches').where('divisionId', '==', safeDivisionId).get();
+  const matchUpdates = snap.docs
+    .map((doc) => {
+      const data = doc.data();
+      const seasonLevelUpdate = overwriteExisting || !data.seasonId || !data.divisionLevelId
+        ? {
+            seasonId: safeSeasonId,
+            divisionLevelId: safeDivisionLevelId,
+            ...(effectiveMatchType ? { matchType: effectiveMatchType } : {}),
+          }
+        : {};
+      const { updateData: identityUpdate, linkedUserIds } = matchUpdateForRosterLookup(data, rosterByName);
+      linkedUserIds.forEach((id) => rosterUserIds.add(id));
+      const updateData = { ...seasonLevelUpdate, ...identityUpdate };
+      return Object.keys(updateData).length > 0 ? { ref: doc.ref, updateData } : null;
+    })
+    .filter((item): item is { ref: FirebaseFirestore.DocumentReference; updateData: Record<string, unknown> } => item !== null);
+
   let updatedMatches = 0;
-  for (let i = 0; i < matchesToUpdate.length; i += 400) {
+  for (let i = 0; i < matchUpdates.length; i += 400) {
     const batch = db.batch();
-    matchesToUpdate.slice(i, i + 400).forEach((doc) => {
-      batch.update(doc.ref, {
-        seasonId: safeSeasonId,
-        divisionLevelId: safeDivisionLevelId,
-        ...(effectiveMatchType ? { matchType: effectiveMatchType } : {}),
-      });
+    matchUpdates.slice(i, i + 400).forEach(({ ref, updateData }) => {
+      batch.update(ref, updateData);
       updatedMatches += 1;
     });
     await batch.commit();
   }
 
-  const playerIds = new Set<string>();
-  const playerNames = new Map<string, string>();
-  for (const doc of matchesToUpdate) {
-    const data = doc.data();
-    const p1 = typeof data.player1Id === 'string' ? data.player1Id : '';
-    const p2 = typeof data.player2Id === 'string' ? data.player2Id : '';
-    if (p1 && p1 !== 'guest') {
-      playerIds.add(p1);
-      if (typeof data.player1Name === 'string') playerNames.set(p1, data.player1Name);
-    }
-    if (p2 && p2 !== 'guest' && data.player2IsGuest !== true) {
-      playerIds.add(p2);
-      if (typeof data.player2Name === 'string') playerNames.set(p2, data.player2Name);
-    }
-    if (Array.isArray(data.playerIds)) {
-      data.playerIds.filter((id: unknown): id is string => typeof id === 'string' && id !== 'guest').forEach((id) => playerIds.add(id));
-    }
-  }
-
   let membershipsUpserted = 0;
-  const userSnaps = await Promise.all([...playerIds].map((id) => db.collection('users').doc(id).get()));
+  const userSnaps = await Promise.all([...rosterUserIds].map((id) => db.collection('users').doc(id).get()));
   for (const userSnap of userSnaps) {
     const user = userSnap.data() ?? {};
     await upsertMembershipDocument(db, {
@@ -1175,7 +1234,7 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
       seasonId: safeSeasonId,
       divisionLevelId: safeDivisionLevelId,
       userId: userSnap.id,
-      displayName: (typeof user.displayName === 'string' && user.displayName) || playerNames.get(userSnap.id) || userSnap.id,
+      displayName: (typeof user.displayName === 'string' && user.displayName) || userSnap.id,
       email: typeof user.email === 'string' ? user.email : undefined,
       phone: typeof user.phone === 'string' ? user.phone : undefined,
       assignedBy: request.auth.uid,
@@ -1185,7 +1244,7 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
     membershipsUpserted += 1;
   }
 
-  if (updatedMatches > 0) {
+  if (updatedMatches > 0 || membershipsUpserted > 0) {
     await recalculateRankings(safeDivisionId, { normalizeMatches: true });
   }
 
