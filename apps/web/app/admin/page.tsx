@@ -87,6 +87,7 @@ export default function AdminPage(): React.JSX.Element {
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
   const [backfillMessage, setBackfillMessage] = useState("");
+  const [backfillLevelId, setBackfillLevelId] = useState("");
   const [backfillingLevelId, setBackfillingLevelId] = useState<string | null>(null);
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
@@ -122,6 +123,11 @@ export default function AdminPage(): React.JSX.Element {
     if (memberLevelId && addMemberSeasonLevels.some((level) => level.id === memberLevelId)) return;
     setMemberLevelId(addMemberSeasonLevels[0]?.id ?? "");
   }, [addMemberSeasonLevels, memberLevelId]);
+
+  useEffect(() => {
+    if (backfillLevelId && adminSeasonLevels.some((level) => level.id === backfillLevelId)) return;
+    setBackfillLevelId(adminSeasonLevels[0]?.id ?? "");
+  }, [adminSeasonLevels, backfillLevelId]);
 
   // Gate: redirect players who are not leaders/admins away from this page.
   useEffect(() => {
@@ -550,6 +556,15 @@ export default function AdminPage(): React.JSX.Element {
     }
   }
 
+
+  async function handleBackfillSelectedLevel() {
+    if (!backfillLevelId) {
+      setError("Create or select a division level before linking legacy matches.");
+      return;
+    }
+    await handleBackfillLevel(backfillLevelId);
+  }
+
   async function repairRankings() {
     if (!division) return;
     setRepairingRankings(true);
@@ -855,6 +870,112 @@ export default function AdminPage(): React.JSX.Element {
                 </button>
                 {csvMessage && <p role="status" style={styles.inlineSuccess}>{csvMessage}</p>}
               </div>
+            </div>
+
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Link Legacy Matches</h2>
+              <p style={styles.hint}>
+                Previously recorded matches may not have season/division-level fields yet.
+                Choose the correct season and division level below to make those legacy matches
+                appear in the filtered Matches and Standings views. Existing season/level assignments are not overwritten.
+              </p>
+              <div style={styles.row}>
+                <select
+                  style={styles.input}
+                  value={adminSeasonId}
+                  onChange={(e) => setAdminSeasonId(e.target.value)}
+                  aria-label="Legacy match season"
+                >
+                  {seasonOptions.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  style={styles.input}
+                  value={backfillLevelId}
+                  onChange={(e) => setBackfillLevelId(e.target.value)}
+                  aria-label="Legacy match division level"
+                >
+                  <option value="">Select division level</option>
+                  {adminSeasonLevels.map((level) => (
+                    <option key={level.id} value={level.id}>
+                      {level.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  style={styles.btn}
+                  onClick={handleBackfillSelectedLevel}
+                  disabled={!backfillLevelId || !!backfillingLevelId}
+                >
+                  {backfillingLevelId === backfillLevelId ? "Linking…" : "Link legacy matches"}
+                </button>
+              </div>
+              {adminSeasonLevels.length === 0 && (
+                <p style={styles.hint}>Create a division level for this season before linking legacy matches.</p>
+              )}
+              {backfillMessage && <p role="status" style={styles.success}>{backfillMessage}</p>}
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Master Divisions</h2>
+              <p style={styles.hint}>All division options configured for the selected season.</p>
+              <div style={styles.filterBar}>
+                <label style={styles.filterLabel}>
+                  Season
+                  <select
+                    style={styles.input}
+                    value={adminSeasonId}
+                    onChange={(e) => setAdminSeasonId(e.target.value)}
+                  >
+                    {seasonOptions.map((season) => (
+                      <option key={season.id} value={season.id}>
+                        {season.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div style={styles.tableScroller}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Division</th>
+                      <th style={styles.th}>Type</th>
+                      <th style={styles.th}>Skill</th>
+                      <th style={styles.th}>Description</th>
+                      <th style={styles.th}>Legacy Data</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminSeasonLevels.map((level) => (
+                      <tr key={level.id} style={styles.tr}>
+                        <td style={styles.td}>{level.name}</td>
+                        <td style={styles.td}>{level.matchType}</td>
+                        <td style={styles.td}>{level.skillLevel}</td>
+                        <td style={styles.td}>{level.description || "—"}</td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            style={styles.btnSecondary}
+                            onClick={() => handleBackfillLevel(level.id)}
+                            disabled={backfillingLevelId === level.id}
+                          >
+                            {backfillingLevelId === level.id ? "Linking…" : "Link legacy matches"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {adminSeasonLevels.length === 0 && (
+                <p style={styles.hint}>No divisions have been configured for this season.</p>
+              )}
             </div>
 
             <div style={styles.card}>
