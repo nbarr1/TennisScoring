@@ -1192,8 +1192,10 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
     ...divisionPlayerIds.map((id) => db.collection('users').doc(id).get()),
     ...(await db.collection('users').where('divisionId', '==', safeDivisionId).get()).docs,
   ]);
+  const userSnapById = new Map<string, FirebaseFirestore.DocumentSnapshot>();
   rosterSnaps.forEach((userSnap) => {
     rosterUserIds.add(userSnap.id);
+    userSnapById.set(userSnap.id, userSnap);
     addRosterUserToLookup(rosterByName, userSnap.id, userSnap.data());
   });
 
@@ -1225,9 +1227,12 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
     await batch.commit();
   }
 
+  const missingUserIds = [...rosterUserIds].filter((id) => !userSnapById.has(id));
+  const missingUserSnaps = await Promise.all(missingUserIds.map((id) => db.collection('users').doc(id).get()));
+  missingUserSnaps.forEach((userSnap) => userSnapById.set(userSnap.id, userSnap));
+
   let membershipsUpserted = 0;
-  const userSnaps = await Promise.all([...rosterUserIds].map((id) => db.collection('users').doc(id).get()));
-  for (const userSnap of userSnaps) {
+  for (const userSnap of userSnapById.values()) {
     const user = userSnap.data() ?? {};
     await upsertMembershipDocument(db, {
       divisionId: safeDivisionId,
