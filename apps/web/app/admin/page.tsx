@@ -976,63 +976,6 @@ export default function AdminPage(): React.JSX.Element {
               {adminSeasonLevels.length === 0 && (
                 <p style={styles.hint}>No divisions have been configured for this season.</p>
               )}
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Master Divisions</h2>
-              <p style={styles.hint}>All division options configured for the selected season.</p>
-              <div style={styles.filterBar}>
-                <label style={styles.filterLabel}>
-                  Season
-                  <select
-                    style={styles.input}
-                    value={adminSeasonId}
-                    onChange={(e) => setAdminSeasonId(e.target.value)}
-                  >
-                    {seasonOptions.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div style={styles.tableScroller}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Division</th>
-                      <th style={styles.th}>Type</th>
-                      <th style={styles.th}>Skill</th>
-                      <th style={styles.th}>Description</th>
-                      <th style={styles.th}>Legacy Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminSeasonLevels.map((level) => (
-                      <tr key={level.id} style={styles.tr}>
-                        <td style={styles.td}>{level.name}</td>
-                        <td style={styles.td}>{level.matchType}</td>
-                        <td style={styles.td}>{level.skillLevel}</td>
-                        <td style={styles.td}>{level.description || "—"}</td>
-                        <td style={styles.td}>
-                          <button
-                            type="button"
-                            style={styles.btnSecondary}
-                            onClick={() => handleBackfillLevel(level.id)}
-                            disabled={backfillingLevelId === level.id}
-                          >
-                            {backfillingLevelId === level.id ? "Linking…" : "Link legacy matches"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {adminSeasonLevels.length === 0 && (
-                <p style={styles.hint}>No divisions have been configured for this season.</p>
-              )}
               {backfillMessage && <p role="status" style={styles.success}>{backfillMessage}</p>}
             </div>
 
