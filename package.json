@@ -10,7 +10,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
-    "test:shared": "pnpm --filter @tennis/shared test"
+    "test:shared": "pnpm --filter @tennis/shared test",
+    "backfill:season-level": "node scripts/backfill-division-season-level.mjs --"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
@@ -20,7 +21,8 @@
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "prettier": "^3.2.0",
-    "firebase": "^10.12.0"
+    "firebase": "^10.12.0",
+    "firebase-admin": "^12.0.0"
   },
   "pnpm": {
     "neverBuiltDependencies": [
