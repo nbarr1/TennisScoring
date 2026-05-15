@@ -5,6 +5,10 @@ import { FcmProvider } from './FcmProvider';
 export const metadata: Metadata = {
   title: 'Tennis League',
   description: 'Work Tennis League Scoring & Rankings',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
