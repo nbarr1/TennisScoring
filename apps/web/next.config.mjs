@@ -20,6 +20,10 @@ const config = {
   async rewrites() {
     return [
       {
+        source: '/favicon.ico',
+        destination: '/favicon.svg',
+      },
+      {
         source: '/firebase-messaging-sw.js',
         destination: '/api/firebase-messaging-sw',
       },

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Tennis League">
+  <rect width="64" height="64" rx="14" fill="#1a472a"/>
+  <circle cx="32" cy="32" r="23" fill="#d4af37"/>
+  <path d="M18 8c7 12 7 36 0 48" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M46 8c-7 12-7 36 0 48" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+</svg>
