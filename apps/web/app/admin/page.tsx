@@ -108,6 +108,11 @@ export default function AdminPage(): React.JSX.Element {
     previousEmail: string;
     previousPhone?: string;
   } | null>(null);
+  const [authDebug, setAuthDebug] = useState<{
+    uid: string;
+    email: string;
+    roleClaim?: unknown;
+  } | null>(null);
 
   const levelNameById = useMemo(
     () => new Map(divisionLevels.map((level) => [level.id, level.name] as const)),
@@ -151,6 +156,33 @@ export default function AdminPage(): React.JSX.Element {
       }
     });
   }, [firebaseUser, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!firebaseUser) {
+      setAuthDebug(null);
+      return;
+    }
+    firebaseUser.getIdTokenResult()
+      .then((token) => {
+        if (cancelled) return;
+        setAuthDebug({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? "(no email on auth user)",
+          roleClaim: token.claims.role,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAuthDebug({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? "(no email on auth user)",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseUser]);
 
   // Resolve the division context for leaders and admins.
   useEffect(() => {
@@ -869,11 +901,19 @@ export default function AdminPage(): React.JSX.Element {
                     {" "}{divisionLevelsError.message}
                   </p>
                   {divisionLevelsPermissionHint ? (
-                    <ul style={styles.errorList}>
-                      {divisionLevelsPermissionHint.map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul style={styles.errorList}>
+                        {divisionLevelsPermissionHint.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                      {authDebug ? (
+                        <p style={styles.errorMeta}>
+                          Active Firebase Auth identity: uid <code>{authDebug.uid}</code>, email <code>{authDebug.email}</code>
+                          {authDebug.roleClaim !== undefined ? <> , token role claim <code>{String(authDebug.roleClaim)}</code></> : null}
+                        </p>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : divisionLevels.length > 0 ? (
@@ -1375,6 +1415,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { marginTop: 10, color: "#c0392b", fontSize: 13 },
   errorList: { margin: "6px 0 0 18px", padding: 0, display: "grid", gap: 4 },
+  errorMeta: { margin: "8px 0 0", fontSize: 12, color: "#8b0000" },
   success: { marginTop: 10, color: "#1a7f37", fontSize: 13 },
   confirmPrompt: { flexBasis: "100%", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" },
   inlineSuccess: {
