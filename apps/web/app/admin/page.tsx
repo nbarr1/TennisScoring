@@ -637,6 +637,8 @@ export default function AdminPage(): React.JSX.Element {
           </button>
         </div>
 
+        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+
         {loading ? (
           <div style={styles.placeholder}>Loading…</div>
         ) : !division ? (
