@@ -896,7 +896,7 @@ export default function AdminPage(): React.JSX.Element {
                 <p style={styles.hint}>Loading division levels…</p>
               ) : divisionLevelsError ? (
                 <div role="alert" style={styles.error}>
-                  <p>
+                  <p style={{ margin: 0 }}>
                     Unable to load division levels for {division?.name ?? "this division"}.
                     {" "}{divisionLevelsError.message}
                   </p>
