@@ -121,6 +121,14 @@ export default function AdminPage(): React.JSX.Element {
     () => divisionLevels.filter((level) => level.seasonId === adminSeasonId),
     [adminSeasonId, divisionLevels],
   );
+  const divisionLevelsPermissionHint = useMemo(() => {
+    if (divisionLevelsError?.code !== "permission-denied") return null;
+    return [
+      "You are signed in to Firebase Auth with the expected account.",
+      "Your users/{uid}.role is admin or app_developer, OR your users/{uid}.divisionId matches this division.",
+      "Your uid is listed in this division's leaderIds or playerIds roster.",
+    ];
+  }, [divisionLevelsError?.code]);
 
 
   useEffect(() => {
@@ -855,10 +863,19 @@ export default function AdminPage(): React.JSX.Element {
               {loadingDivisionLevels ? (
                 <p style={styles.hint}>Loading division levels…</p>
               ) : divisionLevelsError ? (
-                <p role="alert" style={styles.error}>
-                  Unable to load division levels for {division?.name ?? "this division"}.
-                  {" "}{divisionLevelsError.message}
-                </p>
+                <div role="alert" style={styles.error}>
+                  <p>
+                    Unable to load division levels for {division?.name ?? "this division"}.
+                    {" "}{divisionLevelsError.message}
+                  </p>
+                  {divisionLevelsPermissionHint ? (
+                    <ul style={styles.errorList}>
+                      {divisionLevelsPermissionHint.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
               ) : divisionLevels.length > 0 ? (
                 <div style={styles.levelGrid}>
                   {divisionLevels.map((level) => (
@@ -1357,6 +1374,7 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
   },
   error: { marginTop: 10, color: "#c0392b", fontSize: 13 },
+  errorList: { margin: "6px 0 0 18px", padding: 0, display: "grid", gap: 4 },
   success: { marginTop: 10, color: "#1a7f37", fontSize: 13 },
   confirmPrompt: { flexBasis: "100%", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" },
   inlineSuccess: {
