@@ -289,6 +289,7 @@ pnpm --filter @tennis/mobile build:android
 - If feedback submission fails, verify `GITHUB_TOKEN` exists in Secret Manager and the `GITHUB_OWNER`/`GITHUB_REPO` params point to a repository where the token can create issues.
 - If Functions deploy fails with `iam.serviceaccounts.actAs` or Secret Manager IAM errors, use the remediation steps in `firebase/DEPLOYMENT.md`.
 - If EAS builds cannot resolve workspace packages, confirm the EAS profile prebuild command completed and that pnpm 9.15.5 is available in the build environment.
+- If Admin shows `Unable to load division levels ... Missing or insufficient permissions`, verify the signed-in user is authenticated in Firebase Auth and that Firestore allows reads to `divisions/{divisionId}/levels/{levelId}` for that user. Reads are allowed only for app admins, users whose `users/{uid}.divisionId` matches the division, or users present in that division's `leaderIds`/`playerIds` roster.
 
 ## Seasons, division levels, and CSV exports
 
