@@ -1,5 +1,7 @@
 export const dynamic = 'force-dynamic';
 
+const FIREBASE_SERVICE_WORKER_SDK_VERSION = '10.14.1';
+
 export function GET() {
   const config = JSON.stringify({
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -11,8 +13,8 @@ export function GET() {
   });
 
   const script = `
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/${FIREBASE_SERVICE_WORKER_SDK_VERSION}/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/${FIREBASE_SERVICE_WORKER_SDK_VERSION}/firebase-messaging-compat.js');
 
 firebase.initializeApp(${config});
 const messaging = firebase.messaging();

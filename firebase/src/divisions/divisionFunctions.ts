@@ -438,15 +438,16 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
 
 
 export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
+  const { divisionId, name, email, sendInvite, seasonId, divisionLevelId } = (request.data ?? {}) as AddPlaceholderInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeName = name?.trim();
+  const safeEmail = email ? normalizeEmail(email) : '';
+  const safeSeasonId = seasonId?.trim();
+  const safeDivisionLevelId = divisionLevelId?.trim();
+
   try {
     if (!request.auth) throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
     const uid = request.auth.uid;
-    const { divisionId, name, email, sendInvite, seasonId, divisionLevelId } = (request.data ?? {}) as AddPlaceholderInput;
-    const safeDivisionId = divisionId?.trim();
-    const safeName = name?.trim();
-    const safeEmail = email ? normalizeEmail(email) : '';
-    const safeSeasonId = seasonId?.trim();
-    const safeDivisionLevelId = divisionLevelId?.trim();
     if (!safeDivisionId || !safeName) {
       throw new HttpsError('invalid-argument', 'Division and name are required.');
     }
@@ -594,8 +595,11 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
   } catch (error) {
     if (error instanceof HttpsError) throw error;
     logger.error('addDivisionMemberPlaceholder failed', {
-      error,
-      data: request.data ?? null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      divisionId: safeDivisionId ?? null,
+      hasEmail: Boolean(safeEmail),
+      hasSeasonId: Boolean(safeSeasonId),
+      hasDivisionLevelId: Boolean(safeDivisionLevelId),
       uid: request.auth?.uid ?? null,
     });
     throw new HttpsError('internal', 'Could not add member. Please retry or contact support.');

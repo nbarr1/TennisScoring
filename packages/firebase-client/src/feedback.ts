@@ -117,6 +117,7 @@ function buildLabels(payload: SubmitFeedbackPayload): string[] | undefined {
 function buildMetadata(
   payload: SubmitFeedbackPayload,
 ): Record<string, unknown> | undefined {
+  const allowContact = payload.allowContact === true;
   const metadata: Record<string, unknown> = {
     ...payload.metadata,
     source: payload.source,
@@ -128,12 +129,16 @@ function buildMetadata(
     appVersion: payload.appVersion,
     nativeAppVersion: payload.nativeAppVersion,
     nativeBuildVersion: payload.nativeBuildVersion,
-    userId: payload.userId ?? payload.user?.uid,
-    userEmail: payload.userEmail ?? payload.user?.email,
-    userDisplayName: payload.userDisplayName ?? payload.user?.displayName,
     divisionId: payload.user?.divisionId,
     allowContact: payload.allowContact,
     screenContext: payload.screenContext,
+    ...(allowContact
+      ? {
+          userId: payload.userId ?? payload.user?.uid,
+          userEmail: payload.userEmail ?? payload.user?.email,
+          userDisplayName: payload.userDisplayName ?? payload.user?.displayName,
+        }
+      : {}),
   };
 
   const filteredMetadata = Object.fromEntries(

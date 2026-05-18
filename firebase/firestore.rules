@@ -19,6 +19,10 @@ service cloud.firestore {
       return isAuth() && (getUserData().role == 'admin' || getUserData().role == 'app_developer');
     }
 
+    function isAppDeveloper() {
+      return isAuth() && getUserData().role == 'app_developer';
+    }
+
     function isDivisionMember(divisionId) {
       return isAuth() && getUserData().divisionId == divisionId;
     }
@@ -93,12 +97,15 @@ service cloud.firestore {
         request.auth.uid in resource.data.playerIds ||
         request.auth.uid in resource.data.leaderIds
       );
-      allow create: if isAuth() &&
+      // Regular division creation goes through the createDivision Cloud Function.
+      // App developers may still create division documents directly for maintenance.
+      allow create: if isAppDeveloper() &&
         request.resource.data.keys().hasOnly(divisionFields()) &&
-        request.resource.data.leaderIds == [request.auth.uid] &&
-        request.resource.data.playerIds == [request.auth.uid] &&
         request.resource.data.name is string &&
-        request.resource.data.inviteCode is string;
+        request.resource.data.inviteCode is string &&
+        request.resource.data.inviteCode.matches('^[A-Z2-9]{8}$') &&
+        request.resource.data.leaderIds is list &&
+        request.resource.data.playerIds is list;
       allow update: if (isLeader(divisionId) || isAdmin()) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'leaderIds', 'playerIds', 'updatedAt']);
       allow delete: if isAdmin();
@@ -291,11 +298,22 @@ service cloud.firestore {
 
       // Score actions sub-collection
       match /actions/{actionId} {
+        function actionFields() {
+          return ['type', 'player', 'scorer', 'score', 'snapshot', 'metadata', 'createdBy', 'createdAt'];
+        }
+
+        function validActionCreate() {
+          return request.resource.data.keys().hasOnly(actionFields()) &&
+            request.resource.data.createdBy == request.auth.uid &&
+            request.resource.data.createdAt is number &&
+            request.resource.data.type is string;
+        }
+
         allow read: if isAuth() &&
           isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
-        allow create: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
-        allow update: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
-        allow delete: if false;
+        allow create: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data) &&
+          validActionCreate();
+        allow update, delete: if false;
       }
     }
 
@@ -312,12 +330,10 @@ service cloud.firestore {
 
 
     // ---------- Feedback ----------
+    // Feedback is submitted through the submitFeedback Cloud Function and stored
+    // only as GitHub issues; no client Firestore access is allowed.
     match /feedback/{feedbackId} {
-      allow read: if isAuth() && (
-        isAdmin() ||
-        getUserData().role == 'division_leader'
-      );
-      allow create, update, delete: if false; // Cloud Functions only
+      allow read, write: if false;
     }
 
     // ---------- Invites ----------
@@ -330,38 +346,6 @@ service cloud.firestore {
       allow read, write: if false; // Cloud Functions / extension only
     }
 
-    // ---------- Feedback ----------
-    match /feedback/{feedbackId} {
-      function feedbackFields() {
-        return [
-          'userId',
-          'userEmail',
-          'userDisplayName',
-          'category',
-          'message',
-          'source',
-          'platform',
-          'appVersion',
-          'nativeAppVersion',
-          'nativeBuildVersion',
-          'screen',
-          'screenContext',
-          'status',
-          'createdAt'
-        ];
-      }
-
-      allow read: if isAdmin();
-      allow create: if isAuth() &&
-        request.resource.data.keys().hasOnly(feedbackFields()) &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.category is string &&
-        request.resource.data.message is string &&
-        request.resource.data.source in ['mobile', 'web'] &&
-        request.resource.data.status == 'new' &&
-        request.resource.data.createdAt is number;
-      allow update, delete: if false;
-    }
 
     // ---------- Channels ----------
     match /channels/{channelId} {
