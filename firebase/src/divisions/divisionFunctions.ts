@@ -1131,6 +1131,33 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     });
   }
 
+  const membershipCol = db
+    .collection('divisions')
+    .doc(safeDivisionId)
+    .collection('memberships');
+  const previousMemberships = await membershipCol
+    .where('userId', '==', targetUserId)
+    .where('seasonId', '==', safeSeasonId)
+    .where('status', '==', 'active')
+    .get();
+
+  const nextMembershipId = divisionMembershipId(safeSeasonId, safeLevelId, targetUserId);
+  const archiveBatch = db.batch();
+  previousMemberships.docs.forEach((docSnap) => {
+    if (docSnap.id === nextMembershipId) return;
+    archiveBatch.set(
+      docSnap.ref,
+      {
+        status: 'removed',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  if (!previousMemberships.empty) {
+    await archiveBatch.commit();
+  }
+
   const membershipId = await upsertMembershipDocument(db, {
     divisionId: safeDivisionId,
     seasonId: safeSeasonId,
