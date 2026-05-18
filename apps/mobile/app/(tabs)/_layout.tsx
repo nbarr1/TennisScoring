@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
+import { isPrivilegedRole } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
@@ -8,7 +9,7 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 
 export default function TabLayout() {
   const { user } = useAppStore();
-  const isAdmin = user?.role === 'admin' || user?.role === 'division_leader';
+  const isAdmin = isPrivilegedRole(user?.role);
 
   return (
     <Tabs

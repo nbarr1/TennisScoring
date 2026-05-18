@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { DEFAULT_FORMAT, EMPTY_STATS, applyPoint, computeRankings, extractMatchTotals } from '@tennis/shared';
+import { DEFAULT_FORMAT, EMPTY_STATS, applyPoint, computeRankings, currentSeasonForDate, extractMatchTotals, isPrivilegedRole } from '@tennis/shared';
 import type { Match, HeadToHead, Player, PlayerMatchStats, ReportSubmission } from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
@@ -688,11 +688,14 @@ export async function recalculateRankings(
     userSnaps.map((s) => [s.id, s.data()?.displayName ?? s.id]),
   );
 
+  const activeSeasonId = typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()
+    ? division.activeSeasonId
+    : currentSeasonForDate().id;
   const rankingInputs = playerIds.map((userId) => ({
     userId,
     displayName: displayNames.get(userId) ?? userId,
     divisionId,
-    season: division?.season ?? '2024',
+    season: activeSeasonId,
     ...(statsMap.get(userId) ?? emptyRankingStats()),
   }));
 
@@ -802,9 +805,22 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function appBaseUrl(): string {
+  const configuredUrl = process.env.APP_BASE_URL?.trim();
+  if (!configuredUrl) {
+    if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV !== 'production') {
+      return 'http://localhost:3000';
+    }
+    throw new functions.https.HttpsError('failed-precondition', 'APP_BASE_URL must be configured in production.');
+  }
+  if (process.env.NODE_ENV === 'production' && !configuredUrl.startsWith('https://')) {
+    throw new functions.https.HttpsError('failed-precondition', 'APP_BASE_URL must use HTTPS in production.');
+  }
+  return configuredUrl;
+}
+
 function matchLinkForId(matchId: string): string {
-  const appUrl = process.env.APP_BASE_URL ?? 'http://localhost:3000';
-  return `${appUrl.replace(/\/$/, '')}/matches/${encodeURIComponent(matchId)}`;
+  return `${appBaseUrl().replace(/\/$/, '')}/matches/${encodeURIComponent(matchId)}`;
 }
 
 function buildManualCompletedScore(sets: { p1: number; p2: number }[]): {
@@ -864,10 +880,6 @@ function buildManualCompletedScore(sets: { p1: number; p2: number }[]): {
       player2SetsWon: p2Sets,
     },
   };
-}
-
-function isPrivilegedRole(role: unknown): boolean {
-  return role === 'admin' || role === 'division_leader' || role === 'app_developer';
 }
 
 async function notifyPlayersMatchRecorded(

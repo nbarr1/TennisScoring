@@ -36,10 +36,10 @@ import {
   type Match,
   type PlayerRanking,
   type User,
+  isPrivilegedRole,
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 
-const PRIVILEGED_ROLES = new Set(['admin', 'division_leader', 'app_developer']);
 
 export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
@@ -138,7 +138,7 @@ export default function AdminPage(): React.JSX.Element {
     if (!firebaseUser) return;
     getDoc(userDoc(firebaseUser.uid)).then((snap) => {
       const role = snap.data()?.role as string | undefined;
-      if (!role || !PRIVILEGED_ROLES.has(role)) {
+      if (!isPrivilegedRole(role)) {
         router.replace('/dashboard');
       }
     });

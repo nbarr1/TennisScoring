@@ -1,5 +1,15 @@
 export type UserRole = 'player' | 'division_leader' | 'admin' | 'app_developer';
 
+export const PRIVILEGED_ROLES: readonly UserRole[] = [
+  'admin',
+  'division_leader',
+  'app_developer',
+];
+
+export function isPrivilegedRole(role: unknown): role is UserRole {
+  return typeof role === 'string' && (PRIVILEGED_ROLES as readonly string[]).includes(role);
+}
+
 export interface ContactPreferences {
   allowEmail: boolean;
   allowSMS: boolean;

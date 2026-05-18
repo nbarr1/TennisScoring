@@ -109,9 +109,22 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function appBaseUrl(): string {
+  const configuredUrl = process.env.APP_BASE_URL?.trim();
+  if (!configuredUrl) {
+    if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV !== 'production') {
+      return 'http://localhost:3000';
+    }
+    throw new HttpsError('failed-precondition', 'APP_BASE_URL must be configured in production.');
+  }
+  if (process.env.NODE_ENV === 'production' && !configuredUrl.startsWith('https://')) {
+    throw new HttpsError('failed-precondition', 'APP_BASE_URL must use HTTPS in production.');
+  }
+  return configuredUrl;
+}
+
 function inviteLinkForToken(token: string): string {
-  const appUrl = process.env.APP_BASE_URL ?? 'http://localhost:3000';
-  return `${appUrl.replace(/\/$/, '')}/invite/accept?token=${encodeURIComponent(token)}`;
+  return `${appBaseUrl().replace(/\/$/, '')}/invite/accept?token=${encodeURIComponent(token)}`;
 }
 
 export const sendInvite = onCall(async (request) => {

@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Share,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -41,6 +40,7 @@ import {
   type Match,
   type PlayerRanking,
   type User,
+  isPrivilegedRole,
 } from '@tennis/shared';
 
 export default function AdminScreen() {
@@ -78,10 +78,7 @@ export default function AdminScreen() {
   const [savingLevel, setSavingLevel] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
 
-  const isAdmin =
-    user?.role === 'admin' ||
-    user?.role === 'division_leader' ||
-    user?.role === 'app_developer';
+  const isAdmin = isPrivilegedRole(user?.role);
 
   useEffect(() => {
     if (!user?.id) {
