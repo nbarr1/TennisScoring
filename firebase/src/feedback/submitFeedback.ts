@@ -150,7 +150,7 @@ function metadataAllowsContact(metadata: unknown): boolean {
 function formatMetadata(metadata: unknown, uid?: string): string {
   const lines = ['---', 'Submitted via Firebase Functions.'];
   const allowContact = metadataAllowsContact(metadata);
-  if (uid && allowContact) lines.push(`Firebase Auth UID hash: ${hashedUid(uid)}`);
+  if (uid) lines.push('Firebase Auth UID hash: ' + hashedUid(uid));
 
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     const entries = Object.entries(metadata as Record<string, unknown>)
