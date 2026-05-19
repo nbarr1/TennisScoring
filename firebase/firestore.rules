@@ -29,7 +29,9 @@ service cloud.firestore {
 
     function isUserInDivisionRoster(divisionId, userId) {
       let division = get(/databases/$(database)/documents/divisions/$(divisionId)).data;
-      return userId in division.playerIds || userId in division.leaderIds;
+      let playerIds = division.playerIds is list ? division.playerIds : [];
+      let leaderIds = division.leaderIds is list ? division.leaderIds : [];
+      return userId in playerIds || userId in leaderIds;
     }
 
     function isDivisionRosterMember(divisionId) {
@@ -37,8 +39,9 @@ service cloud.firestore {
     }
 
     function isLeader(divisionId) {
-      return isAuth() &&
-        request.auth.uid in get(/databases/$(database)/documents/divisions/$(divisionId)).data.leaderIds;
+      let division = get(/databases/$(database)/documents/divisions/$(divisionId)).data;
+      let leaderIds = division.leaderIds is list ? division.leaderIds : [];
+      return isAuth() && request.auth.uid in leaderIds;
     }
 
     function isMatchParticipant(matchData) {
@@ -94,8 +97,7 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isAdmin() ||
         isDivisionMember(divisionId) ||
-        request.auth.uid in resource.data.playerIds ||
-        request.auth.uid in resource.data.leaderIds
+        isDivisionRosterMember(divisionId)
       );
       // Regular division creation goes through the createDivision Cloud Function.
       // App developers may still create division documents directly for maintenance.
