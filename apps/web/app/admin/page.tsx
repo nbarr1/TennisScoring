@@ -570,6 +570,8 @@ export default function AdminPage(): React.JSX.Element {
         name: newPlayerName.trim(),
         email: newPlayerEmail.trim() || undefined,
         phone: newPlayerPhone.trim() || undefined,
+        role: newPlayerRole,
+        status: newPlayerStatus,
       });
       setNewPlayerRowOpen(false);
       setNewPlayerName("Example Player");
