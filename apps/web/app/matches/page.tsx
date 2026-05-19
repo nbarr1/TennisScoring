@@ -535,7 +535,7 @@ function StartLiveMatchModal({
       const matchId = await createMatch({
         player1Id: currentUser.id,
         player2Id: "guest",
-        player1Name: currentUser.displayName,
+        player1Name: currentUser.displayName || "Player 1",
         player2Name: opponentName.trim(),
         player2IsGuest: true,
         divisionId,
