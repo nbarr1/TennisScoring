@@ -42,6 +42,8 @@ type UpsertDivisionMembershipInput = {
   email?: string;
   phone?: string;
   sendInvite?: boolean;
+  role?: 'player' | 'division_leader';
+  status?: 'active' | 'waitlisted';
 };
 type BackfillDivisionSeasonLevelInput = {
   divisionId?: string;
@@ -248,6 +250,7 @@ async function upsertMembershipDocument(
     assignedBy: string;
     source: 'registered_user' | 'placeholder' | 'imported' | 'migration';
     role?: 'player' | 'division_leader';
+    status?: 'active' | 'waitlisted';
   },
 ): Promise<string> {
   await assertDivisionLevel(db, input.divisionId, input.seasonId, input.divisionLevelId);
@@ -269,7 +272,7 @@ async function upsertMembershipDocument(
       ...(input.email ? { emailSnapshot: normalizeEmail(input.email) } : {}),
       ...(input.phone ? { phoneSnapshot: input.phone.trim() } : {}),
       role: input.role ?? 'player',
-      status: 'active',
+      status: input.status ?? 'active',
       source: input.source,
       assignedBy: input.assignedBy,
       createdAt: snap.exists ? snap.data()?.createdAt ?? FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
@@ -1049,7 +1052,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     throw new HttpsError('unauthenticated', 'You must be signed in to manage division memberships.');
   }
 
-  const { divisionId, seasonId, divisionLevelId, userId, name, email, phone, sendInvite } =
+  const { divisionId, seasonId, divisionLevelId, userId, name, email, phone, sendInvite, role, status } =
     (request.data ?? {}) as UpsertDivisionMembershipInput;
   const safeDivisionId = divisionId?.trim();
   const safeSeasonId = seasonId?.trim();
@@ -1072,6 +1075,8 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
   let targetEmail = safeEmail;
   let targetPhone = safePhone;
   let source: 'registered_user' | 'placeholder' = 'registered_user';
+  const safeMembershipRole = role === 'division_leader' ? 'division_leader' : 'player';
+  const safeMembershipStatus = status === 'waitlisted' ? 'waitlisted' : 'active';
 
   if (targetUserId) {
     const userSnap = await db.collection('users').doc(targetUserId).get();
@@ -1131,6 +1136,33 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     });
   }
 
+  const membershipCol = db
+    .collection('divisions')
+    .doc(safeDivisionId)
+    .collection('memberships');
+  const previousMemberships = await membershipCol
+    .where('userId', '==', targetUserId)
+    .where('seasonId', '==', safeSeasonId)
+    .where('status', '==', 'active')
+    .get();
+
+  const nextMembershipId = divisionMembershipId(safeSeasonId, safeLevelId, targetUserId);
+  const archiveBatch = db.batch();
+  previousMemberships.docs.forEach((docSnap) => {
+    if (docSnap.id === nextMembershipId) return;
+    archiveBatch.set(
+      docSnap.ref,
+      {
+        status: 'removed',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  if (!previousMemberships.empty) {
+    await archiveBatch.commit();
+  }
+
   const membershipId = await upsertMembershipDocument(db, {
     divisionId: safeDivisionId,
     seasonId: safeSeasonId,
@@ -1141,6 +1173,8 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     phone: targetPhone,
     assignedBy: request.auth.uid,
     source,
+    role: safeMembershipRole,
+    status: safeMembershipStatus,
   });
 
   await Promise.all([

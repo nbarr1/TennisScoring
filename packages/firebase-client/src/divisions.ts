@@ -70,6 +70,7 @@ export function useDivisionMemberships(
       divisionMembershipsQuery(
         divisionId,
         seasonId,
+        where('status', '==', 'active'),
         ...(divisionLevelId ? [where('divisionLevelId', '==', divisionLevelId)] : []),
       ),
       (snap) => {
@@ -123,6 +124,8 @@ export async function upsertDivisionMembership(input: {
   email?: string;
   phone?: string;
   sendInvite?: boolean;
+  role?: 'player' | 'division_leader';
+  status?: 'active' | 'waitlisted';
 }): Promise<{ membershipId: string; userId: string; createdPlaceholder: boolean }> {
   const callable = httpsCallable<typeof input, { membershipId: string; userId: string; createdPlaceholder: boolean }>(
     functions,
