@@ -16,14 +16,13 @@ import {
   createDivision as createDivisionShared,
   mergeDivisionPlayerRecords,
   recalculateDivisionRankings,
-  addDivisionMemberPlaceholder as addDivisionMemberPlaceholderShared,
   updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
   upsertDivisionLevel,
   exportDivisionCsv,
-  backfillDivisionSeasonLevel,
   useAuthUser,
   useDivisionLevels,
   useDivisionMemberships,
+  upsertDivisionMembership,
 } from "@tennis/firebase-client";
 import {
   currentSeasonForDate,
@@ -46,10 +45,6 @@ export default function AdminPage(): React.JSX.Element {
   const router = useRouter();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
-  const [memberName, setMemberName] = useState("");
-  const [memberEmail, setMemberEmail] = useState("");
-  const [memberSeasonId, setMemberSeasonId] = useState(currentSeasonForDate().id);
-  const [memberLevelId, setMemberLevelId] = useState("");
   const [needsMergeForUserId, setNeedsMergeForUserId] = useState<string | null>(
     null,
   );
@@ -62,9 +57,7 @@ export default function AdminPage(): React.JSX.Element {
   const [editPhone, setEditPhone] = useState("");
   const [newDivisionName, setNewDivisionName] = useState("");
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
-  const [inviteMessage, setInviteMessage] = useState("");
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
@@ -90,9 +83,6 @@ export default function AdminPage(): React.JSX.Element {
   );
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
-  const [backfillMessage, setBackfillMessage] = useState("");
-  const [backfillLevelId, setBackfillLevelId] = useState("");
-  const [backfillingLevelId, setBackfillingLevelId] = useState<string | null>(null);
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -108,6 +98,14 @@ export default function AdminPage(): React.JSX.Element {
     previousEmail: string;
     previousPhone?: string;
   } | null>(null);
+  const [newPlayerRowOpen, setNewPlayerRowOpen] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerEmail, setNewPlayerEmail] = useState("");
+  const [newPlayerPhone, setNewPlayerPhone] = useState("");
+  const [newPlayerRole, setNewPlayerRole] = useState<"player" | "division_leader">("player");
+  const [newPlayerStatus, setNewPlayerStatus] = useState<"active" | "waitlisted">("active");
+  const [newPlayerDivisionLevelId, setNewPlayerDivisionLevelId] = useState("");
+  const [savingNewPlayer, setSavingNewPlayer] = useState(false);
   const [authDebug, setAuthDebug] = useState<{
     uid: string;
     email: string;
@@ -117,10 +115,6 @@ export default function AdminPage(): React.JSX.Element {
   const levelNameById = useMemo(
     () => new Map(divisionLevels.map((level) => [level.id, level.name] as const)),
     [divisionLevels],
-  );
-  const addMemberSeasonLevels = useMemo(
-    () => divisionLevels.filter((level) => level.seasonId === memberSeasonId),
-    [divisionLevels, memberSeasonId],
   );
   const adminSeasonLevels = useMemo(
     () => divisionLevels.filter((level) => level.seasonId === adminSeasonId),
@@ -137,14 +131,9 @@ export default function AdminPage(): React.JSX.Element {
 
 
   useEffect(() => {
-    if (memberLevelId && addMemberSeasonLevels.some((level) => level.id === memberLevelId)) return;
-    setMemberLevelId(addMemberSeasonLevels[0]?.id ?? "");
-  }, [addMemberSeasonLevels, memberLevelId]);
-
-  useEffect(() => {
-    if (backfillLevelId && adminSeasonLevels.some((level) => level.id === backfillLevelId)) return;
-    setBackfillLevelId(adminSeasonLevels[0]?.id ?? "");
-  }, [adminSeasonLevels, backfillLevelId]);
+    if (newPlayerDivisionLevelId && adminSeasonLevels.some((level) => level.id === newPlayerDivisionLevelId)) return;
+    setNewPlayerDivisionLevelId(adminSeasonLevels[0]?.id ?? "");
+  }, [adminSeasonLevels, newPlayerDivisionLevelId]);
 
   // Gate: redirect players who are not leaders/admins away from this page.
   useEffect(() => {
@@ -285,53 +274,6 @@ export default function AdminPage(): React.JSX.Element {
     setNewDivisionName("");
   }
 
-  async function addDivisionMember() {
-    if (!firebaseUser || !division?.id || !memberName.trim() || !memberLevelId) return;
-    setAdding(true);
-    setError("");
-    setInviteMessage("");
-    try {
-      const trimmedName = memberName.trim();
-      const trimmedEmail = memberEmail.trim() || undefined;
-      const memberResult = await addDivisionMemberPlaceholderShared(
-        division.id,
-        trimmedName,
-        trimmedEmail,
-        false,
-        { seasonId: memberSeasonId, divisionLevelId: memberLevelId },
-      );
-      setNeedsMergeForUserId(memberResult.userId);
-      setMergeSourceUserId("");
-      setSelectedMatchIds([]);
-      setCandidateMatches([]);
-      setEditEmail(trimmedEmail ?? "");
-      setEditPhone("");
-      const baseMessage = memberResult.createdPlaceholder
-        ? `Player added for ${memberName.trim()}.`
-        : "Existing registered player added to division.";
-      const linkedMessage = memberResult.linkedHistoricalMatches
-        ? ` Automatically linked ${memberResult.linkedHistoricalMatches} historical match${
-            memberResult.linkedHistoricalMatches === 1 ? "" : "es"
-          } by player name.`
-        : "";
-      setInviteMessage(
-        `${baseMessage}${linkedMessage} If anything is missing, link records below.`,
-      );
-      setMemberName("");
-      setMemberEmail("");
-    } catch (e) {
-      const message = (e as { message?: string; code?: string }).message;
-      const code = (e as { code?: string }).code;
-      setError(
-        message
-          ? `${code ?? "error"}: ${message}`
-          : "Failed to add division member. Please try again.",
-      );
-    } finally {
-      setAdding(false);
-    }
-  }
-
   async function handleMergeRecords() {
     if (!division || !needsMergeForUserId) return;
     if (selectedMatchIds.length === 0) {
@@ -351,7 +293,6 @@ export default function AdminPage(): React.JSX.Element {
           targetEmail: editEmail.trim() || undefined,
         },
       );
-      setInviteMessage("");
       setLinkActionMessage({
         targetUserId: needsMergeForUserId,
         message: `Linked records. Updated ${updatedMatches} historical match${updatedMatches === 1 ? "" : "es"} and refreshed rankings.`,
@@ -426,7 +367,6 @@ export default function AdminPage(): React.JSX.Element {
           matchIds: lastLinkAction.matchIds,
         },
       );
-      setInviteMessage("");
       setLinkActionMessage({
         targetUserId: lastLinkAction.sourceUserId,
         message: `Undo complete. Reverted ${reverted} linked historical matches.`,
@@ -572,42 +512,9 @@ export default function AdminPage(): React.JSX.Element {
   }
 
 
-  async function handleBackfillLevel(levelId: string) {
-    if (!division) return;
-    const level = divisionLevels.find((item) => item.id === levelId);
-    if (!level) return;
-    const confirmed = window.confirm(
-      `Link all legacy matches without a season/division level to ${level.name}? Existing season/level assignments will be left unchanged.`,
-    );
-    if (!confirmed) return;
-    setBackfillingLevelId(levelId);
-    setBackfillMessage("");
-    setError("");
-    try {
-      const result = await backfillDivisionSeasonLevel({
-        divisionId: division.id,
-        seasonId: level.seasonId,
-        divisionLevelId: level.id,
-        matchType: level.matchType,
-      });
-      setBackfillMessage(
-        `Linked ${result.updatedMatches} legacy match${result.updatedMatches === 1 ? "" : "es"} and upserted ${result.membershipsUpserted} roster membership${result.membershipsUpserted === 1 ? "" : "s"} for ${level.name}.`,
-      );
-    } catch (e) {
-      setError((e as { message?: string }).message || "Failed to link legacy matches.");
-    } finally {
-      setBackfillingLevelId(null);
-    }
-  }
 
 
-  async function handleBackfillSelectedLevel() {
-    if (!backfillLevelId) {
-      setError("Create or select a division level before linking legacy matches.");
-      return;
-    }
-    await handleBackfillLevel(backfillLevelId);
-  }
+
 
   async function repairRankings() {
     if (!division) return;
@@ -648,6 +555,32 @@ export default function AdminPage(): React.JSX.Element {
       setError(message || "Failed to repair rankings. Please try again.");
     } finally {
       setRepairingRankings(false);
+    }
+  }
+
+  async function handleCreatePlayerRow() {
+    if (!division || !newPlayerName.trim() || !newPlayerDivisionLevelId) return;
+    setSavingNewPlayer(true);
+    setError("");
+    try {
+      await upsertDivisionMembership({
+        divisionId: division.id,
+        seasonId: adminSeasonId,
+        divisionLevelId: newPlayerDivisionLevelId,
+        name: newPlayerName.trim(),
+        email: newPlayerEmail.trim() || undefined,
+        phone: newPlayerPhone.trim() || undefined,
+        role: newPlayerRole,
+        status: newPlayerStatus,
+      });
+      setNewPlayerRowOpen(false);
+      setNewPlayerName("");
+      setNewPlayerEmail("");
+      setNewPlayerPhone("");
+    } catch (e) {
+      setError((e as { message?: string }).message || "Failed to save player row.");
+    } finally {
+      setSavingNewPlayer(false);
     }
   }
 
@@ -706,6 +639,8 @@ export default function AdminPage(): React.JSX.Element {
           </button>
         </div>
 
+        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+
         {loading ? (
           <div style={styles.placeholder}>Loading…</div>
         ) : !division ? (
@@ -755,73 +690,7 @@ export default function AdminPage(): React.JSX.Element {
           </div>
         ) : (
           <>
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>{division.name}</h2>
-              <p style={styles.hint}>
-                {players.length} player{players.length !== 1 ? "s" : ""}{" "}
-                enrolled
-              </p>
-
-              <h3 style={styles.subTitle}>Add Division Member</h3>
-              <p style={styles.hint}>
-                One flow for existing players and placeholders. If the email
-                belongs to a registered account, they are added directly.
-                Otherwise, a placeholder is created.
-              </p>
-              <div style={styles.row}>
-                <select
-                  style={styles.input}
-                  value={memberSeasonId}
-                  onChange={(e) => {
-                    setMemberSeasonId(e.target.value);
-                    setMemberLevelId("");
-                  }}
-                  aria-label="Member season"
-                >
-                  {seasonOptions.map((season) => (
-                    <option key={season.id} value={season.id}>
-                      {season.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  style={styles.input}
-                  value={memberLevelId}
-                  onChange={(e) => setMemberLevelId(e.target.value)}
-                  aria-label="Member division level"
-                >
-                  <option value="">Select division level</option>
-                  {addMemberSeasonLevels.map((level) => (
-                    <option key={level.id} value={level.id}>
-                      {level.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  style={styles.input}
-                  value={memberName}
-                  onChange={(e) => setMemberName(e.target.value)}
-                  placeholder="Player name"
-                />
-                <input
-                  style={styles.input}
-                  value={memberEmail}
-                  onChange={(e) => setMemberEmail(e.target.value)}
-                  placeholder="player@company.com (optional)"
-                  type="email"
-                />
-                <button
-                  style={styles.btn}
-                  onClick={addDivisionMember}
-                  disabled={adding || !memberName.trim() || !memberLevelId || !division?.id}
-                >
-                  {adding ? "Saving…" : "Add Member"}
-                </button>
-              </div>
-              {inviteMessage && <p role="status" aria-live="polite" style={styles.success}>{inviteMessage}</p>}
-              {error && <p role="alert" style={styles.error}>{error}</p>}
-            </div>
-
+            
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Seasons & Division Levels</h2>
@@ -943,130 +812,13 @@ export default function AdminPage(): React.JSX.Element {
             </div>
 
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Link Legacy Matches</h2>
-              <p style={styles.hint}>
-                Previously recorded matches may not have season/division-level fields yet.
-                Choose the correct season and division level below to make those legacy matches
-                appear in the filtered Matches and Standings views. Existing season/level assignments are not overwritten.
-              </p>
-              <div style={styles.row}>
-                <select
-                  style={styles.input}
-                  value={adminSeasonId}
-                  onChange={(e) => setAdminSeasonId(e.target.value)}
-                  aria-label="Legacy match season"
-                >
-                  {seasonOptions.map((season) => (
-                    <option key={season.id} value={season.id}>
-                      {season.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  style={styles.input}
-                  value={backfillLevelId}
-                  onChange={(e) => setBackfillLevelId(e.target.value)}
-                  aria-label="Legacy match division level"
-                >
-                  <option value="">Select division level</option>
-                  {adminSeasonLevels.map((level) => (
-                    <option key={level.id} value={level.id}>
-                      {level.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  style={styles.btn}
-                  onClick={handleBackfillSelectedLevel}
-                  disabled={!backfillLevelId || !!backfillingLevelId}
-                >
-                  {backfillingLevelId === backfillLevelId ? "Linking…" : "Link legacy matches"}
-                </button>
-              </div>
-              {adminSeasonLevels.length === 0 && (
-                <p style={styles.hint}>Create a division level for this season before linking legacy matches.</p>
-              )}
-              {backfillMessage && <p role="status" style={styles.success}>{backfillMessage}</p>}
-            </div>
+            
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Master Divisions</h2>
-              <p style={styles.hint}>All division options configured for the selected season.</p>
-              <div style={styles.filterBar}>
-                <label style={styles.filterLabel}>
-                  Season
-                  <select
-                    style={styles.input}
-                    value={adminSeasonId}
-                    onChange={(e) => setAdminSeasonId(e.target.value)}
-                  >
-                    {seasonOptions.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div style={styles.tableScroller}>
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Division</th>
-                      <th style={styles.th}>Type</th>
-                      <th style={styles.th}>Skill</th>
-                      <th style={styles.th}>Description</th>
-                      <th style={styles.th}>Legacy Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminSeasonLevels.map((level) => (
-                      <tr key={level.id} style={styles.tr}>
-                        <td style={styles.td}>{level.name}</td>
-                        <td style={styles.td}>{level.matchType}</td>
-                        <td style={styles.td}>{level.skillLevel}</td>
-                        <td style={styles.td}>{level.description || "—"}</td>
-                        <td style={styles.td}>
-                          <button
-                            type="button"
-                            style={styles.btnSecondary}
-                            onClick={() => handleBackfillLevel(level.id)}
-                            disabled={backfillingLevelId === level.id}
-                          >
-                            {backfillingLevelId === level.id ? "Linking…" : "Link legacy matches"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {adminSeasonLevels.length === 0 && (
-                <p style={styles.hint}>No divisions have been configured for this season.</p>
-              )}
-              {backfillMessage && <p role="status" style={styles.success}>{backfillMessage}</p>}
-            </div>
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Ranking Repair</h2>
-              <p style={styles.hint}>
-                Rebuild rankings and head-to-head records from completed matches
-                without deleting match history.
-              </p>
-              <button
-                style={styles.btn}
-                onClick={repairRankings}
-                disabled={repairingRankings}
-              >
-                {repairingRankings ? "Repairing..." : "Repair Rankings"}
-              </button>
-              {repairMessage && <p role="status" aria-live="polite" style={styles.success}>{repairMessage}</p>}
-            </div>
+            
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Players</h2>
+              <button type="button" style={styles.btnSecondary} onClick={() => setNewPlayerRowOpen((v) => !v)}>{newPlayerRowOpen ? "Cancel add row" : "Add row"}</button>
               <div style={styles.filterBar}>
                 <label style={styles.filterLabel}>
                   Season
@@ -1095,17 +847,31 @@ export default function AdminPage(): React.JSX.Element {
                         <th style={styles.th}>Phone</th>
                         <th style={styles.th}>Role</th>
                         <th style={styles.th}>Status</th>
+                        <th style={styles.th}>Division</th>
                         <th style={styles.th}>Options</th>
                       </tr>
                     </thead>
                     <tbody>
+                    {newPlayerRowOpen ? (
+                      <tr style={styles.tr}>
+                        <td style={styles.td}><input style={styles.input} value={newPlayerName} onChange={(e)=>setNewPlayerName(e.target.value)} /></td>
+                        <td style={styles.td}><input style={styles.input} value={newPlayerEmail} onChange={(e)=>setNewPlayerEmail(e.target.value)} /></td>
+                        <td style={styles.td}><input style={styles.input} value={newPlayerPhone} onChange={(e)=>setNewPlayerPhone(e.target.value)} /></td>
+                        <td style={styles.td}><select style={styles.input} value={newPlayerRole} onChange={(e)=>setNewPlayerRole(e.target.value as "player"|"division_leader")}><option value="player">Player</option><option value="division_leader">Leader</option></select></td>
+                        <td style={styles.td}><select style={styles.input} value={newPlayerStatus} onChange={(e)=>setNewPlayerStatus(e.target.value as "active"|"waitlisted")}><option value="active">Active</option><option value="waitlisted">Waitlisted</option></select></td>
+                        <td style={styles.td}><select style={styles.input} value={newPlayerDivisionLevelId} onChange={(e)=>setNewPlayerDivisionLevelId(e.target.value)}>{adminSeasonLevels.map((level)=><option key={level.id} value={level.id}>{level.name}</option>)}</select></td>
+                        <td style={styles.td}><button style={styles.btn} onClick={handleCreatePlayerRow} disabled={savingNewPlayer}>{savingNewPlayer?"Saving…":"Save"}</button></td>
+                      </tr>
+                    ) : null}
+
                       {rowsByLevel.flatMap((group) => [
                         <tr key={`${group.levelId}-group`} style={styles.groupHeaderRow}>
-                          <td style={styles.groupHeaderCell} colSpan={6}>
+                          <td style={styles.groupHeaderCell} colSpan={7}>
                             {group.levelName} · {group.rows.length} player{group.rows.length === 1 ? "" : "s"}
                           </td>
                         </tr>,
-                        ...group.rows.flatMap(({ player: p }) => {
+                        ...group.rows.flatMap((row) => {
+                        const p = row.player;
                         const rows: React.JSX.Element[] = [
                           <tr key={`${p.id}-row`} style={styles.tr}>
                             <td style={styles.td}>{p.displayName}</td>
@@ -1153,6 +919,7 @@ export default function AdminPage(): React.JSX.Element {
                                   : "Unregistered"
                                 : "Registered"}
                             </td>
+                            <td style={styles.td}>{row.membership?.divisionLevelId ? (levelNameById.get(row.membership.divisionLevelId) ?? row.membership.divisionLevelId) : "Unassigned"}</td>
                             <td style={styles.td}>
                               <button
                                 style={styles.btnSecondary}
@@ -1178,7 +945,7 @@ export default function AdminPage(): React.JSX.Element {
                             <tr key={`${p.id}-editor`}>
                               <td
                                 style={{ ...styles.td, ...styles.editorCell }}
-                                colSpan={6}
+                                colSpan={7}
                               >
                                 <div style={styles.inlineEditor}>
                                   <input
@@ -1313,6 +1080,21 @@ export default function AdminPage(): React.JSX.Element {
                   </table>
                 </div>
               )}
+            </div>
+<div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Ranking Repair</h2>
+              <p style={styles.hint}>
+                Rebuild rankings and head-to-head records from completed matches
+                without deleting match history.
+              </p>
+              <button
+                style={styles.btn}
+                onClick={repairRankings}
+                disabled={repairingRankings}
+              >
+                {repairingRankings ? "Repairing..." : "Repair Rankings"}
+              </button>
+              {repairMessage && <p role="status" aria-live="polite" style={styles.success}>{repairMessage}</p>}
             </div>
           </>
         )}

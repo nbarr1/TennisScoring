@@ -70,6 +70,7 @@ export function useDivisionMemberships(
       divisionMembershipsQuery(
         divisionId,
         seasonId,
+        where('status', '==', 'active'),
         ...(divisionLevelId ? [where('divisionLevelId', '==', divisionLevelId)] : []),
       ),
       (snap) => {
