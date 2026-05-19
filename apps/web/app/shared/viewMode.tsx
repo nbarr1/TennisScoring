@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export type ViewModePreference = 'auto' | 'ios' | 'standard';
 export type EffectiveViewMode = 'ios' | 'standard';
