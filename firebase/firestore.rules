@@ -38,6 +38,13 @@ service cloud.firestore {
       return isAuth() && isUserInDivisionRoster(divisionId, request.auth.uid);
     }
 
+
+    function hasDivisionLevelMembership(divisionId, seasonId, divisionLevelId) {
+      return isAuth() && exists(
+        /databases/$(database)/documents/divisions/$(divisionId)/memberships/$(seasonId + '_' + divisionLevelId + '_' + request.auth.uid)
+      );
+    }
+
     function isLeader(divisionId) {
       let division = get(/databases/$(database)/documents/divisions/$(divisionId)).data;
       let leaderIds = division.leaderIds is list ? division.leaderIds : [];
@@ -117,7 +124,8 @@ service cloud.firestore {
         allow read: if isAuth() && (
           isAdmin() ||
           isDivisionMember(divisionId) ||
-          isDivisionRosterMember(divisionId)
+          isDivisionRosterMember(divisionId) ||
+          hasDivisionLevelMembership(divisionId, resource.data.seasonId, levelId)
         );
         allow write: if false;
       }
