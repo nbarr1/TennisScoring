@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
-  cancelMatch, postponeMatch, deleteMatch,
+  cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
@@ -16,6 +16,7 @@ import {
 } from '@tennis/shared';
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
+import { useViewMode } from '../../shared/viewMode';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
@@ -27,6 +28,10 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const [showManage, setShowManage] = useState(false);
   const [showPostponeOptions, setShowPostponeOptions] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [liveActionLoading, setLiveActionLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const { effectiveMode } = useViewMode();
+  const isIosView = effectiveMode === 'ios';
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -114,21 +119,67 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     setConfirmAction(null);
   }
 
+
+  async function handleStartLive(server: 'player1' | 'player2') {
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await startMatch(id, server, false, match.liveScore);
+    } catch {
+      setLiveError('Could not start live scoring. Please try again.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
+
+  async function handlePoint(player: 'player1' | 'player2') {
+    if (!match) return;
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await scorePoint(id, match, player);
+    } catch {
+      setLiveError('Could not record point. Check your connection and retry.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
+
+  async function handleUndoPoint() {
+    if (!match) return;
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await undoLastPoint(id, match);
+    } catch {
+      setLiveError('Could not undo point.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
   const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
   const canPostpone = match.status === 'scheduled';
   const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
   const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
   const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
 
+  const containerStyles = {
+    page: isIosView ? { ...styles.page, ...styles.iosPage } : styles.page,
+    nav: isIosView ? { ...styles.nav, ...styles.iosNav } : styles.nav,
+    main: isIosView ? { ...styles.main, ...styles.iosMain } : styles.main,
+    scoreboard: isIosView ? { ...styles.scoreboard, ...styles.iosScoreboard } : styles.scoreboard,
+    section: isIosView ? { ...styles.section, ...styles.iosSection } : styles.section,
+  };
+
   return (
-    <div style={styles.page}>
-      <nav style={styles.nav}>
+    <div style={containerStyles.page}>
+      <nav style={containerStyles.nav}>
         <Link href="/matches" style={styles.back}>← Back to Matches</Link>
         <span style={styles.navBrand}>🎾 Tennis League</span>
       </nav>
 
-      <main style={styles.main}>
-        <div style={styles.scoreboard}>
+      <main style={containerStyles.main}>
+        <div style={containerStyles.scoreboard}>
           <div style={styles.badgeRow}>
             <StatusBadge status={match.status} />
             {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
@@ -160,6 +211,31 @@ export default function MatchPage({ params }: { params: { id: string } }): React
             </button>
           </div>
         )}
+        {match.status === 'scheduled' && isParticipant && (
+          <div style={styles.liveControlSection}>
+            <h2 style={styles.liveControlTitle}>Start Live Scoring</h2>
+            <p style={styles.liveControlHint}>Pick who serves first to begin +Live scoring.</p>
+            <div style={styles.liveButtonRow}>
+              <button style={styles.liveScoreBtn} onClick={() => handleStartLive('player1')} disabled={liveActionLoading}>{liveActionLoading ? 'Starting…' : `${p1Name} serves`}</button>
+              <button style={styles.liveScoreBtn} onClick={() => handleStartLive('player2')} disabled={liveActionLoading}>{liveActionLoading ? 'Starting…' : `${p2Name} serves`}</button>
+            </div>
+          </div>
+        )}
+
+        {match.status === 'in_progress' && isParticipant && (
+          <div style={styles.liveControlSection}>
+            <h2 style={styles.liveControlTitle}>Live Scoring</h2>
+            <div style={styles.liveButtonRow}>
+              <button style={styles.liveScoreBtn} onClick={() => handlePoint('player1')} disabled={liveActionLoading}>+1 {p1Name}</button>
+              <button style={styles.liveScoreBtn} onClick={() => handlePoint('player2')} disabled={liveActionLoading}>+1 {p2Name}</button>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <button style={styles.liveUndoBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>Undo last point</button>
+            </div>
+          </div>
+        )}
+
+        {liveError && <div style={styles.liveError}>{liveError}</div>}
 
         {/* Report actions */}
         {isParticipant && match.status === 'pending_report' && !submission && (
@@ -225,7 +301,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         )}
 
         {/* Set breakdown */}
-        <div style={styles.section}>
+        <div style={containerStyles.section}>
           <h2 style={styles.sectionTitle}>Set Breakdown</h2>
           {match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).map((s, i) => (
             <div key={i} style={styles.setRow}>
@@ -245,7 +321,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
         {/* Stats */}
         {match.status === 'completed' && !isHistoric && (
-          <div style={styles.section}>
+          <div style={containerStyles.section}>
             <h2 style={styles.sectionTitle}>Match Statistics</h2>
             <div style={styles.statsTable}>
               <StatRow label="" v1={p1Name} v2={p2Name} header />
@@ -270,7 +346,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         )}
 
         {match.status === 'completed' && match.reportUrl && (
-          <div style={styles.section}>
+          <div style={containerStyles.section}>
             <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
               📊 Download Match Report (PDF)
             </a>
@@ -374,12 +450,16 @@ function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: str
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: '100vh', background: '#1a472a' },
+  iosPage: { minHeight: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' },
   center: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 8 },
   nav: { padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  iosNav: { position: 'sticky', top: 0, zIndex: 5, background: '#1a472a', paddingTop: 'max(12px, env(safe-area-inset-top))', paddingLeft: 16, paddingRight: 16 },
   back: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   navBrand: { color: '#fff', fontWeight: 700, fontSize: 18 },
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
+  iosMain: { padding: '16px 12px 24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
+  iosScoreboard: { padding: '20px 0 24px' },
   badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
   historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
   playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
@@ -399,6 +479,14 @@ const styles: Record<string, React.CSSProperties> = {
   gameScore: { color: '#a8d5a2', fontSize: 28, fontWeight: 600, marginBottom: 16 },
   server: { color: '#ffdc60', fontSize: 13, fontWeight: 600 },
   section: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16 },
+  iosSection: { padding: 16, borderRadius: 12 },
+  liveControlSection: { background: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, textAlign: 'center' as const },
+  liveControlTitle: { fontSize: 18, fontWeight: 800, color: '#1a472a', margin: '0 0 8px' },
+  liveControlHint: { fontSize: 13, color: '#666', margin: '0 0 12px' },
+  liveButtonRow: { display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const },
+  liveScoreBtn: { minHeight: 44, background: '#1a472a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 16px', fontWeight: 700, cursor: 'pointer' },
+  liveUndoBtn: { minHeight: 40, background: '#fff', color: '#1a472a', border: '1px solid #1a472a', borderRadius: 10, padding: '10px 16px', fontWeight: 700, cursor: 'pointer' },
+  liveError: { background: '#fff3f1', color: '#b3261e', borderRadius: 10, padding: 12, marginBottom: 16, textAlign: 'center' as const },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
   setRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #f0f0f0' },
   setLabel: { color: '#666', fontSize: 14, width: 48 },

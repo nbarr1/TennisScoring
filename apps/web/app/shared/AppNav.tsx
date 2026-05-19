@@ -1,4 +1,7 @@
+'use client';
+
 import Link from "next/link";
+import { ViewModeToggle } from "./ViewModeToggle";
 
 export type AppNavSection =
   | "dashboard"
@@ -43,6 +46,7 @@ export function AppNav({
             {item.label}
           </Link>
         ))}
+        <ViewModeToggle />
         <form method="post" action="/api/auth/logout" style={styles.logoutForm}>
           <button type="submit" style={styles.logoutButton}>
             Sign out
