@@ -23,8 +23,15 @@ service cloud.firestore {
       return isAuth() && getUserData().role == 'app_developer';
     }
 
-    function isDivisionMember(divisionId) {
-      return isAuth() && getUserData().divisionId == divisionId;
+    function isDivisionAffiliated(divisionId) {
+      let userData = getUserData();
+      let divisionIds = userData.divisionIds is list ? userData.divisionIds : [];
+      let membershipDivisionIds = userData.membershipDivisionIds is list ? userData.membershipDivisionIds : [];
+      return isAuth() && (
+        userData.divisionId == divisionId ||
+        divisionId in divisionIds ||
+        divisionId in membershipDivisionIds
+      );
     }
 
     function isUserInDivisionRoster(divisionId, userId) {
@@ -36,13 +43,6 @@ service cloud.firestore {
 
     function isDivisionRosterMember(divisionId) {
       return isAuth() && isUserInDivisionRoster(divisionId, request.auth.uid);
-    }
-
-
-    function hasDivisionLevelMembership(divisionId, seasonId, divisionLevelId) {
-      return isAuth() && exists(
-        /databases/$(database)/documents/divisions/$(divisionId)/memberships/$(seasonId + '_' + divisionLevelId + '_' + request.auth.uid)
-      );
     }
 
     function isLeader(divisionId) {
@@ -103,7 +103,7 @@ service cloud.firestore {
 
       allow read: if isAuth() && (
         isAdmin() ||
-        isDivisionMember(divisionId) ||
+        isDivisionAffiliated(divisionId) ||
         isDivisionRosterMember(divisionId)
       );
       // Regular division creation goes through the createDivision Cloud Function.
@@ -123,9 +123,8 @@ service cloud.firestore {
       match /levels/{levelId} {
         allow read: if isAuth() && (
           isAdmin() ||
-          isDivisionMember(divisionId) ||
-          isDivisionRosterMember(divisionId) ||
-          hasDivisionLevelMembership(divisionId, resource.data.seasonId, levelId)
+          isDivisionAffiliated(divisionId) ||
+          isDivisionRosterMember(divisionId)
         );
         allow write: if false;
       }
@@ -135,7 +134,7 @@ service cloud.firestore {
         allow read: if isAuth() && (
           isAdmin() ||
           isLeader(divisionId) ||
-          isDivisionMember(divisionId) ||
+          isDivisionAffiliated(divisionId) ||
           isDivisionRosterMember(divisionId)
         );
         allow write: if false;
@@ -145,7 +144,7 @@ service cloud.firestore {
       match /rankings/{userId} {
         allow read: if isAuth() && (
           isAdmin() ||
-          isDivisionMember(divisionId) ||
+          isDivisionAffiliated(divisionId) ||
           isDivisionRosterMember(divisionId)
         );
         allow write: if false; // Cloud Functions only
@@ -272,7 +271,7 @@ service cloud.firestore {
 
       allow read: if isAuth() && (
         isAdmin() ||
-        isDivisionMember(resource.data.divisionId) ||
+        isDivisionAffiliated(resource.data.divisionId) ||
         isDivisionRosterMember(resource.data.divisionId) ||
         isMatchParticipant(resource.data) ||
         isLeader(resource.data.divisionId)
@@ -283,7 +282,7 @@ service cloud.firestore {
         request.resource.data.player1Id == request.auth.uid &&
         request.resource.data.status in ['scheduled', 'proposed'] &&
         (
-          isDivisionMember(request.resource.data.divisionId) ||
+          isDivisionAffiliated(request.resource.data.divisionId) ||
           isDivisionRosterMember(request.resource.data.divisionId)
         ) &&
         (
@@ -331,7 +330,7 @@ service cloud.firestore {
     match /headToHead/{h2hId} {
       allow read: if isAuth() && (
         isAdmin() ||
-        isDivisionMember(resource.data.divisionId) ||
+        isDivisionAffiliated(resource.data.divisionId) ||
         isDivisionRosterMember(resource.data.divisionId)
       );
       allow write: if false; // Cloud Functions only
