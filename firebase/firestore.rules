@@ -24,13 +24,10 @@ service cloud.firestore {
     }
 
     function isDivisionAffiliated(divisionId) {
-      let userData = getUserData();
-      let divisionIds = userData.divisionIds is list ? userData.divisionIds : [];
-      let membershipDivisionIds = userData.membershipDivisionIds is list ? userData.membershipDivisionIds : [];
-      return isAuth() && (
-        userData.divisionId == divisionId ||
-        divisionId in divisionIds ||
-        divisionId in membershipDivisionIds
+      return isAuth() && divisionId is string && divisionId.size() > 0 && (
+        getUserData().get('divisionId', null) == divisionId ||
+        (getUserData().get('divisionIds', []) is list && divisionId in getUserData().get('divisionIds', [])) ||
+        (getUserData().get('membershipDivisionIds', []) is list && divisionId in getUserData().get('membershipDivisionIds', []))
       );
     }
 
