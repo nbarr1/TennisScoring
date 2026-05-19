@@ -572,7 +572,7 @@ function StartLiveMatchModal({
             placeholder="Guest opponent"
           />
         </label>
-        {error && <div style={styles.error}>{error}</div>}
+{error && <div role="alert" style={modalStyles.error}>{error}</div>}
         <div style={modalStyles.actions}>
           <button style={modalStyles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
           <button style={{ ...modalStyles.submitBtn, ...(submitting ? modalStyles.btnDisabled : {}) }} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
