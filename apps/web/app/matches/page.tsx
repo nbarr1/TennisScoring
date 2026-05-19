@@ -1836,7 +1836,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   section: { marginBottom: 28 },
   titleActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
-  iosTitleActions: { width: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))" },
+  iosTitleActions: { width: "100%", justifyContent: "stretch" as const },
   liveBtn: {
     minHeight: 44,
     background: "#27ae60",

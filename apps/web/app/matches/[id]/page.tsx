@@ -28,6 +28,8 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const [showManage, setShowManage] = useState(false);
   const [showPostponeOptions, setShowPostponeOptions] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [liveActionLoading, setLiveActionLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const { effectiveMode } = useViewMode();
   const isIosView = effectiveMode === 'ios';
 
@@ -117,6 +119,44 @@ export default function MatchPage({ params }: { params: { id: string } }): React
     setConfirmAction(null);
   }
 
+
+  async function handleStartLive(server: 'player1' | 'player2') {
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await startMatch(id, server, false, match.liveScore);
+    } catch {
+      setLiveError('Could not start live scoring. Please try again.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
+
+  async function handlePoint(player: 'player1' | 'player2') {
+    if (!match) return;
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await scorePoint(id, match, player);
+    } catch {
+      setLiveError('Could not record point. Check your connection and retry.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
+
+  async function handleUndoPoint() {
+    if (!match) return;
+    setLiveError(null);
+    setLiveActionLoading(true);
+    try {
+      await undoLastPoint(id, match);
+    } catch {
+      setLiveError('Could not undo point.');
+    } finally {
+      setLiveActionLoading(false);
+    }
+  }
   const canManage = isParticipant && match.status !== 'cancelled' && match.status !== 'completed';
   const canPostpone = match.status === 'scheduled';
   const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
@@ -171,6 +211,31 @@ export default function MatchPage({ params }: { params: { id: string } }): React
             </button>
           </div>
         )}
+        {match.status === 'scheduled' && isParticipant && (
+          <div style={styles.liveControlSection}>
+            <h2 style={styles.liveControlTitle}>Start Live Scoring</h2>
+            <p style={styles.liveControlHint}>Pick who serves first to begin +Live scoring.</p>
+            <div style={styles.liveButtonRow}>
+              <button style={styles.liveScoreBtn} onClick={() => handleStartLive('player1')} disabled={liveActionLoading}>{liveActionLoading ? 'Starting…' : `${p1Name} serves`}</button>
+              <button style={styles.liveScoreBtn} onClick={() => handleStartLive('player2')} disabled={liveActionLoading}>{liveActionLoading ? 'Starting…' : `${p2Name} serves`}</button>
+            </div>
+          </div>
+        )}
+
+        {match.status === 'in_progress' && isParticipant && (
+          <div style={styles.liveControlSection}>
+            <h2 style={styles.liveControlTitle}>Live Scoring</h2>
+            <div style={styles.liveButtonRow}>
+              <button style={styles.liveScoreBtn} onClick={() => handlePoint('player1')} disabled={liveActionLoading}>+1 {p1Name}</button>
+              <button style={styles.liveScoreBtn} onClick={() => handlePoint('player2')} disabled={liveActionLoading}>+1 {p2Name}</button>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <button style={styles.liveUndoBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>Undo last point</button>
+            </div>
+          </div>
+        )}
+
+        {liveError && <div style={styles.liveError}>{liveError}</div>}
 
         {/* Report actions */}
         {isParticipant && match.status === 'pending_report' && !submission && (
@@ -415,6 +480,13 @@ const styles: Record<string, React.CSSProperties> = {
   server: { color: '#ffdc60', fontSize: 13, fontWeight: 600 },
   section: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16 },
   iosSection: { padding: 16, borderRadius: 12 },
+  liveControlSection: { background: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, textAlign: 'center' as const },
+  liveControlTitle: { fontSize: 18, fontWeight: 800, color: '#1a472a', margin: '0 0 8px' },
+  liveControlHint: { fontSize: 13, color: '#666', margin: '0 0 12px' },
+  liveButtonRow: { display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const },
+  liveScoreBtn: { minHeight: 44, background: '#1a472a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 16px', fontWeight: 700, cursor: 'pointer' },
+  liveUndoBtn: { minHeight: 40, background: '#fff', color: '#1a472a', border: '1px solid #1a472a', borderRadius: 10, padding: '10px 16px', fontWeight: 700, cursor: 'pointer' },
+  liveError: { background: '#fff3f1', color: '#b3261e', borderRadius: 10, padding: 12, marginBottom: 16, textAlign: 'center' as const },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
   setRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #f0f0f0' },
   setLabel: { color: '#666', fontSize: 14, width: 48 },
