@@ -1499,7 +1499,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
   title: { fontSize: 20, fontWeight: 700, color: "#1a472a", marginBottom: 16 },
   hint: { fontSize: 14, color: "#556", margin: "0 0 12px" },
   label: { display: "grid", gap: 8, fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 8 },
-  actions: { display: "flex", gap: 10, marginTop: 12 },
   modeToggle: {
     display: "flex",
     borderRadius: 10,
@@ -1576,7 +1575,6 @@ const modalStyles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   setsBlock: { marginBottom: 14 },
-  label: { fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 8 },
   setRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 },
   setLabel: { fontSize: 13, color: "#666", width: 48 },
   setInput: {
