@@ -1169,7 +1169,7 @@ export default function AdminPage(): React.JSX.Element {
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: 900, margin: "0 auto", padding: "40px 24px" },
+  main: { maxWidth: 1200, margin: "0 auto", padding: "40px 24px" },
   adminHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" as const },
   pageTitle: {
     fontSize: 28,
@@ -1186,6 +1186,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#fff",
     borderRadius: 14,
     padding: 28,
+    width: "100%",
+    maxWidth: "none",
     marginBottom: 20,
     boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
   },
