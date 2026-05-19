@@ -24,10 +24,11 @@ service cloud.firestore {
     }
 
     function isDivisionAffiliated(divisionId) {
+      let userData = getUserData();
       return isAuth() && divisionId is string && divisionId.size() > 0 && (
-        getUserData().get('divisionId', null) == divisionId ||
-        (getUserData().get('divisionIds', []) is list && divisionId in getUserData().get('divisionIds', [])) ||
-        (getUserData().get('membershipDivisionIds', []) is list && divisionId in getUserData().get('membershipDivisionIds', []))
+        userData.get('divisionId', null) == divisionId ||
+        (userData.get('divisionIds', []) is list && divisionId in userData.get('divisionIds', [])) ||
+        (userData.get('membershipDivisionIds', []) is list && divisionId in userData.get('membershipDivisionIds', []))
       );
     }
 
@@ -120,6 +121,7 @@ service cloud.firestore {
       match /levels/{levelId} {
         allow read: if isAuth() && (
           isAdmin() ||
+          isLeader(divisionId) ||
           isDivisionAffiliated(divisionId) ||
           isDivisionRosterMember(divisionId)
         );
