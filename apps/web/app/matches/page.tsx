@@ -16,7 +16,6 @@ import {
   searchDivisionPlayers,
   proposeMatch,
   createMatch,
-  startMatch,
   acceptMatchProposal,
   declineMatchProposal,
   useActiveDivisionId,
@@ -551,13 +550,8 @@ function StartLiveMatchModal({
         createdBy: currentUser.id,
         scheduledAt: Date.now(),
       });
-      await startMatch(matchId, "player1", false);
       onCreated(matchId);
     } catch {
-      if (matchId) {
-        onCreated(matchId);
-        return;
-      }
       setError("Could not create live match. Try again.");
     } finally {
       setSubmitting(false);
@@ -565,23 +559,23 @@ function StartLiveMatchModal({
   }
 
   return (
-    <div style={styles.modalOverlay}>
-      <div style={styles.modalCard}>
-        <h2 style={styles.modalTitle}>New Live Match</h2>
-        <p style={styles.modalHint}>Quick start for iOS: create a live match and jump straight into scoring.</p>
-        <label style={styles.label}>
+    <div style={modalStyles.overlay}>
+      <div style={modalStyles.card}>
+        <h2 style={modalStyles.title}>New Live Match</h2>
+        <p style={modalStyles.hint}>Quick start for iOS: create a live match and jump straight into scoring.</p>
+        <label style={modalStyles.label}>
           Opponent name
           <input
-            style={styles.input}
+            style={modalStyles.input}
             value={opponentName}
             onChange={(event) => setOpponentName(event.target.value)}
             placeholder="Guest opponent"
           />
         </label>
         {error && <div style={styles.error}>{error}</div>}
-        <div style={styles.modalActions}>
-          <button style={styles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
-          <button style={styles.primaryBtn} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
+        <div style={modalStyles.actions}>
+          <button style={modalStyles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button style={{ ...modalStyles.submitBtn, ...(submitting ? modalStyles.btnDisabled : {}) }} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
         </div>
       </div>
     </div>
@@ -1503,6 +1497,9 @@ const modalStyles: Record<string, React.CSSProperties> = {
     overflowY: "auto" as const,
   },
   title: { fontSize: 20, fontWeight: 700, color: "#1a472a", marginBottom: 16 },
+  hint: { fontSize: 14, color: "#556", margin: "0 0 12px" },
+  label: { display: "grid", gap: 8, fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 8 },
+  actions: { display: "flex", gap: 10, marginTop: 12 },
   modeToggle: {
     display: "flex",
     borderRadius: 10,

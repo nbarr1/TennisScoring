@@ -229,7 +229,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
               <button style={styles.liveScoreBtn} onClick={() => handlePoint('player1')} disabled={liveActionLoading}>+1 {p1Name}</button>
               <button style={styles.liveScoreBtn} onClick={() => handlePoint('player2')} disabled={liveActionLoading}>+1 {p2Name}</button>
             </div>
-            <div style={{ marginTop: 10 }}>
+            <div style={styles.liveUndoWrap}>
               <button style={styles.liveUndoBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>Undo last point</button>
             </div>
           </div>
@@ -485,6 +485,7 @@ const styles: Record<string, React.CSSProperties> = {
   liveControlHint: { fontSize: 13, color: '#666', margin: '0 0 12px' },
   liveButtonRow: { display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' as const },
   liveScoreBtn: { minHeight: 44, background: '#1a472a', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 16px', fontWeight: 700, cursor: 'pointer' },
+  liveUndoWrap: { marginTop: 10 },
   liveUndoBtn: { minHeight: 40, background: '#fff', color: '#1a472a', border: '1px solid #1a472a', borderRadius: 10, padding: '10px 16px', fontWeight: 700, cursor: 'pointer' },
   liveError: { background: '#fff3f1', color: '#b3261e', borderRadius: 10, padding: 12, marginBottom: 16, textAlign: 'center' as const },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
