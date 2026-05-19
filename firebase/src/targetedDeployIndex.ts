@@ -19,4 +19,4 @@ export {
 
 export { submitFeedback } from './feedback/submitFeedback';
 
-export { getInvitePreview, acceptInvite } from './users/sendInvite';
+export { sendInvite, getInvitePreview, acceptInvite } from './users/sendInvite';

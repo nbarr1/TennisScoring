@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,getInvitePreview,acceptInvite,submitFeedback'
+          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,sendInvite,getInvitePreview,acceptInvite,submitFeedback'
 
           FILTERS="$FILTERS" node <<'NODE'
           const path = require('path');
@@ -161,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,getInvitePreview,acceptInvite,submitFeedback'
+          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,sendInvite,getInvitePreview,acceptInvite,submitFeedback'
 
           npx firebase-tools deploy \
             --only "functions:${DEPLOY_FUNCTIONS//,/\,functions:}" \
