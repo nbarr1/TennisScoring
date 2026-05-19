@@ -3,8 +3,10 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { useViewMode } from "../shared/viewMode";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { onSnapshot, where } from "firebase/firestore";
 import {
   divisionMatchesQuery,
@@ -13,6 +15,8 @@ import {
   recordMatchOnBehalf,
   searchDivisionPlayers,
   proposeMatch,
+  createMatch,
+  startMatch,
   acceptMatchProposal,
   declineMatchProposal,
   useActiveDivisionId,
@@ -130,6 +134,9 @@ function stop(handler: () => void) {
 }
 
 export default function MatchesPage(): React.JSX.Element {
+  const router = useRouter();
+  const { effectiveMode } = useViewMode();
+  const isIosView = effectiveMode === "ios";
   const { firebaseUser } = useAuthUser();
   const { profile } = useUserProfile(firebaseUser?.uid ?? null);
   const { divisionId, loading: divisionLoading } = useActiveDivisionId(
@@ -140,6 +147,7 @@ export default function MatchesPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [showRecord, setShowRecord] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
+  const [showLive, setShowLive] = useState(false);
   const currentSeason = useMemo(() => currentSeasonForDate(), []);
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
   const [selectedSeasonId, setSelectedSeasonId] = useState(currentSeason.id);
@@ -258,15 +266,25 @@ export default function MatchesPage(): React.JSX.Element {
     profile?.role === "division_leader" ||
     profile?.role === "app_developer";
 
+  const pageStyle = isIosView ? { ...styles.page, ...styles.iosPage } : styles.page;
+  const mainStyle = isIosView ? { ...styles.main, ...styles.iosMain } : styles.main;
+  const titleActionsStyle = isIosView ? { ...styles.titleActions, ...styles.iosTitleActions } : styles.titleActions;
+
   return (
-    <div style={styles.page}>
+    <div style={pageStyle}>
       <AppNav active="matches" />
 
-      <main style={styles.main}>
+      <main style={mainStyle}>
         <div style={styles.titleRow}>
           <h1 style={styles.pageTitle}>Matches</h1>
           {divisionId && firebaseUser && (
-            <div style={styles.titleActions}>
+            <div style={titleActionsStyle}>
+              <button
+                style={styles.liveBtn}
+                onClick={() => setShowLive(true)}
+              >
+                + Live
+              </button>
               <button
                 style={styles.proposeBtn}
                 onClick={() => setShowPropose(true)}
@@ -447,6 +465,21 @@ export default function MatchesPage(): React.JSX.Element {
           </>
         )}
 
+        {showLive && firebaseUser && profile && divisionId && (
+          <StartLiveMatchModal
+            currentUser={profile}
+            divisionId={divisionId}
+            seasonId={selectedSeasonId}
+            divisionLevelId={activeLevelId}
+            matchType={activeLevel?.matchType}
+            onClose={() => setShowLive(false)}
+            onCreated={(matchId) => {
+              setShowLive(false);
+              router.push(`/matches/${matchId}`);
+            }}
+          />
+        )}
+
         {showRecord && firebaseUser && profile && divisionId && (
           <RecordPastMatchModal
             currentUser={profile}
@@ -470,6 +503,87 @@ export default function MatchesPage(): React.JSX.Element {
           />
         )}
       </main>
+    </div>
+  );
+}
+
+
+function StartLiveMatchModal({
+  onClose,
+  onCreated,
+  divisionId,
+  currentUser,
+  seasonId,
+  divisionLevelId,
+  matchType,
+}: {
+  onClose: () => void;
+  onCreated: (matchId: string) => void;
+  divisionId: string;
+  currentUser: User;
+  seasonId: string;
+  divisionLevelId?: string;
+  matchType?: "singles" | "doubles";
+}) {
+  const [opponentName, setOpponentName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleCreateLive() {
+    if (!opponentName.trim()) {
+      setError("Enter an opponent name.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    let matchId: string | null = null;
+    try {
+      matchId = await createMatch({
+        player1Id: currentUser.id,
+        player2Id: "guest",
+        player1Name: currentUser.displayName,
+        player2Name: opponentName.trim(),
+        player2IsGuest: true,
+        divisionId,
+        seasonId,
+        divisionLevelId,
+        matchType,
+        createdBy: currentUser.id,
+        scheduledAt: Date.now(),
+      });
+      await startMatch(matchId, "player1", false);
+      onCreated(matchId);
+    } catch {
+      if (matchId) {
+        onCreated(matchId);
+        return;
+      }
+      setError("Could not create live match. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={styles.modalOverlay}>
+      <div style={styles.modalCard}>
+        <h2 style={styles.modalTitle}>New Live Match</h2>
+        <p style={styles.modalHint}>Quick start for iOS: create a live match and jump straight into scoring.</p>
+        <label style={styles.label}>
+          Opponent name
+          <input
+            style={styles.input}
+            value={opponentName}
+            onChange={(event) => setOpponentName(event.target.value)}
+            placeholder="Guest opponent"
+          />
+        </label>
+        {error && <div style={styles.error}>{error}</div>}
+        <div style={styles.modalActions}>
+          <button style={styles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button style={styles.primaryBtn} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1582,6 +1696,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
+  iosPage: { minHeight: "100dvh" },
   filterBar: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
   filterLabel: { display: "grid", gap: 6, fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
   select: { minWidth: 180, border: "1px solid #ddd", borderRadius: 10, padding: "10px 12px", background: "#fff", color: "var(--text)", fontSize: 14, textTransform: "none" as const, letterSpacing: 0 },
@@ -1590,6 +1705,7 @@ const styles: Record<string, React.CSSProperties> = {
   playerGroup: { borderTop: "1px solid #f0f0f0", padding: "10px 0" },
   playerSummary: { cursor: "pointer", fontWeight: 700, color: "#333", marginBottom: 10 },
   main: { maxWidth: 960, margin: "0 auto", padding: "40px 24px" },
+  iosMain: { padding: "24px 12px calc(24px + env(safe-area-inset-bottom))" },
   titleRow: {
     display: "flex",
     alignItems: "center",
@@ -1605,6 +1721,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
   },
   recordBtn: {
+    minHeight: 44,
     background: "#fff",
     border: "1.5px solid var(--green-dark)",
     color: "var(--green-dark)",
@@ -1719,7 +1836,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   section: { marginBottom: 28 },
   titleActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
+  iosTitleActions: { width: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))" },
+  liveBtn: {
+    minHeight: 44,
+    background: "#27ae60",
+    color: "#fff",
+    border: "none",
+    borderRadius: 999,
+    padding: "10px 16px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
   proposeBtn: {
+    minHeight: 44,
     background: "var(--green-dark)",
     border: "none",
     color: "#fff",
