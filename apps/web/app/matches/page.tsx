@@ -555,23 +555,23 @@ function StartLiveMatchModal({
   }
 
   return (
-    <div style={styles.modalOverlay}>
-      <div style={styles.modalCard}>
-        <h2 style={styles.modalTitle}>New Live Match</h2>
-        <p style={styles.modalHint}>Quick start for iOS: create a live match and jump straight into scoring.</p>
-        <label style={styles.label}>
+    <div style={modalStyles.overlay}>
+      <div style={modalStyles.card}>
+        <h2 style={modalStyles.title}>New Live Match</h2>
+        <p style={modalStyles.muted}>Quick start for iOS: create a live match and jump straight into scoring.</p>
+        <label style={modalStyles.label}>
           Opponent name
           <input
-            style={styles.input}
+            style={modalStyles.input}
             value={opponentName}
             onChange={(event) => setOpponentName(event.target.value)}
             placeholder="Guest opponent"
           />
         </label>
-        {error && <div style={styles.error}>{error}</div>}
-        <div style={styles.modalActions}>
-          <button style={styles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
-          <button style={styles.primaryBtn} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
+        {error && <div style={modalStyles.error}>{error}</div>}
+        <div style={modalStyles.actions}>
+          <button style={modalStyles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
+          <button style={modalStyles.submitBtn} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
         </div>
       </div>
     </div>
