@@ -9,7 +9,8 @@
     "deploy": "firebase deploy --only functions",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "build:targeted-deploy": "pnpm --filter @tennis/shared build && esbuild src/targetedDeployIndex.ts --bundle --platform=node --external:firebase-admin --external:firebase-admin/app --external:firebase-admin/firestore --external:firebase-admin/messaging --external:firebase-functions --external:firebase-functions/v2 --external:pdf-lib --outfile=lib/index.js --format=cjs"
+    "build:targeted-deploy": "pnpm --filter @tennis/shared build && esbuild src/targetedDeployIndex.ts --bundle --platform=node --external:firebase-admin --external:firebase-admin/app --external:firebase-admin/firestore --external:firebase-admin/messaging --external:firebase-functions --external:firebase-functions/v2 --external:pdf-lib --outfile=lib/index.js --format=cjs",
+    "test:rules": "npx firebase-tools emulators:exec --only firestore,storage \"node ./scripts/rules-smoke.mjs\""
   },
   "main": "lib/index.js",
   "engines": {

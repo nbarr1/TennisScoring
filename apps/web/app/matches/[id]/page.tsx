@@ -121,6 +121,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
 
   async function handleStartLive(server: 'player1' | 'player2') {
+    if (!match) return;
     setLiveError(null);
     setLiveActionLoading(true);
     try {
