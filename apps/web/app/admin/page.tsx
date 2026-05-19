@@ -99,9 +99,9 @@ export default function AdminPage(): React.JSX.Element {
     previousPhone?: string;
   } | null>(null);
   const [newPlayerRowOpen, setNewPlayerRowOpen] = useState(false);
-  const [newPlayerName, setNewPlayerName] = useState("Example Player");
-  const [newPlayerEmail, setNewPlayerEmail] = useState("player@example.com");
-  const [newPlayerPhone, setNewPlayerPhone] = useState("555-0100");
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerEmail, setNewPlayerEmail] = useState("");
+  const [newPlayerPhone, setNewPlayerPhone] = useState("");
   const [newPlayerRole, setNewPlayerRole] = useState<"player" | "division_leader">("player");
   const [newPlayerStatus, setNewPlayerStatus] = useState<"active" | "waitlisted">("active");
   const [newPlayerDivisionLevelId, setNewPlayerDivisionLevelId] = useState("");
