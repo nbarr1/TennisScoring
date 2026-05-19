@@ -139,11 +139,33 @@ jobs:
           node -e "const fs=require('fs');const p='firebase/package.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.devDependencies){delete d.devDependencies['@tennis/shared'];}fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
         working-directory: .
 
+      - name: Verify deploy filters exist in targeted bundle
+        run: |
+          set -euo pipefail
+
+          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,getInvitePreview,acceptInvite,submitFeedback'
+
+          FILTERS="$FILTERS" node <<'NODE'
+          const path = require('path');
+          const filters = (process.env.FILTERS || '').split(',').map((v) => v.trim()).filter(Boolean);
+          const mod = require(path.resolve(process.cwd(), 'lib/index.js'));
+          const missing = filters.filter((name) => typeof mod[name] !== 'function');
+          if (missing.length) {
+            console.error(`Missing targeted exports for deploy filters: ${missing.join(', ')}`);
+            process.exit(1);
+          }
+          console.log(`Verified ${filters.length} deploy filters are exported by lib/index.js`);
+          NODE
+
       - name: Deploy updated functions
-        run: >-
-          npx firebase-tools deploy
-          --only functions:addDivisionMemberPlaceholder,functions:mergeDivisionPlayerRecords,functions:updateDivisionPlayerEmail,functions:upsertDivisionLevel,functions:upsertDivisionMembership,functions:backfillDivisionSeasonLevel,functions:exportDivisionCsv,functions:onMatchUpdate,functions:scoreMatchPoint,functions:recordMatchOnBehalf,functions:submitFeedback
-          --project "$FIREBASE_PROJECT_ID"
+        run: |
+          set -euo pipefail
+
+          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,getInvitePreview,acceptInvite,submitFeedback'
+
+          npx firebase-tools deploy \
+            --only "functions:${DEPLOY_FUNCTIONS//,/\,functions:}" \
+            --project "$FIREBASE_PROJECT_ID"
         env:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           GITHUB_OWNER: ${{ vars.GITHUB_OWNER || github.repository_owner }}

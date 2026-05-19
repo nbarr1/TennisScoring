@@ -1,6 +1,7 @@
 export {
   onMatchUpdate,
   scoreMatchPoint,
+  recordHistoricMatch,
   recordMatchOnBehalf,
 } from './matches/matchFunctions';
 
@@ -12,6 +13,10 @@ export {
   upsertDivisionMembership,
   backfillDivisionSeasonLevel,
   exportDivisionCsv,
+  createDivision,
+  joinDivisionByCode,
 } from './divisions/divisionFunctions';
 
 export { submitFeedback } from './feedback/submitFeedback';
+
+export { getInvitePreview, acceptInvite } from './users/sendInvite';
