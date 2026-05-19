@@ -46,3 +46,7 @@ Thumbs.db
 
 # Test
 coverage/
+
+# Firebase mobile config
+google-services.json
+apps/mobile/android/app/google-services.json
