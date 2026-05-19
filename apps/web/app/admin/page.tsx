@@ -99,13 +99,18 @@ export default function AdminPage(): React.JSX.Element {
     previousPhone?: string;
   } | null>(null);
   const [newPlayerRowOpen, setNewPlayerRowOpen] = useState(false);
-  const [newPlayerName, setNewPlayerName] = useState("");
-  const [newPlayerEmail, setNewPlayerEmail] = useState("");
-  const [newPlayerPhone, setNewPlayerPhone] = useState("");
+  const [newPlayerName, setNewPlayerName] = useState("Example Player");
+  const [newPlayerEmail, setNewPlayerEmail] = useState("player@example.com");
+  const [newPlayerPhone, setNewPlayerPhone] = useState("555-0100");
   const [newPlayerRole, setNewPlayerRole] = useState<"player" | "division_leader">("player");
   const [newPlayerStatus, setNewPlayerStatus] = useState<"active" | "waitlisted">("active");
   const [newPlayerDivisionLevelId, setNewPlayerDivisionLevelId] = useState("");
   const [savingNewPlayer, setSavingNewPlayer] = useState(false);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState<'player' | 'division_leader'>('player');
+  const [editStatus, setEditStatus] = useState<'active' | 'waitlisted'>('active');
+  const [editDivisionLevelId, setEditDivisionLevelId] = useState('');
   const [authDebug, setAuthDebug] = useState<{
     uid: string;
     email: string;
@@ -558,6 +563,31 @@ export default function AdminPage(): React.JSX.Element {
     }
   }
 
+  async function handleSavePlayerRow() {
+    if (!division || !editingPlayerId || !editName.trim() || !editDivisionLevelId) return;
+    setMerging(true);
+    setError('');
+    try {
+      await upsertDivisionMembership({
+        divisionId: division.id,
+        seasonId: adminSeasonId,
+        divisionLevelId: editDivisionLevelId,
+        userId: editingPlayerId,
+        name: editName.trim(),
+        email: editEmail.trim() || undefined,
+        phone: editPhone.trim() || undefined,
+        role: editRole,
+        status: editStatus,
+      });
+      setExpandedPlayerId(null);
+      setEditingPlayerId(null);
+    } catch (e) {
+      setError((e as { message?: string }).message || 'Failed to save player updates.');
+    } finally {
+      setMerging(false);
+    }
+  }
+
   async function handleCreatePlayerRow() {
     if (!division || !newPlayerName.trim() || !newPlayerDivisionLevelId) return;
     setSavingNewPlayer(true);
@@ -570,13 +600,11 @@ export default function AdminPage(): React.JSX.Element {
         name: newPlayerName.trim(),
         email: newPlayerEmail.trim() || undefined,
         phone: newPlayerPhone.trim() || undefined,
-        role: newPlayerRole,
-        status: newPlayerStatus,
       });
       setNewPlayerRowOpen(false);
-      setNewPlayerName("");
-      setNewPlayerEmail("");
-      setNewPlayerPhone("");
+      setNewPlayerName("Example Player");
+      setNewPlayerEmail("player@example.com");
+      setNewPlayerPhone("555-0100");
     } catch (e) {
       setError((e as { message?: string }).message || "Failed to save player row.");
     } finally {
@@ -927,8 +955,13 @@ export default function AdminPage(): React.JSX.Element {
                                   setNeedsMergeForUserId(p.id);
                                   setMergeSourceUserId("");
                                   setSelectedMatchIds([]);
+                                  setEditName(p.displayName ?? "");
                                   setEditEmail(p.email ?? "");
                                   setEditPhone(p.phone ?? "");
+                                  setEditRole(row.membership?.role === "division_leader" ? "division_leader" : "player");
+                                  setEditStatus(row.membership?.status === "waitlisted" ? "waitlisted" : "active");
+                                  setEditDivisionLevelId(row.membership?.divisionLevelId ?? adminSeasonLevels[0]?.id ?? "");
+                                  setEditingPlayerId(p.id);
                                   setLinkActionMessage(null);
                                   setExpandedPlayerId((current) =>
                                     current === p.id ? null : p.id,
@@ -953,13 +986,13 @@ export default function AdminPage(): React.JSX.Element {
                                       ...styles.input,
                                       ...styles.editorInput,
                                     }}
-                                    value={editEmail}
+                                    value={editName}
                                     onChange={(e) =>
-                                      setEditEmail(e.target.value)
+                                      setEditName(e.target.value)
                                     }
-                                    placeholder="Update player email (optional)"
-                                    type="email"
-                                    aria-label="Update player email"
+                                    placeholder="Name"
+                                    type="text"
+                                    aria-label="Update player name"
                                   />
                                   <input
                                     style={{
@@ -974,11 +1007,42 @@ export default function AdminPage(): React.JSX.Element {
                                     type="tel"
                                     aria-label="Update player phone"
                                   />
+                                                                    <select style={{ ...styles.input, ...styles.editorInput }} value={editRole} onChange={(e) => setEditRole(e.target.value as "player" | "division_leader")}>
+                                    <option value="player">Player</option>
+                                    <option value="division_leader">Leader</option>
+                                  </select>
+                                  <select style={{ ...styles.input, ...styles.editorInput }} value={editStatus} onChange={(e) => setEditStatus(e.target.value as "active" | "waitlisted")}>
+                                    <option value="active">Active</option>
+                                    <option value="waitlisted">Waitlisted</option>
+                                  </select>
+                                  <select style={{ ...styles.input, ...styles.editorInput }} value={editDivisionLevelId} onChange={(e) => setEditDivisionLevelId(e.target.value)}>
+                                    {adminSeasonLevels.map((level) => (
+                                      <option key={level.id} value={level.id}>{level.name}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    style={{
+                                      ...styles.input,
+                                      ...styles.editorInput,
+                                    }}
+                                    value={editEmail}
+                                    onChange={(e) =>
+                                      setEditEmail(e.target.value)
+                                    }
+                                    placeholder="Update player email (optional)"
+                                  />
                                   <p style={styles.linkPrompt}>
                                     Which of the recorded matches did{" "}
                                     {p.displayName} play in?
                                   </p>
                                   <div style={styles.editorActions}>
+                                    <button
+                                      style={styles.btn}
+                                      onClick={handleSavePlayerRow}
+                                      disabled={merging || needsMergeForUserId !== p.id || !editName.trim() || !editDivisionLevelId}
+                                    >
+                                      {merging ? "Saving…" : "Save Row"}
+                                    </button>
                                     <button
                                       style={styles.btn}
                                       onClick={handleMergeRecords}
