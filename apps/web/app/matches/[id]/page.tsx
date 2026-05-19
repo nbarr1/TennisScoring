@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
-  cancelMatch, postponeMatch, deleteMatch,
+  cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
