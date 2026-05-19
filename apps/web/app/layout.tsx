@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { FcmProvider } from './FcmProvider';
+import { ViewModeProvider } from './shared/viewMode';
 
 export const metadata: Metadata = {
   title: 'Tennis League',
@@ -16,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
     <html lang="en">
       <body>
         <FcmProvider />
-        {children}
+        <ViewModeProvider>{children}</ViewModeProvider>
       </body>
     </html>
   );

@@ -16,6 +16,7 @@ import {
 } from '@tennis/shared';
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
+import { useViewMode } from '../../shared/viewMode';
 
 export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
   const { id } = params;
@@ -27,6 +28,8 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const [showManage, setShowManage] = useState(false);
   const [showPostponeOptions, setShowPostponeOptions] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const { effectiveMode } = useViewMode();
+  const isIosView = effectiveMode === 'ios';
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -120,15 +123,23 @@ export default function MatchPage({ params }: { params: { id: string } }): React
   const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
   const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
 
+  const containerStyles = {
+    page: isIosView ? { ...styles.page, ...styles.iosPage } : styles.page,
+    nav: isIosView ? { ...styles.nav, ...styles.iosNav } : styles.nav,
+    main: isIosView ? { ...styles.main, ...styles.iosMain } : styles.main,
+    scoreboard: isIosView ? { ...styles.scoreboard, ...styles.iosScoreboard } : styles.scoreboard,
+    section: isIosView ? { ...styles.section, ...styles.iosSection } : styles.section,
+  };
+
   return (
-    <div style={styles.page}>
-      <nav style={styles.nav}>
+    <div style={containerStyles.page}>
+      <nav style={containerStyles.nav}>
         <Link href="/matches" style={styles.back}>← Back to Matches</Link>
         <span style={styles.navBrand}>🎾 Tennis League</span>
       </nav>
 
-      <main style={styles.main}>
-        <div style={styles.scoreboard}>
+      <main style={containerStyles.main}>
+        <div style={containerStyles.scoreboard}>
           <div style={styles.badgeRow}>
             <StatusBadge status={match.status} />
             {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
@@ -225,7 +236,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         )}
 
         {/* Set breakdown */}
-        <div style={styles.section}>
+        <div style={containerStyles.section}>
           <h2 style={styles.sectionTitle}>Set Breakdown</h2>
           {match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).map((s, i) => (
             <div key={i} style={styles.setRow}>
@@ -245,7 +256,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
         {/* Stats */}
         {match.status === 'completed' && !isHistoric && (
-          <div style={styles.section}>
+          <div style={containerStyles.section}>
             <h2 style={styles.sectionTitle}>Match Statistics</h2>
             <div style={styles.statsTable}>
               <StatRow label="" v1={p1Name} v2={p2Name} header />
@@ -270,7 +281,7 @@ export default function MatchPage({ params }: { params: { id: string } }): React
         )}
 
         {match.status === 'completed' && match.reportUrl && (
-          <div style={styles.section}>
+          <div style={containerStyles.section}>
             <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
               📊 Download Match Report (PDF)
             </a>
@@ -374,12 +385,16 @@ function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: str
 
 const styles: Record<string, React.CSSProperties> = {
   page: { minHeight: '100vh', background: '#1a472a' },
+  iosPage: { minHeight: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' },
   center: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 8 },
   nav: { padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  iosNav: { position: 'sticky', top: 0, zIndex: 5, background: '#1a472a', paddingTop: 'max(12px, env(safe-area-inset-top))', paddingLeft: 16, paddingRight: 16 },
   back: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
   navBrand: { color: '#fff', fontWeight: 700, fontSize: 18 },
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
+  iosMain: { padding: '16px 12px 24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
+  iosScoreboard: { padding: '20px 0 24px' },
   badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
   historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
   playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
@@ -399,6 +414,7 @@ const styles: Record<string, React.CSSProperties> = {
   gameScore: { color: '#a8d5a2', fontSize: 28, fontWeight: 600, marginBottom: 16 },
   server: { color: '#ffdc60', fontSize: 13, fontWeight: 600 },
   section: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16 },
+  iosSection: { padding: 16, borderRadius: 12 },
   sectionTitle: { fontSize: 18, fontWeight: 700, color: '#1a472a', marginBottom: 16 },
   setRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #f0f0f0' },
   setLabel: { color: '#666', fontSize: 14, width: 48 },
