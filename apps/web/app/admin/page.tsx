@@ -574,9 +574,9 @@ export default function AdminPage(): React.JSX.Element {
         status: newPlayerStatus,
       });
       setNewPlayerRowOpen(false);
-      setNewPlayerName("Example Player");
-      setNewPlayerEmail("player@example.com");
-      setNewPlayerPhone("555-0100");
+      setNewPlayerName("");
+      setNewPlayerEmail("");
+      setNewPlayerPhone("");
     } catch (e) {
       setError((e as { message?: string }).message || "Failed to save player row.");
     } finally {
