@@ -173,7 +173,7 @@ function RankingRow({
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: 900, margin: "0 auto", padding: "40px 24px" },
+  main: { maxWidth: "100%", margin: "0 auto", padding: "40px 40px" },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
