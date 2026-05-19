@@ -267,6 +267,9 @@ export default function AdminPage(): React.JSX.Element {
         setPlayers([]);
       }
       setLoading(false);
+    }, (snapErr) => {
+      setError(`Unable to load division data: ${snapErr.message}`);
+      setLoading(false);
     });
   }, [firebaseUser]);
 
