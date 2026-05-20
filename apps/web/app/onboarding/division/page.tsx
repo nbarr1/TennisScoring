@@ -1,25 +1,170 @@
 'use client';
+
 export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthUser, createDivision, joinDivisionByCode, getDivision } from '@tennis/firebase-client';
+import {
+  useAuthUser,
+  createDivision,
+  joinDivisionByCode,
+  getDivision,
+} from '@tennis/firebase-client';
+
 // PLATFORM-SPECIFIC: Web uses inline form controls and browser alert for invite code confirmation.
 type Mode = 'choose' | 'create' | 'join';
-export default function DivisionOnboardingPage(): React.JSX.Element { /* omitted for brevity */
-  const [mode, setMode] = useState<Mode>('choose'); const [divisionName, setDivisionName] = useState(''); const [inviteCode, setInviteCode] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState<string | null>(null); const router = useRouter(); const { firebaseUser } = useAuthUser();
-  async function handleCreate() { if (!divisionName.trim() || !firebaseUser) return; setLoading(true); setError(null); try { const divisionId = await createDivision(divisionName.trim(), firebaseUser.uid, { displayName: firebaseUser.displayName ?? undefined, email: firebaseUser.email ?? undefined }); const division = await getDivision(divisionId); window.alert(`Division created. Share invite code: ${division?.inviteCode ?? ''}`); router.replace('/dashboard'); } catch { setError('Could not create division. Please try again.'); } finally { setLoading(false);} }
-  async function handleJoin() { if (!inviteCode.trim() || !firebaseUser) return; setLoading(true); setError(null); try { await joinDivisionByCode(inviteCode.trim(), firebaseUser.uid); router.replace('/dashboard'); } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Could not join division.'); } finally { setLoading(false);} }
-  return <main style={styles.root}><div style={styles.card}><h1 style={styles.title}>Join a Division</h1><p style={styles.subtitle}>Create a new division or join with an invite code.</p>{error ? <p style={styles.error}>{error}</p> : null}{mode === 'choose' ? <div style={styles.stack}><button style={styles.primaryBtn} onClick={() => setMode('create')}>Create Division</button><button style={styles.secondaryBtn} onClick={() => setMode('join')}>Join Division</button></div> : null}{mode === 'create' ? <div style={styles.stack}><input style={styles.input} value={divisionName} onChange={(e) => setDivisionName(e.target.value)} placeholder='Division name' /><button style={styles.primaryBtn} onClick={handleCreate} disabled={loading}>{loading ? 'Loading…' : 'Create Division'}</button><button style={styles.linkBtn} onClick={() => setMode('choose')}>Back</button></div> : null}{mode === 'join' ? <div style={styles.stack}><input style={styles.input} value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} maxLength={6} placeholder='ABC123' /><button style={styles.primaryBtn} onClick={handleJoin} disabled={loading}>{loading ? 'Loading…' : 'Join Division'}</button><button style={styles.linkBtn} onClick={() => setMode('choose')}>Back</button></div> : null}</div></main>;
+
+export default function DivisionOnboardingPage(): React.JSX.Element {
+  const [mode, setMode] = useState<Mode>('choose');
+  const [divisionName, setDivisionName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const { firebaseUser } = useAuthUser();
+
+  async function handleCreate() {
+    if (!divisionName.trim() || !firebaseUser) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const divisionId = await createDivision(divisionName.trim(), firebaseUser.uid, {
+        displayName: firebaseUser.displayName ?? undefined,
+        email: firebaseUser.email ?? undefined,
+      });
+      const division = await getDivision(divisionId);
+      window.alert(`Division created. Share invite code: ${division?.inviteCode ?? ''}`);
+      router.replace('/dashboard');
+    } catch {
+      setError('Could not create division. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleJoin() {
+    if (!inviteCode.trim() || !firebaseUser) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      await joinDivisionByCode(inviteCode.trim(), firebaseUser.uid);
+      router.replace('/dashboard');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not join division.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main style={styles.root}>
+      <div style={styles.card}>
+        <h1 style={styles.title}>Join a Division</h1>
+        <p style={styles.subtitle}>Create a new division or join with an invite code.</p>
+
+        {error ? <p style={styles.error}>{error}</p> : null}
+
+        {mode === 'choose' ? (
+          <div style={styles.stack}>
+            <button style={styles.primaryBtn} onClick={() => setMode('create')}>
+              Create Division
+            </button>
+            <button style={styles.secondaryBtn} onClick={() => setMode('join')}>
+              Join Division
+            </button>
+          </div>
+        ) : null}
+
+        {mode === 'create' ? (
+          <div style={styles.stack}>
+            <input
+              style={styles.input}
+              value={divisionName}
+              onChange={(e) => setDivisionName(e.target.value)}
+              placeholder="Division name"
+            />
+            <button style={styles.primaryBtn} onClick={handleCreate} disabled={loading}>
+              {loading ? 'Loading…' : 'Create Division'}
+            </button>
+            <button style={styles.linkBtn} onClick={() => setMode('choose')}>
+              Back
+            </button>
+          </div>
+        ) : null}
+
+        {mode === 'join' ? (
+          <div style={styles.stack}>
+            <input
+              style={styles.input}
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              maxLength={8}
+              placeholder="ABCDEF12"
+            />
+            <button style={styles.primaryBtn} onClick={handleJoin} disabled={loading}>
+              {loading ? 'Loading…' : 'Join Division'}
+            </button>
+            <button style={styles.linkBtn} onClick={() => setMode('choose')}>
+              Back
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </main>
+  );
 }
+
 const styles: Record<string, React.CSSProperties> = {
-  root: { minHeight: '100vh', background: '#f5f5f0', display: 'grid', placeItems: 'center', padding: 24 },
-  card: { width: '100%', maxWidth: 480, background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 10px 24px rgba(0,0,0,0.08)' },
+  root: {
+    minHeight: '100vh',
+    background: '#f5f5f0',
+    display: 'grid',
+    placeItems: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 480,
+    background: '#fff',
+    borderRadius: 14,
+    padding: 24,
+    boxShadow: '0 10px 24px rgba(0,0,0,0.08)',
+  },
   title: { margin: 0, marginBottom: 8, color: '#1a472a', fontSize: 28 },
   subtitle: { marginTop: 0, marginBottom: 16, color: '#5e5e5e' },
   error: { color: '#b42318', marginBottom: 12 },
   stack: { display: 'grid', gap: 10 },
-  input: { border: '1px solid #ddd', borderRadius: 8, padding: '12px 10px', fontSize: 16 },
-  primaryBtn: { border: 'none', borderRadius: 10, background: '#1a472a', color: '#fff', padding: '12px 16px', fontWeight: 700, cursor: 'pointer' },
-  secondaryBtn: { border: '1px solid #1a472a', borderRadius: 10, background: '#fff', color: '#1a472a', padding: '12px 16px', fontWeight: 700, cursor: 'pointer' },
-  linkBtn: { border: 'none', background: 'transparent', color: '#1a472a', padding: '8px 0', cursor: 'pointer' }
+  input: {
+    border: '1px solid #ddd',
+    borderRadius: 8,
+    padding: '12px 10px',
+    fontSize: 16,
+  },
+  primaryBtn: {
+    border: 'none',
+    borderRadius: 10,
+    background: '#1a472a',
+    color: '#fff',
+    padding: '12px 16px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  secondaryBtn: {
+    border: '1px solid #1a472a',
+    borderRadius: 10,
+    background: '#fff',
+    color: '#1a472a',
+    padding: '12px 16px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  linkBtn: {
+    border: 'none',
+    background: 'transparent',
+    color: '#1a472a',
+    padding: '8px 0',
+    cursor: 'pointer',
+  },
 };
