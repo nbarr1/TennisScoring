@@ -4,10 +4,16 @@ updates:
     directory: '/'
     schedule:
       interval: weekly
+    ignore:
+      # react-native is constrained by the Expo SDK version; do not auto-bump
+      - dependency-name: react-native
+        update-types: ['version-update:semver-minor', 'version-update:semver-patch']
     groups:
       monorepo-npm:
         patterns:
           - '*'
+        exclude-patterns:
+          - 'react-native'
 
   - package-ecosystem: github-actions
     directory: '/'
