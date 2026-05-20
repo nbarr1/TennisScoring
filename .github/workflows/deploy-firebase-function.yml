@@ -54,7 +54,7 @@ jobs:
           project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
 
       - name: Setup Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Verify feedback GitHub configuration
         run: |
