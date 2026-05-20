@@ -986,9 +986,11 @@ export default function AdminPage(): React.JSX.Element {
                                 : "Registered"}
                             </td>
                             <td style={styles.td}>
-                              {p.divisionId
-                                ? (divisionNameById.get(p.divisionId) ?? p.divisionId)
-                                : "Unassigned"}
+                              {row.membership?.divisionLevelId
+                                ? (levelNameById.get(row.membership.divisionLevelId) ?? row.membership.divisionLevelId)
+                                : p.divisionId
+                                  ? (divisionNameById.get(p.divisionId) ?? p.divisionId)
+                                  : "Unassigned"}
                             </td>
                             <td style={styles.td}>
                               <button
