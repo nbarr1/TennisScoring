@@ -9,12 +9,17 @@ on:
       - "packages/shared/**"
       - ".github/workflows/deploy-firebase-function.yml"
 
+concurrency:
+  group: deploy-firebase-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  deploy:
+  deploy_staging:
     runs-on: ubuntu-latest
+    environment: staging
     defaults:
       run:
         working-directory: firebase
@@ -157,7 +162,7 @@ jobs:
           console.log(`Verified ${filters.length} deploy filters are exported by lib/index.js`);
           NODE
 
-      - name: Deploy updated functions
+      - name: Deploy updated functions (staging)
         run: |
           set -euo pipefail
 
@@ -173,3 +178,12 @@ jobs:
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}
+
+  deploy_production:
+    if: github.event_name == 'workflow_dispatch'
+    needs: deploy_staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Manual promotion gate
+        run: echo 'Approve this environment to promote deployment to production.'

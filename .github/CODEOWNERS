@@ -1,0 +1,7 @@
+# Replace @tennisscoring/maintainers with your actual GitHub team or usernames.
+* @tennisscoring/maintainers
+/apps/mobile/ @tennisscoring/maintainers
+/apps/web/ @tennisscoring/maintainers
+/firebase/ @tennisscoring/maintainers
+/packages/shared/ @tennisscoring/maintainers
+/.github/workflows/ @tennisscoring/maintainers

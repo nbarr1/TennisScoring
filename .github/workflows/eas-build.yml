@@ -1,21 +1,35 @@
 name: EAS Build (Android APKs)
+
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Which Android APK to build"
+        description: Which Android APK to build
         required: true
         default: mobile
         type: choice
         options:
           - mobile
           - wear
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - '.github/workflows/eas-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/shared/**'
+      - '.github/workflows/eas-build.yml'
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +45,9 @@ jobs:
       - name: Select EAS profile
         id: profile
         run: |
-          if [ "${{ github.event.inputs.target }}" = "wear" ]; then
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.target }}" = "wear" ]; then
             echo "name=wear-preview" >> "$GITHUB_OUTPUT"
           else
             echo "name=preview" >> "$GITHUB_OUTPUT"
@@ -45,3 +61,11 @@ jobs:
           EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      - name: Build summary
+        run: |
+          {
+            echo "## EAS Build Metadata"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Profile: ${{ steps.profile.outputs.name }}"
+            echo "- Event: $GITHUB_EVENT_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"

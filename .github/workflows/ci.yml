@@ -6,41 +6,90 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  lint-typecheck-test:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      shared_or_root: ${{ steps.filter.outputs.shared_or_root }}
+      firebase: ${{ steps.filter.outputs.firebase }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared_or_root:
+              - 'packages/shared/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'tsconfig.base.json'
+            firebase:
+              - 'firebase/**'
+              - 'packages/shared/**'
+
+  lint_typecheck:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v3
         with:
           version: 9
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Dependency audit
-        run: pnpm audit --audit-level=high
-
-      - name: Firebase rules guard
-        run: pnpm check:firebase-rules
-
-      - name: Firebase emulator rules smoke test
-        run: pnpm --filter @tennis/firebase-functions test:rules
-
       - name: Type check
         run: pnpm typecheck
-
       - name: Lint
         run: pnpm lint
 
+  shared_tests:
+    needs: changes
+    if: needs.changes.outputs.shared_or_root == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Test (shared package)
         run: pnpm --filter @tennis/shared test
+
+  firebase_rules_tests:
+    needs: changes
+    if: needs.changes.outputs.firebase == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Dependency audit
+        run: pnpm audit --audit-level=high
+      - name: Firebase rules guard
+        run: pnpm check:firebase-rules
+      - name: Firebase emulator rules smoke test
+        run: pnpm --filter @tennis/firebase-functions test:rules

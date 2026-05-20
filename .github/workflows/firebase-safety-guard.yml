@@ -1,0 +1,49 @@
+name: Firebase Safety Guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'firebase/**'
+      - '.github/workflows/firebase-safety-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block dangerous Firebase rules patterns
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          changed_files="$(git diff --name-only "$base_sha" "$head_sha" | grep -E '^firebase/.*\.rules$' || true)"
+
+          if [ -z "$changed_files" ]; then
+            echo "No Firebase rules changes detected."
+            exit 0
+          fi
+
+          disallowed='allow read, write: if true'
+          for file in $changed_files; do
+            if git diff "$base_sha" "$head_sha" -- "$file" | grep -E '^\+.*allow[[:space:]]+read,[[:space:]]+write:[[:space:]]+if[[:space:]]+true' >/dev/null; then
+              echo "Dangerous broad allow detected in $file"
+              exit 1
+            fi
+          done
+
+          echo "Firebase safety guard passed."
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Firebase emulator rules smoke test
+        run: pnpm --filter @tennis/firebase-functions test:rules
