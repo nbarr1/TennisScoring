@@ -133,7 +133,9 @@ android {
             // Release signing is handled by EAS/Play signing. Do not sign release
             // builds with the debug keystore unless explicitly requested for a
             // local-only diagnostic build.
-            if ((findProperty('android.allowDebugReleaseSigning') ?: 'false').toBoolean()) {
+            def allowDebugReleaseSigning = ((findProperty('android.allowDebugReleaseSigning') ?: 'false').toBoolean()) ||
+                ((System.getenv('EAS_BUILD_PROFILE') ?: '').toLowerCase() in ['preview', 'wear-preview'])
+            if (allowDebugReleaseSigning) {
                 signingConfig signingConfigs.debug
             }
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
