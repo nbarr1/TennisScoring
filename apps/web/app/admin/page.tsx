@@ -952,7 +952,7 @@ export default function AdminPage(): React.JSX.Element {
                             </td>
                             <td style={styles.td}>
                               {row.membership?.divisionLevelId
-                                ? (levelNameById.get(row.membership.divisionLevelId) ?? "Unknown level")
+                                ? (levelNameById.get(row.membership.divisionLevelId) ?? (loadingDivisionLevels ? "Loading..." : "Unknown Level"))
                                 : "Unassigned"}
                             </td>
                             <td style={styles.td}>
