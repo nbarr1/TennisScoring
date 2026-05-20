@@ -34,10 +34,14 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
         email: firebaseUser.email ?? undefined,
       });
       const division = await getDivision(divisionId);
-      window.alert(`Division created. Share invite code: ${division?.inviteCode ?? ''}`);
-      router.replace('/dashboard');
-    } catch {
-      setError('Could not create division. Please try again.');
+      if (division?.inviteCode) {
+        window.alert(`Division created. Share invite code: ${division.inviteCode}`);
+        router.replace('/dashboard');
+      } else {
+        setError('Could not retrieve division details. Please try again.');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not create division. Please try again.');
     } finally {
       setLoading(false);
     }
