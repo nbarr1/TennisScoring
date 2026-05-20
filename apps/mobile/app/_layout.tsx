@@ -21,7 +21,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const inAuth = segments[0] === '(auth)';
     const inOnboarding = segments[0] === '(onboarding)';
-    const inTutorial = segments[1] === 'tutorial';
+    const inTutorial = (segments as string[])[1] === 'tutorial';
 
     if (!firebaseUser) {
       if (!inAuth) router.replace('/(auth)/login');
