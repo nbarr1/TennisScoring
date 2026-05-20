@@ -1,6 +1,6 @@
 {
   "name": "@tennis/web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "packageManager": "pnpm@9.15.5",
   "scripts": {
@@ -19,7 +19,7 @@
     "next-auth": "^4.24.0",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.10.0",
-    "next-firebase-auth-edge": "^1.0.0",
+    "next-firebase-auth-edge": "^1.0.1",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
