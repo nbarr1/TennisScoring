@@ -116,9 +116,6 @@ export default function AdminPage(): React.JSX.Element {
     email: string;
     roleClaim?: unknown;
   } | null>(null);
-  const [divisionNameById, setDivisionNameById] = useState<Map<string, string>>(
-    () => new Map(),
-  );
 
   const levelNameById = useMemo(
     () => new Map(divisionLevels.map((level) => [level.id, level.name] as const)),
@@ -142,38 +139,6 @@ export default function AdminPage(): React.JSX.Element {
     if (newPlayerDivisionLevelId && adminSeasonLevels.some((level) => level.id === newPlayerDivisionLevelId)) return;
     setNewPlayerDivisionLevelId(adminSeasonLevels[0]?.id ?? "");
   }, [adminSeasonLevels, newPlayerDivisionLevelId]);
-
-  useEffect(() => {
-    const divisionIds = Array.from(
-      new Set(
-        players
-          .map((player) => player.divisionId)
-          .filter((divisionId): divisionId is string => Boolean(divisionId)),
-      ),
-    );
-    if (divisionIds.length === 0) {
-      setDivisionNameById(new Map());
-      return;
-    }
-
-    let cancelled = false;
-    void Promise.all(
-      divisionIds.map(async (divisionId) => {
-        const divisionSnap = await getDoc(divisionDoc(divisionId));
-        return {
-          id: divisionId,
-          name: divisionSnap.exists() ? divisionSnap.data().name : divisionId,
-        };
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setDivisionNameById(new Map(entries.map((entry) => [entry.id, entry.name] as const)));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [players]);
 
   // Gate: redirect players who are not leaders/admins away from this page.
   useEffect(() => {
@@ -913,7 +878,7 @@ export default function AdminPage(): React.JSX.Element {
                         <th style={styles.th}>Phone</th>
                         <th style={styles.th}>Role</th>
                         <th style={styles.th}>Status</th>
-                        <th style={styles.th}>Division</th>
+                        <th style={styles.th}>Division Level</th>
                         <th style={styles.th}>Options</th>
                       </tr>
                     </thead>
@@ -987,10 +952,8 @@ export default function AdminPage(): React.JSX.Element {
                             </td>
                             <td style={styles.td}>
                               {row.membership?.divisionLevelId
-                                ? (levelNameById.get(row.membership.divisionLevelId) ?? row.membership.divisionLevelId)
-                                : p.divisionId
-                                  ? (divisionNameById.get(p.divisionId) ?? p.divisionId)
-                                  : "Unassigned"}
+                                ? (levelNameById.get(row.membership.divisionLevelId) ?? (loadingDivisionLevels ? "Loading..." : "Unknown Level"))
+                                : "Unassigned"}
                             </td>
                             <td style={styles.td}>
                               <button
