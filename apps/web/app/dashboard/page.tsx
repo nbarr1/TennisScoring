@@ -97,7 +97,7 @@ export default function DashboardPage(): React.JSX.Element {
 
         {!profileLoading && !divisionLoading && !divisionId ? (
           <div style={styles.empty}>
-            Join or create a division to see standings.
+            Join or create a division to see standings. <button style={styles.emptyLinkBtn} onClick={() => router.push('/onboarding/division')}>Open division onboarding</button>
           </div>
         ) : loading || divisionLoading ? (
           <div style={styles.loading}>Loading rankings…</div>
@@ -216,6 +216,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#fff",
     borderRadius: 12,
   },
+  emptyLinkBtn: { border: "none", background: "transparent", color: "#1a472a", fontWeight: 700, cursor: "pointer", textDecoration: "underline" },
   table: {
     background: "#fff",
     borderRadius: 14,
