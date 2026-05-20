@@ -113,24 +113,36 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
         ) : null}
 
         {!createdInviteCode && mode === 'create' ? (
-          <div style={styles.stack}>
+          <form
+            style={styles.stack}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleCreate();
+            }}
+          >
             <input
               style={styles.input}
               value={divisionName}
               onChange={(e) => setDivisionName(e.target.value)}
               placeholder="Division name"
             />
-            <button style={styles.primaryBtn} onClick={handleCreate} disabled={loading}>
+            <button type="submit" style={styles.primaryBtn} disabled={loading}>
               {loading ? 'Loading…' : 'Create Division'}
             </button>
-            <button style={styles.linkBtn} onClick={() => setMode('choose')}>
+            <button type="button" style={styles.linkBtn} onClick={() => setMode('choose')}>
               Back
             </button>
-          </div>
+          </form>
         ) : null}
 
         {!createdInviteCode && mode === 'join' ? (
-          <div style={styles.stack}>
+          <form
+            style={styles.stack}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleJoin();
+            }}
+          >
             <input
               style={styles.input}
               value={inviteCode}
@@ -138,13 +150,13 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
               maxLength={8}
               placeholder="ABCDEF12"
             />
-            <button style={styles.primaryBtn} onClick={handleJoin} disabled={loading}>
+            <button type="submit" style={styles.primaryBtn} disabled={loading}>
               {loading ? 'Loading…' : 'Join Division'}
             </button>
-            <button style={styles.linkBtn} onClick={() => setMode('choose')}>
+            <button type="button" style={styles.linkBtn} onClick={() => setMode('choose')}>
               Back
             </button>
-          </div>
+          </form>
         ) : null}
       </div>
     </main>
