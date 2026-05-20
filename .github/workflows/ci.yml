@@ -20,7 +20,7 @@ jobs:
       shared_or_root: ${{ steps.filter.outputs.shared_or_root }}
       firebase: ${{ steps.filter.outputs.firebase }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -39,7 +39,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v3
         with:
           version: 9
@@ -59,7 +59,7 @@ jobs:
     if: needs.changes.outputs.shared_or_root == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v3
         with:
           version: 9
@@ -77,7 +77,7 @@ jobs:
     if: needs.changes.outputs.firebase == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v3
         with:
           version: 9
