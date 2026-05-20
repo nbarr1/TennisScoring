@@ -11,13 +11,15 @@ import {
   getDivision,
 } from '@tennis/firebase-client';
 
-// PLATFORM-SPECIFIC: Web uses inline form controls and browser alert for invite code confirmation.
+// PLATFORM-SPECIFIC: Web uses the Clipboard API for one-click invite code copying.
 type Mode = 'choose' | 'create' | 'join';
 
 export default function DivisionOnboardingPage(): React.JSX.Element {
   const [mode, setMode] = useState<Mode>('choose');
   const [divisionName, setDivisionName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [createdInviteCode, setCreatedInviteCode] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -28,15 +30,18 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 
     setLoading(true);
     setError(null);
+    setCopyStatus(null);
+    setCreatedInviteCode(null);
+
     try {
       const divisionId = await createDivision(divisionName.trim(), firebaseUser.uid, {
         displayName: firebaseUser.displayName ?? undefined,
         email: firebaseUser.email ?? undefined,
       });
       const division = await getDivision(divisionId);
+
       if (division?.inviteCode) {
-        window.alert(`Division created. Share invite code: ${division.inviteCode}`);
-        router.replace('/dashboard');
+        setCreatedInviteCode(division.inviteCode);
       } else {
         setError('Could not retrieve division details. Please try again.');
       }
@@ -62,6 +67,17 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
     }
   }
 
+  async function copyInviteCode() {
+    if (!createdInviteCode) return;
+
+    try {
+      await navigator.clipboard.writeText(createdInviteCode);
+      setCopyStatus('Invite code copied.');
+    } catch {
+      setCopyStatus('Could not copy automatically. Please copy manually.');
+    }
+  }
+
   return (
     <main style={styles.root}>
       <div style={styles.card}>
@@ -70,7 +86,22 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 
         {error ? <p style={styles.error}>{error}</p> : null}
 
-        {mode === 'choose' ? (
+        {createdInviteCode ? (
+          <div style={styles.stack}>
+            <p style={styles.successTitle}>Division created successfully.</p>
+            <p style={styles.successBody}>Share this invite code with other players:</p>
+            <div style={styles.inviteCodeBox}>{createdInviteCode}</div>
+            <button style={styles.secondaryBtn} onClick={copyInviteCode}>
+              Copy Code
+            </button>
+            {copyStatus ? <p style={styles.copyStatus}>{copyStatus}</p> : null}
+            <button style={styles.primaryBtn} onClick={() => router.replace('/dashboard')}>
+              Continue to Dashboard
+            </button>
+          </div>
+        ) : null}
+
+        {!createdInviteCode && mode === 'choose' ? (
           <div style={styles.stack}>
             <button style={styles.primaryBtn} onClick={() => setMode('create')}>
               Create Division
@@ -81,7 +112,7 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
           </div>
         ) : null}
 
-        {mode === 'create' ? (
+        {!createdInviteCode && mode === 'create' ? (
           <div style={styles.stack}>
             <input
               style={styles.input}
@@ -98,7 +129,7 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
           </div>
         ) : null}
 
-        {mode === 'join' ? (
+        {!createdInviteCode && mode === 'join' ? (
           <div style={styles.stack}>
             <input
               style={styles.input}
@@ -140,6 +171,20 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: { marginTop: 0, marginBottom: 16, color: '#5e5e5e' },
   error: { color: '#b42318', marginBottom: 12 },
   stack: { display: 'grid', gap: 10 },
+  successTitle: { margin: 0, color: '#1a472a', fontWeight: 700, fontSize: 18 },
+  successBody: { margin: 0, color: '#4f4f4f' },
+  inviteCodeBox: {
+    border: '1px dashed #1a472a',
+    borderRadius: 8,
+    padding: '12px 10px',
+    fontSize: 22,
+    fontWeight: 800,
+    letterSpacing: 3,
+    textAlign: 'center',
+    color: '#1a472a',
+    background: '#f8fbf8',
+  },
+  copyStatus: { margin: 0, color: '#2d6a4f', fontSize: 13 },
   input: {
     border: '1px solid #ddd',
     borderRadius: 8,

@@ -50,24 +50,31 @@ export default function WebTutorialPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const [index, setIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const slide = SLIDES[index];
   const isLast = index === SLIDES.length - 1;
 
   async function finish() {
     if (!firebaseUser) return;
+
     setFinishing(true);
+    setError(null);
     try {
       await updateUserProfile(firebaseUser.uid, { tutorialDone: true });
       router.push('/onboarding/division');
-    } catch {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not finish tutorial. Please try again.');
       setFinishing(false);
     }
   }
 
   function next() {
-    if (isLast) finish();
-    else setIndex(index + 1);
+    if (isLast) {
+      void finish();
+    } else {
+      setIndex(index + 1);
+    }
   }
 
   return (
@@ -76,6 +83,7 @@ export default function WebTutorialPage(): React.JSX.Element {
         <div style={styles.icon}>{slide.icon}</div>
         <h1 style={styles.title}>{slide.title}</h1>
         <p style={styles.body}>{slide.body}</p>
+        {error ? <p style={styles.error}>{error}</p> : null}
       </div>
 
       <div style={styles.dots}>
@@ -86,10 +94,12 @@ export default function WebTutorialPage(): React.JSX.Element {
 
       <div style={styles.actions}>
         {!isLast ? (
-          <button style={styles.skipBtn} onClick={finish} disabled={finishing}>
+          <button style={styles.skipBtn} onClick={() => void finish()} disabled={finishing}>
             {finishing ? 'Loading…' : 'Skip'}
           </button>
-        ) : <span />}
+        ) : (
+          <span />
+        )}
         <button style={styles.nextBtn} onClick={next} disabled={finishing}>
           {finishing ? 'Loading…' : isLast ? 'Get Started' : 'Next'}
         </button>
@@ -104,6 +114,7 @@ const styles: Record<string, React.CSSProperties> = {
   icon: { fontSize: 80, marginBottom: 24 },
   title: { fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 16, lineHeight: 1.2 },
   body: { fontSize: 17, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 },
+  error: { marginTop: 14, color: '#ffe4e1', fontWeight: 600 },
   dots: { display: 'flex', gap: 8, marginTop: 40, marginBottom: 40 },
   dot: { width: 8, height: 8, borderRadius: 4, background: 'rgba(255,220,96,0.4)', transition: 'all 0.3s' },
   dotActive: { width: 24, background: '#ffdc60' },
