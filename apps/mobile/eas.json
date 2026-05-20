@@ -51,7 +51,7 @@
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
         "APP_ENV": "preview",
-        "NODE_VERSION": "22.0.0",
+        "NODE_VERSION": "22",
         "PNPM_VERSION": "9.15.5"
       }
     }
