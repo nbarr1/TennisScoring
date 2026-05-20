@@ -59,7 +59,7 @@ export default function WebTutorialPage(): React.JSX.Element {
     setFinishing(true);
     try {
       await updateUserProfile(firebaseUser.uid, { tutorialDone: true });
-      router.push('/dashboard');
+      router.push('/onboarding/division');
     } catch {
       setFinishing(false);
     }
