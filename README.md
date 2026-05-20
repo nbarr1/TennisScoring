@@ -1,14 +1,14 @@
 # 🎾 TennisScoring
 
-**GE Vernova Tennis League — Version 1.0.0 baseline**
+**GE Vernova Tennis League — Version 1.0.1 baseline**
 
-TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.0` marks the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features.
+TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marks the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features.
 
 ---
 
 ## ✅ Current v1 Condition
 
-- **Version marker:** `1.0.0` in the workspace manifests and Expo app metadata.
+- **Version marker:** `1.0.1` in the workspace manifests and Expo app metadata.
 - **Repository shape:** monorepo with web, mobile, Firebase Functions, Firebase client utilities, and shared domain logic.
 - **Auth model:** Firebase Authentication email/password on web and mobile. The web app exchanges Firebase ID tokens for an httpOnly `tennis-auth` session cookie through `next-firebase-auth-edge` middleware.
 - **Data model:** Firestore collections for users, divisions, matches, channels/messages, head-to-head data, and division ranking subcollections.
