@@ -1,8 +1,14 @@
-import { NativeModulesProxy, EventEmitter, Subscription } from 'expo-modules-core';
+import { NativeModulesProxy, EventEmitter, type EventSubscription } from 'expo-modules-core';
 import type { LiveScore } from '@tennis/shared';
 
+type WatchEvents = {
+  onWatchScoreInput: (event: WatchScoreInputEvent) => void;
+  onWatchConnected: (event: { paired: boolean; installed: boolean }) => void;
+};
+
 const AppleWatchNative = NativeModulesProxy.AppleWatch;
-const emitter = new EventEmitter(AppleWatchNative);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const emitter = new EventEmitter<WatchEvents>(AppleWatchNative as any);
 
 export type WatchScoreInputEvent = { player: 'player1' | 'player2' };
 
@@ -18,10 +24,10 @@ export function isAppleWatchConnected(): boolean {
 
 export function addWatchScoreInputListener(
   handler: (event: WatchScoreInputEvent) => void
-): Subscription {
+): EventSubscription {
   return emitter.addListener('onWatchScoreInput', handler);
 }
 
-export function addWatchConnectedListener(handler: (event: { paired: boolean; installed: boolean }) => void): Subscription {
+export function addWatchConnectedListener(handler: (event: { paired: boolean; installed: boolean }) => void): EventSubscription {
   return emitter.addListener('onWatchConnected', handler);
 }
