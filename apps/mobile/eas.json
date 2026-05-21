@@ -12,10 +12,10 @@
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
-        "APP_ENV": "development",
-        "NODE_VERSION": "22",
-        "PNPM_VERSION": "9.15.5"
-      }
+        "APP_ENV": "development"
+      },
+      "node": "20.19.2",
+      "pnpm": "9.15.5"
     },
     "preview": {
       "distribution": "internal",
@@ -24,10 +24,10 @@
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
-        "APP_ENV": "preview",
-        "NODE_VERSION": "22",
-        "PNPM_VERSION": "9.15.5"
-      }
+        "APP_ENV": "preview"
+      },
+      "node": "20.19.2",
+      "pnpm": "9.15.5"
     },
     "production": {
       "autoIncrement": true,
@@ -36,10 +36,10 @@
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
-        "APP_ENV": "production",
-        "NODE_VERSION": "22",
-        "PNPM_VERSION": "9.15.5"
-      }
+        "APP_ENV": "production"
+      },
+      "node": "20.19.2",
+      "pnpm": "9.15.5"
     },
     "wear-preview": {
       "distribution": "internal",
@@ -50,10 +50,10 @@
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
-        "APP_ENV": "preview",
-        "NODE_VERSION": "22",
-        "PNPM_VERSION": "9.15.5"
-      }
+        "APP_ENV": "preview"
+      },
+      "node": "20.19.2",
+      "pnpm": "9.15.5"
     }
   }
 }
