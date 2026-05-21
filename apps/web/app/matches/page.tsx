@@ -278,12 +278,14 @@ export default function MatchesPage(): React.JSX.Element {
           <h1 style={styles.pageTitle}>Matches</h1>
           {divisionId && firebaseUser && (
             <div style={titleActionsStyle}>
-              <button
-                style={styles.liveBtn}
-                onClick={() => setShowLive(true)}
-              >
-                + Live
-              </button>
+              {isIosView && (
+                <button
+                  style={styles.liveBtn}
+                  onClick={() => setShowLive(true)}
+                >
+                  + Live
+                </button>
+              )}
               <button
                 style={styles.proposeBtn}
                 onClick={() => setShowPropose(true)}
