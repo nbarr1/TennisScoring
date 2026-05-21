@@ -327,7 +327,7 @@ export default function MatchesScreen() {
             },
       );
       resetCreateModal();
-      router.push(`/match/${matchId}`);
+      router.push({ pathname: '/match/[id]', params: { id: matchId } });
     } catch (e) {
       console.error('[createMatch]', e);
       Alert.alert('Error', 'Could not create match. Please try again.');

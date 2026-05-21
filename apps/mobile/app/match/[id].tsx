@@ -376,7 +376,8 @@ function EditScoreModal({
 }
 
 export default function MatchScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id?: string | string[] }>();
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
   const { match, loading } = useMatch(id ?? null);
   const { user, divisionId } = useAppStore();
