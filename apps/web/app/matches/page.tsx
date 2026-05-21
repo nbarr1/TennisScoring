@@ -16,6 +16,7 @@ import {
   searchDivisionPlayers,
   proposeMatch,
   createMatch,
+  startMatch,
   acceptMatchProposal,
   declineMatchProposal,
   useActiveDivisionId,
@@ -552,6 +553,7 @@ function StartLiveMatchModal({
         createdBy: currentUser.id,
         scheduledAt: Date.now(),
       });
+      await startMatch(matchId, "player1", false);
       onCreated(matchId);
     } catch {
       setError("Could not create live match. Try again.");

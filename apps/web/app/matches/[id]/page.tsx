@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
@@ -18,10 +18,11 @@ import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 import { useViewMode } from '../../shared/viewMode';
 
-export default function MatchPage({ params }: { params: { id: string } }): React.JSX.Element {
-  const { id } = params;
+export default function MatchPage(): React.JSX.Element {
+  const params = useParams<{ id: string }>();
+  const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const router = useRouter();
-  const { match, loading } = useMatch(id);
+  const { match, loading } = useMatch(id ?? null);
   const { firebaseUser } = useAuthUser();
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -35,6 +36,10 @@ export default function MatchPage({ params }: { params: { id: string } }): React
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
+  }
+
+  if (!id) {
+    return <div style={styles.center}>Match not found. <Link href="/matches">Back to matches</Link></div>;
   }
 
   if (!match) {
