@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import {
@@ -18,6 +18,18 @@ import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
 import { useViewMode } from '../../shared/viewMode';
 
+
+function lastName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] || name;
+}
+
+function formatMmSs(ms: number): string {
+  const secs = Math.max(0, Math.floor(ms / 1000));
+  const mm = Math.floor(secs / 60);
+  const ss = secs % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
 export default function MatchPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -33,6 +45,15 @@ export default function MatchPage(): React.JSX.Element {
   const [liveError, setLiveError] = useState<string | null>(null);
   const { effectiveMode } = useViewMode();
   const isIosView = effectiveMode === 'ios';
+  const [clockTick, setClockTick] = useState(Date.now());
+  const [tapLock, setTapLock] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+  useEffect(() => {
+    if (match?.status !== 'in_progress') return;
+    const t = setInterval(() => setClockTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [match?.status]);
 
   if (loading) {
     return <div style={styles.center}>Loading match…</div>;
@@ -118,6 +139,7 @@ export default function MatchPage(): React.JSX.Element {
       setShowManage(false);
       setShowPostponeOptions(false);
     } else {
+      if (deleteConfirmText !== 'DELETE') return;
       await withLoading(() => deleteMatch(id));
       router.push('/matches');
     }
@@ -139,7 +161,9 @@ export default function MatchPage(): React.JSX.Element {
   }
 
   async function handlePoint(player: 'player1' | 'player2') {
-    if (!match) return;
+    if (!match || tapLock) return;
+    setTapLock(true);
+    setTimeout(() => setTapLock(false), 300);
     setLiveError(null);
     setLiveActionLoading(true);
     try {
@@ -168,6 +192,35 @@ export default function MatchPage(): React.JSX.Element {
   const canCancel = match.status === 'scheduled' || match.status === 'in_progress';
   const canDelete = match.status === 'scheduled' || match.status === 'cancelled';
   const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
+
+
+  const p1Last = lastName(p1Name);
+  const p2Last = lastName(p2Name);
+  const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
+  const showSet3 = visibleSets.length >= 3;
+  const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
+  const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
+  const blockScoring = liveActionLoading || tapLock || match.status !== 'in_progress';
+
+  if (isParticipant && (match.status === 'scheduled' || match.status === 'in_progress')) {
+    return (
+      <div style={styles.livePage}>
+        <div style={styles.liveScoreboardRegion}>
+          <div style={styles.timerRow}><span>Set {match.liveScore.currentSet + 1} · {setClock}</span><span>Match · {matchClock}</span></div>
+          <button aria-label="Match actions" style={styles.actionsIconBtn} onClick={() => setShowManage(true)}>⋮</button>
+          <table style={styles.scoreTable}><tbody>
+            {[['player1', p1Last], ['player2', p2Last]].map(([key, name]) => {
+              const pl = key as 'player1'|'player2';
+              const lead = pl === 'player1' ? match.liveScore.player1SetsWon > match.liveScore.player2SetsWon : match.liveScore.player2SetsWon > match.liveScore.player1SetsWon;
+              return <tr key={pl}><td style={styles.nameCell}>{match.liveScore.server===pl?'● ':''}{name}</td><td style={{...styles.scoreCell,...(lead?styles.leadingCell:{})}}>{pl==='player1'?match.liveScore.currentGame.player1:match.liveScore.currentGame.player2}</td>{Array.from({ length: Math.max(2, visibleSets.length) }).map((_, idx) => <td key={idx} style={styles.scoreCell}>{match.liveScore.sets[idx]?.[pl==='player1'?'player1Games':'player2Games'] ?? 0}</td>)}<td style={styles.scoreCell}>{pl==='player1'?match.liveScore.player1SetsWon:match.liveScore.player2SetsWon}</td></tr>;
+            })}
+          </tbody></table>
+        </div>
+        <div style={styles.hintStrip}>{match.status === 'scheduled' ? 'Waiting for server selection' : liveError ?? ''}</div>
+        {match.status === 'scheduled' ? <div style={styles.serverSelectWrap}><button style={styles.liveHalfBtn} onClick={()=>handleStartLive('player1')}>{p1Last} serves</button><button style={styles.liveHalfBtn} onClick={()=>handleStartLive('player2')}>{p2Last} serves</button></div> : <div style={styles.scoreButtonsRegion}><button aria-label={`Add point for ${p1Last}`} style={styles.liveHalfBtn} disabled={blockScoring} onClick={()=>handlePoint('player1')}>+ {p1Last}</button><button aria-label={`Add point for ${p2Last}`} style={styles.liveHalfBtn} disabled={blockScoring} onClick={()=>handlePoint('player2')}>+ {p2Last}</button></div>}
+      </div>
+    );
+  }
 
   const containerStyles = {
     page: isIosView ? { ...styles.page, ...styles.iosPage } : styles.page,
@@ -455,6 +508,20 @@ function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: str
 }
 
 const styles: Record<string, React.CSSProperties> = {
+
+  livePage: { height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#0E1418', color: '#fff' },
+  liveScoreboardRegion: { position: 'relative', padding: '12px 10px 8px', flex: '0 0 auto' },
+  timerRow: { display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8, color: '#d7e0e3' },
+  actionsIconBtn: { position: 'absolute', top: 8, right: 8, background: 'transparent', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer' },
+  scoreTable: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 14 },
+  nameCell: { padding: '8px 4px', minWidth: 90, fontWeight: 700, fontSize: 14, borderBottom: '1px solid rgba(255,255,255,.14)' },
+  scoreCell: { textAlign: 'center' as const, padding: '8px 4px', minWidth: 36, fontSize: 14, borderBottom: '1px solid rgba(255,255,255,.14)' },
+  leadingCell: { color: '#FFB44A', fontWeight: 800 },
+  hintStrip: { flex: '0 0 56px', minHeight: 56, padding: '12px', borderTop: '1px solid rgba(255,255,255,.12)', borderBottom: '1px solid rgba(255,255,255,.12)', color: '#c9d1d4', fontSize: 13 },
+  scoreButtonsRegion: { flex: 1, display: 'flex' },
+  serverSelectWrap: { flex: 1, display: 'flex' },
+  liveHalfBtn: { flex: 1, width: '50%', border: '1px solid rgba(255,255,255,.15)', background: '#1F525C', color: '#fff', fontSize: 24, fontWeight: 800 },
+
   page: { minHeight: '100vh', background: '#1a472a' },
   iosPage: { minHeight: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' },
   center: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 8 },
