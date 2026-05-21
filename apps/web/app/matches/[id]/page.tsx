@@ -198,8 +198,8 @@ export default function MatchPage(): React.JSX.Element {
   const p2Last = lastName(p2Name);
   const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
   const showSet3 = visibleSets.length >= 3;
-  const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' ? clockTick - Date.now() + 1000 : 0));
-  const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' ? clockTick - Date.now() + 1000 : 0));
+  const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
+  const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
   const blockScoring = liveActionLoading || tapLock || match.status !== 'in_progress';
 
   if (isParticipant && (match.status === 'scheduled' || match.status === 'in_progress')) {
