@@ -212,7 +212,7 @@ export default function MatchPage(): React.JSX.Element {
             {[['player1', p1Last], ['player2', p2Last]].map(([key, name]) => {
               const pl = key as 'player1'|'player2';
               const lead = pl === 'player1' ? match.liveScore.player1SetsWon > match.liveScore.player2SetsWon : match.liveScore.player2SetsWon > match.liveScore.player1SetsWon;
-              return <tr key={pl}><td style={styles.nameCell}>{match.liveScore.server===pl?'● ':''}{name}</td><td style={{...styles.scoreCell,...(lead?styles.leadingCell:{})}}>{pl==='player1'?match.liveScore.currentGame.player1:match.liveScore.currentGame.player2}</td><td style={styles.scoreCell}>{match.liveScore.sets[0]?.[pl==='player1'?'player1Games':'player2Games'] ?? 0}</td><td style={styles.scoreCell}>{match.liveScore.sets[1]?.[pl==='player1'?'player1Games':'player2Games'] ?? 0}</td>{showSet3 && <td style={styles.scoreCell}>{match.liveScore.sets[2]?.[pl==='player1'?'player1Games':'player2Games'] ?? 0}</td>}<td style={styles.scoreCell}>{pl==='player1'?match.liveScore.player1SetsWon:match.liveScore.player2SetsWon}</td></tr>;
+              return <tr key={pl}><td style={styles.nameCell}>{match.liveScore.server===pl?'● ':''}{name}</td><td style={{...styles.scoreCell,...(lead?styles.leadingCell:{})}}>{pl==='player1'?match.liveScore.currentGame.player1:match.liveScore.currentGame.player2}</td>{Array.from({ length: Math.max(2, visibleSets.length) }).map((_, idx) => <td key={idx} style={styles.scoreCell}>{match.liveScore.sets[idx]?.[pl==='player1'?'player1Games':'player2Games'] ?? 0}</td>)}<td style={styles.scoreCell}>{pl==='player1'?match.liveScore.player1SetsWon:match.liveScore.player2SetsWon}</td></tr>;
             })}
           </tbody></table>
         </div>
