@@ -52,6 +52,9 @@ jobs:
           else
             echo "name=preview" >> "$GITHUB_OUTPUT"
           fi
+        # Run with --stacktrace option to get the stack trace.
+        # Run with --info or --debug option to get more log output.
+        # Run with --scan to get full insights.
       - working-directory: apps/mobile
         run: eas build --platform android --profile "${{ steps.profile.outputs.name }}" --non-interactive
         env:
@@ -68,4 +71,9 @@ jobs:
             echo "- Commit: $GITHUB_SHA"
             echo "- Profile: ${{ steps.profile.outputs.name }}"
             echo "- Event: $GITHUB_EVENT_NAME"
+            echo ""
+            echo "## Debug Options"
+            echo "- Run with \`--stacktrace\` option to get the stack trace."
+            echo "- Run with \`--info\` or \`--debug\` option to get more log output."
+            echo "- Run with \`--scan\` to get full insights."
           } >> "$GITHUB_STEP_SUMMARY"
