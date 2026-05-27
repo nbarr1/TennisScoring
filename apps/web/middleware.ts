@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from 'next-firebase-auth-edge';
+import { logStructured } from './lib/logger';
 
 const privateKey = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? '').replace(/\\n/g, '\n');
 const cookieSecret = process.env.NEXTAUTH_SECRET;
 
-if (!cookieSecret && process.env.NODE_ENV === 'production') {
-  throw new Error('NEXTAUTH_SECRET environment variable is required in production');
+if (!cookieSecret) {
+  throw new Error('NEXTAUTH_SECRET environment variable is required');
 }
 
-const effectiveCookieSecret = cookieSecret ?? 'development-only-cookie-secret-do-not-use-in-prod';
+const effectiveCookieSecret: string = cookieSecret;
 
 export async function middleware(request: NextRequest) {
   try {
@@ -23,7 +24,7 @@ export async function middleware(request: NextRequest) {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax' as const,
-        maxAge: 12 * 24 * 60 * 60, // 12 days in seconds
+        maxAge: 12 * 24 * 60 * 60,
       },
       serviceAccount: {
         projectId: process.env.FIREBASE_ADMIN_PROJECT_ID ?? '',
@@ -33,7 +34,11 @@ export async function middleware(request: NextRequest) {
       handleValidToken: async () => NextResponse.next(),
       handleInvalidToken: async () => NextResponse.redirect(new URL('/login', request.url)),
       handleError: async (error) => {
-        console.error('[authMiddleware] error:', error);
+        logStructured('error', 'authMiddleware error', {
+          route: request.nextUrl.pathname,
+          requestId: request.headers.get('x-request-id') ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        });
         if (request.nextUrl.pathname === '/api/auth/login') {
           return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
         }
@@ -41,7 +46,11 @@ export async function middleware(request: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('[middleware] uncaught error:', err);
+    logStructured('error', 'middleware uncaught error', {
+      route: request.nextUrl.pathname,
+      requestId: request.headers.get('x-request-id') ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    });
     if (request.nextUrl.pathname === '/api/auth/login') {
       return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
     }
@@ -50,8 +59,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Excludes: login, invite/accept (unauthenticated new-user flow), the logout endpoint,
-  // Next.js internals, and static assets.
-  // /api/auth/login is intentionally NOT excluded so authMiddleware can set the session cookie.
   matcher: ['/((?!login|invite/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
 };
