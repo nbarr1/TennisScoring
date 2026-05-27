@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { logStructured } from '../../../../lib/logger';
 
 type CallableSuccessPayload = {
   result?: {
@@ -87,6 +88,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { json: callablePayload, rawText } = await parseUpstreamPayload(callableResponse);
 
     if (!callableResponse.ok || !callablePayload.result?.userId) {
+      logStructured('error', 'add-division-member upstream failure', {
+        requestId,
+        callableUrl,
+        status: callableResponse.status,
+        statusText: callableResponse.statusText,
+        upstreamError: callablePayload.error?.message ?? null,
+        upstreamBodyPreview: rawText.slice(0, 300),
+      });
       return NextResponse.json(
         {
           error: callablePayload?.error?.message ?? 'Cloud Function call failed.',

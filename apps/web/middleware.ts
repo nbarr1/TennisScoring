@@ -40,14 +40,19 @@ export async function middleware(request: NextRequest) {
         privateKey,
       },
       handleValidToken: async () => NextResponse.next(),
-      handleInvalidToken: async () => NextResponse.redirect(new URL('/login', request.url)),
+      handleInvalidToken: async () => {
+        if (request.nextUrl.pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        return NextResponse.redirect(new URL('/login', request.url));
+      },
       handleError: async (error) => {
         logStructured('error', 'authMiddleware error', {
           route: request.nextUrl.pathname,
           requestId: request.headers.get('x-request-id') ?? null,
           error,
         });
-        if (request.nextUrl.pathname === '/api/auth/login') {
+        if (request.nextUrl.pathname.startsWith('/api/')) {
           return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
         }
         return NextResponse.redirect(new URL('/login', request.url));
@@ -59,7 +64,7 @@ export async function middleware(request: NextRequest) {
       requestId: request.headers.get('x-request-id') ?? null,
       error: err,
     });
-    if (request.nextUrl.pathname === '/api/auth/login') {
+    if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
     }
     return NextResponse.redirect(new URL('/login', request.url));
@@ -67,5 +72,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|invite/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
+  matcher: ['/((?!login|invite/|api/health|api/readiness|api/functions/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
 };
