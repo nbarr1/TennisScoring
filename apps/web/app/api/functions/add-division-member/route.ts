@@ -93,7 +93,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         callableUrl,
         status: callableResponse.status,
         statusText: callableResponse.statusText,
-        upstreamError: callablePayload.error?.message ?? null,
+        upstreamError: callablePayload?.error?.message ?? null,
         upstreamBodyPreview: rawText.slice(0, 300),
       });
       return NextResponse.json(
