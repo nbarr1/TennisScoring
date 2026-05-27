@@ -45,7 +45,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Missing bearer token.', requestId }, { status: 401 });
     }
 
-    await getAdminAuth().verifyIdToken(bearerToken);
+    try {
+      await getAdminAuth().verifyIdToken(bearerToken);
+    } catch {
+      return NextResponse.json({ error: 'Invalid or expired bearer token.', requestId }, { status: 401 });
+    }
 
     const body = (await request.json().catch(() => undefined)) as
       | { divisionId?: string; name?: string; email?: string; sendInvite?: boolean }
