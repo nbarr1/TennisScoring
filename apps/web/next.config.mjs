@@ -5,7 +5,6 @@ const allowUnsafeEval =
 
 const scriptSrc = [
   "'self'",
-  "'unsafe-inline'",
   ...(allowUnsafeEval ? ["'unsafe-eval'"] : []),
   'https://www.gstatic.com',
   'https://vercel.live',
@@ -55,7 +54,7 @@ const config = {
               // Next.js development and the Vercel preview toolbar can require
               // string evaluation. Keep unsafe-eval out of production CSP.
               `script-src ${scriptSrc}`,
-              "style-src 'self' 'unsafe-inline' https://vercel.live",
+              "style-src 'self' https://vercel.live",
               "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://vercel.live https://vercel.com",
               "font-src 'self' https://vercel.live https://assets.vercel.com",
               "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://fcm.googleapis.com https://*.cloudfunctions.net https://vercel.live wss://ws-us3.pusher.com",
