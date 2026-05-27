@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logStructured } from '../../../lib/logger';
 
 export async function GET() {
   const requiredEnv = [
@@ -12,8 +13,9 @@ export async function GET() {
   const missing = requiredEnv.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {
+    logStructured('error', 'Readiness check failed due to missing environment variables', { missing });
     return NextResponse.json(
-      { status: 'not_ready', missing, timestamp: new Date().toISOString() },
+      { status: 'not_ready', timestamp: new Date().toISOString() },
       { status: 503 },
     );
   }
