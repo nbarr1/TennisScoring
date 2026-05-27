@@ -28,7 +28,7 @@ INFO      — Observation or positive callout worth noting.
 **Phase:** Phase 3 — Security Audit  
 **Location:** `apps/web/middleware.ts`  
 **Description:** Static development fallback cookie secret was removed; missing secret now fails closed.
-**Evidence:** Middleware throws when `NEXTAUTH_SECRET` is absent.
+**Evidence:** Middleware redirects to /login or returns a 500 JSON response when NEXTAUTH_SECRET is absent.
 **Recommendation:** Ensure environment validation in all deploy environments.
 
 ### [INFO] Server-side token verification added to API proxy
@@ -41,8 +41,8 @@ INFO      — Observation or positive callout worth noting.
 ### [INFO] CSP tightened
 **Phase:** Phase 3 — Security Audit  
 **Location:** `apps/web/next.config.mjs`  
-**Description:** `unsafe-inline` removed from scripts/styles; eval remains environment-gated.
-**Evidence:** script/style directives no longer include inline allowance.
+**Description:** CSP headers configured; eval remains environment-gated.
+**Evidence:** `script-src` and `style-src` currently include `'unsafe-inline'` and remain configured with environment-gated eval behavior.
 **Recommendation:** Continue toward nonce-based per-route CSP.
 
 ### [INFO] Vulnerability scanning fallback added

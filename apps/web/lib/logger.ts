@@ -9,13 +9,8 @@ function safeSerialize(value: unknown, seen: WeakSet<object>): unknown {
     };
   }
 
-
   if (value instanceof Date) {
     return value.toISOString();
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => safeSerialize(item, seen));
   }
 
   if (value && typeof value === 'object') {
@@ -25,12 +20,17 @@ function safeSerialize(value: unknown, seen: WeakSet<object>): unknown {
 
     seen.add(value as object);
 
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
-        key,
-        safeSerialize(nestedValue, seen),
-      ]),
-    );
+    const result = Array.isArray(value)
+      ? value.map((item) => safeSerialize(item, seen))
+      : Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
+            key,
+            safeSerialize(nestedValue, seen),
+          ]),
+        );
+
+    seen.delete(value as object);
+    return result;
   }
 
   return value;

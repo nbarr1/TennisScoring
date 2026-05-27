@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   const requiredEnv = [
     'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+    'NEXT_PUBLIC_FIREBASE_API_KEY',
     'NEXTAUTH_SECRET',
     'FIREBASE_ADMIN_PROJECT_ID',
     'FIREBASE_ADMIN_CLIENT_EMAIL',
