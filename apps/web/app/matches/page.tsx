@@ -228,39 +228,6 @@ export default function MatchesPage(): React.JSX.Element {
   const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
   const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
 
-  const levelNameById = new Map(
-    divisionLevels.map((level) => [level.id, level.name] as const),
-  );
-  const playerGroupedMatches = matches.reduce<
-    Array<{ levelId: string; levelName: string; players: Array<{ playerId: string; playerName: string; matches: Match[] }> }>
-  >((groups, match) => {
-    const levelId = match.divisionLevelId ?? "unassigned";
-    const levelName =
-      levelId === "unassigned"
-        ? "Unassigned division"
-        : levelNameById.get(levelId) ?? "Division";
-    let levelGroup = groups.find((group) => group.levelId === levelId);
-    if (!levelGroup) {
-      levelGroup = { levelId, levelName, players: [] };
-      groups.push(levelGroup);
-    }
-    [
-      { id: match.player1Id, name: match.player1Name ?? "Player 1" },
-      { id: match.player2Id, name: match.player2Name ?? "Player 2" },
-    ]
-      .filter((player) => player.id !== "guest")
-      .forEach((player) => {
-        let playerGroup = levelGroup.players.find((group) => group.playerId === player.id);
-        if (!playerGroup) {
-          playerGroup = { playerId: player.id, playerName: player.name, matches: [] };
-          levelGroup.players.push(playerGroup);
-        }
-        if (!playerGroup.matches.some((existing) => existing.id === match.id)) {
-          playerGroup.matches.push(match);
-        }
-      });
-    return groups;
-  }, []);
   const canRecordOnBehalf =
     profile?.role === "admin" ||
     profile?.role === "division_leader" ||
@@ -439,31 +406,6 @@ export default function MatchesPage(): React.JSX.Element {
               </section>
             )}
 
-            {playerGroupedMatches.length > 0 && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>Matches by Division & Player</h2>
-                {playerGroupedMatches.map((divisionGroup) => (
-                  <div key={divisionGroup.levelId} style={styles.groupBlock}>
-                    <h3 style={styles.groupTitle}>{divisionGroup.levelName}</h3>
-                    {divisionGroup.players
-                      .sort((a, b) => a.playerName.localeCompare(b.playerName))
-                      .map((playerGroup) => (
-                        <details key={playerGroup.playerId} style={styles.playerGroup}>
-                          <summary style={styles.playerSummary}>
-                            {playerGroup.playerName} · {playerGroup.matches.length} match
-                            {playerGroup.matches.length === 1 ? "" : "es"}
-                          </summary>
-                          <div style={styles.grid}>
-                            {playerGroup.matches.map((m) => (
-                              <MatchCard key={`${playerGroup.playerId}-${m.id}`} m={m} />
-                            ))}
-                          </div>
-                        </details>
-                      ))}
-                  </div>
-                ))}
-              </section>
-            )}
           </>
         )}
 
@@ -1699,10 +1641,6 @@ const styles: Record<string, React.CSSProperties> = {
   filterBar: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
   filterLabel: { display: "grid", gap: 6, fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
   select: { minWidth: 180, border: "1px solid #ddd", borderRadius: 10, padding: "10px 12px", background: "#fff", color: "var(--text)", fontSize: 14, textTransform: "none" as const, letterSpacing: 0 },
-  groupBlock: { background: "#fff", borderRadius: 14, padding: 16, marginBottom: 14, boxShadow: "0 1px 6px rgba(0,0,0,0.04)" },
-  groupTitle: { margin: "0 0 10px", color: "var(--green-dark)", fontSize: 16 },
-  playerGroup: { borderTop: "1px solid #f0f0f0", padding: "10px 0" },
-  playerSummary: { cursor: "pointer", fontWeight: 700, color: "#333", marginBottom: 10 },
   main: { maxWidth: 960, margin: "0 auto", padding: "40px 24px" },
   iosMain: { padding: "24px 12px calc(24px + env(safe-area-inset-bottom))" },
   titleRow: {
