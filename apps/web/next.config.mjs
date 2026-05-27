@@ -45,15 +45,10 @@ const config = {
             key: 'Permissions-Policy',
             value: 'camera=(), microphone=(), geolocation=()',
           },
-          // CSP is intentionally permissive to support Firebase SDKs, FCM, and
-          // gstatic.com imports used by the service worker. Tighten per-route
-          // once a nonce-based approach is in place.
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Next.js development and the Vercel preview toolbar can require
-              // string evaluation. Keep unsafe-eval out of production CSP.
               `script-src ${scriptSrc}`,
               "style-src 'self' 'unsafe-inline' https://vercel.live",
               "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://vercel.live https://vercel.com",

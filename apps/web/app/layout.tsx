@@ -3,9 +3,15 @@ import './globals.css';
 import { FcmProvider } from './FcmProvider';
 import { ViewModeProvider } from './shared/viewMode';
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
+
 export const metadata: Metadata = {
   title: 'Tennis League',
   description: 'Work Tennis League Scoring & Rankings',
+  metadataBase: new URL(siteUrl),
+  alternates: {
+    canonical: '/',
+  },
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
