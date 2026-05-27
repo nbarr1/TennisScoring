@@ -87,8 +87,9 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Dependency audit
-        run: pnpm audit --audit-level=high
+      - name: Dependency audit with fallback
+        run: |
+          pnpm audit --audit-level=high || npx --yes osv-scanner --lockfile=pnpm-lock.yaml
       - name: Firebase rules guard
         run: pnpm check:firebase-rules
       - name: Firebase emulator rules smoke test

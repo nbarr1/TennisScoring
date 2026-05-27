@@ -26,3 +26,5 @@ export {
 } from './divisions/divisionFunctions';
 
 export { submitFeedback } from './feedback/submitFeedback';
+
+export { health, readiness } from './health/health';
