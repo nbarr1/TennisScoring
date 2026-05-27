@@ -9,6 +9,11 @@ function safeSerialize(value: unknown, seen: WeakSet<object>): unknown {
     };
   }
 
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
   if (Array.isArray(value)) {
     return value.map((item) => safeSerialize(item, seen));
   }

@@ -26,7 +26,16 @@ function getAdminAuth() {
 
 async function parseUpstreamPayload(response: Response): Promise<{ json: CallableSuccessPayload; rawText: string }> {
   const rawText = await response.text();
-  const json = (rawText ? (JSON.parse(rawText) as CallableSuccessPayload) : {}) as CallableSuccessPayload;
+  let json: CallableSuccessPayload = {};
+
+  try {
+    if (rawText) {
+      json = JSON.parse(rawText) as CallableSuccessPayload;
+    }
+  } catch {
+    // Keep rawText intact even when upstream JSON is invalid.
+  }
+
   return { json, rawText };
 }
 
@@ -75,10 +84,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       signal: timeoutController.signal,
     }).finally(() => clearTimeout(timeoutHandle));
 
-    const { json: callablePayload, rawText } = await parseUpstreamPayload(callableResponse).catch(() => ({
-      json: {} as CallableSuccessPayload,
-      rawText: '',
-    }));
+    const { json: callablePayload, rawText } = await parseUpstreamPayload(callableResponse);
 
     if (!callableResponse.ok || !callablePayload.result?.userId) {
       return NextResponse.json(

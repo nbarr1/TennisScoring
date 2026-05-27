@@ -13,7 +13,7 @@ export async function middleware(request: NextRequest) {
       requestId: request.headers.get('x-request-id') ?? null,
     });
 
-    if (request.nextUrl.pathname === '/api/auth/login') {
+    if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
     }
 
