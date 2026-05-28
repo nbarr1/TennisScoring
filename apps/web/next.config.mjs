@@ -14,9 +14,7 @@ const scriptSrc = [
 /** @type {import('next').NextConfig} */
 const config = {
   transpilePackages: ['@tennis/shared', '@tennis/firebase-client'],
-  experimental: {
-    serverComponentsExternalPackages: ['firebase-admin'],
-  },
+  serverExternalPackages: ['firebase-admin'],
   async rewrites() {
     return [
       {
