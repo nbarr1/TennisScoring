@@ -166,6 +166,7 @@ CI additionally runs `pnpm audit --audit-level=high` before typecheck/lint/test.
 - [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, and targeted deploy notes.
 - [SECURITY_REVIEW_2026-05-12.md](./SECURITY_REVIEW_2026-05-12.md) — point-in-time security review and deployment checklist.
 - [ui-ux-review.md](./ui-ux-review.md) — point-in-time UI/UX/accessibility review and remediation plan.
+- [docs/production-release-readiness-2026-05-28.md](./docs/production-release-readiness-2026-05-28.md) — practical release checklist for mobile/watch distribution, Google Play publication readiness, web production rollout, and feedback-driven patch operations.
 - [CLAUDE.md](./CLAUDE.md) — agent/developer reference for architecture and conventions.
 
 ---
