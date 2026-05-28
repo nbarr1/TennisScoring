@@ -15,11 +15,55 @@ It also records the documentation updates required so repository materials stay 
 
 Target release posture:
 
-1. Latest mobile and watch builds are generated from the current mainline commit and signed with production credentials.
+1. Latest mobile and watch builds are generated from the chosen release branch/commit and signed with production credentials.
 2. Android mobile app is published to Google Play production (or staged through closed/open testing with a go-live date).
 3. Web application is production-ready (quality/security gates passed), deployed, and accessible to users.
 4. Feedback intake is active and triaged so fast bugfix/patch cadence can follow release.
 5. Repository markdown docs clearly reflect the release process, current status, and ownership.
+
+---
+
+## Phase 0: freeze the release candidate
+
+Do not assume the repository has a local branch named `main`. Some workspaces are checked out directly on a release branch such as `claude/setup-tennis-scoring-app-H7r7V`, and `git checkout main` will fail when no local or remote `main` ref exists. In that case, `git pull --ff-only` runs against the current branch and may still fast-forward it.
+
+Use this branch-safe sequence instead:
+
+```bash
+git status --short
+git branch --show-current
+git remote show origin | sed -n '/HEAD branch/s/.*: //p'
+git branch -r --format='%(refname:short)'
+```
+
+Then choose the release branch:
+
+- If `origin/main` or the remote HEAD branch exists, create/switch to the matching local branch before pulling.
+- If the intended release branch is the current branch, stay on it and pull that branch explicitly.
+- If neither is true, stop and confirm the release branch before deploying.
+
+For the current branch release flow:
+
+```bash
+release_branch="$(git branch --show-current)"
+git fetch origin "$release_branch"
+git pull --ff-only origin "$release_branch"
+git status --short
+git rev-parse HEAD
+```
+
+For a remote-default release flow, after confirming the remote default branch name:
+
+```bash
+default_branch="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
+git fetch origin "$default_branch"
+git switch "$default_branch" 2>/dev/null || git switch --track "origin/$default_branch"
+git pull --ff-only origin "$default_branch"
+git status --short
+git rev-parse HEAD
+```
+
+Record the final commit SHA from `git rev-parse HEAD` as the release candidate. Deploy web, Firebase, mobile, and watch artifacts only from that same SHA.
 
 ---
 

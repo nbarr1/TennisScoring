@@ -4,6 +4,7 @@
 
 ### Added
 - Added production release readiness plan documenting concrete release gating, distribution, and post-release patch workflow (dated 2026-05-28).
+- Clarified Phase 0 release-candidate freeze instructions so deployment does not assume a local `main` branch exists.
 
 ## [1.0.1] — 2026-05-20
 
