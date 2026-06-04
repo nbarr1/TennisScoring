@@ -11,14 +11,17 @@
       "resizeMode": "contain",
       "backgroundColor": "#1a472a"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.tennisleague.app",
       "buildNumber": "1",
-      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -27,16 +30,23 @@
         "backgroundColor": "#1a472a"
       },
       "package": "com.tennisleague.app",
-      "versionCode": 1,
-      "googleServicesFile": "./google-services.json"
+      "versionCode": 1
     },
     "plugins": [
       "expo-router",
-      ["expo-notifications", {
-        "icon": "./assets/adaptive-icon.png",
-        "color": "#1a472a"
-      }],
-      ["expo-secure-store", { "faceIDPermission": "Allow Tennis League to use Face ID" }]
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#1a472a"
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow Tennis League to use Face ID"
+        }
+      ]
     ],
     "scheme": "tennisleague",
     "extra": {

@@ -48,8 +48,8 @@ Create or select a Firebase project, then enable:
 
 Download platform config files:
 
-- Android: download `google-services.json` and place it at `apps/mobile/android/app/google-services.json`. A root-level `apps/mobile/google-services.json` is also present for Expo tooling compatibility.
-- iOS: download `GoogleService-Info.plist` and place it at `apps/mobile/GoogleService-Info.plist` or the path expected by the active native iOS project configuration.
+- Android: download `google-services.json` and place it at `apps/mobile/android/app/google-services.json`. A root-level `apps/mobile/google-services.json` is also present for Expo tooling compatibility. For EAS builds, upload that file as a file environment variable named `GOOGLE_SERVICES_JSON` in each EAS environment used by Android builds (`preview` and `production`).
+- iOS: download `GoogleService-Info.plist` and place it at `apps/mobile/GoogleService-Info.plist` or the path expected by the active native iOS project configuration. For EAS builds, upload that file as `GOOGLE_SERVICE_INFO_PLIST` (or `GOOGLE_SERVICES_PLIST`) in each EAS environment used by iOS builds.
 - Web: copy the Firebase web app config values into `NEXT_PUBLIC_FIREBASE_*` variables.
 
 ---

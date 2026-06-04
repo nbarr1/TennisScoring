@@ -15,7 +15,8 @@
         "APP_ENV": "development"
       },
       "node": "20.19.2",
-      "pnpm": "9.15.5"
+      "pnpm": "9.15.5",
+      "environment": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -27,7 +28,8 @@
         "APP_ENV": "preview"
       },
       "node": "20.19.2",
-      "pnpm": "9.15.5"
+      "pnpm": "9.15.5",
+      "environment": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -39,7 +41,8 @@
         "APP_ENV": "production"
       },
       "node": "20.19.2",
-      "pnpm": "9.15.5"
+      "pnpm": "9.15.5",
+      "environment": "production"
     },
     "wear-preview": {
       "distribution": "internal",
@@ -53,7 +56,8 @@
         "APP_ENV": "preview"
       },
       "node": "20.19.2",
-      "pnpm": "9.15.5"
+      "pnpm": "9.15.5",
+      "environment": "preview"
     }
   }
 }
