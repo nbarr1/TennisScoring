@@ -21,7 +21,8 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
       },
       "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
       "env": {
