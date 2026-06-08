@@ -97,6 +97,7 @@ export default function FeedbackScreen() {
   return (
     <KeyboardAwareScrollView
       keyboardViewStyle={styles.keyboardView}
+      style={styles.container}
       contentContainerStyle={styles.content}
     >
       <View style={styles.header}>

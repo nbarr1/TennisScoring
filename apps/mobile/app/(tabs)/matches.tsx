@@ -31,7 +31,7 @@ import {
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
-import { KeyboardSafeView } from "../../components/KeyboardSafeView";
+import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, User, Availability } from "@tennis/shared";
 
 type ActionKind = "pending" | "awaiting" | null;
@@ -583,27 +583,38 @@ export default function MatchesScreen() {
       )}
 
       <Modal visible={showCreate} transparent animationType="slide">
-        <KeyboardSafeView style={styles.modalKeyboardView}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>
-                {createMode === "historic"
-                  ? "Record Past Match"
-                  : "New Live Match"}
-              </Text>
+        <KeyboardAwareBottomSheet style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {createMode === "historic"
+                ? "Record Past Match"
+                : "New Live Match"}
+            </Text>
 
-              {createMode === "historic" && canRecordOnBehalf && (
-                <>
-                  <View style={styles.modeToggle}>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Record one of my matches"
-                      accessibilityState={{
-                        selected: recordingMode === "self",
-                      }}
+            {createMode === "historic" && canRecordOnBehalf && (
+              <>
+                <View style={styles.modeToggle}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Record one of my matches"
+                    accessibilityState={{
+                      selected: recordingMode === "self",
+                    }}
+                    style={[
+                      styles.modeBtn,
+                      recordingMode === "self" && styles.modeBtnActive,
+                    ]}
+                    onPress={() => {
+                      setRecordingMode("self");
+                      setSelectedPlayer1(null);
+                      setPlayer1SearchText("");
+                      setPlayer1SearchResults([]);
+                    }}
+                  >
+                    <Text
                       style={[
-                        styles.modeBtn,
-                        recordingMode === "self" && styles.modeBtnActive,
+                        styles.modeBtnText,
+                        recordingMode === "self" && styles.modeBtnTextActive,
                       ]}
                       onPress={() => {
                         setRecordingMode("self");
@@ -612,24 +623,33 @@ export default function MatchesScreen() {
                         setPlayer1SearchResults([]);
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.modeBtnText,
-                          recordingMode === "self" && styles.modeBtnTextActive,
-                        ]}
-                      >
-                        My Match
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Record a match between any two players"
-                      accessibilityState={{
-                        selected: recordingMode === "onBehalf",
-                      }}
+                      My Match
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Record a match between any two players"
+                    accessibilityState={{
+                      selected: recordingMode === "onBehalf",
+                    }}
+                    style={[
+                      styles.modeBtn,
+                      recordingMode === "onBehalf" && styles.modeBtnActive,
+                    ]}
+                    onPress={() => {
+                      setRecordingMode("onBehalf");
+                      setOpponentMode("search");
+                      setGuestName("");
+                      setSelectedOpponent(null);
+                      setSearchText("");
+                      setSearchResults([]);
+                    }}
+                  >
+                    <Text
                       style={[
-                        styles.modeBtn,
-                        recordingMode === "onBehalf" && styles.modeBtnActive,
+                        styles.modeBtnText,
+                        recordingMode === "onBehalf" &&
+                          styles.modeBtnTextActive,
                       ]}
                       onPress={() => {
                         setRecordingMode("onBehalf");
@@ -652,75 +672,80 @@ export default function MatchesScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  {recordingMode === "onBehalf" &&
-                    (selectedPlayer1 ? (
-                      <View style={styles.selectedPlayer}>
-                        <View style={styles.playerChip}>
-                          <Text style={styles.playerChipName}>
-                            {selectedPlayer1.displayName}
-                          </Text>
-                          <Text style={styles.playerChipEmail}>
-                            {selectedPlayer1.email}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel="Change first player"
-                          onPress={() => {
-                            setSelectedPlayer1(null);
-                            setPlayer1SearchText("");
-                          }}
-                        >
-                          <Text style={styles.changeText}>Change</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <>
-                        <Text style={styles.modalLabel}>
-                          Search first player
+                {recordingMode === "onBehalf" &&
+                  (selectedPlayer1 ? (
+                    <View style={styles.selectedPlayer}>
+                      <View style={styles.playerChip}>
+                        <Text style={styles.playerChipName}>
+                          {selectedPlayer1.displayName}
                         </Text>
-                        <View style={styles.searchRow}>
-                          <TextInput
-                            accessibilityLabel="Search first player"
-                            style={[styles.input, styles.searchInput]}
-                            value={player1SearchText}
-                            onChangeText={setPlayer1SearchText}
-                            placeholder="Name or email..."
-                            autoCapitalize="none"
-                            autoCorrect={false}
+                        <Text style={styles.playerChipEmail}>
+                          {selectedPlayer1.email}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Change first player"
+                        onPress={() => {
+                          setSelectedPlayer1(null);
+                          setPlayer1SearchText("");
+                        }}
+                      >
+                        <Text style={styles.changeText}>Change</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.modalLabel}>Search first player</Text>
+                      <View style={styles.searchRow}>
+                        <TextInput
+                          accessibilityLabel="Search first player"
+                          style={[styles.input, styles.searchInput]}
+                          value={player1SearchText}
+                          onChangeText={setPlayer1SearchText}
+                          placeholder="Name or email..."
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        {searchingPlayer1 && (
+                          <ActivityIndicator
+                            style={styles.searchSpinner}
+                            color="#1a472a"
                           />
-                          {searchingPlayer1 && (
-                            <ActivityIndicator
-                              style={styles.searchSpinner}
-                              color="#1a472a"
-                            />
+                        )}
+                      </View>
+                      {player1SearchResults.length > 0 && (
+                        <FlatList
+                          data={player1SearchResults}
+                          keyExtractor={(u) => u.id}
+                          style={styles.resultsList}
+                          keyboardShouldPersistTaps="handled"
+                          renderItem={({ item }) => (
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`Select ${item.displayName} as first player`}
+                              style={styles.resultRow}
+                              onPress={() => {
+                                setSelectedPlayer1(item);
+                                setPlayer1SearchResults([]);
+                              }}
+                            >
+                              <Text style={styles.resultName}>
+                                {item.displayName}
+                              </Text>
+                              <Text style={styles.resultEmail}>
+                                {item.email}
+                              </Text>
+                            </TouchableOpacity>
                           )}
-                        </View>
-                        {player1SearchResults.length > 0 && (
-                          <FlatList
-                            data={player1SearchResults}
-                            keyExtractor={(u) => u.id}
-                            style={styles.resultsList}
-                            keyboardShouldPersistTaps="handled"
-                            renderItem={({ item }) => (
-                              <TouchableOpacity
-                                accessibilityRole="button"
-                                accessibilityLabel={`Select ${item.displayName} as first player`}
-                                style={styles.resultRow}
-                                onPress={() => {
-                                  setSelectedPlayer1(item);
-                                  setPlayer1SearchResults([]);
-                                }}
-                              >
-                                <Text style={styles.resultName}>
-                                  {item.displayName}
-                                </Text>
-                                <Text style={styles.resultEmail}>
-                                  {item.email}
-                                </Text>
-                              </TouchableOpacity>
-                            )}
-                          />
+                        />
+                      )}
+                      {player1SearchText.trim().length > 0 &&
+                        !searchingPlayer1 &&
+                        player1SearchResults.length === 0 && (
+                          <Text style={styles.noResults}>
+                            No players found.
+                          </Text>
                         )}
                         {player1SearchText.trim().length > 0 &&
                           !searchingPlayer1 &&
@@ -734,116 +759,193 @@ export default function MatchesScreen() {
                 </>
               )}
 
-              {/* Opponent mode toggle */}
-              <View style={styles.modeToggle}>
+            {/* Opponent mode toggle */}
+            <View style={styles.modeToggle}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Search for an existing player"
+                accessibilityState={{ selected: opponentMode === "search" }}
+                style={[
+                  styles.modeBtn,
+                  opponentMode === "search" && styles.modeBtnActive,
+                ]}
+                onPress={() => {
+                  setOpponentMode("search");
+                  setGuestName("");
+                }}
+              >
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    opponentMode === "search" && styles.modeBtnTextActive,
+                  ]}
+                >
+                  Search Player
+                </Text>
+              </TouchableOpacity>
+              {(createMode !== "historic" || recordingMode === "self") && (
                 <TouchableOpacity
                   accessibilityRole="button"
-                  accessibilityLabel="Search for an existing player"
-                  accessibilityState={{ selected: opponentMode === "search" }}
+                  accessibilityLabel="Enter a guest opponent"
+                  accessibilityState={{ selected: opponentMode === "guest" }}
                   style={[
                     styles.modeBtn,
-                    opponentMode === "search" && styles.modeBtnActive,
+                    opponentMode === "guest" && styles.modeBtnActive,
                   ]}
                   onPress={() => {
-                    setOpponentMode("search");
-                    setGuestName("");
+                    setOpponentMode("guest");
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                    setSearchResults([]);
                   }}
                 >
                   <Text
                     style={[
                       styles.modeBtnText,
-                      opponentMode === "search" && styles.modeBtnTextActive,
+                      opponentMode === "guest" && styles.modeBtnTextActive,
                     ]}
                   >
                     Search Player
                   </Text>
                 </TouchableOpacity>
-                {(createMode !== "historic" || recordingMode === "self") && (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Enter a guest opponent"
-                    accessibilityState={{ selected: opponentMode === "guest" }}
-                    style={[
-                      styles.modeBtn,
-                      opponentMode === "guest" && styles.modeBtnActive,
-                    ]}
-                    onPress={() => {
-                      setOpponentMode("guest");
-                      setSelectedOpponent(null);
-                      setSearchText("");
-                      setSearchResults([]);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.modeBtnText,
-                        opponentMode === "guest" && styles.modeBtnTextActive,
-                      ]}
-                    >
-                      Guest / No Account
-                    </Text>
-                  </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Opponent picker */}
+            {opponentMode === "guest" ? (
+              <TextInput
+                accessibilityLabel="Guest opponent name"
+                style={styles.input}
+                value={guestName}
+                onChangeText={setGuestName}
+                placeholder="Guest name..."
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+            ) : selectedOpponent ? (
+              <View style={styles.selectedPlayer}>
+                <View style={styles.playerChip}>
+                  <Text style={styles.playerChipName}>
+                    {selectedOpponent.displayName}
+                  </Text>
+                  <Text style={styles.playerChipEmail}>
+                    {selectedOpponent.email}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                  }}
+                >
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalLabel}>
+                  {createMode === "historic" && recordingMode === "onBehalf"
+                    ? "Search second player"
+                    : "Search for opponent"}
+                </Text>
+                <View style={styles.searchRow}>
+                  <TextInput
+                    accessibilityLabel={
+                      createMode === "historic" && recordingMode === "onBehalf"
+                        ? "Search second player"
+                        : "Search for opponent"
+                    }
+                    style={[styles.input, styles.searchInput]}
+                    value={searchText}
+                    onChangeText={setSearchText}
+                    placeholder="Name or email..."
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {searching && (
+                    <ActivityIndicator
+                      style={styles.searchSpinner}
+                      color="#1a472a"
+                    />
+                  )}
+                </View>
+                {searchResults.length > 0 && (
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(u) => u.id}
+                    style={styles.resultsList}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${item.displayName}`}
+                        style={styles.resultRow}
+                        onPress={() => {
+                          setSelectedOpponent(item);
+                          setSearchResults([]);
+                        }}
+                      >
+                        <Text style={styles.resultName}>
+                          {item.displayName}
+                        </Text>
+                        <Text style={styles.resultEmail}>{item.email}</Text>
+                      </TouchableOpacity>
+                    )}
+                  />
                 )}
               </View>
 
-              {/* Opponent picker */}
-              {opponentMode === "guest" ? (
-                <TextInput
-                  accessibilityLabel="Guest opponent name"
-                  style={styles.input}
-                  value={guestName}
-                  onChangeText={setGuestName}
-                  placeholder="Guest name..."
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                />
-              ) : selectedOpponent ? (
-                <View style={styles.selectedPlayer}>
-                  <View style={styles.playerChip}>
-                    <Text style={styles.playerChipName}>
-                      {selectedOpponent.displayName}
-                    </Text>
-                    <Text style={styles.playerChipEmail}>
-                      {selectedOpponent.email}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Change selected opponent"
-                    onPress={() => {
-                      setSelectedOpponent(null);
-                      setSearchText("");
-                    }}
-                  >
-                    <Text style={styles.changeText}>Change</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <>
+            {/* Historic set-score entry */}
+            {createMode === "historic" &&
+              (recordingMode === "self" || selectedPlayer1) &&
+              (opponentMode === "guest"
+                ? guestName.trim()
+                : selectedOpponent) && (
+                <View style={styles.setsContainer}>
                   <Text style={styles.modalLabel}>
-                    {createMode === "historic" && recordingMode === "onBehalf"
-                      ? "Search second player"
-                      : "Search for opponent"}
+                    {recordingMode === "onBehalf"
+                      ? "Enter set scores (first player's games first)"
+                      : "Enter set scores (your games first)"}
                   </Text>
-                  <View style={styles.searchRow}>
-                    <TextInput
-                      accessibilityLabel={
-                        createMode === "historic" &&
-                        recordingMode === "onBehalf"
-                          ? "Search second player"
-                          : "Search for opponent"
-                      }
-                      style={[styles.input, styles.searchInput]}
-                      value={searchText}
-                      onChangeText={setSearchText}
-                      placeholder="Name or email..."
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    {searching && (
-                      <ActivityIndicator
-                        style={styles.searchSpinner}
-                        color="#1a472a"
+                  {historicSets.map((s, i) => (
+                    <View key={i} style={styles.setRow}>
+                      <Text style={styles.setLabel}>Set {i + 1}</Text>
+                      <TextInput
+                        accessibilityLabel={`Set ${i + 1} ${
+                          recordingMode === "onBehalf"
+                            ? "first player's"
+                            : "your"
+                        } games`}
+                        style={styles.setInput}
+                        value={s.p1}
+                        onChangeText={(v) => {
+                          const next = [...historicSets];
+                          next[i] = { ...next[i], p1: v };
+                          setHistoricSets(next);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholder={
+                          recordingMode === "onBehalf" ? "P1" : "You"
+                        }
+                      />
+                      <Text style={styles.setDash}>–</Text>
+                      <TextInput
+                        accessibilityLabel={`Set ${i + 1} opponent games`}
+                        style={styles.setInput}
+                        value={s.p2}
+                        onChangeText={(v) => {
+                          const next = [...historicSets];
+                          next[i] = { ...next[i], p2: v };
+                          setHistoricSets(next);
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                        placeholder={
+                          recordingMode === "onBehalf" ? "P2" : "Opp"
+                        }
                       />
                     )}
                   </View>
@@ -869,7 +971,18 @@ export default function MatchesScreen() {
                           <Text style={styles.resultEmail}>{item.email}</Text>
                         </TouchableOpacity>
                       )}
-                    />
+                    </View>
+                  ))}
+                  {historicSets.length < 5 && (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Add another set"
+                      onPress={() =>
+                        setHistoricSets([...historicSets, { p1: "", p2: "" }])
+                      }
+                    >
+                      <Text style={styles.addSet}>+ Add Set</Text>
+                    </TouchableOpacity>
                   )}
                   {searchText.trim().length > 0 &&
                     !searching &&
@@ -879,150 +992,70 @@ export default function MatchesScreen() {
                 </>
               )}
 
-              {/* Historic set-score entry */}
-              {createMode === "historic" &&
-                (recordingMode === "self" || selectedPlayer1) &&
-                (opponentMode === "guest"
-                  ? guestName.trim()
-                  : selectedOpponent) && (
-                  <View style={styles.setsContainer}>
-                    <Text style={styles.modalLabel}>
-                      {recordingMode === "onBehalf"
-                        ? "Enter set scores (first player's games first)"
-                        : "Enter set scores (your games first)"}
-                    </Text>
-                    {historicSets.map((s, i) => (
-                      <View key={i} style={styles.setRow}>
-                        <Text style={styles.setLabel}>Set {i + 1}</Text>
-                        <TextInput
-                          accessibilityLabel={`Set ${i + 1} ${
-                            recordingMode === "onBehalf"
-                              ? "first player's"
-                              : "your"
-                          } games`}
-                          style={styles.setInput}
-                          value={s.p1}
-                          onChangeText={(v) => {
-                            const next = [...historicSets];
-                            next[i] = { ...next[i], p1: v };
-                            setHistoricSets(next);
-                          }}
-                          keyboardType="number-pad"
-                          maxLength={2}
-                          placeholder={
-                            recordingMode === "onBehalf" ? "P1" : "You"
-                          }
-                        />
-                        <Text style={styles.setDash}>–</Text>
-                        <TextInput
-                          accessibilityLabel={`Set ${i + 1} opponent games`}
-                          style={styles.setInput}
-                          value={s.p2}
-                          onChangeText={(v) => {
-                            const next = [...historicSets];
-                            next[i] = { ...next[i], p2: v };
-                            setHistoricSets(next);
-                          }}
-                          keyboardType="number-pad"
-                          maxLength={2}
-                          placeholder={
-                            recordingMode === "onBehalf" ? "P2" : "Opp"
-                          }
-                        />
-                        {historicSets.length > 1 && (
-                          <TouchableOpacity
-                            accessibilityRole="button"
-                            accessibilityLabel={`Remove set ${i + 1}`}
-                            onPress={() =>
-                              setHistoricSets(
-                                historicSets.filter((_, j) => j !== i),
-                              )
-                            }
-                          >
-                            <Text style={styles.removeSet}>✕</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    ))}
-                    {historicSets.length < 5 && (
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel="Add another set"
-                        onPress={() =>
-                          setHistoricSets([...historicSets, { p1: "", p2: "" }])
-                        }
-                      >
-                        <Text style={styles.addSet}>+ Add Set</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Cancel match creation"
-                  style={styles.cancelBtn}
-                  onPress={resetCreateModal}
-                >
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    createMode === "historic"
-                      ? "Record past match"
-                      : "Create live match"
-                  }
-                  accessibilityState={{
-                    disabled:
-                      creating ||
-                      (createMode === "historic" &&
-                        recordingMode === "onBehalf" &&
-                        !selectedPlayer1) ||
-                      (opponentMode === "search"
-                        ? !selectedOpponent
-                        : !guestName.trim()),
-                    busy: creating,
-                  }}
-                  style={[
-                    styles.createBtn,
-                    (creating ||
-                      (createMode === "historic" &&
-                        recordingMode === "onBehalf" &&
-                        !selectedPlayer1) ||
-                      (opponentMode === "search"
-                        ? !selectedOpponent
-                        : !guestName.trim())) &&
-                      styles.createBtnDisabled,
-                  ]}
-                  onPress={
-                    createMode === "historic"
-                      ? handleRecordHistoric
-                      : handleCreateMatch
-                  }
-                  disabled={
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel match creation"
+                style={styles.cancelBtn}
+                onPress={resetCreateModal}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={
+                  createMode === "historic"
+                    ? "Record past match"
+                    : "Create live match"
+                }
+                accessibilityState={{
+                  disabled:
                     creating ||
                     (createMode === "historic" &&
                       recordingMode === "onBehalf" &&
                       !selectedPlayer1) ||
                     (opponentMode === "search"
                       ? !selectedOpponent
-                      : !guestName.trim())
-                  }
-                >
-                  {creating ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.createText}>
-                      {createMode === "historic" ? "Record" : "Create"}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+                      : !guestName.trim()),
+                  busy: creating,
+                }}
+                style={[
+                  styles.createBtn,
+                  (creating ||
+                    (createMode === "historic" &&
+                      recordingMode === "onBehalf" &&
+                      !selectedPlayer1) ||
+                    (opponentMode === "search"
+                      ? !selectedOpponent
+                      : !guestName.trim())) &&
+                    styles.createBtnDisabled,
+                ]}
+                onPress={
+                  createMode === "historic"
+                    ? handleRecordHistoric
+                    : handleCreateMatch
+                }
+                disabled={
+                  creating ||
+                  (createMode === "historic" &&
+                    recordingMode === "onBehalf" &&
+                    !selectedPlayer1) ||
+                  (opponentMode === "search"
+                    ? !selectedOpponent
+                    : !guestName.trim())
+                }
+              >
+                {creating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.createText}>
+                    {createMode === "historic" ? "Record" : "Create"}
+                  </Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-        </KeyboardSafeView>
+        </KeyboardAwareBottomSheet>
       </Modal>
     </View>
   );
@@ -1104,10 +1137,9 @@ function ProposeMatchModal({
 
   return (
     <Modal visible transparent animationType="slide">
-      <KeyboardSafeView style={styles.modalKeyboardView}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Propose a Match</Text>
+      <KeyboardAwareBottomSheet style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Propose a Match</Text>
 
             {selectedOpponent ? (
               <>
@@ -1131,9 +1163,18 @@ function ProposeMatchModal({
                     <Text style={styles.changeText}>Change</Text>
                   </TouchableOpacity>
                 </View>
-                <AvailabilityHint
-                  availability={selectedOpponent.availability}
-                />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                  }}
+                >
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+              <AvailabilityHint availability={selectedOpponent.availability} />
 
                 <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                 <TextInput
@@ -1243,7 +1284,7 @@ function ProposeMatchModal({
             </View>
           </View>
         </View>
-      </KeyboardSafeView>
+      </KeyboardAwareBottomSheet>
     </Modal>
   );
 }
@@ -1424,7 +1465,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyBody: { fontSize: 14, color: "#666", textAlign: "center" },
-  modalKeyboardView: { flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

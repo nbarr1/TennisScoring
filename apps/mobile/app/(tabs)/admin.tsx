@@ -453,7 +453,7 @@ export default function AdminScreen() {
 
   return (
     <KeyboardAwareScrollView
-      keyboardViewStyle={styles.container}
+      style={styles.container}
       contentContainerStyle={styles.content}
     >
       <Text style={styles.pageTitle}>Division Admin</Text>

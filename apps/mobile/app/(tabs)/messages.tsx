@@ -20,7 +20,10 @@ import {
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import type { Message, Channel, User } from "@tennis/shared";
-import { KeyboardSafeView } from "../../components/KeyboardSafeView";
+import {
+  KeyboardAwareBottomSheet,
+  KeyboardSafeView,
+} from "../../components/KeyboardSafeView";
 
 function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
   return (
@@ -238,66 +241,61 @@ export default function MessagesScreen() {
       </TouchableOpacity>
 
       <Modal visible={showNewDM} transparent animationType="slide">
-        <KeyboardSafeView style={styles.modalKeyboardView}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>New Direct Message</Text>
-              <View style={styles.searchRow}>
-                <TextInput
-                  style={[styles.input, styles.searchInput]}
-                  value={dmSearch}
-                  onChangeText={handleSearchDM}
-                  placeholder="Search teammates..."
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                />
-                {dmSearching && (
-                  <ActivityIndicator
-                    style={{ marginLeft: 8 }}
-                    color="#1a472a"
-                  />
-                )}
-              </View>
-              {dmCreating && (
-                <ActivityIndicator
-                  color="#1a472a"
-                  style={{ marginVertical: 12 }}
-                />
-              )}
-              <FlatList
-                data={dmResults}
-                keyExtractor={(u) => u.id}
-                style={{ maxHeight: 280 }}
-                keyboardShouldPersistTaps="handled"
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.resultRow}
-                    onPress={() => handleStartDM(item)}
-                  >
-                    <Text style={styles.resultName}>{item.displayName}</Text>
-                    <Text style={styles.resultEmail}>{item.email}</Text>
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  dmSearch.trim().length > 0 && !dmSearching ? (
-                    <Text style={styles.noResults}>No teammates found.</Text>
-                  ) : null
-                }
+        <KeyboardAwareBottomSheet style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>New Direct Message</Text>
+            <View style={styles.searchRow}>
+              <TextInput
+                style={[styles.input, styles.searchInput]}
+                value={dmSearch}
+                onChangeText={handleSearchDM}
+                placeholder="Search teammates..."
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
               />
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => {
-                  setShowNewDM(false);
-                  setDmSearch("");
-                  setDmResults([]);
-                }}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+              {dmSearching && (
+                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
+              )}
             </View>
+            {dmCreating && (
+              <ActivityIndicator
+                color="#1a472a"
+                style={{ marginVertical: 12 }}
+              />
+            )}
+            <FlatList
+              data={dmResults}
+              keyExtractor={(u) => u.id}
+              style={{ maxHeight: 280 }}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.resultRow}
+                  onPress={() => handleStartDM(item)}
+                >
+                  <Text style={styles.resultName}>{item.displayName}</Text>
+                  <Text style={styles.resultEmail}>{item.email}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                dmSearch.trim().length > 0 && !dmSearching ? (
+                  <Text style={styles.noResults}>No teammates found.</Text>
+                ) : null
+              }
+            />
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setShowNewDM(false);
+                setDmSearch("");
+                setDmResults([]);
+              }}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
-        </KeyboardSafeView>
+        </KeyboardAwareBottomSheet>
       </Modal>
     </View>
   );
@@ -408,7 +406,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  modalKeyboardView: { flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

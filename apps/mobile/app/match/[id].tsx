@@ -42,8 +42,8 @@ import {
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import {
+  KeyboardAwareBottomSheet,
   KeyboardAwareScrollView,
-  KeyboardSafeView,
 } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
@@ -853,21 +853,14 @@ export default function MatchScreen() {
 
   useEffect(() => {
     if (!match) return;
-
-    const sendCurrentScoreToWear = () => {
-      const p1Name = match.player1Name ?? "Player 1";
-      const p2Name = match.player2Name ?? "Player 2";
-      void sendScoreToWear(match.liveScore, {
-        status: match.status,
-        player1Name: p1Name,
-        player2Name: p2Name,
-        ...buildWearFeedback(match),
-      });
-    };
-
-    sendCurrentScoreToWear();
-    const subscription = addWearSyncRequestListener(sendCurrentScoreToWear);
-    return () => subscription.remove();
+    const p1Name = match.player1Name ?? "Player 1";
+    const p2Name = match.player2Name ?? "Player 2";
+    void sendScoreToWear(match.liveScore, {
+      status: match.status,
+      player1Name: p1Name,
+      player2Name: p2Name,
+      ...buildWearFeedback(match),
+    });
   }, [match]);
 
   useEffect(() => {
@@ -1640,36 +1633,25 @@ export default function MatchScreen() {
 
       {/* Link Opponent Modal */}
       <Modal visible={showLinkOpponent} transparent animationType="slide">
-        <KeyboardSafeView style={styles.linkModalKeyboardView}>
-          <View style={styles.linkModalOverlay}>
-            <View style={styles.linkModalCard}>
-              <Text style={styles.linkModalTitle}>Link Opponent Account</Text>
-              <Text style={styles.linkModalHint}>
-                Search for your opponent in the division and link them to this
-                match.
-              </Text>
-              <View style={styles.linkSearchRow}>
-                <TextInput
-                  style={styles.linkSearchInput}
-                  value={linkSearch}
-                  onChangeText={handleLinkSearch}
-                  placeholder="Search by name or email..."
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                />
-                {linkSearching && (
-                  <ActivityIndicator
-                    style={{ marginLeft: 8 }}
-                    color="#1a472a"
-                  />
-                )}
-              </View>
-              {linking && (
-                <ActivityIndicator
-                  color="#1a472a"
-                  style={{ marginVertical: 8 }}
-                />
+        <KeyboardAwareBottomSheet style={styles.linkModalOverlay}>
+          <View style={styles.linkModalCard}>
+            <Text style={styles.linkModalTitle}>Link Opponent Account</Text>
+            <Text style={styles.linkModalHint}>
+              Search for your opponent in the division and link them to this
+              match.
+            </Text>
+            <View style={styles.linkSearchRow}>
+              <TextInput
+                style={styles.linkSearchInput}
+                value={linkSearch}
+                onChangeText={handleLinkSearch}
+                placeholder="Search by name or email..."
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+              />
+              {linkSearching && (
+                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
               )}
               <FlatList
                 data={linkResults}
@@ -1694,19 +1676,40 @@ export default function MatchScreen() {
                   ) : null
                 }
               />
-              <TouchableOpacity
-                style={styles.linkCancelBtn}
-                onPress={() => {
-                  setShowLinkOpponent(false);
-                  setLinkSearch("");
-                  setLinkResults([]);
-                }}
-              >
-                <Text style={styles.linkCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            )}
+            <FlatList
+              data={linkResults}
+              keyExtractor={(u) => u.id}
+              style={{ maxHeight: 240 }}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.linkResultRow}
+                  onPress={() => handleLinkOpponent(item)}
+                  disabled={linking}
+                >
+                  <Text style={styles.linkResultName}>{item.displayName}</Text>
+                  <Text style={styles.linkResultEmail}>{item.email}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                linkSearch.trim().length > 0 && !linkSearching ? (
+                  <Text style={styles.linkNoResults}>No players found.</Text>
+                ) : null
+              }
+            />
+            <TouchableOpacity
+              style={styles.linkCancelBtn}
+              onPress={() => {
+                setShowLinkOpponent(false);
+                setLinkSearch("");
+                setLinkResults([]);
+              }}
+            >
+              <Text style={styles.linkCancelText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
-        </KeyboardSafeView>
+        </KeyboardAwareBottomSheet>
       </Modal>
     </ScrollView>
   );
