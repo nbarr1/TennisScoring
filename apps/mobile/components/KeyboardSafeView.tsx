@@ -19,7 +19,7 @@ type KeyboardAwareScrollViewProps = ScrollViewProps & {
 };
 
 const DEFAULT_KEYBOARD_BEHAVIOR: KeyboardAvoidingViewProps["behavior"] =
-  Platform.OS === "ios" ? "padding" : "height";
+  Platform.OS === "ios" ? "padding" : undefined;
 
 export function KeyboardSafeView({
   children,
