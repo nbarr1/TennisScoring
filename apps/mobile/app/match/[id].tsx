@@ -47,6 +47,7 @@ import {
 } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
+  addWearSyncRequestListener,
   sendScoreToWear,
 } from "../../modules/wear-os";
 import type { Match, TipTrigger, User } from "@tennis/shared";
@@ -852,14 +853,21 @@ export default function MatchScreen() {
 
   useEffect(() => {
     if (!match) return;
-    const p1Name = match.player1Name ?? "Player 1";
-    const p2Name = match.player2Name ?? "Player 2";
-    void sendScoreToWear(match.liveScore, {
-      status: match.status,
-      player1Name: p1Name,
-      player2Name: p2Name,
-      ...buildWearFeedback(match),
-    });
+
+    const sendCurrentScoreToWear = () => {
+      const p1Name = match.player1Name ?? "Player 1";
+      const p2Name = match.player2Name ?? "Player 2";
+      void sendScoreToWear(match.liveScore, {
+        status: match.status,
+        player1Name: p1Name,
+        player2Name: p2Name,
+        ...buildWearFeedback(match),
+      });
+    };
+
+    sendCurrentScoreToWear();
+    const subscription = addWearSyncRequestListener(sendCurrentScoreToWear);
+    return () => subscription.remove();
   }, [match]);
 
   useEffect(() => {

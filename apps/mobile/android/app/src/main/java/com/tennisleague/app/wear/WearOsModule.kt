@@ -69,14 +69,23 @@ class WearOsModule(
   }
 
   override fun onMessageReceived(event: MessageEvent) {
-    if (event.path != POINT_PATH) return
-    val command = String(event.data)
-    val payload =
-      if (command == "undo") mapOf("action" to "undo")
-      else mapOf("action" to "point", "player" to command)
+    when (event.path) {
+      POINT_PATH -> {
+        val command = String(event.data)
+        val payload =
+          if (command == "undo") mapOf("action" to "undo")
+          else mapOf("action" to "point", "player" to command)
+        emit("onWearScoreInput", payload)
+      }
+
+      SYNC_REQUEST_PATH -> emit("onWearSyncRequest", null)
+    }
+  }
+
+  private fun emit(eventName: String, payload: Any?) {
     reactContext
       .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-      .emit("onWearScoreInput", payload)
+      .emit(eventName, payload)
   }
 
   private fun registerListener() {
@@ -94,5 +103,6 @@ class WearOsModule(
   companion object {
     private const val SCORE_PATH = "/tennis/score"
     private const val POINT_PATH = "/tennis/point"
+    private const val SYNC_REQUEST_PATH = "/tennis/sync-request"
   }
 }

@@ -47,6 +47,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   override fun onResume() {
     super.onResume()
     Wearable.getMessageClient(this).addListener(this)
+    requestScoreSync()
   }
 
   override fun onPause() {
@@ -246,14 +247,38 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun sendCommand(command: String) {
     if (matchFinished && command != "undo") return
-    Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
-      val client = Wearable.getMessageClient(this)
-      for (node in nodes) {
-        client.sendMessage(node.id, POINT_PATH, command.toByteArray())
+    sendToConnectedNodes(POINT_PATH, command.toByteArray()) { hasNodes ->
+      if (!hasNodes) {
+        feedbackTitle.text = "Phone not found"
+        feedbackBody.text = "Pair this watch and open the live match on your phone."
       }
     }
   }
 
+  private fun requestScoreSync() {
+    sendToConnectedNodes(SYNC_REQUEST_PATH, ByteArray(0)) { hasNodes ->
+      feedbackTitle.text = if (hasNodes) "Sync requested" else "Phone not found"
+      feedbackBody.text =
+        if (hasNodes) "Open the live match on your phone if the score does not appear."
+        else "Install and open Tennis League on your paired phone."
+    }
+  }
+
+  private fun sendToConnectedNodes(path: String, data: ByteArray, onNodesChecked: (Boolean) -> Unit = {}) {
+    Wearable.getNodeClient(this).connectedNodes
+      .addOnSuccessListener { nodes ->
+        onNodesChecked(nodes.isNotEmpty())
+        val client = Wearable.getMessageClient(this)
+        for (node in nodes) {
+          client.sendMessage(node.id, path, data)
+            .addOnFailureListener { error -> Log.e(TAG, "Failed to send $path to ${node.displayName}", error) }
+        }
+      }
+      .addOnFailureListener { error ->
+        Log.e(TAG, "Could not read connected Wear nodes", error)
+        onNodesChecked(false)
+      }
+  }
 
   private fun isScoreButton(keyCode: Int): Boolean {
     return pointCommandForButton(keyCode) != null
@@ -342,6 +367,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     private const val TAG = "TennisWatch"
     private const val SCORE_PATH = "/tennis/score"
     private const val POINT_PATH = "/tennis/point"
+    private const val SYNC_REQUEST_PATH = "/tennis/sync-request"
     private const val DOUBLE_PRESS_MS = 300L
     private val BACKGROUND = Color.rgb(8, 16, 20)
     private val SCOREBOARD = Color.rgb(14, 20, 24)
