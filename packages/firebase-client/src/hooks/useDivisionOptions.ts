@@ -59,7 +59,8 @@ export function useDivisionOptions(
       try {
         const options = await getUserDivisionOptions(userId, currentDivisionId);
         if (!cancelled) setDivisionOptions(options);
-      } catch {
+      } catch (err) {
+        console.error('Failed to load division options:', err);
         if (!cancelled) setDivisionOptions([]);
       }
     }

@@ -59,7 +59,15 @@ function initialLiveScore(): LiveScore {
 }
 
 function deepCloneScore(score: LiveScore): LiveScore {
-  return JSON.parse(JSON.stringify(score));
+  return {
+    ...score,
+    sets: score.sets.map((s) => ({
+      ...s,
+      tiebreak: s.tiebreak ? { ...s.tiebreak } : undefined,
+    })),
+    currentGame: { ...score.currentGame },
+    tiebreakScore: score.tiebreakScore ? { ...score.tiebreakScore } : undefined,
+  };
 }
 
 function isMatchPoint(score: LiveScore, scorer: Player, format: MatchFormat_Config): boolean {

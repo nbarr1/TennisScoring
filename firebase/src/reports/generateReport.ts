@@ -169,7 +169,7 @@ async function createAndStoreReport(matchId: string, match: Match) {
 
   const [signedUrl] = await file.getSignedUrl({
     action: 'read',
-    expires: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
+    expires: Date.now() + 365 * 24 * 60 * 60 * 1000, // 1 year
   });
 
   await getFirestore()

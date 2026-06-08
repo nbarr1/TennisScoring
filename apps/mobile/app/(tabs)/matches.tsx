@@ -238,7 +238,8 @@ export default function MatchesScreen() {
         setPlayer1SearchResults(
           results.filter((u) => u.id !== selectedOpponent?.id),
         );
-      } catch {
+      } catch (err) {
+        console.error('Failed to search player 1:', err);
         setPlayer1SearchResults([]);
       } finally {
         setSearchingPlayer1(false);
@@ -268,7 +269,8 @@ export default function MatchesScreen() {
             ? selectedPlayer1?.id
             : user?.id;
         setSearchResults(results.filter((u) => u.id !== player1Id));
-      } catch {
+      } catch (err) {
+        console.error('Failed to search opponent:', err);
         setSearchResults([]);
       } finally {
         setSearching(false);

@@ -325,7 +325,8 @@ export function useRankings(
           const result = buildRankingsFromMatches(matches, divisionId, firestoreRankings);
           computedRankings = result.rankings;
           countedMatchCount = result.countedMatchCount;
-        } catch {
+        } catch (err) {
+          console.error('Failed to build rankings from matches:', err);
           computedRankings = [];
           countedMatchCount = 0;
         }

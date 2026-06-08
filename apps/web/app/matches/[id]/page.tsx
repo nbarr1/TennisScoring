@@ -153,7 +153,8 @@ export default function MatchPage(): React.JSX.Element {
     setLiveActionLoading(true);
     try {
       await startMatch(id, server, false, match.liveScore);
-    } catch {
+    } catch (err) {
+      console.error('Failed to start live scoring:', err);
       setLiveError('Could not start live scoring. Please try again.');
     } finally {
       setLiveActionLoading(false);
@@ -168,7 +169,8 @@ export default function MatchPage(): React.JSX.Element {
     setLiveActionLoading(true);
     try {
       await scorePoint(id, match, player);
-    } catch {
+    } catch (err) {
+      console.error('Failed to record point:', err);
       setLiveError('Could not record point. Check your connection and retry.');
     } finally {
       setLiveActionLoading(false);
@@ -181,7 +183,8 @@ export default function MatchPage(): React.JSX.Element {
     setLiveActionLoading(true);
     try {
       await undoLastPoint(id, match);
-    } catch {
+    } catch (err) {
+      console.error('Failed to undo point:', err);
       setLiveError('Could not undo point.');
     } finally {
       setLiveActionLoading(false);

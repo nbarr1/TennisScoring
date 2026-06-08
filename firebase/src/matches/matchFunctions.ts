@@ -681,11 +681,20 @@ export async function recalculateRankings(
     ? divisionPlayerIds
     : [...statsMap.keys()];
 
+  // Optimization: Use a cache to avoid redundant Firestore reads for user documents
+  const userCache = new Map<string, FirebaseFirestore.DocumentSnapshot>();
+  rosterUserSnaps.forEach((s) => userCache.set(s.id, s));
+
   const userSnaps = await Promise.all(
-    playerIds.map((id) => db.collection('users').doc(id).get()),
+    playerIds.map(async (id) => {
+      const cached = userCache.get(id);
+      if (cached) return cached;
+      return db.collection('users').doc(id).get();
+    }),
   );
+
   const displayNames = new Map(
-    userSnaps.map((s) => [s.id, s.data()?.displayName ?? s.id]),
+    userSnaps.map((s) => [s.id, (s.data()?.displayName ?? s.id).trim()]),
   );
 
   const activeSeasonId = typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()

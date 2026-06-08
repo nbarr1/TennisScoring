@@ -426,6 +426,8 @@ export default function MatchScreen() {
     setScoring(true);
     try {
       await undoLastPoint(id, match);
+    } catch (err) {
+      console.error('Failed to undo last point:', err);
     } finally {
       setScoring(false);
     }
@@ -464,6 +466,8 @@ export default function MatchScreen() {
           `${result.matchWinner === 'player1' ? p1 : p2} wins!\n\nEither player can now submit the match report.`,
         );
       }
+    } catch (err) {
+      console.error('Failed to score point:', err);
     } finally {
       setScoring(false);
     }
@@ -695,7 +699,8 @@ export default function MatchScreen() {
     try {
       const results = await searchDivisionPlayers(divisionId, text);
       setLinkResults(results.filter((u) => u.id !== user?.id));
-    } catch {
+    } catch (err) {
+      console.error('Failed to search division players:', err);
       setLinkResults([]);
     } finally {
       setLinkSearching(false);
@@ -719,7 +724,8 @@ export default function MatchScreen() {
         'Opponent Linked!',
         `${opponent.displayName ?? 'Player'} has been added to this match. Rankings will update after the next match is completed.`,
       );
-    } catch {
+    } catch (err) {
+      console.error('Failed to link opponent:', err);
       Alert.alert('Error', 'Could not link opponent. Please try again.');
     } finally {
       setLinking(false);
