@@ -266,7 +266,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun sendToConnectedNodes(path: String, data: ByteArray, onNodesChecked: (Boolean) -> Unit = {}) {
     Wearable.getNodeClient(this).connectedNodes
-      .addOnSuccessListener { nodes ->
+      .addOnSuccessListener(this) { nodes ->
         onNodesChecked(nodes.isNotEmpty())
         val client = Wearable.getMessageClient(this)
         for (node in nodes) {
@@ -274,7 +274,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
             .addOnFailureListener { error -> Log.e(TAG, "Failed to send $path to ${node.displayName}", error) }
         }
       }
-      .addOnFailureListener { error ->
+      .addOnFailureListener(this) { error ->
         Log.e(TAG, "Could not read connected Wear nodes", error)
         onNodesChecked(false)
       }
