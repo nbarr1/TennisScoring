@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import {
@@ -125,6 +125,7 @@ export default function MatchPage(): React.JSX.Element {
     const message = match.status === 'completed'
       ? 'Deleting a completed match will not reverse its effect on rankings. Continue?'
       : 'This match and all its data will be permanently deleted.';
+    setDeleteConfirmText('');
     setConfirmAction({ type: 'delete', message });
   }
 
@@ -141,7 +142,15 @@ export default function MatchPage(): React.JSX.Element {
     } else {
       if (deleteConfirmText !== 'DELETE') return;
       await withLoading(() => deleteMatch(id));
+      setDeleteConfirmText('');
       router.push('/matches');
+    }
+    setConfirmAction(null);
+  }
+
+  function handleDismissConfirmAction() {
+    if (confirmAction?.type === 'delete') {
+      setDeleteConfirmText('');
     }
     setConfirmAction(null);
   }
@@ -200,7 +209,6 @@ export default function MatchPage(): React.JSX.Element {
   const p1Last = lastName(p1Name);
   const p2Last = lastName(p2Name);
   const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
-  const showSet3 = visibleSets.length >= 3;
   const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
   const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
   const blockScoring = liveActionLoading || tapLock || match.status !== 'in_progress';
@@ -470,11 +478,23 @@ export default function MatchPage(): React.JSX.Element {
             >
               <h3 id="confirm-action-title" style={styles.modalTitle}>{confirmTitle}</h3>
               <p style={styles.modalBody}>{confirmBody}</p>
+              {confirmAction.type === 'delete' && (
+                <label style={styles.confirmInputLabel}>
+                  Type DELETE to confirm
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(event) => setDeleteConfirmText(event.target.value)}
+                    style={styles.confirmInput}
+                    disabled={actionLoading}
+                  />
+                </label>
+              )}
               <div style={styles.modalBtns}>
                 <button
                   type="button"
                   style={styles.modalCancel}
-                  onClick={() => setConfirmAction(null)}
+                  onClick={handleDismissConfirmAction}
                   disabled={actionLoading}
                 >
                   Keep Match
@@ -590,6 +610,8 @@ const styles: Record<string, React.CSSProperties> = {
   modal: { background: '#fff', borderRadius: 16, padding: 32, maxWidth: 380, width: '90%' },
   modalTitle: { fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 },
   modalBody: { fontSize: 14, color: '#555', marginBottom: 24, lineHeight: 1.5 },
+  confirmInputLabel: { display: 'flex', flexDirection: 'column' as const, gap: 8, color: '#555', fontSize: 13, fontWeight: 700, marginBottom: 18 },
+  confirmInput: { border: '1px solid #d8d8d8', borderRadius: 8, padding: '10px 12px', fontSize: 15 },
   modalBtns: { display: 'flex', gap: 12, justifyContent: 'flex-end' },
   modalCancel: { background: '#f0f0f0', color: '#333', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
   modalConfirm: { background: '#c0392b', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 14, cursor: 'pointer' },

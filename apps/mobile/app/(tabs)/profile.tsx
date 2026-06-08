@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   TextInput,
   Switch,
-  ScrollView,
   Alert,
 } from "react-native";
 import { signOut } from "firebase/auth";
@@ -29,6 +28,7 @@ import {
   type AvailabilitySlot,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
+import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
@@ -147,7 +147,10 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAwareScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
           {(profile.displayName ||
@@ -413,7 +416,7 @@ export default function ProfileScreen() {
           <Text style={styles.signOutBtnText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 
