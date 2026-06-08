@@ -39,3 +39,13 @@ export function addWearScoreInputListener(
     }
   );
 }
+
+export function addWearSyncRequestListener(
+  handler: () => void,
+): WearSubscription {
+  return (
+    emitter?.addListener('onWearSyncRequest', handler) ?? {
+      remove: () => undefined,
+    }
+  );
+}
