@@ -148,7 +148,7 @@ export default function ProfileScreen() {
 
   return (
     <KeyboardAwareScrollView
-      style={styles.container}
+      keyboardViewStyle={styles.container}
       contentContainerStyle={styles.content}
     >
       <View style={styles.avatar}>
