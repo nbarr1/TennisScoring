@@ -11,17 +11,13 @@
       "resizeMode": "contain",
       "backgroundColor": "#1a472a"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.tennisleague.app",
       "buildNumber": "1",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "remote-notification"
-        ]
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -30,7 +26,8 @@
         "backgroundColor": "#1a472a"
       },
       "package": "com.tennisleague.app",
-      "versionCode": 1
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-router",

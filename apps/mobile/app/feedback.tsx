@@ -2,9 +2,7 @@ import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,6 +21,7 @@ import {
   useAuthUser,
   useUserProfile,
 } from "@tennis/firebase-client";
+import { KeyboardAwareScrollView } from "../components/KeyboardSafeView";
 
 export default function FeedbackScreen() {
   const router = useRouter();
@@ -96,74 +95,70 @@ export default function FeedbackScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardView}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <KeyboardAwareScrollView
+      keyboardViewStyle={styles.keyboardView}
+      style={styles.container}
+      contentContainerStyle={styles.content}
     >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
+      <View style={styles.header}>
+        <Text style={styles.title}>Provide feedback</Text>
+        <Text style={styles.subtitle}>
+          Tell us what is working, what is confusing, or what you would like to
+          see next.
+        </Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Category</Text>
+        <TextInput
+          accessibilityLabel="Feedback category"
+          style={styles.input}
+          value={category}
+          onChangeText={setCategory}
+          placeholder="Bug, feature request, scoring, profile…"
+          autoCapitalize="sentences"
+          returnKeyType="next"
+        />
+
+        <Text style={styles.label}>Message</Text>
+        <TextInput
+          accessibilityLabel="Feedback message"
+          style={[styles.input, styles.messageInput]}
+          value={message}
+          onChangeText={setMessage}
+          placeholder="Share as much detail as you can."
+          multiline
+          textAlignVertical="top"
+        />
+      </View>
+
+      <View style={styles.contextCard}>
+        <Text style={styles.contextTitle}>Included automatically</Text>
+        <Text style={styles.contextText}>Source: mobile</Text>
+        <Text style={styles.contextText}>Platform: {Platform.OS}</Text>
+        {appVersion ? (
+          <Text style={styles.contextText}>App version: {appVersion}</Text>
+        ) : null}
+        <Text style={styles.contextText}>
+          Screen: {params.from ?? pathname}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Send feedback"
+        accessibilityState={{ disabled: submitting, busy: submitting }}
+        style={[styles.submitBtn, submitting && styles.btnDisabled]}
+        onPress={handleSubmit}
+        disabled={submitting}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Provide feedback</Text>
-          <Text style={styles.subtitle}>
-            Tell us what is working, what is confusing, or what you would like
-            to see next.
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Category</Text>
-          <TextInput
-            accessibilityLabel="Feedback category"
-            style={styles.input}
-            value={category}
-            onChangeText={setCategory}
-            placeholder="Bug, feature request, scoring, profile…"
-            autoCapitalize="sentences"
-            returnKeyType="next"
-          />
-
-          <Text style={styles.label}>Message</Text>
-          <TextInput
-            accessibilityLabel="Feedback message"
-            style={[styles.input, styles.messageInput]}
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Share as much detail as you can."
-            multiline
-            textAlignVertical="top"
-          />
-        </View>
-
-        <View style={styles.contextCard}>
-          <Text style={styles.contextTitle}>Included automatically</Text>
-          <Text style={styles.contextText}>Source: mobile</Text>
-          <Text style={styles.contextText}>Platform: {Platform.OS}</Text>
-          {appVersion ? (
-            <Text style={styles.contextText}>App version: {appVersion}</Text>
-          ) : null}
-          <Text style={styles.contextText}>
-            Screen: {params.from ?? pathname}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Send feedback"
-          accessibilityState={{ disabled: submitting, busy: submitting }}
-          style={[styles.submitBtn, submitting && styles.btnDisabled]}
-          onPress={handleSubmit}
-          disabled={submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.submitBtnText}>Send Feedback</Text>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        {submitting ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.submitBtnText}>Send Feedback</Text>
+        )}
+      </TouchableOpacity>
+    </KeyboardAwareScrollView>
   );
 }
 
