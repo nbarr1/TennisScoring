@@ -616,6 +616,12 @@ export default function MatchesScreen() {
                         styles.modeBtnText,
                         recordingMode === "self" && styles.modeBtnTextActive,
                       ]}
+                      onPress={() => {
+                        setRecordingMode("self");
+                        setSelectedPlayer1(null);
+                        setPlayer1SearchText("");
+                        setPlayer1SearchResults([]);
+                      }}
                     >
                       My Match
                     </Text>
@@ -645,11 +651,26 @@ export default function MatchesScreen() {
                         recordingMode === "onBehalf" &&
                           styles.modeBtnTextActive,
                       ]}
+                      onPress={() => {
+                        setRecordingMode("onBehalf");
+                        setOpponentMode("search");
+                        setGuestName("");
+                        setSelectedOpponent(null);
+                        setSearchText("");
+                        setSearchResults([]);
+                      }}
                     >
-                      Any Two
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                      <Text
+                        style={[
+                          styles.modeBtnText,
+                          recordingMode === "onBehalf" &&
+                            styles.modeBtnTextActive,
+                        ]}
+                      >
+                        Any Two
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
                 {recordingMode === "onBehalf" &&
                   (selectedPlayer1 ? (
@@ -726,10 +747,17 @@ export default function MatchesScreen() {
                             No players found.
                           </Text>
                         )}
-                    </>
-                  ))}
-              </>
-            )}
+                        {player1SearchText.trim().length > 0 &&
+                          !searchingPlayer1 &&
+                          player1SearchResults.length === 0 && (
+                            <Text style={styles.noResults}>
+                              No players found.
+                            </Text>
+                          )}
+                      </>
+                    ))}
+                </>
+              )}
 
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
@@ -777,7 +805,7 @@ export default function MatchesScreen() {
                       opponentMode === "guest" && styles.modeBtnTextActive,
                     ]}
                   >
-                    Guest / No Account
+                    Search Player
                   </Text>
                 </TouchableOpacity>
               )}
@@ -867,13 +895,7 @@ export default function MatchesScreen() {
                     )}
                   />
                 )}
-                {searchText.trim().length > 0 &&
-                  !searching &&
-                  searchResults.length === 0 && (
-                    <Text style={styles.noResults}>No players found.</Text>
-                  )}
-              </>
-            )}
+              </View>
 
             {/* Historic set-score entry */}
             {createMode === "historic" &&
@@ -925,17 +947,28 @@ export default function MatchesScreen() {
                           recordingMode === "onBehalf" ? "P2" : "Opp"
                         }
                       />
-                      {historicSets.length > 1 && (
+                    )}
+                  </View>
+                  {searchResults.length > 0 && (
+                    <FlatList
+                      data={searchResults}
+                      keyExtractor={(u) => u.id}
+                      style={styles.resultsList}
+                      keyboardShouldPersistTaps="handled"
+                      renderItem={({ item }) => (
                         <TouchableOpacity
                           accessibilityRole="button"
-                          accessibilityLabel={`Remove set ${i + 1}`}
-                          onPress={() =>
-                            setHistoricSets(
-                              historicSets.filter((_, j) => j !== i),
-                            )
-                          }
+                          accessibilityLabel={`Select ${item.displayName}`}
+                          style={styles.resultRow}
+                          onPress={() => {
+                            setSelectedOpponent(item);
+                            setSearchResults([]);
+                          }}
                         >
-                          <Text style={styles.removeSet}>✕</Text>
+                          <Text style={styles.resultName}>
+                            {item.displayName}
+                          </Text>
+                          <Text style={styles.resultEmail}>{item.email}</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -951,7 +984,12 @@ export default function MatchesScreen() {
                       <Text style={styles.addSet}>+ Add Set</Text>
                     </TouchableOpacity>
                   )}
-                </View>
+                  {searchText.trim().length > 0 &&
+                    !searching &&
+                    searchResults.length === 0 && (
+                      <Text style={styles.noResults}>No players found.</Text>
+                    )}
+                </>
               )}
 
             <View style={styles.modalActions}>
@@ -1103,16 +1141,27 @@ function ProposeMatchModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Propose a Match</Text>
 
-          {selectedOpponent ? (
-            <>
-              <View style={styles.selectedPlayer}>
-                <View style={styles.playerChip}>
-                  <Text style={styles.playerChipName}>
-                    {selectedOpponent.displayName}
-                  </Text>
-                  <Text style={styles.playerChipEmail}>
-                    {selectedOpponent.email}
-                  </Text>
+            {selectedOpponent ? (
+              <>
+                <View style={styles.selectedPlayer}>
+                  <View style={styles.playerChip}>
+                    <Text style={styles.playerChipName}>
+                      {selectedOpponent.displayName}
+                    </Text>
+                    <Text style={styles.playerChipEmail}>
+                      {selectedOpponent.email}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Change selected opponent"
+                    onPress={() => {
+                      setSelectedOpponent(null);
+                      setSearchText("");
+                    }}
+                  >
+                    <Text style={styles.changeText}>Change</Text>
+                  </TouchableOpacity>
                 </View>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -1127,109 +1176,112 @@ function ProposeMatchModal({
               </View>
               <AvailabilityHint availability={selectedOpponent.availability} />
 
-              <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
-              <TextInput
-                accessibilityLabel="Match date"
-                style={styles.input}
-                value={date}
-                onChangeText={setDate}
-                placeholder="2026-05-10"
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={10}
-              />
-              <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
-              <TextInput
-                accessibilityLabel="Match time"
-                style={styles.input}
-                value={time}
-                onChangeText={setTime}
-                placeholder="18:30"
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={5}
-              />
-            </>
-          ) : (
-            <>
-              <Text style={styles.modalLabel}>Search for opponent</Text>
-              <View style={styles.searchRow}>
+                <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                 <TextInput
-                  accessibilityLabel="Search for opponent"
-                  style={[styles.input, styles.searchInput]}
-                  value={searchText}
-                  onChangeText={setSearchText}
-                  placeholder="Name or email..."
+                  accessibilityLabel="Match date"
+                  style={styles.input}
+                  value={date}
+                  onChangeText={setDate}
+                  placeholder="2026-05-10"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  maxLength={10}
                 />
-                {searching && (
-                  <ActivityIndicator
-                    style={styles.searchSpinner}
-                    color="#1a472a"
+                <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
+                <TextInput
+                  accessibilityLabel="Match time"
+                  style={styles.input}
+                  value={time}
+                  onChangeText={setTime}
+                  placeholder="18:30"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={5}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalLabel}>Search for opponent</Text>
+                <View style={styles.searchRow}>
+                  <TextInput
+                    accessibilityLabel="Search for opponent"
+                    style={[styles.input, styles.searchInput]}
+                    value={searchText}
+                    onChangeText={setSearchText}
+                    placeholder="Name or email..."
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {searching && (
+                    <ActivityIndicator
+                      style={styles.searchSpinner}
+                      color="#1a472a"
+                    />
+                  )}
+                </View>
+                {searchResults.length > 0 && (
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(u) => u.id}
+                    style={styles.resultsList}
+                    keyboardShouldPersistTaps="handled"
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${item.displayName}`}
+                        style={styles.resultRow}
+                        onPress={() => {
+                          setSelectedOpponent(item);
+                          setSearchResults([]);
+                        }}
+                      >
+                        <Text style={styles.resultName}>
+                          {item.displayName}
+                        </Text>
+                        <Text style={styles.resultEmail}>{item.email}</Text>
+                      </TouchableOpacity>
+                    )}
                   />
                 )}
-              </View>
-              {searchResults.length > 0 && (
-                <FlatList
-                  data={searchResults}
-                  keyExtractor={(u) => u.id}
-                  style={styles.resultsList}
-                  keyboardShouldPersistTaps="handled"
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Select ${item.displayName}`}
-                      style={styles.resultRow}
-                      onPress={() => {
-                        setSelectedOpponent(item);
-                        setSearchResults([]);
-                      }}
-                    >
-                      <Text style={styles.resultName}>{item.displayName}</Text>
-                      <Text style={styles.resultEmail}>{item.email}</Text>
-                    </TouchableOpacity>
+                {searchText.trim().length > 0 &&
+                  !searching &&
+                  searchResults.length === 0 && (
+                    <Text style={styles.noResults}>No players found.</Text>
                   )}
-                />
-              )}
-              {searchText.trim().length > 0 &&
-                !searching &&
-                searchResults.length === 0 && (
-                  <Text style={styles.noResults}>No players found.</Text>
-                )}
-            </>
-          )}
+              </>
+            )}
 
-          <View style={styles.modalActions}>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Cancel match proposal"
-              style={styles.cancelBtn}
-              onPress={onClose}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Send match proposal"
-              accessibilityState={{
-                disabled: submitting || !selectedOpponent || !date || !time,
-                busy: submitting,
-              }}
-              style={[
-                styles.createBtn,
-                (submitting || !selectedOpponent || !date || !time) &&
-                  styles.createBtnDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={submitting || !selectedOpponent || !date || !time}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.createText}>Send Proposal</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel match proposal"
+                style={styles.cancelBtn}
+                onPress={onClose}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Send match proposal"
+                accessibilityState={{
+                  disabled: submitting || !selectedOpponent || !date || !time,
+                  busy: submitting,
+                }}
+                style={[
+                  styles.createBtn,
+                  (submitting || !selectedOpponent || !date || !time) &&
+                    styles.createBtnDisabled,
+                ]}
+                onPress={handleSubmit}
+                disabled={submitting || !selectedOpponent || !date || !time}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.createText}>Send Proposal</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAwareBottomSheet>

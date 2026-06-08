@@ -47,6 +47,7 @@ import {
 } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
+  addWearSyncRequestListener,
   sendScoreToWear,
 } from "../../modules/wear-os";
 import type { Match, TipTrigger, User } from "@tennis/shared";
@@ -1652,11 +1653,28 @@ export default function MatchScreen() {
               {linkSearching && (
                 <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
               )}
-            </View>
-            {linking && (
-              <ActivityIndicator
-                color="#1a472a"
-                style={{ marginVertical: 8 }}
+              <FlatList
+                data={linkResults}
+                keyExtractor={(u) => u.id}
+                style={{ maxHeight: 240 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.linkResultRow}
+                    onPress={() => handleLinkOpponent(item)}
+                    disabled={linking}
+                  >
+                    <Text style={styles.linkResultName}>
+                      {item.displayName}
+                    </Text>
+                    <Text style={styles.linkResultEmail}>{item.email}</Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  linkSearch.trim().length > 0 && !linkSearching ? (
+                    <Text style={styles.linkNoResults}>No players found.</Text>
+                  ) : null
+                }
               />
             )}
             <FlatList
@@ -2476,6 +2494,7 @@ const styles = StyleSheet.create({
   tipBody: { color: "#1a472a", fontSize: 13 },
 
   // Link opponent modal
+  linkModalKeyboardView: { flex: 1 },
   linkModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
