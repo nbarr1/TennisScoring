@@ -662,16 +662,9 @@ export default function MatchesScreen() {
                         setSearchResults([]);
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.modeBtnText,
-                          recordingMode === "onBehalf" &&
-                            styles.modeBtnTextActive,
-                        ]}
-                      >
-                        Any Two
-                      </Text>
-                    </TouchableOpacity>
+                      Any Two
+                    </Text>
+                  </TouchableOpacity>
                   </View>
 
                 {recordingMode === "onBehalf" &&
@@ -749,15 +742,8 @@ export default function MatchesScreen() {
                             No players found.
                           </Text>
                         )}
-                        {player1SearchText.trim().length > 0 &&
-                          !searchingPlayer1 &&
-                          player1SearchResults.length === 0 && (
-                            <Text style={styles.noResults}>
-                              No players found.
-                            </Text>
-                          )}
-                      </>
-                    ))}
+                    </>
+                  ))}
                 </>
               )}
 
@@ -897,7 +883,13 @@ export default function MatchesScreen() {
                     )}
                   />
                 )}
-              </View>
+                {searchText.trim().length > 0 &&
+                  !searching &&
+                  searchResults.length === 0 && (
+                    <Text style={styles.noResults}>No players found.</Text>
+                  )}
+              </>
+            )}
 
             {/* Historic set-score entry */}
             {createMode === "historic" &&
@@ -949,30 +941,6 @@ export default function MatchesScreen() {
                           recordingMode === "onBehalf" ? "P2" : "Opp"
                         }
                       />
-                    )}
-                  </View>
-                  {searchResults.length > 0 && (
-                    <FlatList
-                      data={searchResults}
-                      keyExtractor={(u) => u.id}
-                      style={styles.resultsList}
-                      keyboardShouldPersistTaps="handled"
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={`Select ${item.displayName}`}
-                          style={styles.resultRow}
-                          onPress={() => {
-                            setSelectedOpponent(item);
-                            setSearchResults([]);
-                          }}
-                        >
-                          <Text style={styles.resultName}>
-                            {item.displayName}
-                          </Text>
-                          <Text style={styles.resultEmail}>{item.email}</Text>
-                        </TouchableOpacity>
-                      )}
                     </View>
                   ))}
                   {historicSets.length < 5 && (
@@ -986,12 +954,7 @@ export default function MatchesScreen() {
                       <Text style={styles.addSet}>+ Add Set</Text>
                     </TouchableOpacity>
                   )}
-                  {searchText.trim().length > 0 &&
-                    !searching &&
-                    searchResults.length === 0 && (
-                      <Text style={styles.noResults}>No players found.</Text>
-                    )}
-                </>
+                </View>
               )}
 
             <View style={styles.modalActions}>
@@ -1165,18 +1128,7 @@ function ProposeMatchModal({
                     <Text style={styles.changeText}>Change</Text>
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Change selected opponent"
-                  onPress={() => {
-                    setSelectedOpponent(null);
-                    setSearchText("");
-                  }}
-                >
-                  <Text style={styles.changeText}>Change</Text>
-                </TouchableOpacity>
-              </View>
-              <AvailabilityHint availability={selectedOpponent.availability} />
+                <AvailabilityHint availability={selectedOpponent.availability} />
 
                 <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                 <TextInput
@@ -1285,7 +1237,6 @@ function ProposeMatchModal({
               </TouchableOpacity>
             </View>
           </View>
-        </View>
       </KeyboardAwareBottomSheet>
     </Modal>
   );

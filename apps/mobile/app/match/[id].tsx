@@ -47,7 +47,6 @@ import {
 } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
-  addWearSyncRequestListener,
   sendScoreToWear,
 } from "../../modules/wear-os";
 import type { Match, TipTrigger, User } from "@tennis/shared";
@@ -1682,28 +1681,7 @@ export default function MatchScreen() {
                   ) : null
                 }
               />
-            )}
-            <FlatList
-              data={linkResults}
-              keyExtractor={(u) => u.id}
-              style={{ maxHeight: 240 }}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.linkResultRow}
-                  onPress={() => handleLinkOpponent(item)}
-                  disabled={linking}
-                >
-                  <Text style={styles.linkResultName}>{item.displayName}</Text>
-                  <Text style={styles.linkResultEmail}>{item.email}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                linkSearch.trim().length > 0 && !linkSearching ? (
-                  <Text style={styles.linkNoResults}>No players found.</Text>
-                ) : null
-              }
-            />
+            </View>
             <TouchableOpacity
               style={styles.linkCancelBtn}
               onPress={() => {
