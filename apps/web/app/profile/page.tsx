@@ -6,7 +6,7 @@ import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useEffect, useState } from "react";
 import {
   useAuthUser,
-  useUserProfile,
+  usePrivateUser,
   updateUserProfile,
   useDivisionOptions,
 } from "@tennis/firebase-client";
@@ -25,7 +25,7 @@ const NOTIFICATION_OPT_IN_KEY = "tennis-notifications-opt-in";
 
 export default function ProfilePage(): React.JSX.Element {
   const { firebaseUser, loading: authLoading } = useAuthUser();
-  const { profile, loading: profileLoading } = useUserProfile(
+  const { user, loading: userLoading } = usePrivateUser(
     firebaseUser?.uid ?? null,
   );
 
@@ -45,23 +45,23 @@ export default function ProfilePage(): React.JSX.Element {
   const [error, setError] = useState("");
   const divisionOptions = useDivisionOptions(
     firebaseUser?.uid,
-    profile?.divisionId,
+    user?.divisionId,
   );
   const [selectedDivisionId, setSelectedDivisionId] = useState("");
 
   useEffect(() => {
-    if (!profile) return;
-    setDisplayName(profile.displayName ?? "");
-    setEmail(profile.email ?? "");
-    setPhone(profile.phone ?? "");
-    setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
-    setAllowSMS(profile.contactPreferences?.allowSMS ?? true);
-    setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
-    setTipsEnabled(profile.tipsEnabled ?? true);
-    setAvailabilitySlots(profile.availability?.slots ?? []);
-    setAvailabilityNote(profile.availability?.note ?? "");
-    setSelectedDivisionId(profile.divisionId ?? "");
-  }, [profile]);
+    if (!user) return;
+    setDisplayName(user.displayName ?? "");
+    setEmail(user.email ?? "");
+    setPhone(user.phone ?? "");
+    setAllowEmail(user.contactPreferences?.allowEmail ?? true);
+    setAllowSMS(user.contactPreferences?.allowSMS ?? true);
+    setAllowInApp(user.contactPreferences?.allowInApp ?? true);
+    setTipsEnabled(user.tipsEnabled ?? true);
+    setAvailabilitySlots(user.availability?.slots ?? []);
+    setAvailabilityNote(user.availability?.note ?? "");
+    setSelectedDivisionId(user.divisionId ?? "");
+  }, [user]);
 
   function addSlot() {
     setAvailabilitySlots(addAvailabilitySlot);
@@ -92,7 +92,7 @@ export default function ProfilePage(): React.JSX.Element {
   }
 
   async function handleSave() {
-    if (!firebaseUser || !profile) return;
+    if (!firebaseUser || !user) return;
     const validation = validateAvailabilitySlots(availabilitySlots);
     if (!validation.valid) {
       setError(validation.message);
@@ -124,11 +124,11 @@ export default function ProfilePage(): React.JSX.Element {
     }
   }
 
-  if (authLoading || profileLoading) {
+  if (authLoading || userLoading) {
     return <div style={styles.placeholder}>Loading profile…</div>;
   }
 
-  if (!profile) {
+  if (!user) {
     return (
       <div style={styles.placeholder}>
         No profile found. Try signing out and back in.

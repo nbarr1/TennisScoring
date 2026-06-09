@@ -12,11 +12,11 @@ import {
   getOrCreateDM,
   searchDivisionPlayers,
   useUserProfile,
-  userDoc,
+  profileDoc,
   deleteDirectChannel,
 } from "@tennis/firebase-client";
 import { getDoc } from "firebase/firestore";
-import type { Channel, Message, User } from "@tennis/shared";
+import type { Channel, Message, User, PublicProfile } from "@tennis/shared";
 
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
@@ -35,9 +35,9 @@ export default function MessagesPage(): React.JSX.Element {
     let cancelled = false;
     void Promise.all(
       ids.map(async (id) => {
-        const snap = await getDoc(userDoc(id));
+        const snap = await getDoc(profileDoc(id));
         const data = snap.data();
-        return [id, data?.displayName || data?.email || id] as const;
+        return [id, data?.displayName || id] as const;
       }),
     ).then((entries) => {
       if (!cancelled) {
@@ -153,7 +153,7 @@ function NewDmModal({
   onCreated: (channel: Channel) => void;
 }) {
   const [searchText, setSearchText] = useState("");
-  const [results, setResults] = useState<User[]>([]);
+  const [results, setResults] = useState<PublicProfile[]>([]);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -177,7 +177,7 @@ function NewDmModal({
     return () => clearTimeout(t);
   }, [searchText, divisionId, currentUserId]);
 
-  async function handlePick(user: User) {
+  async function handlePick(user: PublicProfile) {
     setCreating(true);
     setError("");
     try {
@@ -216,7 +216,7 @@ function NewDmModal({
           autoFocus
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder="Search by name or email…"
+          placeholder="Search by name…"
         />
         {searching && <div style={styles.muted}>Searching…</div>}
         {results.length > 0 && (
@@ -231,7 +231,6 @@ function NewDmModal({
                 disabled={creating}
               >
                 <div style={styles.resultName}>{u.displayName}</div>
-                <div style={styles.resultEmail}>{u.email}</div>
               </button>
             ))}
           </div>

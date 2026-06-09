@@ -1,10 +1,10 @@
 import { create } from 'zustand';
-import type { User } from '@tennis/shared';
+import type { User, PublicProfile } from '@tennis/shared';
 
 interface AppStore {
-  user: User | null;
+  user: PublicProfile | User | null;
   divisionId: string | null;
-  setUser: (user: User | null) => void;
+  setUser: (user: PublicProfile | User | null) => void;
   setDivisionId: (id: string | null) => void;
 }
 

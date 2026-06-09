@@ -13,7 +13,7 @@ import { useRouter } from "expo-router";
 import {
   auth,
   useAuthUser,
-  useUserProfile,
+  usePrivateUser,
   updateUserProfile,
   useDivisionOptions,
 } from "@tennis/firebase-client";
@@ -32,7 +32,7 @@ import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
-  const { profile, loading } = useUserProfile(firebaseUser?.uid ?? null);
+  const { user, loading } = usePrivateUser(firebaseUser?.uid ?? null);
   const { setUser } = useAppStore();
   const router = useRouter();
 
@@ -50,24 +50,24 @@ export default function ProfileScreen() {
   const [availabilityNote, setAvailabilityNote] = useState("");
   const divisionOptions = useDivisionOptions(
     firebaseUser?.uid,
-    profile?.divisionId,
+    user?.divisionId,
   );
   const [selectedDivisionId, setSelectedDivisionId] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
-    setDisplayName(profile.displayName ?? "");
-    setEmail(profile.email ?? "");
-    setPhone(profile.phone ?? "");
-    setAllowEmail(profile.contactPreferences?.allowEmail ?? true);
-    setAllowSMS(profile.contactPreferences?.allowSMS ?? false);
-    setAllowInApp(profile.contactPreferences?.allowInApp ?? true);
-    setTipsEnabled(profile.tipsEnabled ?? true);
-    setAvailabilitySlots(profile.availability?.slots ?? []);
-    setAvailabilityNote(profile.availability?.note ?? "");
-    setSelectedDivisionId(profile.divisionId ?? "");
-  }, [profile]);
+    if (!user) return;
+    setDisplayName(user.displayName ?? "");
+    setEmail(user.email ?? "");
+    setPhone(user.phone ?? "");
+    setAllowEmail(user.contactPreferences?.allowEmail ?? true);
+    setAllowSMS(user.contactPreferences?.allowSMS ?? false);
+    setAllowInApp(user.contactPreferences?.allowInApp ?? true);
+    setTipsEnabled(user.tipsEnabled ?? true);
+    setAvailabilitySlots(user.availability?.slots ?? []);
+    setAvailabilityNote(user.availability?.note ?? "");
+    setSelectedDivisionId(user.divisionId ?? "");
+  }, [user]);
 
   function addSlot() {
     setAvailabilitySlots(addAvailabilitySlot);
@@ -138,7 +138,7 @@ export default function ProfileScreen() {
     ]);
   }
 
-  if (loading || !profile) {
+  if (loading || !user) {
     return (
       <View style={styles.center}>
         <Text>Loading profile…</Text>
@@ -153,16 +153,16 @@ export default function ProfileScreen() {
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
-          {(profile.displayName ||
+          {(user.displayName ||
             firebaseUser?.displayName ||
             "?")[0].toUpperCase()}
         </Text>
       </View>
       <Text style={styles.name}>
-        {profile.displayName || firebaseUser?.displayName || "Unknown"}
+        {user.displayName || firebaseUser?.displayName || "Unknown"}
       </Text>
       <Text style={styles.email}>
-        {profile.email || firebaseUser?.email || ""}
+        {user.email || firebaseUser?.email || ""}
       </Text>
 
       <View style={styles.section}>
@@ -199,16 +199,16 @@ export default function ProfileScreen() {
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Display name</Text>
               <Text style={styles.rowValue}>
-                {profile.displayName ?? "Not set"}
+                {user.displayName ?? "Not set"}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Email</Text>
-              <Text style={styles.rowValue}>{profile.email ?? "Not set"}</Text>
+              <Text style={styles.rowValue}>{user.email ?? "Not set"}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Phone</Text>
-              <Text style={styles.rowValue}>{profile.phone ?? "Not set"}</Text>
+              <Text style={styles.rowValue}>{user.phone ?? "Not set"}</Text>
             </View>
           </>
         )}
@@ -262,9 +262,9 @@ export default function ProfileScreen() {
         ) : (
           <Text style={styles.rowValue}>
             {divisionOptions.find(
-              (division) => division.id === profile.divisionId,
+              (division) => division.id === user.divisionId,
             )?.name ??
-              profile.divisionId ??
+              user.divisionId ??
               "No division"}
           </Text>
         )}

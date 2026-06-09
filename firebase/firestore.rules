@@ -12,7 +12,7 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
     }
 
     function isAdmin() {
@@ -60,7 +60,19 @@ service cloud.firestore {
       return isAuth() && request.auth.uid in channelData.participantIds;
     }
 
-    // ---------- Users ----------
+    // ---------- Profiles (Public) ----------
+    match /profiles/{userId} {
+      allow read: if isAuth() && (
+        isUser(userId) ||
+        isAdmin() ||
+        resource.data.divisionId == getUserData().divisionId
+      );
+      // Profiles are primarily managed by Cloud Functions or when updating the main user doc.
+      // Admin can update profiles directly for maintenance.
+      allow write: if isAdmin();
+    }
+
+    // ---------- Users (Private) ----------
     match /users/{userId} {
       function editableUserFields() {
         return [
@@ -78,7 +90,7 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isUser(userId) ||
         isAdmin() ||
-        resource.data.divisionId == getUserData().divisionId
+        isLeader(resource.data.divisionId)
       );
       allow create: if isUser(userId) &&
         request.resource.data.id == request.auth.uid &&

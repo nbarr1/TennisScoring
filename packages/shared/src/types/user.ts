@@ -52,23 +52,41 @@ export interface User {
   inviteStatus?: 'none' | 'invite_sent' | 'registered';
   invitedAt?: number;
   invitedBy?: string;
-  rankingSummary?: {
-    divisionId: string;
-    rank: number;
-    matchesPlayed: number;
-    matchesWon: number;
-    matchesLost: number;
-    setsWon: number;
-    setsLost: number;
-    gamesWon: number;
-    gamesLost: number;
-    gameDifferential: number;
-    updatedAt: number;
-  };
+  rankingSummary?: UserRankingSummary;
   createdAt: number; // Unix ms timestamp
   updatedAt: number;
 }
 
+export interface UserRankingSummary {
+  divisionId: string;
+  rank: number;
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
+  gameDifferential: number;
+  updatedAt: number;
+}
+
+/**
+ * Publicly accessible profile data that can be shared with division members.
+ * Does NOT contain PII like email, phone, or FCM tokens.
+ */
+export interface PublicProfile {
+  id: string;
+  displayName: string;
+  avatarUrl?: string;
+  divisionId?: string;
+  role: UserRole;
+  tutorialDone?: boolean;
+  rankingSummary?: UserRankingSummary;
+  updatedAt: number;
+}
+
+/** @deprecated Use PublicProfile or User (Private) depending on context */
 export interface UserProfile {
   id: string;
   displayName: string;

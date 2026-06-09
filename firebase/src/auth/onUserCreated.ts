@@ -31,12 +31,21 @@ export const onUserCreated = functions.identity.beforeUserCreated(async (event) 
   const user = event.data;
   if (!user) return;
 
-  await db.collection('users').doc(user.uid).set({
-    id: user.uid,
-    displayName: user.displayName ?? user.email?.split('@')[0] ?? 'Player',
-    email: user.email ?? '',
+  const uid = user.uid;
+  const displayName = user.displayName ?? user.email?.split('@')[0] ?? 'Player';
+  const email = user.email ?? '';
+  const avatarUrl = user.photoURL ?? null;
+  const now = FieldValue.serverTimestamp();
+
+  const batch = db.batch();
+
+  // Private user document (PII)
+  batch.set(db.collection('users').doc(uid), {
+    id: uid,
+    displayName,
+    email,
     phone: user.phoneNumber ?? null,
-    avatarUrl: user.photoURL ?? null,
+    avatarUrl,
     contactPreferences: {
       allowEmail: true,
       allowSMS: false,
@@ -48,7 +57,19 @@ export const onUserCreated = functions.identity.beforeUserCreated(async (event) 
     tipsEnabled: true,
     isRegistered: true,
     inviteStatus: 'registered',
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
+    createdAt: now,
+    updatedAt: now,
   });
+
+  // Public profile document (Non-PII)
+  batch.set(db.collection('profiles').doc(uid), {
+    id: uid,
+    displayName,
+    avatarUrl,
+    divisionId: null,
+    role: 'player',
+    updatedAt: now,
+  });
+
+  await batch.commit();
 });

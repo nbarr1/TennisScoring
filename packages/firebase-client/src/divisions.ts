@@ -8,9 +8,9 @@ import {
   type FirestoreError,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, usersCol } from './collections';
+import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, profilesCol, usersCol } from './collections';
 import { functions } from './config';
-import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User } from '@tennis/shared';
+import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User, PublicProfile } from '@tennis/shared';
 
 export function useDivisionLevels(
   divisionId: string | null | undefined,
@@ -308,16 +308,15 @@ export async function getDivision(
 export async function searchDivisionPlayers(
   divisionId: string,
   searchText: string,
-): Promise<User[]> {
-  const q = query(usersCol(), where('divisionId', '==', divisionId));
+): Promise<PublicProfile[]> {
+  const q = query(profilesCol(), where('divisionId', '==', divisionId));
   const snap = await getDocs(q);
   const lower = searchText.toLowerCase().trim();
   return snap.docs
-    .map((d): User => ({ ...d.data(), id: d.id }))
+    .map((d): PublicProfile => ({ ...d.data(), id: d.id }))
     .filter(
       (u) =>
-        u.displayName.toLowerCase().includes(lower) ||
-        u.email.toLowerCase().includes(lower),
+        u.displayName.toLowerCase().includes(lower),
     );
 }
 
