@@ -1,192 +1,158 @@
 # 🎾 TennisScoring
 
-**GE Vernova Tennis League — Version 1.0.1 baseline**
+**Current stable release baseline: `1.0.1`**  
+**Repository status:** stable, releasable, and ready for routine maintenance or feature work.
 
-TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marks the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features.
-
----
-
-## ✅ Current v1 Condition
-
-- **Version marker:** `1.0.1` in the workspace manifests and Expo app metadata.
-- **Repository shape:** monorepo with web, mobile, Firebase Functions, Firebase client utilities, and shared domain logic.
-- **Auth model:** Firebase Authentication email/password on web and mobile. The web app exchanges Firebase ID tokens for an httpOnly `tennis-auth` session cookie through `next-firebase-auth-edge` middleware.
-- **Data model:** Firestore collections for users, divisions, matches, channels/messages, head-to-head data, and division ranking subcollections.
-- **Deploy targets:** Vercel/Next.js for web, EAS/Expo for mobile Android/iOS builds, Firebase CLI/GitHub Actions for targeted Cloud Functions deploys, and Firebase rules/indexes for Firestore/Storage.
-- **Validation status:** shared Jest tests, TypeScript type checks, lint tasks, CI workflow, security review, and UI/UX review are documented in this repository.
+TennisScoring is a pnpm/Turborepo monorepo for GE Vernova Tennis League scoring. It includes a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage rules, shared TypeScript domain packages, and companion Wear OS / Apple Watch code.
 
 ---
 
-## 🌟 Product Capabilities
+## Current Release State
+
+- **Version:** `1.0.1` in the root workspace, web app, mobile app, shared package, and Firebase client package manifests. The Firebase Functions package remains `1.0.0` as an internal deploy package.
+- **Runtime:** Node.js `22` for workspace scripts and Firebase Functions; EAS build profiles pin Node `20.19.2` for Expo cloud builds.
+- **Package manager:** `pnpm@9.15.5`.
+- **Web stack:** Next.js `16.2.6`, React `19.2.6`, Firebase Web SDK, `next-firebase-auth-edge`, and Zustand.
+- **Mobile stack:** Expo `55`, React Native `0.83.1`, React `19.2.0`, Expo Router, Firebase Web SDK, and Zustand.
+- **Backend stack:** Firebase Authentication, Firestore, Storage, FCM, Cloud Functions, `firebase-admin`, `firebase-functions`, and `pdf-lib`.
+- **CI/CD:** GitHub Actions for lint/typecheck, selected tests, Firebase rules smoke tests, CodeQL, EAS Android preview builds, Firebase safety checks, and targeted Firebase Functions deploys.
+
+---
+
+## Product Capabilities
 
 ### League and division management
 
-- Create and join divisions using invite codes.
-- Document Spring/Fall seasons and division levels/flights such as Beginner Singles, Beginner Doubles, Intermediate Singles, and Intermediate Doubles.
-- Add players by email, create placeholder division members, update placeholder/player email records, and merge historical placeholder records into real user accounts.
-- Role-aware admin and division-leader flows for managing divisions and records.
+- Create divisions and join them by invite code.
+- Manage season/level metadata and division memberships.
+- Add invited players by email and handle placeholder player records until users register.
+- Merge placeholder records into registered user accounts.
+- Export division CSV data for records and review.
 
-### Match lifecycle
+### Match lifecycle and scoring
 
-- Propose, accept, decline, cancel, postpone, delete, and start matches.
-- Score live matches with shared tennis scoring logic.
-- Record historic results and leader-entered results.
-- Support guest opponents, later linking guest matches to registered users.
-- Edit completed/pending scores when correction is needed.
-- Submit reports, confirm reports, dispute reports, and resolve disputed reports.
+- Propose, accept, decline, cancel, postpone, delete, start, and complete matches.
+- Score live matches with shared tennis scoring rules.
+- Record historical matches and leader-entered results.
+- Submit, confirm, dispute, and resolve match reports.
+- Support guest opponents and corrections to pending/completed scores.
 
-### Scoring and rankings
+### Rankings and reports
 
-- Shared scoring engine for standard tennis points, deuce/advantage, set completion, tiebreaks, and match completion.
-- Optional advanced stats tracking for aces, winners, opponent errors, and derived serving/receiving totals.
-- Ranking recalculation from completed matches with head-to-head support and denormalized user ranking summaries.
-- Admin CSV export for season-scoped match results and ranking rows so historical records can be preserved outside the app.
-- PDF match report generation from Cloud Functions.
+- Recalculate division rankings from completed match data.
+- Maintain ranking summaries and head-to-head context.
+- Generate PDF match reports through Firebase Functions.
 
-### Communication, feedback, and notifications
+### Communication and feedback
 
-- Division/user channels and direct messaging.
-- Firebase Cloud Messaging support for match proposals, accepted matches, report submissions, disputes, and new messages.
-- Web and mobile feedback forms that call the `submitFeedback` Cloud Function; GitHub issue creation happens only server-side through a Functions secret.
+- Use division/user channels and direct messaging.
+- Send Firebase Cloud Messaging notifications for supported match and messaging events.
+- Submit feedback from web or mobile through the `submitFeedback` Cloud Function. GitHub credentials stay server-side in Firebase Secret Manager.
 
 ### Profiles and onboarding
 
-- Email/password sign in, sign up, and explicit sign out on web and mobile.
-- Division selection/onboarding tutorial gates.
-- Profile editing for display name, phone, avatar URL, contact preferences, weekly availability, and scoring tips preference.
-- Shared profile utility functions for availability validation and profile update payloads.
+- Sign up, sign in, and sign out with Firebase email/password auth.
+- Use tutorial and division onboarding gates.
+- Edit display name, phone, avatar URL, contact preferences, availability, and scoring-tip preference.
 
 ### Platform coverage
 
-- **Web:** Next.js App Router application under `apps/web`.
-- **Mobile:** Expo Router application under `apps/mobile`.
-- **Backend:** Firebase Functions and rules under `firebase`.
-- **Wearables:** Wear OS Kotlin module/app and Apple Watch Swift/module files under `apps/mobile`.
+- **Web:** Next.js App Router under `apps/web/app`.
+- **Mobile:** Expo Router under `apps/mobile/app`.
+- **Backend:** Firebase Functions and Firebase rules under `firebase`.
+- **Shared packages:** `packages/shared` and `packages/firebase-client`.
+- **Wearables:** Wear OS code under `apps/mobile/android/wear` and `apps/mobile/modules/wear-os`; Apple Watch code under `apps/mobile/ios/TennisScoringWatch` and `apps/mobile/modules/apple-watch`.
 
 ---
 
-## 🚀 Tech Stack
-
-- **Monorepo:** pnpm workspaces and Turborepo.
-- **Language:** TypeScript with strict settings for app/package code.
-- **Web app:** Next.js 14, React 18, Firebase Web SDK, `next-firebase-auth-edge`.
-- **Mobile app:** Expo 51, React Native 0.74, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
-- **Backend:** Firebase Cloud Functions v2/v1 mix, Firestore, Storage, Authentication, FCM, `firebase-admin`, `pdf-lib`.
-- **Shared packages:** `@tennis/shared` for domain logic and `@tennis/firebase-client` for Firebase SDK wrappers/hooks.
-- **Testing:** Jest/ts-jest for shared scoring, ranking, profile, and status metadata tests.
-
----
-
-## 🏗️ Project Structure
+## Repository Layout
 
 ```text
 apps/
-  mobile/                 Expo React Native app, Android project, Wear OS app/module, Apple Watch files
-  web/                    Next.js web app, API routes, auth middleware, shared web UI components
-firebase/                 Cloud Functions source, Firebase config, Firestore indexes/rules, Storage rules
+  mobile/                 Expo app, native Android project, Wear OS app/module, Apple Watch files
+  web/                    Next.js app, API routes, auth middleware, shared web UI components
+firebase/                 Cloud Functions, Firebase config, Firestore indexes/rules, Storage rules
 packages/
-  firebase-client/        Shared Firebase config, typed collections, callable wrappers, and React hooks
-  shared/                 Shared TypeScript types, scoring/ranking engines, profile utilities, and tips
-scripts/                  Repository maintenance scripts
+  firebase-client/        Firebase SDK config, typed collection helpers, callable wrappers, React hooks
+  shared/                 Types, scoring/ranking engines, profile utilities, tips, tests
+scripts/                  Repository maintenance and backfill scripts
 design/                   Standalone design previews
-.github/workflows/        CI, EAS Android APK build, and targeted Firebase Functions deploy workflows
+docs/                     Current operational notes plus historical audit summaries
+.github/workflows/        CI, security, Firebase, and EAS workflows
 ```
 
 ---
 
-## 📦 Shared Code Contract
-
-The `@tennis/shared` package is the canonical location for reusable domain code. Current exports include:
-
-- Tennis match, user, division, season, division level, invite, message, feedback, CSV export, and ranking types.
-- `MATCH_STATUS_METADATA` and `getMatchStatusMetadata` for consistent status labels, colors, tones, icons, and accessibility labels.
-- Scoring helpers such as `createInitialScore`, `applyPoint`, `formatScoreDisplay`, and `formatGameScore`.
-- Ranking helpers such as `computeRankings`, `updateRankingWithMatchResult`, and `extractMatchTotals`.
-- Tip metadata and trigger-to-tip helpers.
-- Profile availability helpers such as `addAvailabilitySlot`, `updateAvailabilitySlot`, `removeAvailabilitySlot`, `cycleAvailabilitySlotDay`, `validateAvailabilitySlots`, `buildAvailability`, and `buildUserProfileUpdates`.
-
-When adding logic used by more than one app/package, add it to `packages/shared` and import it from `@tennis/shared` instead of duplicating it in web, mobile, or Firebase code.
-
----
-
-## 🔥 Firebase Client Contract
-
-The `@tennis/firebase-client` package centralizes client-side Firebase access for web and mobile:
-
-- Initializes Firebase from `NEXT_PUBLIC_FIREBASE_*` or `EXPO_PUBLIC_FIREBASE_*` environment variables.
-- Exports `app`, `db`, `auth`, `storage`, `functions`, and `getMessagingIfSupported`.
-- Provides typed collection/document helpers and common query builders.
-- Provides hooks for auth users, user profiles, matches, live matches, rankings, messages, channels, division options, and active division resolution.
-- Wraps Cloud Function calls for division management, match workflows, ranking repair/recalculation, and feedback submission.
-
-App code should prefer these exports over ad-hoc Firebase SDK wiring.
-
----
-
-## 🚦 Getting Started
-
-1. **Install dependencies:**
-   ```bash
-   pnpm install
-   ```
-2. **Create environment files:** use [SETUP.md](./SETUP.md) for web, mobile, Firebase Functions, and CI/deploy configuration.
-3. **Run the baseline checks:**
-   ```bash
-   pnpm --filter @tennis/shared test -- --runInBand
-   pnpm typecheck
-   pnpm lint
-   ```
-4. **Run an app locally:**
-   ```bash
-   pnpm --filter @tennis/web dev
-   pnpm --filter @tennis/mobile start
-   cd firebase && pnpm serve
-   ```
-
----
-
-## 🧪 Test and Verification Commands
+## Primary Commands
 
 ```bash
-pnpm --filter @tennis/shared test -- --runInBand
+pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
 ```
 
-CI additionally runs `pnpm audit --audit-level=high` before typecheck/lint/test.
+Targeted commands:
+
+```bash
+pnpm --filter @tennis/shared test -- --runInBand
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
+pnpm --filter @tennis/web build
+pnpm --filter @tennis/mobile typecheck
+```
+
+Cloud and mobile build commands may require Firebase, EAS, Apple, Android, or GitHub credentials that are not stored in the repository.
 
 ---
 
-## 📘 Supporting Documentation
+## Environment Variables
 
-- [SETUP.md](./SETUP.md) — local setup, environment variables, Firebase, web, mobile, wearable, and CI/deploy setup.
-- [VERSION_1_BASELINE.md](./VERSION_1_BASELINE.md) — v1 baseline snapshot, deployable components, validation commands, and extension notes.
-- [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, and targeted deploy notes.
-- [SECURITY_REVIEW_2026-05-12.md](./SECURITY_REVIEW_2026-05-12.md) — point-in-time security review and deployment checklist.
-- [ui-ux-review.md](./ui-ux-review.md) — point-in-time UI/UX/accessibility review and remediation plan.
-- [docs/production-release-readiness-2026-05-28.md](./docs/production-release-readiness-2026-05-28.md) — practical release checklist for mobile/watch distribution, Google Play publication readiness, web production rollout, and feedback-driven patch operations.
-- [CLAUDE.md](./CLAUDE.md) — agent/developer reference for architecture and conventions.
+### Web public Firebase variables
+
+`apps/web` reads Firebase client configuration from `NEXT_PUBLIC_FIREBASE_*` variables:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
+- `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (required for web push)
+
+### Mobile public Firebase variables
+
+`apps/mobile` reads the corresponding Expo public variables:
+
+- `EXPO_PUBLIC_FIREBASE_API_KEY`
+- `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `EXPO_PUBLIC_FIREBASE_PROJECT_ID`
+- `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `EXPO_PUBLIC_FIREBASE_APP_ID`
+- `EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID` (optional)
+- `EXPO_PUBLIC_FIREBASE_VAPID_KEY` (optional for native builds)
+
+### Server and deploy variables
+
+- `FIREBASE_SERVICE_ACCOUNT_JSON` and `FIREBASE_PROJECT_ID` are used by Firebase deploy workflows.
+- `GITHUB_TOKEN` is stored as a Firebase Functions secret for feedback issue creation.
+- `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_FEEDBACK_LABELS`, and `GITHUB_API_URL` configure feedback issue routing.
+- `APP_BASE_URL` configures absolute links generated by Functions.
+- `NEXT_FIREBASE_AUTH_COOKIE_SECRET_CURRENT`, `NEXT_FIREBASE_AUTH_COOKIE_SECRET_PREVIOUS`, and related auth-edge values configure the web session cookie middleware.
+
+Never commit `.env` files, service-account keys, GitHub tokens, Apple credential files, or production Firebase admin credentials.
 
 ---
 
-## 🎨 Design Previews
+## Documentation Map
 
-Open `design/live-scoring-layout-preview.html` in a browser to review and edit a standalone mock of the mobile live scoring layout. Use the **Copy feedback JSON** button to capture layout notes that can be applied back to `apps/mobile/app/match/[id].tsx`.
-
----
-
-## 🧭 Version 1 Extension Guidance
-
-The v1 baseline should be treated as the known-good starting point for future feature work. Before adding features:
-
-1. Keep cross-platform types and rules in `packages/shared`.
-2. Keep Firebase SDK access behind `@tennis/firebase-client` where practical.
-3. Add or update shared tests for scoring, ranking, profile, and match status changes.
-4. Run the baseline checks in this README.
-5. Revisit the security and UI/UX review checklists before production rollout changes.
-
----
-
-**GE Vernova Tennis League — All skill levels welcome!**
+- `SETUP.md` — local development and environment setup.
+- `firebase/DEPLOYMENT.md` — Firebase deploy prerequisites and feedback secret setup.
+- `docs/dependency-policy.md` — dependency update and audit policy.
+- `docs/quality-gates-plan.md` — current quality gates for stable releases.
+- `VERSION_1_BASELINE.md` — release baseline summary for `1.0.1`.
+- `SECURITY_REVIEW_2026-05-12.md` and `ui-ux-review.md` — historical reviews updated with current status notes.

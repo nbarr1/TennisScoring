@@ -1,150 +1,54 @@
-# TennisScoring Version 1.0.0 Baseline
+# Version 1 Stable Baseline
 
-**Baseline date:** 2026-05-13  
-**Baseline label:** `v1.0.0` / first functional deployable repository  
-**Purpose:** capture the current repository condition before the next phase of mobile and web application feature work.
+**Current stable baseline:** `1.0.1`  
+**Status:** stable and releasable  
+**Last reviewed:** 2026-06-10
 
----
+## Release identity
 
-## Summary
+The repository is treated as the stable Version 1 baseline for maintenance and future feature work. The root workspace, web app, mobile app, shared package, and Firebase client package are versioned `1.0.1`. The Firebase Functions package is an internal deploy package that remains versioned `1.0.0`.
 
-Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.
+## Baseline scope
 
----
+The stable baseline includes:
 
-## Version Markers
+- Web app routes for login, dashboard, matches, match detail, messages, feedback, profile, admin, invite acceptance, tutorial onboarding, and division onboarding.
+- Mobile app routes for login, tutorial onboarding, division onboarding, tabs for dashboard/matches/messages/profile/admin, feedback, and match detail/live scoring.
+- Shared scoring, ranking, profile, type, status metadata, and tips utilities.
+- Firebase Functions for match workflows, scoring, ranking recalculation/repair, reports, messaging notifications, user onboarding, invites, division management, CSV export, feedback, health, and readiness.
+- Targeted Firebase Functions deploy support for the functions exported from `firebase/src/targetedDeployIndex.ts`.
+- Firestore and Storage rules plus emulator smoke tests.
+- Wear OS and Apple Watch companion code that should stay aligned with shared live-score data shapes.
 
-The following manifests identify this baseline as `1.0.0`:
+## Release gates
 
-- Root workspace: `package.json`
-- Web app: `apps/web/package.json`
-- Mobile app: `apps/mobile/package.json`
-- Shared package: `packages/shared/package.json`
-- Firebase client package: `packages/firebase-client/package.json`
-- Firebase Functions package: `firebase/package.json`
-- Expo app metadata: `apps/mobile/app.json` (`version: 1.0.0`, Android `versionCode: 1`, iOS `buildNumber: 1`)
-
-A Git tag named `v1.0.0` should point to the commit containing this baseline.
-
----
-
-## Deployable Components
-
-### Web application
-
-- Location: `apps/web`
-- Framework: Next.js App Router with React 18
-- Authentication: Firebase email/password client auth with `next-firebase-auth-edge` session-cookie middleware
-- Major routes:
-  - `/login`
-  - `/dashboard`
-  - `/matches`
-  - `/matches/[id]`
-  - `/messages`
-  - `/profile`
-  - `/admin`
-  - `/feedback`
-  - `/invite/accept`
-  - `/onboarding/tutorial`
-
-### Mobile application
-
-- Location: `apps/mobile`
-- Framework: Expo 51 / React Native 0.74 with Expo Router
-- Authentication: Firebase email/password sign in and sign up
-- Major route groups:
-  - `(auth)` for login/signup
-  - `(onboarding)` for division selection and tutorial
-  - `(tabs)` for dashboard, matches, messages, profile, and admin
-  - `match/[id]` for setup, live scoring, reporting, guest linking, and score correction
-  - `feedback` for user feedback submission
-
-### Firebase backend
-
-- Location: `firebase`
-- Includes Cloud Functions, Firestore rules/indexes, Storage rules, and emulator configuration
-- Major callable/event functions include:
-  - match scoring/reporting/ranking functions: `scoreMatchPoint`, `recordHistoricMatch`, `recordMatchOnBehalf`, `resolveDisputedReport`, `recalculateDivisionRankings`, `repairAllDivisionRankings`, `onMatchUpdate`
-  - division/player management functions: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`
-  - invite functions: `sendInvite`, `getInvitePreview`, `acceptInvite`
-  - messaging and notification trigger: `onNewMessage`
-  - feedback integration: `submitFeedback`
-
-### Shared package
-
-- Location: `packages/shared`
-- Provides reusable TypeScript types, scoring engine, ranking engine, profile utilities, tips, and tests.
-- Should remain the first destination for logic shared by web, mobile, Firebase Functions, or future apps.
-
-### Firebase client package
-
-- Location: `packages/firebase-client`
-- Provides Firebase initialization, typed collection helpers, query builders, React hooks, and Cloud Function wrappers for web/mobile consumers.
-
-### Wearable code
-
-- Wear OS app/module code exists under `apps/mobile/android/wear`, `apps/mobile/android/app/src/main/java/com/tennisleague/app/wear`, and `apps/mobile/modules/wear-os`.
-- Apple Watch Swift/module code exists under `apps/mobile/ios/TennisScoringWatch` and `apps/mobile/modules/apple-watch`.
-- Wearable code should be kept in sync with shared `LiveScore` shape changes.
-
----
-
-## Core v1 Workflows
-
-- Email/password sign up and sign in.
-- Auth-gated onboarding into division selection/tutorial.
-- Create/join divisions and manage division rosters.
-- Create proposed, scheduled, live, historic, guest, and leader-entered matches.
-- Score live matches with shared tennis scoring logic.
-- Track optional advanced match stats.
-- Submit, confirm, dispute, and resolve match reports.
-- Generate report artifacts and recalculate rankings from completed matches.
-- Send and receive in-app messages.
-- Send web/mobile feedback through a Firebase Function backed by a GitHub token stored only in Secret Manager.
-- Receive Firebase Cloud Messaging notifications where platform setup is complete.
-
----
-
-## Validation Commands
-
-Use these commands to verify the baseline before and after future feature branches:
+Before a release branch or production deploy, run:
 
 ```bash
-pnpm --filter @tennis/shared test -- --runInBand
+pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
 ```
 
-Additional deployment checks:
+Additional platform gates:
 
 ```bash
-pnpm audit --audit-level=high
-pnpm --filter @tennis/firebase-functions build:targeted-deploy
+pnpm --filter @tennis/web build
+pnpm --filter @tennis/mobile typecheck
 pnpm --filter @tennis/mobile build:android
 pnpm --filter @tennis/mobile build:ios
 ```
 
-Cloud/mobile build commands may require configured Firebase, EAS, Apple, Android, and GitHub credentials.
+The EAS build commands require configured Expo, Android, Apple, and Firebase credentials.
 
----
+## Maintenance expectations
 
-## Known Follow-up Areas
-
-The baseline is functional and deployable, but the following documents intentionally remain as follow-up references:
-
-- `SECURITY_REVIEW_2026-05-12.md` for production hardening, dependency/audit, auth/domain, and deployment safeguards.
-- `ui-ux-review.md` for accessibility, interaction, responsive layout, and design-system improvements.
-- `firebase/DEPLOYMENT.md` for the IAM and Secret Manager permissions needed by the targeted Functions deploy workflow.
-
----
-
-## Rules for Future Feature Work
-
-1. Start future web/mobile work from the `v1.0.0` baseline tag or a branch that contains it.
-2. Keep cross-platform logic in `packages/shared`.
-3. Keep Firestore/Auth/Functions access in `packages/firebase-client` where practical.
-4. Update Firestore rules/indexes and shared TypeScript types together when changing the data model.
-5. Add/update tests for scoring, ranking, profile, and status workflows.
-6. Update README/setup/version documentation whenever functionality, deployment, or required environment variables change.
+- Keep shared data contracts synchronized across web, mobile, Functions, rules, and wearable code.
+- Keep feedback GitHub credentials only in Firebase Secret Manager.
+- Run Firebase rules smoke tests for rules or backend authorization changes.
+- Update this file, `README.md`, `SETUP.md`, and the relevant `docs/` file whenever release gates, versions, deploy targets, or required environment variables change.

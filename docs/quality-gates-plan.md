@@ -1,18 +1,69 @@
-# Quality Gates Plan
+# Quality Gates
 
-## Accessibility Automation (Action 6)
-- Add `@axe-core/playwright` and Playwright-based accessibility regression checks for login, dashboard, matches, and profile flows.
-- Add CI job that runs these checks on every PR.
-- Add manual screen-reader checklist (VoiceOver/NVDA) with keyboard-only traversal validation.
+**Current stable baseline:** `1.0.1`  
+**Status:** active release checklist  
+**Last reviewed:** 2026-06-10
 
-## End-to-End Coverage (Action 9)
-- Add Playwright end-to-end suite for auth, match lifecycle, messaging, and feedback submission.
-- Gate merges on these end-to-end checks for web.
-- Add mobile E2E plan using Detox for onboarding, login, and match flows.
+This file is the current quality-gate reference for releasable changes.
 
-## Performance Budget (Action 10)
-- Define budget: JS bundle per route, image payload, and font payload ceilings.
-- Add Lighthouse CI checks for LCP/INP/CLS thresholds.
-- Fail PR builds on budget regressions.
+## Required gates for release-impacting work
 
-> Status: Requires additional framework setup and credentials that are not present in this repository snapshot.
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+## Firebase gates
+
+Run when Firebase Functions, Firestore rules, Storage rules, indexes, shared backend contracts, or auth-sensitive behavior changes:
+
+```bash
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm --filter @tennis/firebase-functions build:targeted-deploy
+```
+
+## Shared domain gates
+
+Run when scoring, rankings, profile utilities, shared types, match status metadata, or tips change:
+
+```bash
+pnpm --filter @tennis/shared test -- --runInBand
+pnpm --filter @tennis/shared typecheck
+pnpm --filter @tennis/shared build
+```
+
+## Web gates
+
+Run when `apps/web`, `packages/firebase-client`, or web-facing environment contracts change:
+
+```bash
+pnpm --filter @tennis/web typecheck
+pnpm --filter @tennis/web lint
+pnpm --filter @tennis/web build
+```
+
+## Mobile gates
+
+Run when `apps/mobile`, mobile route code, native modules, or Expo/EAS configuration changes:
+
+```bash
+pnpm --filter @tennis/mobile typecheck
+pnpm --filter @tennis/mobile lint
+pnpm --filter @tennis/mobile build:android
+pnpm --filter @tennis/mobile build:ios
+```
+
+EAS build commands require configured credentials and are not expected to succeed in a generic local container.
+
+## Manual release checks
+
+- Verify the target Firebase project is not accidentally production for staging/test deploys.
+- Confirm `GITHUB_TOKEN` exists in Firebase Secret Manager before deploying feedback changes.
+- Confirm web and mobile Firebase public variables point to the intended project.
+- Smoke test login, onboarding, match creation/scoring, report submission, messaging, feedback, and profile updates.
+- Review Firebase rules diffs for broad read/write grants.
+- Update documentation when commands, versions, env vars, release gates, or deploy targets change.

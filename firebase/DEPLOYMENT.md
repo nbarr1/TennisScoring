@@ -1,31 +1,45 @@
-# Firebase Functions deployment prerequisites
+# Firebase Deployment
 
-This project deploys Cloud Functions with `firebase-tools` from CI. These notes reflect the Version 1.0.0 baseline and the targeted Functions deploy workflow in `.github/workflows/deploy-firebase-function.yml`.
+These notes reflect the current stable `1.0.1` repository state.
 
-## Version 1.0.0 deployment status
+## Deploy shape
 
-The v1 targeted deployment workflow currently builds `firebase/src/targetedDeployIndex.ts` and deploys selected Functions used by the web/mobile baseline, including division placeholder/merge/email tools, season division-level and membership/backfill management, CSV export, match update/scoring/reporting hooks, and feedback submission. Full backend deploys can still be run manually with the Firebase CLI when rules, indexes, or all Functions need to be refreshed.
+- Firebase configuration lives in `firebase/firebase.json`.
+- Firestore rules live in `firebase/firestore.rules`.
+- Storage rules live in `firebase/storage.rules`.
+- Firestore indexes live in `firebase/firestore.indexes.json`.
+- Full Functions exports are declared in `firebase/src/index.ts`.
+- Targeted deploy exports are declared in `firebase/src/targetedDeployIndex.ts` and bundled by `pnpm --filter @tennis/firebase-functions build:targeted-deploy`.
 
-## Required IAM for the deployer principal
+The targeted deploy bundle currently includes match update/scoring/historic recording, selected division and membership management, season/level backfill, CSV export, feedback submission, invites, invite previews, and invite acceptance. Use a full backend deploy only when intentionally refreshing all Function exports.
 
-The principal represented by `FIREBASE_SERVICE_ACCOUNT_JSON` must have permissions to deploy functions **and** impersonate the runtime service account.
+## CI workflow
 
-At minimum, ensure:
+`.github/workflows/deploy-firebase-function.yml` runs on manual dispatch and on pushes to `main` that touch Firebase, shared package, or the workflow itself. It:
 
-- Cloud Functions/Admin deploy permissions (project-level, e.g. `roles/cloudfunctions.developer` or `roles/cloudfunctions.admin`)
-- Cloud Build permissions (e.g. `roles/cloudbuild.builds.editor`)
-- Artifact Registry permissions (e.g. `roles/artifactregistry.writer`)
-- Secret Manager deploy-time secret binding permissions on `GITHUB_TOKEN` (e.g. `roles/secretmanager.admin` on only the `GITHUB_TOKEN` secret so Firebase CLI can update the secret IAM policy for the Functions runtime service account)
-- **Service Account User** on the runtime service account used by Functions:
-  - `roles/iam.serviceAccountUser` on `PROJECT_NUMBER-compute@developer.gserviceaccount.com` (or your custom runtime SA)
+1. Installs with `pnpm@9.15.5`.
+2. Uses Node.js `22`.
+3. Builds the targeted Functions bundle from the workspace root.
+4. Authenticates with Google Cloud using `FIREBASE_SERVICE_ACCOUNT_JSON` and `FIREBASE_PROJECT_ID`.
+5. Verifies the feedback GitHub token and repository configuration.
+6. Writes Firebase Functions params to `.env.$FIREBASE_PROJECT_ID`.
+7. Runs the targeted Firebase deploy.
 
-## Fix for `iam.serviceaccounts.actAs` 403
+## Required IAM
 
-If deploy fails with:
+The principal represented by `FIREBASE_SERVICE_ACCOUNT_JSON` needs enough access to deploy Cloud Functions and allow Firebase CLI to bind runtime secrets:
 
-- `Caller is missing permission 'iam.serviceaccounts.actAs'`
+- Cloud Functions deploy permissions, such as `roles/cloudfunctions.developer` or `roles/cloudfunctions.admin`.
+- Cloud Build permissions, such as `roles/cloudbuild.builds.editor`.
+- Artifact Registry write permissions, such as `roles/artifactregistry.writer`.
+- Service Account User on the runtime service account, typically `PROJECT_NUMBER-compute@developer.gserviceaccount.com` unless a custom runtime service account is configured.
+- Secret Manager access to describe/read `GITHUB_TOKEN` and update that secret IAM policy if Firebase CLI needs to grant runtime access.
 
-Grant `roles/iam.serviceAccountUser` to the deployer principal on the runtime SA:
+Prefer granting Secret Manager admin access only on the `GITHUB_TOKEN` secret rather than project-wide.
+
+## Fix: missing `iam.serviceaccounts.actAs`
+
+If deployment fails because the caller lacks `iam.serviceaccounts.actAs`, grant Service Account User on the runtime service account:
 
 ```bash
 gcloud iam service-accounts add-iam-policy-binding \
@@ -34,96 +48,67 @@ gcloud iam service-accounts add-iam-policy-binding \
   --role="roles/iam.serviceAccountUser"
 ```
 
-Replace `DEPLOYER_SA@PROJECT_ID.iam.gserviceaccount.com` with the service account whose key is stored in `FIREBASE_SERVICE_ACCOUNT_JSON`.
+Replace the service account values with the project number and deployer service account used by `FIREBASE_SERVICE_ACCOUNT_JSON`.
 
-## Fix for `secretmanager.secrets.setIamPolicy` 403
+## Fix: missing `secretmanager.secrets.setIamPolicy`
 
-If deploy fails while Firebase CLI is ensuring runtime access to the feedback token secret:
+If deployment fails while binding `GITHUB_TOKEN` to the Functions runtime service account, grant the deployer Secret Manager Admin on only the `GITHUB_TOKEN` secret:
 
-- `Permission 'secretmanager.secrets.setIamPolicy' denied for resource 'projects/PROJECT_ID/secrets/GITHUB_TOKEN'`
-
-The root cause is that the deployer principal can read the secret but cannot update the `GITHUB_TOKEN` secret IAM policy. When a function declares `defineSecret('GITHUB_TOKEN')`, Firebase CLI verifies that the Functions runtime service account can access that secret. If the runtime service account is not already bound correctly, Firebase CLI updates the secret IAM policy during deploy. The principal represented by `FIREBASE_SERVICE_ACCOUNT_JSON` therefore needs `secretmanager.secrets.setIamPolicy` on `GITHUB_TOKEN`.
-
-Recommended Console fix with the narrowest resource scope:
-
-1. Open **Google Cloud Console** and select the project used by `FIREBASE_PROJECT_ID`.
+1. Open Google Cloud Console for `FIREBASE_PROJECT_ID`.
 2. Go to **Security > Secret Manager**.
-3. Open the `GITHUB_TOKEN` secret. If it does not exist, create it first with the GitHub token value.
-4. Open the secret **Permissions** tab, or open the right-side **Info panel**.
-5. Click **Grant access**.
-6. Add the service account whose key is stored in the GitHub secret `FIREBASE_SERVICE_ACCOUNT_JSON` as the principal, for example `firebase-adminsdk-fbsvc@PROJECT_ID.iam.gserviceaccount.com`.
-7. Grant **Secret Manager Admin** (`roles/secretmanager.admin`) on this `GITHUB_TOKEN` secret.
-8. Save and rerun the deploy workflow.
+3. Open or create the `GITHUB_TOKEN` secret.
+4. Open the secret **Permissions** panel.
+5. Grant the deployer principal `roles/secretmanager.admin` for that secret.
+6. Rerun the deploy workflow.
 
-Do not grant this at the project level unless you intentionally want the deployer to administer every secret in the project.
+## Feedback GitHub integration
 
+Feedback issue creation is handled by the `submitFeedback` Cloud Function. Do not add GitHub tokens, private keys, or installation tokens to `apps/web`, `apps/mobile`, `NEXT_PUBLIC_*`, or `EXPO_PUBLIC_*` variables.
 
-## GitHub feedback integration
-
-Feedback issue creation is handled only by the `submitFeedback` Cloud Function. Keep all GitHub credentials out of `apps/web` and `apps/mobile`; do not add `NEXT_PUBLIC_*` or `EXPO_PUBLIC_*` variables for GitHub tokens, private keys, or installation tokens.
-
-Configure the repository target as Functions params/config and store the token in Functions secret storage:
+Configure the token and params for the target Firebase project:
 
 ```bash
 firebase functions:secrets:set GITHUB_TOKEN
 
-# Params consumed by firebase/src/feedback/submitFeedback.ts
-# Store these with your Functions environment/params for the target project.
 GITHUB_OWNER="your-github-org-or-user"
 GITHUB_REPO="your-feedback-repo"
 GITHUB_FEEDBACK_LABELS="feedback"
+GITHUB_API_URL="https://api.github.com"
+APP_BASE_URL="https://your-web-app.example"
 ```
 
-The `GITHUB_TOKEN` secret can be a fine-grained personal access token or an app installation token with permission to create issues in the configured repository.
+The workflow accepts `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_FEEDBACK_LABELS`, `GITHUB_API_URL`, and `APP_BASE_URL` as GitHub Actions variables or defaults where defined by the workflow.
 
-Before deploying from CI, the workflow runs a preflight check that:
+## Local feedback preflight
 
-1. Resolves the Firebase params from GitHub Actions variables, defaulting to the current workflow repository owner/name when `GITHUB_OWNER` or `GITHUB_REPO` are unset.
-2. Confirms the deployer service account can describe and access the latest `GITHUB_TOKEN` Secret Manager version.
-3. Uses the secret value to call the configured GitHub issue creation endpoint with an intentionally invalid payload. A `422` response verifies authentication/authorization reached GitHub validation without creating an issue.
-4. Writes the non-secret params to `.env.$FIREBASE_PROJECT_ID` before `firebase deploy` so Firebase CLI non-interactive mode can resolve `defineString` params without prompting.
-
-You can run the same check locally after authenticating with `gcloud`:
+After authenticating with `gcloud`, verify the GitHub token can reach issue creation without creating an issue:
 
 ```bash
 export FIREBASE_PROJECT_ID="your-firebase-project"
-export GITHUB_OWNER="your-github-org-or-user" # defaults to github.repository_owner in CI
-export GITHUB_REPO="your-feedback-repo"      # defaults to github.event.repository.name in CI
+export GITHUB_OWNER="your-github-org-or-user"
+export GITHUB_REPO="your-feedback-repo"
 export GITHUB_API_URL="https://api.github.com"
 
-gcloud secrets describe GITHUB_TOKEN \
-  --project "$FIREBASE_PROJECT_ID" \
-  --format='value(name)' > /dev/null
-
-token="$(gcloud secrets versions access latest \
-  --secret GITHUB_TOKEN \
-  --project "$FIREBASE_PROJECT_ID")"
-
-status="$(curl --silent --show-error --location \
+token="$(gcloud secrets versions access latest --secret GITHUB_TOKEN --project "$FIREBASE_PROJECT_ID")"
+curl --silent --show-error --location \
   --request POST \
-  --output /tmp/github-feedback-check.json \
-  --write-out '%{http_code}' \
   --header 'Accept: application/vnd.github+json' \
   --header "Authorization: Bearer $token" \
   --header 'Content-Type: application/json' \
   --header 'X-GitHub-Api-Version: 2022-11-28' \
   --data '{}' \
-  "${GITHUB_API_URL%/}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues")"
-
-test "$status" = "422"
+  "${GITHUB_API_URL%/}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues"
 ```
 
-## Workflow secrets
+A `422` response means authentication and authorization reached GitHub validation without creating an issue.
 
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
+## Rules and emulator checks
 
-## Workflow variables
+Run these checks before deploying rules or authorization-sensitive Functions:
 
-These GitHub Actions variables are written to `.env.$FIREBASE_PROJECT_ID` and passed as Firebase Functions params during deploy:
+```bash
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+```
 
-- `APP_BASE_URL` (optional but recommended; defaults to `http://localhost:3000` and is written to `.env.$FIREBASE_PROJECT_ID` so non-interactive deploys can resolve the `APP_BASE_URL` Functions param)
-- `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
-- `GITHUB_REPO` (optional; defaults to the current workflow repository name)
-- `GITHUB_API_URL` (optional; defaults to `https://api.github.com`)
-- `GITHUB_FEEDBACK_LABELS` (optional; defaults to `feedback`)
+The emulator smoke test uses Firestore and Storage emulators configured in `firebase/firebase.json`.
