@@ -190,10 +190,13 @@ export default function AdminPage(): React.JSX.Element {
       divisionsCol(),
       where("leaderIds", "array-contains", firebaseUser.uid),
     );
+    let activeId = 0;
 
     return onSnapshot(
       leaderQuery,
       async (leaderSnap) => {
+        // Prevent older async snapshot work from overwriting state after a newer snapshot arrives.
+        const currentId = ++activeId;
         let div: Division | null = null;
 
         if (!leaderSnap.empty) {
@@ -214,6 +217,8 @@ export default function AdminPage(): React.JSX.Element {
             }
           }
         }
+
+        if (currentId !== activeId) return;
 
         setDivision(div);
         if (div) {
@@ -260,6 +265,9 @@ export default function AdminPage(): React.JSX.Element {
               updatedAt: ranking.updatedAt ?? 0,
             });
           });
+
+          if (currentId !== activeId) return;
+
           setPlayers(
             [...byId.values()].sort((a, b) =>
               a.displayName.localeCompare(b.displayName),
@@ -271,6 +279,7 @@ export default function AdminPage(): React.JSX.Element {
         setLoading(false);
       },
       (snapshotError) => {
+        activeId++;
         // Surface Firestore rule denials in the UI instead of leaving an uncaught listener error in DevTools.
         setDivision(null);
         setPlayers([]);
