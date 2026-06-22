@@ -77,7 +77,7 @@ export default function FeedbackPage(): React.JSX.Element {
         user: {
           uid: firebaseUser.uid,
           displayName: profile?.displayName ?? firebaseUser.displayName,
-          email: firebaseUser.email,
+          email: firebaseUser.email ?? "",
           divisionId: profile?.divisionId,
         },
       });
