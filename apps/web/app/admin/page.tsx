@@ -191,86 +191,97 @@ export default function AdminPage(): React.JSX.Element {
       where("leaderIds", "array-contains", firebaseUser.uid),
     );
 
-    return onSnapshot(leaderQuery, async (leaderSnap) => {
-      let div: Division | null = null;
+    return onSnapshot(
+      leaderQuery,
+      async (leaderSnap) => {
+        let div: Division | null = null;
 
-      if (!leaderSnap.empty) {
-        div = {
-          id: leaderSnap.docs[0].id,
-          ...(leaderSnap.docs[0].data() as Omit<Division, "id">),
-        };
-      } else {
-        const profileSnap = await getDoc(userDoc(firebaseUser.uid));
-        const profileDivisionId = profileSnap.data()?.divisionId;
-        if (typeof profileDivisionId === "string" && profileDivisionId.trim()) {
-          const divisionSnap = await getDoc(divisionDoc(profileDivisionId));
-          if (divisionSnap.exists()) {
-            div = {
-              id: divisionSnap.id,
-              ...(divisionSnap.data() as Omit<Division, "id">),
-            };
+        if (!leaderSnap.empty) {
+          div = {
+            id: leaderSnap.docs[0].id,
+            ...(leaderSnap.docs[0].data() as Omit<Division, "id">),
+          };
+        } else {
+          const profileSnap = await getDoc(userDoc(firebaseUser.uid));
+          const profileDivisionId = profileSnap.data()?.divisionId;
+          if (typeof profileDivisionId === "string" && profileDivisionId.trim()) {
+            const divisionSnap = await getDoc(divisionDoc(profileDivisionId));
+            if (divisionSnap.exists()) {
+              div = {
+                id: divisionSnap.id,
+                ...(divisionSnap.data() as Omit<Division, "id">),
+              };
+            }
           }
         }
-      }
 
-      setDivision(div);
-      if (div) {
-        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
-          await Promise.all([
-            div.playerIds.length
-              ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
-              : Promise.resolve([]),
-            getDocs(query(usersCol(), where("divisionId", "==", div.id))),
-            getDocs(rankingsCol(div.id)),
-          ]);
-        const rankingFallbacks = rankingSnap.docs.map((d) => {
-          const data = d.data() as PlayerRanking;
-          return { ...data, userId: data.userId || d.id };
-        });
-        const byId = new Map<string, User>();
-        const addProfile = (id: string, data: Omit<User, "id">) => {
-          byId.set(id, { id, ...data });
-        };
-        divisionMemberProfiles.forEach((d) => {
-          if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
-        });
-        divisionProfileSnap.docs.forEach((d) =>
-          addProfile(d.id, d.data() as Omit<User, "id">),
-        );
-        rankingFallbacks.forEach((ranking) => {
-          if (byId.has(ranking.userId)) return;
-          byId.set(ranking.userId, {
-            id: ranking.userId,
-            displayName: ranking.displayName,
-            email: "",
-            contactPreferences: {
-              allowEmail: false,
-              allowSMS: false,
-              allowInApp: true,
-            },
-            divisionId: div.id,
-            role: "player",
-            fcmTokens: [],
-            tipsEnabled: true,
-            isRegistered: false,
-            inviteStatus: "none",
-            createdAt: ranking.updatedAt ?? 0,
-            updatedAt: ranking.updatedAt ?? 0,
+        setDivision(div);
+        if (div) {
+          const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
+            await Promise.all([
+              div.playerIds.length
+                ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
+                : Promise.resolve([]),
+              getDocs(query(usersCol(), where("divisionId", "==", div.id))),
+              getDocs(rankingsCol(div.id)),
+            ]);
+          const rankingFallbacks = rankingSnap.docs.map((d) => {
+            const data = d.data() as PlayerRanking;
+            return { ...data, userId: data.userId || d.id };
           });
-        });
-        setPlayers(
-          [...byId.values()].sort((a, b) =>
-            a.displayName.localeCompare(b.displayName),
-          ),
-        );
-      } else {
+          const byId = new Map<string, User>();
+          const addProfile = (id: string, data: Omit<User, "id">) => {
+            byId.set(id, { id, ...data });
+          };
+          divisionMemberProfiles.forEach((d) => {
+            if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
+          });
+          divisionProfileSnap.docs.forEach((d) =>
+            addProfile(d.id, d.data() as Omit<User, "id">),
+          );
+          rankingFallbacks.forEach((ranking) => {
+            if (byId.has(ranking.userId)) return;
+            byId.set(ranking.userId, {
+              id: ranking.userId,
+              displayName: ranking.displayName,
+              email: "",
+              contactPreferences: {
+                allowEmail: false,
+                allowSMS: false,
+                allowInApp: true,
+              },
+              divisionId: div.id,
+              role: "player",
+              fcmTokens: [],
+              tipsEnabled: true,
+              isRegistered: false,
+              inviteStatus: "none",
+              createdAt: ranking.updatedAt ?? 0,
+              updatedAt: ranking.updatedAt ?? 0,
+            });
+          });
+          setPlayers(
+            [...byId.values()].sort((a, b) =>
+              a.displayName.localeCompare(b.displayName),
+            ),
+          );
+        } else {
+          setPlayers([]);
+        }
+        setLoading(false);
+      },
+      (snapshotError) => {
+        // Surface Firestore rule denials in the UI instead of leaving an uncaught listener error in DevTools.
+        setDivision(null);
         setPlayers([]);
-      }
-      setLoading(false);
-    }, (snapErr) => {
-      setError(`Unable to load division data: ${snapErr.message}`);
-      setLoading(false);
-    });
+        setError(
+          snapshotError.code === "permission-denied"
+            ? "Unable to load your admin division. Confirm your signed-in account is a division leader or app admin."
+            : snapshotError.message,
+        );
+        setLoading(false);
+      },
+    );
   }, [firebaseUser]);
 
   async function createDivision() {
@@ -721,7 +732,7 @@ export default function AdminPage(): React.JSX.Element {
           </div>
         ) : (
           <>
-            
+
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Seasons & Division Levels</h2>
@@ -843,9 +854,9 @@ export default function AdminPage(): React.JSX.Element {
             </div>
 
 
-            
 
-            
+
+
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Players</h2>

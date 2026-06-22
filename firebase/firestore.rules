@@ -12,7 +12,8 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+      // Authorization must use the private users doc because app roles/division membership are written there.
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isAdmin() {
