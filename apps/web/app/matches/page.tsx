@@ -27,12 +27,11 @@ import {
 import {
   formatScoreDisplay,
   formatGameScore,
-  DAY_LABELS,
   getMatchStatusMetadata,
   currentSeasonForDate,
   defaultSeasonOptions,
 } from "@tennis/shared";
-import type { Match, User, Availability } from "@tennis/shared";
+import type { Match, PublicProfile } from "@tennis/shared";
 
 function formatScheduledAt(ts?: number): string {
   if (!ts) return "Time TBD";
@@ -464,7 +463,7 @@ function StartLiveMatchModal({
   onClose: () => void;
   onCreated: (matchId: string) => void;
   divisionId: string;
-  currentUser: User;
+  currentUser: PublicProfile;
   seasonId: string;
   divisionLevelId?: string;
   matchType?: "singles" | "doubles";
@@ -537,7 +536,7 @@ function RecordPastMatchModal({
   canRecordOnBehalf,
   onClose,
 }: {
-  currentUser: User;
+  currentUser: PublicProfile;
   divisionId: string;
   seasonId: string;
   divisionLevelId?: string;
@@ -553,12 +552,16 @@ function RecordPastMatchModal({
   );
   const [guestName, setGuestName] = useState("");
   const [player1SearchText, setPlayer1SearchText] = useState("");
-  const [player1SearchResults, setPlayer1SearchResults] = useState<User[]>([]);
-  const [selectedPlayer1, setSelectedPlayer1] = useState<User | null>(null);
+  const [player1SearchResults, setPlayer1SearchResults] = useState<
+    PublicProfile[]
+  >([]);
+  const [selectedPlayer1, setSelectedPlayer1] =
+    useState<PublicProfile | null>(null);
   const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [sets, setSets] = useState([{ p1: "", p2: "" }]);
   const [submitting, setSubmitting] = useState(false);
@@ -841,7 +844,6 @@ function RecordPastMatchModal({
                 <div style={modalStyles.selectedRow}>
                   <div>
                     <div style={modalStyles.selectedName}>{selectedPlayer1.displayName}</div>
-                    <div style={modalStyles.selectedEmail}>{selectedPlayer1.email}</div>
                   </div>
                   <button
                     type="button"
@@ -864,7 +866,7 @@ function RecordPastMatchModal({
                     style={modalStyles.input}
                     value={player1SearchText}
                     onChange={(e) => setPlayer1SearchText(e.target.value)}
-                    placeholder="Search first player by name or email…"
+                    placeholder="Search first player by name…"
                   />
                   {searchingPlayer1 && <div style={modalStyles.muted}>Searching…</div>}
                   {player1SearchResults.length > 0 && (
@@ -881,7 +883,6 @@ function RecordPastMatchModal({
                           }}
                         >
                           <div style={modalStyles.resultName}>{u.displayName}</div>
-                          <div style={modalStyles.resultEmail}>{u.email}</div>
                         </button>
                       ))}
                     </div>
@@ -983,9 +984,6 @@ function RecordPastMatchModal({
                   <div style={modalStyles.selectedName}>
                     {selectedOpponent.displayName}
                   </div>
-                  <div style={modalStyles.selectedEmail}>
-                    {selectedOpponent.email}
-                  </div>
                 </div>
                 <button
                   type="button"
@@ -1010,8 +1008,8 @@ function RecordPastMatchModal({
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder={
                     recordingMode === "onBehalf"
-                      ? "Search second player by name or email…"
-                      : "Search opponent by name or email…"
+                      ? "Search second player by name…"
+                      : "Search opponent by name…"
                   }
                 />
                 {searching && <div style={modalStyles.muted}>Searching…</div>}
@@ -1031,7 +1029,6 @@ function RecordPastMatchModal({
                         <div style={modalStyles.resultName}>
                           {u.displayName}
                         </div>
-                        <div style={modalStyles.resultEmail}>{u.email}</div>
                       </button>
                     ))}
                   </div>
@@ -1196,35 +1193,6 @@ function RecordPastMatchModal({
     </div>
   );
 }
-function AvailabilityHint({ availability }: { availability?: Availability }) {
-  if (
-    !availability ||
-    (availability.slots.length === 0 && !availability.note)
-  ) {
-    return (
-      <div style={modalStyles.muted}>
-        Opponent hasn&apos;t set their preferred play times.
-      </div>
-    );
-  }
-  return (
-    <div style={modalStyles.availability}>
-      <div style={modalStyles.availabilityTitle}>Their preferred times</div>
-      {availability.slots.map((s, i) => (
-        <div key={i} style={modalStyles.availabilityRow}>
-          <span style={modalStyles.availabilityDay}>{DAY_LABELS[s.day]}</span>
-          <span style={modalStyles.availabilityTime}>
-            {s.from}–{s.to}
-          </span>
-        </div>
-      ))}
-      {availability.note && (
-        <div style={modalStyles.availabilityNote}>{availability.note}</div>
-      )}
-    </div>
-  );
-}
-
 function ProposeMatchModal({
   currentUser,
   divisionId,
@@ -1233,7 +1201,7 @@ function ProposeMatchModal({
   matchType,
   onClose,
 }: {
-  currentUser: User;
+  currentUser: PublicProfile;
   divisionId: string;
   seasonId: string;
   divisionLevelId?: string;
@@ -1241,8 +1209,9 @@ function ProposeMatchModal({
   onClose: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1321,9 +1290,6 @@ function ProposeMatchModal({
                 <div style={modalStyles.selectedName}>
                   {selectedOpponent.displayName}
                 </div>
-                <div style={modalStyles.selectedEmail}>
-                  {selectedOpponent.email}
-                </div>
               </div>
               <button
                 type="button"
@@ -1336,7 +1302,6 @@ function ProposeMatchModal({
                 Change
               </button>
             </div>
-            <AvailabilityHint availability={selectedOpponent.availability} />
           </>
         ) : (
           <>
@@ -1348,7 +1313,7 @@ function ProposeMatchModal({
               style={modalStyles.input}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search opponent by name or email…"
+              placeholder="Search opponent by name…"
             />
             {searching && <div style={modalStyles.muted}>Searching…</div>}
             {searchResults.length > 0 && (
@@ -1365,7 +1330,6 @@ function ProposeMatchModal({
                     }}
                   >
                     <div style={modalStyles.resultName}>{u.displayName}</div>
-                    <div style={modalStyles.resultEmail}>{u.email}</div>
                   </button>
                 ))}
               </div>
