@@ -11,9 +11,13 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == userId;
     }
 
-    function getUserData() {
+    function getUserDataById(uid) {
       // Authorization must use the private users doc because app roles/division membership are written there.
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function getUserData() {
+      return getUserDataById(request.auth.uid);
     }
 
     function isAdmin() {
@@ -63,8 +67,20 @@ service cloud.firestore {
 
     // ---------- Profiles (Public) ----------
     match /profiles/{userId} {
-      allow read: if isAuth() && (
+      // Single-document reads can afford the extra get() needed to check the target's
+      // live users/{uid}.divisionId instead of this doc's own (stale) divisionId.
+      allow get: if isAuth() && (
         isUser(userId) ||
+        isAdmin() ||
+        getUserDataById(userId).divisionId == getUserData().divisionId
+      );
+      // List queries (e.g. division roster/opponent search) must stay resolvable from the
+      // queried document's own field plus the requester's cached identity, or Firestore
+      // rejects the entire query outright once a get() on a document outside the query's own
+      // filter is introduced. Division membership here can only be judged against this doc's
+      // own (possibly stale) divisionId; profiles is a mostly-static public mirror so brief
+      // staleness here is an accepted trade-off for list operations.
+      allow list: if isAuth() && (
         isAdmin() ||
         resource.data.divisionId == getUserData().divisionId
       );
@@ -166,30 +182,49 @@ service cloud.firestore {
     // ---------- Matches ----------
     // Returns true when a participant is performing a valid match update.
     // Confirming or disputing a report is only allowed for the non-submitting player.
-    function canUpdateMatch(existing, incoming) {
-      let isParticipant = isMatchParticipant(existing);
-      let changed = incoming.diff(existing).affectedKeys();
-      let isCancellation = incoming.status == 'cancelled' &&
+    // Split into one helper per update kind because Firestore rules cap the number
+    // of `let` bindings a single function may declare (10); each helper below stays
+    // under that cap while canUpdateMatch itself just ORs their results together.
+    function isCancellationUpdate(existing, incoming, changed) {
+      return incoming.status == 'cancelled' &&
         (existing.status == 'proposed' || existing.status == 'scheduled' || existing.status == 'in_progress') &&
         changed.hasOnly(['status']);
-      let isPostpone = existing.status == 'scheduled' && incoming.status == 'scheduled' &&
+    }
+
+    function isPostponeUpdate(existing, incoming, changed) {
+      return existing.status == 'scheduled' && incoming.status == 'scheduled' &&
         changed.hasOnly(['scheduledAt']);
-      let isAcceptProposal = existing.status == 'proposed' && incoming.status == 'scheduled' &&
+    }
+
+    function isAcceptProposalUpdate(existing, incoming, changed) {
+      return existing.status == 'proposed' && incoming.status == 'scheduled' &&
         request.auth.uid == existing.player2Id &&
         changed.hasOnly(['status']);
-      let isStartMatch = existing.status == 'scheduled' && incoming.status == 'in_progress' &&
+    }
+
+    function isStartMatchUpdate(existing, incoming, changed) {
+      return existing.status == 'scheduled' && incoming.status == 'in_progress' &&
         changed.hasOnly(['status', 'startedAt', 'currentSetStartedAt', 'advancedStatsEnabled', 'liveScore']);
-      let isUndo = 'undoSnapshot' in existing &&
+    }
+
+    function isUndoUpdate(existing, incoming, changed) {
+      return 'undoSnapshot' in existing &&
         incoming.liveScore == existing.undoSnapshot.liveScore &&
         incoming.status == existing.undoSnapshot.status &&
         changed.hasOnly(['status', 'liveScore', 'stats', 'winner', 'completedAt', 'currentSetStartedAt', 'matchDurationMs', 'undoSnapshot']);
-      let isReportSubmit = existing.status == 'pending_report' &&
+    }
+
+    function isReportSubmitUpdate(existing, incoming, changed) {
+      return existing.status == 'pending_report' &&
         incoming.status == existing.status &&
         changed.hasOnly(['reportSubmission']) &&
         incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status']) &&
         incoming.reportSubmission.submittedBy == request.auth.uid &&
         incoming.reportSubmission.submittedAt is number &&
         incoming.reportSubmission.status == 'pending_confirmation';
+    }
+
+    function isValidConfirmOrDisputeUpdate(existing, incoming, changed) {
       let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
@@ -208,15 +243,19 @@ service cloud.firestore {
         incoming.reportSubmission.status == 'disputed' &&
         incoming.reportSubmission.disputedBy == request.auth.uid &&
         incoming.reportSubmission.disputedAt is number;
-      let isValidConfirmOrDispute = isConfirmOrDispute &&
+      return isConfirmOrDispute &&
         hasSubmission &&
         existing.reportSubmission.status == 'pending_confirmation' &&
         isNotSubmitter &&
         preservesOriginalSubmission &&
         changed.hasOnly(['status', 'reportSubmission']) &&
         (isValidConfirm || isValidDispute);
+    }
+
+    function isGuestFinalizeUpdate(existing, incoming, changed) {
       let isGuestMatch = existing.get('player2IsGuest', false) == true;
-      let isGuestFinalize = isGuestMatch && toCompleted &&
+      let toCompleted = incoming.status == 'completed' && existing.status == 'pending_report';
+      return isGuestMatch && toCompleted &&
         changed.hasOnly(['status', 'completedAt', 'reportSubmission']) &&
         incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmedBy', 'confirmedAt']) &&
         incoming.reportSubmission.submittedBy == request.auth.uid &&
@@ -224,23 +263,34 @@ service cloud.firestore {
         incoming.reportSubmission.status == 'confirmed' &&
         incoming.reportSubmission.confirmedBy == request.auth.uid &&
         incoming.reportSubmission.confirmedAt is number;
-      let isLinkGuest = existing.get('player2IsGuest', false) == true &&
+    }
+
+    function isLinkGuestUpdate(existing, incoming, changed) {
+      return existing.get('player2IsGuest', false) == true &&
         incoming.player2IsGuest == false &&
         changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
-      let isEditScore = existing.status in ['pending_report', 'completed'] &&
+    }
+
+    function isEditScoreUpdate(existing, incoming, changed) {
+      return existing.status in ['pending_report', 'completed'] &&
         incoming.status == 'pending_report' &&
         changed.hasOnly(['liveScore', 'winner', 'status', 'completedAt', 'reportSubmission', 'undoSnapshot']);
+    }
+
+    function canUpdateMatch(existing, incoming) {
+      let isParticipant = isMatchParticipant(existing);
+      let changed = incoming.diff(existing).affectedKeys();
       return isParticipant && (
-        isCancellation ||
-        isPostpone ||
-        isAcceptProposal ||
-        isStartMatch ||
-        isUndo ||
-        isReportSubmit ||
-        isGuestFinalize ||
-        isLinkGuest ||
-        isEditScore ||
-        isValidConfirmOrDispute
+        isCancellationUpdate(existing, incoming, changed) ||
+        isPostponeUpdate(existing, incoming, changed) ||
+        isAcceptProposalUpdate(existing, incoming, changed) ||
+        isStartMatchUpdate(existing, incoming, changed) ||
+        isUndoUpdate(existing, incoming, changed) ||
+        isReportSubmitUpdate(existing, incoming, changed) ||
+        isGuestFinalizeUpdate(existing, incoming, changed) ||
+        isLinkGuestUpdate(existing, incoming, changed) ||
+        isEditScoreUpdate(existing, incoming, changed) ||
+        isValidConfirmOrDisputeUpdate(existing, incoming, changed)
       );
     }
 
@@ -305,7 +355,7 @@ service cloud.firestore {
           (
             request.resource.data.playerIds == [request.auth.uid, request.resource.data.player2Id] &&
             (
-              get(/databases/$(database)/documents/users/$(request.resource.data.player2Id)).data.divisionId == request.resource.data.divisionId ||
+              getUserDataById(request.resource.data.player2Id).divisionId == request.resource.data.divisionId ||
               isUserInDivisionRoster(request.resource.data.divisionId, request.resource.data.player2Id)
             )
           )
@@ -375,8 +425,8 @@ service cloud.firestore {
           request.resource.data.type == 'direct' &&
           request.resource.data.participantIds.size() == 2 &&
           request.auth.uid in request.resource.data.participantIds &&
-          get(/databases/$(database)/documents/users/$(request.resource.data.participantIds[0])).data.divisionId == getUserData().divisionId &&
-          get(/databases/$(database)/documents/users/$(request.resource.data.participantIds[1])).data.divisionId == getUserData().divisionId;
+          getUserDataById(request.resource.data.participantIds[0]).divisionId == getUserData().divisionId &&
+          getUserDataById(request.resource.data.participantIds[1]).divisionId == getUserData().divisionId;
       }
 
       allow read: if isChannelParticipant(resource.data);

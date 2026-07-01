@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
 import {
@@ -39,6 +39,36 @@ import {
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 
+const DIVISION_ACCESS_HINTS = [
+  "You are signed in to Firebase Auth with the expected account.",
+  "Your users/{uid}.role is admin or app_developer, OR your users/{uid}.divisionId matches this division.",
+  "Your uid is listed in this division's leaderIds or playerIds roster.",
+];
+
+function PermissionHints({
+  hints,
+  authDebug,
+}: {
+  hints: string[] | null;
+  authDebug: { uid: string; email: string; roleClaim?: unknown } | null;
+}): React.JSX.Element | null {
+  if (!hints) return null;
+  return (
+    <>
+      <ul style={styles.errorList}>
+        {hints.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+      {authDebug ? (
+        <p style={styles.errorMeta}>
+          Active Firebase Auth identity: uid <code>{authDebug.uid}</code>, email <code>{authDebug.email}</code>
+          {authDebug.roleClaim !== undefined ? <> , token role claim <code>{String(authDebug.roleClaim)}</code></> : null}
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 export default function AdminPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
@@ -58,6 +88,20 @@ export default function AdminPage(): React.JSX.Element {
   const [newDivisionName, setNewDivisionName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [divisionAccessDenied, setDivisionAccessDenied] = useState(false);
+  // Tracks whether the currently-displayed `error` was set by the division-listener effect
+  // below, so a later successful snapshot only clears an error it owns (never one set by an
+  // unrelated action handler, e.g. handleMergeRecords) and `divisionAccessDenied` can never
+  // drift out of sync with `error` (every error-setting call site goes through setPageError).
+  const divisionListenerErrorRef = useRef(false);
+  function setPageError(
+    message: string,
+    options?: { permissionDenied?: boolean; fromDivisionListener?: boolean },
+  ) {
+    setError(message);
+    setDivisionAccessDenied(Boolean(options?.permissionDenied));
+    divisionListenerErrorRef.current = Boolean(options?.fromDivisionListener);
+  }
   const [repairingRankings, setRepairingRankings] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
@@ -127,11 +171,7 @@ export default function AdminPage(): React.JSX.Element {
   );
   const divisionLevelsPermissionHint = useMemo(() => {
     if (divisionLevelsError?.code !== "permission-denied") return null;
-    return [
-      "You are signed in to Firebase Auth with the expected account.",
-      "Your users/{uid}.role is admin or app_developer, OR your users/{uid}.divisionId matches this division.",
-      "Your uid is listed in this division's leaderIds or playerIds roster.",
-    ];
+    return DIVISION_ACCESS_HINTS;
   }, [divisionLevelsError?.code]);
 
 
@@ -184,6 +224,7 @@ export default function AdminPage(): React.JSX.Element {
       setDivision(null);
       setPlayers([]);
       setLoading(false);
+      setPageError("");
       return;
     }
     const leaderQuery = query(
@@ -191,8 +232,10 @@ export default function AdminPage(): React.JSX.Element {
       where("leaderIds", "array-contains", firebaseUser.uid),
     );
     let activeId = 0;
+    // undefined = not yet resolved; distinguishes "first resolution" from "resolved to no division".
+    let previousDivisionId: string | null | undefined;
 
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       leaderQuery,
       async (leaderSnap) => {
         // Prevent older async snapshot work from overwriting state after a newer snapshot arrives.
@@ -220,7 +263,23 @@ export default function AdminPage(): React.JSX.Element {
 
         if (currentId !== activeId) return;
 
+        // Only flash "Loading…" and clear the roster when the resolved division actually
+        // changes. Re-fires of the same division (e.g. from this admin's own edits) should
+        // refresh players/rankings in place without blanking the whole panel.
+        const divisionChanged = (div?.id ?? null) !== previousDivisionId;
+        previousDivisionId = div?.id ?? null;
+        if (divisionChanged) {
+          setLoading(true);
+          setPlayers([]);
+        }
+
         setDivision(div);
+        // A successful snapshot only proves the *listener itself* is healthy; only clear an
+        // error/hint that this same listener previously set, so an unrelated in-flight error
+        // from another action (e.g. handleMergeRecords) isn't silently wiped out.
+        if (divisionListenerErrorRef.current) {
+          setPageError("");
+        }
         if (div) {
           const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
             await Promise.all([
@@ -283,14 +342,23 @@ export default function AdminPage(): React.JSX.Element {
         // Surface Firestore rule denials in the UI instead of leaving an uncaught listener error in DevTools.
         setDivision(null);
         setPlayers([]);
-        setError(
-          snapshotError.code === "permission-denied"
+        const isPermissionDenied = snapshotError.code === "permission-denied";
+        setPageError(
+          isPermissionDenied
             ? "Unable to load your admin division. Confirm your signed-in account is a division leader or app admin."
             : snapshotError.message,
+          { permissionDenied: isPermissionDenied, fromDivisionListener: true },
         );
         setLoading(false);
       },
     );
+
+    return () => {
+      // Invalidate any in-flight async work from this effect instance so it can't
+      // call setState after the component unmounts or the effect re-runs.
+      activeId++;
+      unsubscribe();
+    };
   }, [firebaseUser]);
 
   async function createDivision() {
@@ -305,11 +373,11 @@ export default function AdminPage(): React.JSX.Element {
   async function handleMergeRecords() {
     if (!division || !needsMergeForUserId) return;
     if (selectedMatchIds.length === 0) {
-      setError("Please select at least one match to link.");
+      setPageError("Please select at least one match to link.");
       return;
     }
     setMerging(true);
-    setError("");
+    setPageError("");
     setLevelMessage("");
     try {
       const updatedMatches = await mergeDivisionPlayerRecords(
@@ -337,7 +405,7 @@ export default function AdminPage(): React.JSX.Element {
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
-      setError(
+      setPageError(
         message
           ? `${code ?? "error"}: ${message}`
           : "Failed to link historical matches.",
@@ -350,7 +418,7 @@ export default function AdminPage(): React.JSX.Element {
   async function handleUpdatePlayerEmail() {
     if (!division || !needsMergeForUserId || !editEmail.trim()) return;
     setMerging(true);
-    setError("");
+    setPageError("");
     try {
       await updateDivisionPlayerEmailShared(
         division.id,
@@ -372,7 +440,7 @@ export default function AdminPage(): React.JSX.Element {
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
-      setError(
+      setPageError(
         message
           ? `${code ?? "error"}: ${message}`
           : "Failed to update player email.",
@@ -385,7 +453,7 @@ export default function AdminPage(): React.JSX.Element {
   async function undoLastLink() {
     if (!division || !lastLinkAction?.sourceUserId) return;
     setMerging(true);
-    setError("");
+    setPageError("");
     try {
       const reverted = await mergeDivisionPlayerRecords(
         division.id,
@@ -404,7 +472,7 @@ export default function AdminPage(): React.JSX.Element {
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
-      setError(
+      setPageError(
         message
           ? `${code ?? "error"}: ${message}`
           : "Failed to undo the last link action.",
@@ -418,7 +486,7 @@ export default function AdminPage(): React.JSX.Element {
   async function undoLastContact() {
     if (!division || !lastContactAction || !lastContactAction.previousEmail) return;
     setMerging(true);
-    setError("");
+    setPageError("");
     try {
       await updateDivisionPlayerEmailShared(
         division.id,
@@ -437,7 +505,7 @@ export default function AdminPage(): React.JSX.Element {
     } catch (e) {
       const message = (e as { message?: string; code?: string }).message;
       const code = (e as { code?: string }).code;
-      setError(
+      setPageError(
         message
           ? `${code ?? "error"}: ${message}`
           : "Failed to undo contact update.",
@@ -486,7 +554,7 @@ export default function AdminPage(): React.JSX.Element {
     if (!division || !levelName.trim()) return;
     const selectedSeason = seasonOptions.find((season) => season.id === levelSeasonId) ?? currentSeason;
     setSavingLevel(true);
-    setError("");
+    setPageError("");
     setLevelMessage("");
     try {
       await upsertDivisionLevel({
@@ -505,7 +573,7 @@ export default function AdminPage(): React.JSX.Element {
       setLevelDescription("");
       setLevelMessage("Division level saved. Rankings and CSV exports can now use this season/division option.");
     } catch (e) {
-      setError((e as { message?: string }).message || "Failed to save division level.");
+      setPageError((e as { message?: string }).message || "Failed to save division level.");
     } finally {
       setSavingLevel(false);
     }
@@ -515,7 +583,7 @@ export default function AdminPage(): React.JSX.Element {
     if (!division) return;
     setExportingCsv(true);
     setCsvMessage("");
-    setError("");
+    setPageError("");
     try {
       const result = await exportDivisionCsv({
         divisionId: division.id,
@@ -533,7 +601,7 @@ export default function AdminPage(): React.JSX.Element {
       URL.revokeObjectURL(href);
       setCsvMessage(`Exported ${result.rowCount} ${exportType} row${result.rowCount === 1 ? "" : "s"}.`);
     } catch (e) {
-      setError((e as { message?: string }).message || "Failed to export CSV.");
+      setPageError((e as { message?: string }).message || "Failed to export CSV.");
     } finally {
       setExportingCsv(false);
     }
@@ -547,7 +615,7 @@ export default function AdminPage(): React.JSX.Element {
   async function repairRankings() {
     if (!division) return;
     setRepairingRankings(true);
-    setError("");
+    setPageError("");
     setRepairMessage("");
     try {
       const response = (await recalculateDivisionRankings(
@@ -580,7 +648,7 @@ export default function AdminPage(): React.JSX.Element {
       );
     } catch (e) {
       const message = (e as { message?: string }).message;
-      setError(message || "Failed to repair rankings. Please try again.");
+      setPageError(message || "Failed to repair rankings. Please try again.");
     } finally {
       setRepairingRankings(false);
     }
@@ -589,7 +657,7 @@ export default function AdminPage(): React.JSX.Element {
   async function handleSavePlayerRow() {
     if (!division || !editingPlayerId || !editName.trim() || !editDivisionLevelId) return;
     setMerging(true);
-    setError('');
+    setPageError('');
     try {
       await upsertDivisionMembership({
         divisionId: division.id,
@@ -605,7 +673,7 @@ export default function AdminPage(): React.JSX.Element {
       setExpandedPlayerId(null);
       setEditingPlayerId(null);
     } catch (e) {
-      setError((e as { message?: string }).message || 'Failed to save player updates.');
+      setPageError((e as { message?: string }).message || 'Failed to save player updates.');
     } finally {
       setMerging(false);
     }
@@ -614,7 +682,7 @@ export default function AdminPage(): React.JSX.Element {
   async function handleCreatePlayerRow() {
     if (!division || !newPlayerName.trim() || !newPlayerDivisionLevelId) return;
     setSavingNewPlayer(true);
-    setError("");
+    setPageError("");
     try {
       await upsertDivisionMembership({
         divisionId: division.id,
@@ -629,7 +697,7 @@ export default function AdminPage(): React.JSX.Element {
       setNewPlayerEmail("player@example.com");
       setNewPlayerPhone("555-0100");
     } catch (e) {
-      setError((e as { message?: string }).message || "Failed to save player row.");
+      setPageError((e as { message?: string }).message || "Failed to save player row.");
     } finally {
       setSavingNewPlayer(false);
     }
@@ -690,7 +758,15 @@ export default function AdminPage(): React.JSX.Element {
           </button>
         </div>
 
-        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+        {error ? (
+          <div role="alert" style={styles.error}>
+            <p style={{ margin: 0 }}>{error}</p>
+            <PermissionHints
+              hints={divisionAccessDenied ? DIVISION_ACCESS_HINTS : null}
+              authDebug={authDebug}
+            />
+          </div>
+        ) : null}
 
         {loading ? (
           <div style={styles.placeholder}>Loading…</div>
@@ -820,21 +896,7 @@ export default function AdminPage(): React.JSX.Element {
                     Unable to load division levels for {division?.name ?? "this division"}.
                     {" "}{divisionLevelsError.message}
                   </p>
-                  {divisionLevelsPermissionHint ? (
-                    <>
-                      <ul style={styles.errorList}>
-                        {divisionLevelsPermissionHint.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                      {authDebug ? (
-                        <p style={styles.errorMeta}>
-                          Active Firebase Auth identity: uid <code>{authDebug.uid}</code>, email <code>{authDebug.email}</code>
-                          {authDebug.roleClaim !== undefined ? <> , token role claim <code>{String(authDebug.roleClaim)}</code></> : null}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : null}
+                  <PermissionHints hints={divisionLevelsPermissionHint} authDebug={authDebug} />
                 </div>
               ) : divisionLevels.length > 0 ? (
                 <div style={styles.levelGrid}>

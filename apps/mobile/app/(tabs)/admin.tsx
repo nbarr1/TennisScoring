@@ -94,7 +94,10 @@ export default function AdminScreen() {
       divisionsCol(),
       where("leaderIds", "array-contains", user.id),
     );
+    let activeId = 0;
     const unsub = onSnapshot(q, async (snap) => {
+      // Prevent older async snapshot work from overwriting state after a newer snapshot arrives.
+      const currentId = ++activeId;
       let div: Division | null = null;
 
       if (!snap.empty) {
@@ -111,6 +114,8 @@ export default function AdminScreen() {
           };
         }
       }
+
+      if (currentId !== activeId) return;
 
       setDivision(div);
       if (div) {
@@ -160,6 +165,9 @@ export default function AdminScreen() {
             updatedAt: ranking.updatedAt ?? 0,
           });
         });
+
+        if (currentId !== activeId) return;
+
         setPlayers(
           [...byId.values()].sort((a, b) =>
             a.displayName.localeCompare(b.displayName),
@@ -170,7 +178,10 @@ export default function AdminScreen() {
       }
       setLoading(false);
     });
-    return unsub;
+    return () => {
+      activeId++;
+      unsub();
+    };
   }, [user?.id, user?.divisionId]);
 
   async function handleCreateDivision() {
