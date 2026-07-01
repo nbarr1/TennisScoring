@@ -1,0 +1,73 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    // User presence system (online status and last active times)
+    "presence": {
+      "$userId": {
+        // Any authenticated user can see who is online
+        ".read": "auth != null",
+        // Users can only update their own presence status
+        ".write": "auth != null && auth.uid === $userId",
+        ".validate": "newData.hasChildren(['state', 'lastChanged'])",
+        "state": {
+          ".validate": "newData.isString() && (newData.val() === 'online' || newData.val() === 'offline' || newData.val() === 'away')"
+        },
+        "lastChanged": {
+          ".validate": "newData.isNumber() || newData.val() === 'now'"
+        }
+      }
+    },
+
+    // Chat Typing Indicators
+    "typing": {
+      "$channelId": {
+        "$userId": {
+          // Any participant in the app can read typing indicators
+          ".read": "auth != null",
+          // A user can only flag themselves as typing
+          ".write": "auth != null && auth.uid === $userId",
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
+
+    // Ultra-low latency live match score updates
+    "liveMatches": {
+      "$matchId": {
+        // Any authenticated user can view live match scoring streams
+        ".read": "auth != null",
+
+        // Root write rule: allow setting up initial match or if the requester is player1 or player2
+        ".write": "auth != null && ( !data.exists() || auth.uid === data.child('metadata/player1Id').val() || auth.uid === data.child('metadata/player2Id').val() )",
+
+        "metadata": {
+          // Initialize metadata: creator must be player1Id
+          ".validate": "newData.hasChildren(['player1Id', 'player2Id'])",
+          "player1Id": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "player2Id": {
+            ".validate": "newData.isString()"
+          }
+        },
+
+        "liveScore": {
+          // Validate structure of live scoreboard updates
+          ".validate": "newData.hasChildren(['setScore', 'currentSetScore', 'server'])",
+          "server": {
+            ".validate": "newData.isString()"
+          }
+        },
+
+        "points": {
+          // Match point-by-point live feed
+          "$pointId": {
+            ".validate": "newData.hasChildren(['server', 'receiver', 'outcome', 'timestamp'])"
+          }
+        }
+      }
+    }
+  }
+}
