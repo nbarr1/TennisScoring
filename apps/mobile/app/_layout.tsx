@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text, ScrollView } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useAuthUser, useUserProfile } from '@tennis/firebase-client';
+import { useAuthUser, usePrivateUser } from '@tennis/firebase-client';
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
@@ -16,9 +16,44 @@ function LoadingScreen() {
   );
 }
 
+// Release builds have no red-box/dev overlay, so an uncaught render error here
+// would otherwise surface only as a silent crash/restart loop with no way to
+// see why. Surfacing it on-screen gives us a diagnosable error in the field.
+class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('RootErrorBoundary caught an error', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <ScrollView
+          style={{ flex: 1, backgroundColor: '#f5f5f0' }}
+          contentContainerStyle={{ padding: 24, paddingTop: 64 }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#b00020', marginBottom: 12 }}>
+            Something went wrong
+          </Text>
+          <Text style={{ fontSize: 14, color: '#333', marginBottom: 12 }}>
+            {this.state.error.message}
+          </Text>
+          <Text style={{ fontSize: 12, color: '#666' }}>{this.state.error.stack}</Text>
+        </ScrollView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { firebaseUser, loading: authLoading } = useAuthUser();
-  const { profile, loading: profileLoading } = useUserProfile(firebaseUser?.uid ?? null);
+  const { user: profile, loading: profileLoading } = usePrivateUser(firebaseUser?.uid ?? null);
   const router = useRouter();
   const segments = useSegments();
   const { setUser } = useAppStore();
@@ -72,18 +107,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AuthGuard>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(onboarding)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Provide Feedback' }} />
-            <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
-          </Stack>
-        </AuthGuard>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <RootErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AuthGuard>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(onboarding)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Provide Feedback' }} />
+              <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
+            </Stack>
+          </AuthGuard>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </RootErrorBoundary>
   );
 }
