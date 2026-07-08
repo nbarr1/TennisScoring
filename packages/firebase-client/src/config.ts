@@ -23,6 +23,26 @@ const firebaseConfig = {
 const isReactNative = (globalThis as any).navigator?.product === 'ReactNative';
 const isBrowser = typeof (globalThis as Record<string, unknown>)['window'] !== 'undefined' || isReactNative;
 
+function assertFirebaseConfigForRuntime() {
+  if (!isBrowser) return;
+  const missing = [
+    ['apiKey', firebaseConfig.apiKey],
+    ['projectId', firebaseConfig.projectId],
+    ['appId', firebaseConfig.appId],
+  ]
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Firebase configuration is incomplete for this build. Missing: ${missing.join(', ')}. ` +
+        'Set the EXPO_PUBLIC_FIREBASE_* environment variables for mobile APK builds.',
+    );
+  }
+}
+
+assertFirebaseConfigForRuntime();
+
 export const app = isBrowser
   ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
   : (null as unknown as ReturnType<typeof getApp>);
@@ -32,14 +52,20 @@ export const db = isBrowser ? getFirestore(app) : (null as unknown as ReturnType
 function createAuth() {
   if (!isBrowser) return null as unknown as ReturnType<typeof getAuth>;
   if (isReactNative) {
-    // getReactNativePersistence only ships in the React Native entry of firebase/auth,
-    // so it's loaded via require() to keep it out of the web bundle.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
+    // getReactNativePersistence only ships in the React Native auth entry, so it
+    // is loaded dynamically to keep it out of the web bundle.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
-    const { getReactNativePersistence } = require('firebase/auth') as any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) } as any);
+    const { getReactNativePersistence } = require('firebase/auth/react-native') as any;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) } as any);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code === 'auth/already-initialized') return getAuth(app);
+      throw error;
+    }
   }
   return getAuth(app);
 }

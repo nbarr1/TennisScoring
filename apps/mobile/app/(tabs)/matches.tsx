@@ -26,13 +26,12 @@ import {
 import {
   formatScoreDisplay,
   formatGameScore,
-  DAY_LABELS,
   getMatchStatusMetadata,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
-import type { Match, User, Availability } from "@tennis/shared";
+import type { Match, PublicProfile } from "@tennis/shared";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -195,12 +194,12 @@ export default function MatchesScreen() {
   );
   const [guestName, setGuestName] = useState("");
   const [player1SearchText, setPlayer1SearchText] = useState("");
-  const [player1SearchResults, setPlayer1SearchResults] = useState<User[]>([]);
-  const [selectedPlayer1, setSelectedPlayer1] = useState<User | null>(null);
+  const [player1SearchResults, setPlayer1SearchResults] = useState<PublicProfile[]>([]);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(null);
   const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
+  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   // Historic match set scores: array of { p1, p2 } per set
@@ -675,7 +674,7 @@ export default function MatchesScreen() {
                           {selectedPlayer1.displayName}
                         </Text>
                         <Text style={styles.playerChipEmail}>
-                          {selectedPlayer1.email}
+                          Public profile
                         </Text>
                       </View>
                       <TouchableOpacity
@@ -729,7 +728,7 @@ export default function MatchesScreen() {
                                 {item.displayName}
                               </Text>
                               <Text style={styles.resultEmail}>
-                                {item.email}
+                                Public profile
                               </Text>
                             </TouchableOpacity>
                           )}
@@ -817,7 +816,7 @@ export default function MatchesScreen() {
                     {selectedOpponent.displayName}
                   </Text>
                   <Text style={styles.playerChipEmail}>
-                    {selectedOpponent.email}
+                    Public profile
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -878,7 +877,7 @@ export default function MatchesScreen() {
                         <Text style={styles.resultName}>
                           {item.displayName}
                         </Text>
-                        <Text style={styles.resultEmail}>{item.email}</Text>
+                        <Text style={styles.resultEmail}>Public profile</Text>
                       </TouchableOpacity>
                     )}
                   />
@@ -1036,8 +1035,8 @@ function ProposeMatchModal({
   onClose: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<User | null>(null);
+  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
+  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -1114,7 +1113,7 @@ function ProposeMatchModal({
                       {selectedOpponent.displayName}
                     </Text>
                     <Text style={styles.playerChipEmail}>
-                      {selectedOpponent.email}
+                      Public profile
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -1128,7 +1127,7 @@ function ProposeMatchModal({
                     <Text style={styles.changeText}>Change</Text>
                   </TouchableOpacity>
                 </View>
-                <AvailabilityHint availability={selectedOpponent.availability} />
+                <Text style={styles.availabilityEmpty}>Availability is visible only when teammates share it.</Text>
 
                 <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                 <TextInput
@@ -1192,7 +1191,7 @@ function ProposeMatchModal({
                         <Text style={styles.resultName}>
                           {item.displayName}
                         </Text>
-                        <Text style={styles.resultEmail}>{item.email}</Text>
+                        <Text style={styles.resultEmail}>Public profile</Text>
                       </TouchableOpacity>
                     )}
                   />
@@ -1239,35 +1238,6 @@ function ProposeMatchModal({
           </View>
       </KeyboardAwareBottomSheet>
     </Modal>
-  );
-}
-
-function AvailabilityHint({ availability }: { availability?: Availability }) {
-  if (
-    !availability ||
-    (availability.slots.length === 0 && !availability.note)
-  ) {
-    return (
-      <Text style={styles.availabilityEmpty}>
-        Opponent hasn&apos;t set their preferred play times.
-      </Text>
-    );
-  }
-  return (
-    <View style={styles.availabilityBox}>
-      <Text style={styles.availabilityTitle}>Their preferred times</Text>
-      {availability.slots.map((s, i) => (
-        <View key={i} style={styles.availabilityRow}>
-          <Text style={styles.availabilityDay}>{DAY_LABELS[s.day]}</Text>
-          <Text style={styles.availabilityTime}>
-            {s.from}–{s.to}
-          </Text>
-        </View>
-      ))}
-      {availability.note && (
-        <Text style={styles.availabilityNote}>{availability.note}</Text>
-      )}
-    </View>
   );
 }
 
