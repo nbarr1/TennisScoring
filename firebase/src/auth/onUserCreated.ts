@@ -18,9 +18,9 @@ export const onUserCreated = functions.identity.beforeUserCreated(async (event) 
     );
   }
 
-  const email = (event.data?.email ?? '').toLowerCase();
+  const authEmail = (event.data?.email ?? '').toLowerCase();
   const normalizedDomain = domain.startsWith('@') ? domain : `@${domain}`;
-  if (!email.endsWith(normalizedDomain)) {
+  if (!authEmail.endsWith(normalizedDomain)) {
     throw new functions.https.HttpsError(
       'permission-denied',
       `Registration is restricted to ${normalizedDomain} email addresses.`,

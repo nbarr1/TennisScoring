@@ -74,6 +74,26 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+
+function publicProfileUpdate(input: {
+  id: string;
+  displayName?: unknown;
+  avatarUrl?: unknown;
+  divisionId?: string | null;
+  role?: unknown;
+  tutorialDone?: unknown;
+}) {
+  return {
+    id: input.id,
+    ...(typeof input.displayName === 'string' && input.displayName.trim() ? { displayName: input.displayName.trim() } : {}),
+    ...(typeof input.avatarUrl === 'string' ? { avatarUrl: input.avatarUrl } : {}),
+    ...(input.divisionId !== undefined ? { divisionId: input.divisionId } : {}),
+    ...(typeof input.role === 'string' ? { role: input.role } : {}),
+    ...(typeof input.tutorialDone === 'boolean' ? { tutorialDone: input.tutorialDone } : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+}
+
 type MatchLike = {
   status?: unknown;
   player1Name?: unknown;
@@ -328,6 +348,17 @@ export const createDivision = onCall(callableOptions, async (request) => {
       { merge: true },
     );
 
+    tx.set(
+      db.collection('profiles').doc(uid),
+      publicProfileUpdate({
+        id: uid,
+        displayName,
+        divisionId: divisionRef.id,
+        role: 'division_leader',
+      }),
+      { merge: true },
+    );
+
     tx.set(channelRef, {
       type: 'division',
       name: `${safeName} Chat`,
@@ -381,6 +412,16 @@ export const joinDivisionByCode = onCall(callableOptions, async (request) => {
       },
       { merge: true },
     );
+    tx.set(
+      db.collection('profiles').doc(uid),
+      publicProfileUpdate({
+        id: uid,
+        displayName: request.auth?.token.name,
+        divisionId: divisionRef.id,
+        role: 'player',
+      }),
+      { merge: true },
+    );
   });
 
   await addUserToDivisionChannel(db, divisionRef.id, uid);
@@ -430,6 +471,18 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
         divisionId: safeDivisionId,
         updatedAt: FieldValue.serverTimestamp(),
       },
+      { merge: true },
+    );
+    tx.set(
+      db.collection('profiles').doc(userId),
+      publicProfileUpdate({
+        id: userId,
+        displayName: users.docs[0].data()?.displayName,
+        avatarUrl: users.docs[0].data()?.avatarUrl,
+        divisionId: safeDivisionId,
+        role: users.docs[0].data()?.role ?? 'player',
+        tutorialDone: users.docs[0].data()?.tutorialDone,
+      }),
       { merge: true },
     );
   });

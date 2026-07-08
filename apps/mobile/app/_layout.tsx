@@ -1,12 +1,13 @@
-import { Component, useEffect, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator, Text, ScrollView } from 'react-native';
+import { View, ActivityIndicator, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useAuthUser, usePrivateUser } from '@tennis/firebase-client';
+import { auth, useAuthUser, usePrivateUser } from '@tennis/firebase-client';
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
+import { signOut } from 'firebase/auth';
 
 function LoadingScreen() {
   return (
@@ -51,12 +52,70 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
   }
 }
 
+
+function DiagnosticScreen({
+  title,
+  message,
+  details,
+  onRetry,
+  onSignOut,
+}: {
+  title: string;
+  message: string;
+  details?: string;
+  onRetry?: () => void;
+  onSignOut?: () => void;
+}) {
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#f5f5f0' }}
+      contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}
+    >
+      <Text style={{ fontSize: 20, fontWeight: '700', color: '#1a472a', marginBottom: 12 }}>
+        {title}
+      </Text>
+      <Text style={{ fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 16 }}>
+        {message}
+      </Text>
+      {details ? (
+        <Text style={{ fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 18 }}>
+          {details}
+        </Text>
+      ) : null}
+      <View style={{ gap: 12 }}>
+        {onRetry ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading the app"
+            onPress={onRetry}
+            style={{ backgroundColor: '#1a472a', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Retry</Text>
+          </TouchableOpacity>
+        ) : null}
+        {onSignOut ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Sign out and return to login"
+            onPress={onSignOut}
+            style={{ borderColor: '#1a472a', borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#1a472a', fontWeight: '700' }}>Sign out</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    </ScrollView>
+  );
+}
+
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { firebaseUser, loading: authLoading } = useAuthUser();
-  const { user: profile, loading: profileLoading } = usePrivateUser(firebaseUser?.uid ?? null);
+  const { firebaseUser, loading: authLoading, error: authError } = useAuthUser();
+  const [retryKey, setRetryKey] = useState(0);
+  const { user: profile, loading: profileLoading, error: profileError } = usePrivateUser(firebaseUser?.uid ?? null, retryKey);
   const router = useRouter();
   const segments = useSegments();
   const { setUser } = useAppStore();
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
 
   useNotifications(firebaseUser?.uid);
 
@@ -64,6 +123,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const inAuth = segments[0] === '(auth)';
   const inOnboarding = segments[0] === '(onboarding)';
   const inTutorial = (segments as string[])[1] === 'tutorial';
+
+  useEffect(() => {
+    if (!dataLoading) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const timeout = setTimeout(() => setLoadingTimedOut(true), 15000);
+    return () => clearTimeout(timeout);
+  }, [dataLoading, retryKey]);
 
   useEffect(() => {
     if (dataLoading) return;
@@ -86,9 +154,35 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (hasDivision && inOnboarding && !inTutorial) {
       router.replace(tabsDest);
     }
-  }, [firebaseUser, dataLoading, profile, segments]);
+  }, [firebaseUser, dataLoading, profile, router, segments, setUser, retryKey]);
 
-  if (dataLoading) return <LoadingScreen />;
+  if (authError || profileError) {
+    const error = authError ?? profileError;
+    return (
+      <DiagnosticScreen
+        title="Could not finish loading"
+        message="The app could not load your account data. This is usually caused by a temporary network issue, a Firebase configuration problem, or missing account data."
+        details={`uid=${firebaseUser?.uid ?? 'none'}\nerror=${error?.message ?? 'unknown'}`}
+        onRetry={() => setRetryKey((key) => key + 1)}
+        onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
+      />
+    );
+  }
+
+  if (dataLoading) {
+    if (loadingTimedOut) {
+      return (
+        <DiagnosticScreen
+          title="Still loading"
+          message="Loading is taking longer than expected. You can keep waiting, retry the account listener, or sign out and try again."
+          details={`authLoading=${authLoading}\nprofileLoading=${profileLoading}\nuid=${firebaseUser?.uid ?? 'none'}`}
+          onRetry={() => setRetryKey((key) => key + 1)}
+          onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
+        />
+      );
+    }
+    return <LoadingScreen />;
+  }
 
   // Mirror the redirect conditions above: while a replace() is in flight,
   // render a loading screen instead of the stale route's content (e.g. the

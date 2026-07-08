@@ -61,7 +61,7 @@ export default function FeedbackScreen() {
     try {
       await submitFeedback({
         userId: firebaseUser.uid,
-        userEmail: profile?.email ?? firebaseUser.email ?? null,
+        userEmail: firebaseUser.email ?? null,
         userDisplayName:
           profile?.displayName ?? firebaseUser.displayName ?? null,
         category: trimmedCategory,

@@ -1,77 +1,125 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { arrayUnion, onSnapshot, updateDoc, writeBatch } from 'firebase/firestore';
+import { arrayUnion, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
 import type { User, PublicProfile } from '@tennis/shared';
 
-export function useAuthUser() {
+type AuthUserState = {
+  firebaseUser: FirebaseUser | null;
+  loading: boolean;
+  error: Error | null;
+};
+
+type PrivateUserState = {
+  user: User | null;
+  loading: boolean;
+  error: FirestoreError | null;
+};
+
+type PublicProfileState = {
+  profile: PublicProfile | null;
+  loading: boolean;
+  error: FirestoreError | null;
+};
+
+export function useAuthUser(): AuthUserState {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      setLoading(false);
-    });
+    const unsub = onAuthStateChanged(
+      auth,
+      (user) => {
+        setFirebaseUser(user);
+        setError(null);
+        setLoading(false);
+      },
+      (authError) => {
+        setFirebaseUser(null);
+        setError(authError instanceof Error ? authError : new Error(String(authError)));
+        setLoading(false);
+      },
+    );
     return unsub;
   }, []);
 
-  return { firebaseUser, loading };
+  return { firebaseUser, loading, error };
 }
 
 /**
  * Hook for the authenticated user's private data (PII).
  * Only accessible by the owner.
  */
-export function usePrivateUser(uid: string | null) {
+export function usePrivateUser(uid: string | null, reloadKey = 0): PrivateUserState {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
     if (!uid) {
+      setUser(null);
+      setError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setError(null);
     const unsub = onSnapshot(
       userDoc(uid),
       (snap) => {
         setUser(snap.exists() ? { ...(snap.data() as User), id: snap.id } : null);
+        setError(null);
         setLoading(false);
-      }
+      },
+      (snapshotError) => {
+        setUser(null);
+        setError(snapshotError);
+        setLoading(false);
+      },
     );
     return unsub;
-  }, [uid]);
+  }, [uid, reloadKey]);
 
-  return { user, loading };
+  return { user, loading, error };
 }
 
 /**
  * Hook for public profile data.
  * Accessible by division members.
  */
-export function usePublicProfile(uid: string | null) {
+export function usePublicProfile(uid: string | null, reloadKey = 0): PublicProfileState {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
 
   useEffect(() => {
     if (!uid) {
+      setProfile(null);
+      setError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setError(null);
     const unsub = onSnapshot(
       profileDoc(uid),
       (snap) => {
         setProfile(snap.exists() ? { ...(snap.data() as PublicProfile), id: snap.id } : null);
+        setError(null);
         setLoading(false);
-      }
+      },
+      (snapshotError) => {
+        setProfile(null);
+        setError(snapshotError);
+        setLoading(false);
+      },
     );
     return unsub;
-  }, [uid]);
+  }, [uid, reloadKey]);
 
-  return { profile, loading };
+  return { profile, loading, error };
 }
 
 /** @deprecated Use usePrivateUser or usePublicProfile */

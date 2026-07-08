@@ -49,7 +49,7 @@ import {
   addWearScoreInputListener,
   sendScoreToWear,
 } from "../../modules/wear-os";
-import type { Match, TipTrigger, User } from "@tennis/shared";
+import type { Match, TipTrigger, PublicProfile } from "@tennis/shared";
 
 const COURT = {
   court: "#2A6F7E",
@@ -493,7 +493,7 @@ export default function MatchScreen() {
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
-  const [linkResults, setLinkResults] = useState<User[]>([]);
+  const [linkResults, setLinkResults] = useState<PublicProfile[]>([]);
   const [linkSearching, setLinkSearching] = useState(false);
   const [linking, setLinking] = useState(false);
 
@@ -803,14 +803,14 @@ export default function MatchScreen() {
     }
   }
 
-  async function handleLinkOpponent(opponent: User) {
+  async function handleLinkOpponent(opponent: PublicProfile) {
     if (!match || !id) return;
     setLinking(true);
     try {
       await linkGuestOpponent(
         id,
         opponent.id,
-        opponent.displayName ?? opponent.email ?? "",
+        opponent.displayName ?? "",
         match.playerIds ?? [match.player1Id],
       );
       setShowLinkOpponent(false);
@@ -1672,7 +1672,7 @@ export default function MatchScreen() {
                     <Text style={styles.linkResultName}>
                       {item.displayName}
                     </Text>
-                    <Text style={styles.linkResultEmail}>{item.email}</Text>
+                    <Text style={styles.linkResultEmail}>Public profile</Text>
                   </TouchableOpacity>
                 )}
                 ListEmptyComponent={

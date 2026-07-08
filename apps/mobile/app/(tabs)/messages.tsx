@@ -19,7 +19,7 @@ import {
   searchDivisionPlayers,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
-import type { Message, Channel, User } from "@tennis/shared";
+import type { Message, Channel, PublicProfile } from "@tennis/shared";
 import {
   KeyboardAwareBottomSheet,
   KeyboardSafeView,
@@ -146,7 +146,7 @@ export default function MessagesScreen() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [showNewDM, setShowNewDM] = useState(false);
   const [dmSearch, setDmSearch] = useState("");
-  const [dmResults, setDmResults] = useState<User[]>([]);
+  const [dmResults, setDmResults] = useState<PublicProfile[]>([]);
   const [dmSearching, setDmSearching] = useState(false);
   const [dmCreating, setDmCreating] = useState(false);
 
@@ -167,7 +167,7 @@ export default function MessagesScreen() {
     }
   }
 
-  async function handleStartDM(other: User) {
+  async function handleStartDM(other: PublicProfile) {
     if (!user) return;
     setDmCreating(true);
     try {
@@ -275,7 +275,7 @@ export default function MessagesScreen() {
                   onPress={() => handleStartDM(item)}
                 >
                   <Text style={styles.resultName}>{item.displayName}</Text>
-                  <Text style={styles.resultEmail}>{item.email}</Text>
+                  <Text style={styles.resultEmail}>Public profile</Text>
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
