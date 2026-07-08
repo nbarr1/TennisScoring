@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import {
+  auth,
   useAuthUser,
   createDivision,
   joinDivisionByCode,
@@ -27,7 +29,22 @@ export default function DivisionOnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { firebaseUser } = useAuthUser();
+  const setUser = useAppStore((s) => s.setUser);
   const setDivisionId = useAppStore((s) => s.setDivisionId);
+
+  function handleSignOut() {
+    Alert.alert("Sign Out", `Sign out of ${firebaseUser?.email ?? "this account"}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          await signOut(auth);
+          setUser(null);
+        },
+      },
+    ]);
+  }
 
   async function handleCreate() {
     if (!divisionName.trim()) {
@@ -189,6 +206,12 @@ export default function DivisionOnboardingScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <TouchableOpacity style={styles.signOutLink} onPress={handleSignOut}>
+        <Text style={styles.signOutLinkText}>
+          Not you? Signed in as {firebaseUser?.email ?? "unknown"} — Sign out
+        </Text>
+      </TouchableOpacity>
     </KeyboardAwareScrollView>
   );
 }
@@ -255,4 +278,7 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   backBtn: { alignItems: "center", paddingVertical: 12 },
   backText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
+
+  signOutLink: { alignItems: "center", marginTop: 32, padding: 8 },
+  signOutLinkText: { color: "#999", fontSize: 13 },
 });
