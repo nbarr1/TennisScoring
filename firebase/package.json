@@ -17,14 +17,14 @@
     "node": "22"
   },
   "dependencies": {
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.1.0",
     "firebase-functions": "^7.2.5",
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@tennis/shared": "workspace:*",
     "typescript": "^6.0.3",
-    "@types/node": "^25.9.1",
-    "esbuild": "0.28.0"
+    "@types/node": "^26.1.1",
+    "esbuild": "0.28.1"
   }
 }
