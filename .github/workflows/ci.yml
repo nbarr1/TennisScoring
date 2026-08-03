@@ -87,10 +87,26 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Dependency audit with fallback
-        run: |
-          pnpm audit --audit-level=high || npx --yes osv-scanner --lockfile=pnpm-lock.yaml
+      # The rules checks run before the dependency audit. The audit gates this job,
+      # so while it fails these steps never execute and rules changes land with no
+      # CI signal at all — which is how the job behaved from June 2026 onward.
       - name: Firebase rules guard
         run: pnpm check:firebase-rules
       - name: Firebase emulator rules smoke test
         run: pnpm --filter @tennis/firebase-functions test:rules
+      # Reproduces the intended `pnpm audit || osv-scanner` fallback, where the
+      # scanner casts the deciding vote. osv-scanner is a Go binary published as a
+      # container action, not an npm package, so the previous `npx --yes osv-scanner`
+      # invocation always 404'd — leaving any advisory as an unconditional job
+      # failure with a misleading error. continue-on-error below only defers the
+      # verdict to the scanner step; it does not make the audit non-blocking.
+      - name: Dependency audit
+        id: pnpm_audit
+        continue-on-error: true
+        run: pnpm audit --audit-level=high
+      - name: Dependency audit fallback (OSV)
+        if: steps.pnpm_audit.outcome == 'failure'
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
