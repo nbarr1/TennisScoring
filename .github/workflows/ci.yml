@@ -53,6 +53,14 @@ jobs:
         run: pnpm typecheck
       - name: Lint
         run: pnpm lint
+      # Runs last because it is the most expensive step, so the cheap checks fail
+      # fast. Nothing here compiled the apps before, which is how a `require` of a
+      # module path that no longer exists in the installed Firebase SDK reached the
+      # default branch: typecheck missed it behind an `as any`, and only a real
+      # bundler resolves it. Turbo caches the upstream packages that typecheck
+      # already built, so this mostly costs the Next.js compile.
+      - name: Build
+        run: pnpm build
 
   shared_tests:
     needs: changes
