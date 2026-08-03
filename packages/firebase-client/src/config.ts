@@ -52,12 +52,16 @@ export const db = isBrowser ? getFirestore(app) : (null as unknown as ReturnType
 function createAuth() {
   if (!isBrowser) return null as unknown as ReturnType<typeof getAuth>;
   if (isReactNative) {
-    // getReactNativePersistence only ships in the React Native auth entry, so it
-    // is loaded dynamically to keep it out of the web bundle.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // Metro resolves 'firebase/auth' through the package's "react-native" export
+    // condition, which serves @firebase/auth/dist/rn — the only build that exports
+    // getReactNativePersistence. The dedicated 'firebase/auth/react-native' subpath
+    // was removed in Firebase JS SDK v12, and referencing it breaks both the Metro
+    // bundle and the web build (bundlers resolve this require statically even though
+    // it is unreachable on web). Loading it lazily keeps the web bundle unaffected;
+    // on web the named export is simply absent and this branch never runs.
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any
-    const { getReactNativePersistence } = require('firebase/auth/react-native') as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { getReactNativePersistence } = require('firebase/auth') as any;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) } as any);

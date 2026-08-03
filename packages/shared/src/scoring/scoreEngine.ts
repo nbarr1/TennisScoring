@@ -5,6 +5,7 @@ import type {
   MatchFormat_Config,
   SetScore,
   ServiceSide,
+  GameScore,
 } from '../types/match';
 
 export type TipTrigger =
@@ -73,6 +74,49 @@ function deepCloneScore(score: LiveScore): LiveScore {
 function isMatchPoint(score: LiveScore, scorer: Player, format: MatchFormat_Config): boolean {
   const scorerSets = scorer === 'player1' ? score.player1SetsWon : score.player2SetsWon;
   return scorerSets === format.setsToWin - 1;
+}
+
+/** True when `player` wins the current game by taking the next point. */
+function isGamePointFor(game: GameScore, player: Player): boolean {
+  const mine = game[player];
+  const theirs = game[oppositePlayer(player)];
+  return mine === 'Ad' || (mine === '40' && theirs !== '40' && theirs !== 'Ad');
+}
+
+/**
+ * The player one point from winning the current game, if any. At most one player
+ * can hold that position, and at deuce neither does.
+ */
+function playerAtGamePoint(game: GameScore): Player | undefined {
+  if (isGamePointFor(game, 'player1')) return 'player1';
+  if (isGamePointFor(game, 'player2')) return 'player2';
+  return undefined;
+}
+
+/**
+ * Emits at most one of match_point / set_point / game_point.
+ *
+ * A set or match point is a *game* point that also decides the set or match, so the
+ * game-point check has to gate the others: without it, every point of a game played at
+ * 5-3 reports "set point" even at 15-0. The tip describes whoever is actually one point
+ * away, which is not necessarily the player who just scored.
+ */
+function pushOpportunityTips(
+  score: LiveScore,
+  format: MatchFormat_Config,
+  tips: TipTrigger[]
+): void {
+  const player = playerAtGamePoint(score.currentGame);
+  if (!player) return;
+
+  const setPoint = isSetPoint(score, player, format);
+  if (setPoint && isMatchPoint(score, player, format)) {
+    tips.push('match_point');
+  } else if (setPoint) {
+    tips.push('set_point');
+  } else {
+    tips.push('game_point');
+  }
 }
 
 function isSetPoint(score: LiveScore, scorer: Player, format: MatchFormat_Config): boolean {
@@ -184,6 +228,7 @@ export function applyPoint(
     } else if (game.player1 === '40' && game.player2 === '40') {
       game.player1 = 'Ad';
       tips.push('advantage');
+      pushOpportunityTips(next, format, tips);
       return { nextScore: next, tips };
     } else {
       const wasAtForty = game.player1 === '40';
@@ -200,6 +245,7 @@ export function applyPoint(
     } else if (game.player2 === '40' && game.player1 === '40') {
       game.player2 = 'Ad';
       tips.push('advantage');
+      pushOpportunityTips(next, format, tips);
       return { nextScore: next, tips };
     } else {
       const wasAtForty = game.player2 === '40';
@@ -212,13 +258,7 @@ export function applyPoint(
     if (game.player1 === '40' && game.player2 === '40') {
       tips.push('deuce');
     }
-    if (isMatchPoint(next, scorer, format) && isSetPoint(next, scorer, format)) {
-      tips.push('match_point');
-    } else if (isSetPoint(next, scorer, format)) {
-      tips.push('set_point');
-    } else if (game.player1 === '40' || game.player2 === '40') {
-      tips.push('game_point');
-    }
+    pushOpportunityTips(next, format, tips);
     return { nextScore: next, tips };
   }
 

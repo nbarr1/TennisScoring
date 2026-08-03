@@ -16,7 +16,7 @@ import {
   deleteDirectChannel,
 } from "@tennis/firebase-client";
 import { getDoc } from "firebase/firestore";
-import type { Channel, Message, User, PublicProfile } from "@tennis/shared";
+import type { Channel, Message, PublicProfile } from "@tennis/shared";
 
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
