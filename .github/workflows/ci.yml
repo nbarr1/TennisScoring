@@ -87,6 +87,14 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # The Firestore and Storage emulators run on the JVM, and firebase-tools 15
+      # refuses to start on a JDK older than 21. The runner's preinstalled JDK is
+      # older, so without this the emulator exits before the smoke test runs.
+      - name: Set up Java for the Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
       # The rules checks run before the dependency audit. The audit gates this job,
       # so while it fails these steps never execute and rules changes land with no
       # CI signal at all — which is how the job behaved from June 2026 onward.
