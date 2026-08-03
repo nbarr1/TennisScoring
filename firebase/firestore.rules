@@ -271,9 +271,19 @@ service cloud.firestore {
         changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
     }
 
+    // A score edit reopens the match for re-confirmation. It must CLEAR any existing
+    // reportSubmission rather than write a new one: allowing the editor to author the
+    // submission block lets them name the opponent as `submittedBy`, which makes the
+    // editor a valid non-submitter under isValidConfirmOrDisputeUpdate and lets a single
+    // player confirm their own rewritten score straight to 'completed' (and into the
+    // division standings). Forcing the field to be deleted means the editor must re-submit
+    // via isReportSubmitUpdate — which pins submittedBy to their own uid — and the opponent
+    // remains the only party who can confirm.
     function isEditScoreUpdate(existing, incoming, changed) {
       return existing.status in ['pending_report', 'completed'] &&
         incoming.status == 'pending_report' &&
+        !('reportSubmission' in incoming) &&
+        !('undoSnapshot' in incoming) &&
         changed.hasOnly(['liveScore', 'winner', 'status', 'completedAt', 'reportSubmission', 'undoSnapshot']);
     }
 

@@ -53,6 +53,14 @@ jobs:
         run: pnpm typecheck
       - name: Lint
         run: pnpm lint
+      # Runs last because it is the most expensive step, so the cheap checks fail
+      # fast. Nothing here compiled the apps before, which is how a `require` of a
+      # module path that no longer exists in the installed Firebase SDK reached the
+      # default branch: typecheck missed it behind an `as any`, and only a real
+      # bundler resolves it. Turbo caches the upstream packages that typecheck
+      # already built, so this mostly costs the Next.js compile.
+      - name: Build
+        run: pnpm build
 
   shared_tests:
     needs: changes
@@ -87,10 +95,34 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Dependency audit with fallback
-        run: |
-          pnpm audit --audit-level=high || npx --yes osv-scanner --lockfile=pnpm-lock.yaml
+      # The Firestore and Storage emulators run on the JVM, and firebase-tools 15
+      # refuses to start on a JDK older than 21. The runner's preinstalled JDK is
+      # older, so without this the emulator exits before the smoke test runs.
+      - name: Set up Java for the Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      # The rules checks run before the dependency audit. The audit gates this job,
+      # so while it fails these steps never execute and rules changes land with no
+      # CI signal at all — which is how the job behaved from June 2026 onward.
       - name: Firebase rules guard
         run: pnpm check:firebase-rules
       - name: Firebase emulator rules smoke test
         run: pnpm --filter @tennis/firebase-functions test:rules
+      # Reproduces the intended `pnpm audit || osv-scanner` fallback, where the
+      # scanner casts the deciding vote. osv-scanner is a Go binary published as a
+      # container action, not an npm package, so the previous `npx --yes osv-scanner`
+      # invocation always 404'd — leaving any advisory as an unconditional job
+      # failure with a misleading error. continue-on-error below only defers the
+      # verdict to the scanner step; it does not make the audit non-blocking.
+      - name: Dependency audit
+        id: pnpm_audit
+        continue-on-error: true
+        run: pnpm audit --audit-level=high
+      - name: Dependency audit fallback (OSV)
+        if: steps.pnpm_audit.outcome == 'failure'
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml

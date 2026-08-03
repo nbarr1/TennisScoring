@@ -8,9 +8,9 @@ import {
   type FirestoreError,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, profilesCol, usersCol } from './collections';
+import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, profilesCol } from './collections';
 import { functions } from './config';
-import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, User, PublicProfile } from '@tennis/shared';
+import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, PublicProfile } from '@tennis/shared';
 
 export function useDivisionLevels(
   divisionId: string | null | undefined,

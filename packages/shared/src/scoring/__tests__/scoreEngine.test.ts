@@ -239,6 +239,86 @@ describe('scoreEngine', () => {
       expect(result.tips).not.toContain('match_point');
       expect(result.tips).not.toContain('set_point');
     });
+
+    it('does not show set point at 5-3 until the server is one point from the game', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winGames(score, 'player1', 5);
+      score = winGames(score, 'player2', 3);
+
+      // 5-3: winning this game wins the set, but at 15-0 player1 is three points away.
+      const fifteenLove = applyPoint(score, 'player1', DEFAULT_FORMAT);
+      expect(fifteenLove.tips).not.toContain('set_point');
+      expect(fifteenLove.tips).not.toContain('game_point');
+
+      let s = fifteenLove.nextScore;
+      s = applyPoint(s, 'player1', DEFAULT_FORMAT).nextScore; // 30-0
+      const forty = applyPoint(s, 'player1', DEFAULT_FORMAT); // 40-0 — now it is set point
+      expect(forty.tips).toContain('set_point');
+      expect(forty.tips).not.toContain('game_point');
+    });
+
+    it('reports game point only for the player actually one point away', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // 15-0
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // 30-0
+      const atForty = applyPoint(score, 'player1', DEFAULT_FORMAT);   // 40-0
+      expect(atForty.tips).toContain('game_point');
+
+      // Opponent scores to 40-15. player1 still holds game point, so the tip persists.
+      const reply = applyPoint(atForty.nextScore, 'player2', DEFAULT_FORMAT);
+      expect(reply.tips).toContain('game_point');
+      expect(reply.tips).not.toContain('set_point');
+    });
+
+    it('does not report game point at deuce, and does at advantage', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      for (let i = 0; i < 2; i++) score = applyPoint(score, 'player2', DEFAULT_FORMAT).nextScore;
+
+      // player2's third point levels the game at 40-40.
+      const deuce = applyPoint(score, 'player2', DEFAULT_FORMAT);
+      expect(deuce.nextScore.currentGame).toEqual({ player1: '40', player2: '40' });
+      expect(deuce.tips).toContain('deuce');
+      expect(deuce.tips).not.toContain('game_point');
+
+      const advantage = applyPoint(deuce.nextScore, 'player1', DEFAULT_FORMAT);
+      expect(advantage.nextScore.currentGame.player1).toBe('Ad');
+      expect(advantage.tips).toContain('advantage');
+      expect(advantage.tips).toContain('game_point');
+    });
+
+    it('reports set point at advantage when the game decides the set', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winGames(score, 'player1', 5);
+      score = winGames(score, 'player2', 3);
+
+      // Take the 5-3 game to deuce (40-40), then to advantage for player1.
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player2', DEFAULT_FORMAT).nextScore;
+      expect(score.currentGame).toEqual({ player1: '40', player2: '40' });
+      const advantage = applyPoint(score, 'player1', DEFAULT_FORMAT);
+
+      expect(advantage.nextScore.currentGame.player1).toBe('Ad');
+      expect(advantage.tips).toContain('set_point');
+      expect(advantage.tips).not.toContain('game_point');
+    });
+
+    it('reports match point rather than set point in the deciding set', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = winGames(score, 'player1', 6); // player1 takes set 1
+      score = winGames(score, 'player2', 6); // player2 takes set 2
+      score = winGames(score, 'player1', 5);
+      score = winGames(score, 'player2', 3);
+
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // 15-0
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // 30-0
+      const result = applyPoint(score, 'player1', DEFAULT_FORMAT);    // 40-0
+
+      // 40-0 at 5-3 in the deciding set: one point from the set and the match.
+      expect(result.tips).toContain('match_point');
+      expect(result.tips).not.toContain('set_point');
+      expect(result.tips).not.toContain('game_point');
+    });
   });
 
   describe('finalSetTiebreak config', () => {
