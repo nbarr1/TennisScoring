@@ -16,15 +16,15 @@
     "check:firebase-rules": "node scripts/check-firebase-rules.mjs"
   },
   "devDependencies": {
-    "turbo": "^2.9.14",
-    "typescript": "^6.0.3",
-    "@types/node": "^25.9.1",
-    "eslint": "^10.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.4",
-    "@typescript-eslint/parser": "^8.59.4",
-    "prettier": "^3.2.0",
-    "firebase": "^12.13.0",
-    "firebase-admin": "^13.10.0"
+    "turbo": "^2.10.7",
+    "typescript": "^7.0.2",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "prettier": "^3.9.6",
+    "firebase": "^12.17.0",
+    "firebase-admin": "^14.2.0"
   },
   "pnpm": {
     "neverBuiltDependencies": [
