@@ -6,7 +6,8 @@
       "Bash(git push *)",
       "Bash(git *)",
       "mcp__Claude_Code_Remote__list_triggers",
-      "mcp__Claude_Code_Remote__delete_trigger"
+      "mcp__Claude_Code_Remote__delete_trigger",
+      "Bash(pnpm install *)"
     ]
   }
 }
