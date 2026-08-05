@@ -7,7 +7,7 @@ if (!getApps().length) initializeApp();
 
 // Set ALLOWED_EMAIL_DOMAIN to restrict self-registration to a single corporate domain
 // (e.g. "@yourcompany.com"). Production fails closed when this is blank.
-const allowedEmailDomain = defineString('ALLOWED_EMAIL_DOMAIN', { default: '' });
+const allowedEmailDomain = defineString('ALLOWED_EMAIL_DOMAIN', { default: '@gevernova.com' });
 
 export const onUserCreated = functions.identity.beforeUserCreated(async (event) => {
   const domain = allowedEmailDomain.value().trim().toLowerCase();
