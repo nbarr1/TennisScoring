@@ -6,8 +6,7 @@ This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/pass
 
 ## Prerequisites
 
-- Node.js 20+ for local web/mobile development and CI parity.
-- Node.js 22 for Firebase Functions runtime/deploy parity.
+- Node.js 22 for local web/mobile/Firebase Functions development and CI parity (CI, the root workspace `engines` field, and the Functions runtime all pin Node 22).
 - pnpm 9.15.5 or newer.
 - Firebase CLI (`npm i -g firebase-tools`) for emulators, rules, and Functions deployment.
 - EAS CLI (`npm i -g eas-cli`) for mobile cloud builds.
@@ -204,7 +203,7 @@ The repository includes `apps/web/vercel.json` for Vercel output/build behavior.
 
 Mobile app metadata currently identifies v1 as:
 
-- Expo version: `1.0.0`
+- Expo version: `1.0.1`
 - iOS build number: `1`
 - Android version code: `1`
 
@@ -229,15 +228,25 @@ Wear OS preview APK builds use the `wear-preview` EAS profile. The GitHub Action
 
 ### CI
 
-`.github/workflows/ci.yml` runs on pushes to `main`/`claude/**` and pull requests to `main`:
+`.github/workflows/ci.yml` runs on pushes to `main`/`claude/**` and pull requests to `main`, on Node 22. A path-filter job decides which of these run:
 
 ```bash
+# lint_typecheck — always runs
 pnpm install --frozen-lockfile
-pnpm audit --audit-level=high
 pnpm typecheck
 pnpm lint
+pnpm build
+
+# shared_tests — only if packages/shared/** or root workspace files changed
 pnpm --filter @tennis/shared test
+
+# firebase_rules_tests — only if firebase/** changed
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm audit --audit-level=high   # non-blocking; an OSV-scanner step decides the final verdict on failure
 ```
+
+Two more workflows run independently: `.github/workflows/codeql.yml` (weekly + push/PR CodeQL scan) and `.github/workflows/firebase-safety-guard.yml` (blocks dangerous `firebase/**/*.rules` patterns on PRs).
 
 ### Targeted Firebase Functions deploy
 

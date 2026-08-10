@@ -69,8 +69,8 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 - **Monorepo:** pnpm workspaces and Turborepo.
 - **Language:** TypeScript with strict settings for app/package code.
-- **Web app:** Next.js 14, React 18, Firebase Web SDK, `next-firebase-auth-edge`.
-- **Mobile app:** Expo 51, React Native 0.74, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
+- **Web app:** Next.js 16, React 19, Firebase Web SDK, `next-firebase-auth-edge`.
+- **Mobile app:** Expo 55, React Native 0.83, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
 - **Backend:** Firebase Cloud Functions v2/v1 mix, Firestore, Storage, Authentication, FCM, `firebase-admin`, `pdf-lib`.
 - **Shared packages:** `@tennis/shared` for domain logic and `@tennis/firebase-client` for Firebase SDK wrappers/hooks.
 - **Testing:** Jest/ts-jest for shared scoring, ranking, profile, and status metadata tests.
@@ -155,7 +155,7 @@ pnpm test
 pnpm build
 ```
 
-CI additionally runs `pnpm audit --audit-level=high` before typecheck/lint/test.
+CI runs `lint_typecheck` (install → typecheck → lint → build) unconditionally, plus path-filtered jobs: `shared_tests` when `packages/shared/**`/root workspace files change, and `firebase_rules_tests` when `firebase/**` changes (rules smoke test, then `pnpm audit --audit-level=high` with an OSV-scanner fallback deciding the final verdict). See [CLAUDE.md](./CLAUDE.md#ci) for the full pipeline breakdown.
 
 ---
 
@@ -163,6 +163,7 @@ CI additionally runs `pnpm audit --audit-level=high` before typecheck/lint/test.
 
 - [SETUP.md](./SETUP.md) — local setup, environment variables, Firebase, web, mobile, wearable, and CI/deploy setup.
 - [VERSION_1_BASELINE.md](./VERSION_1_BASELINE.md) — v1 baseline snapshot, deployable components, validation commands, and extension notes.
+- [CHANGELOG.md](./CHANGELOG.md) — release history.
 - [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, and targeted deploy notes.
 - [SECURITY_REVIEW_2026-05-12.md](./SECURITY_REVIEW_2026-05-12.md) — point-in-time security review and deployment checklist.
 - [ui-ux-review.md](./ui-ux-review.md) — point-in-time UI/UX/accessibility review and remediation plan.

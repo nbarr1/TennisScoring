@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Full-stack tennis league scoring application at the Version 1.0.0 baseline with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
-**Prerequisites:** Node.js 20+ for local web/mobile/CI parity, Node.js 22 for Firebase Functions runtime/deploy parity, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
+**Prerequisites:** Node.js 22 (matches CI, the root workspace `engines` field, and Firebase Functions runtime/deploy parity), pnpm 9.15.5+, Firebase CLI, and EAS CLI.
 
 
 ## Version 1.0.0 baseline
@@ -27,6 +27,10 @@ pnpm lint                  # Lint all packages
 pnpm typecheck             # Type-check all packages
 pnpm test                  # Run tests (currently @tennis/shared only)
 pnpm clean                 # Remove all dist/build artifacts and node_modules
+pnpm test:shared            # Alias for `pnpm --filter @tennis/shared test`
+pnpm check:firebase-rules    # Static guard against dangerous Firestore/Storage rules patterns
+pnpm backfill:season-level   # One-off script: backfill division season/level data in Firestore
+pnpm backfill:profiles       # One-off script: backfill missing profiles/{uid} docs
 ```
 
 ### Filtered (single package)
@@ -52,6 +56,7 @@ cd packages/shared && pnpm test -- --testPathPattern="scoreEngine"
 
 ```bash
 cd firebase && pnpm serve                  # Firestore :8080, Auth :9099, Functions :5001, Storage :9199, UI :4000
+cd firebase && pnpm test:rules              # Firestore/Storage emulator rules smoke test (used by CI)
 ```
 
 ### Firebase deployment
@@ -156,6 +161,12 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 **`firebase/src/auth/onUserCreated.ts`** — `identity.beforeUserCreated` trigger that creates a default user document in Firestore when a new user authenticates.
 
+**`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
+
+**`firebase/src/users/sendInvite.ts`** — invite callables: `sendInvite`, `getInvitePreview`, `acceptInvite`.
+
+**`firebase/src/health/health.ts`** — `health` and `readiness` HTTP endpoints for uptime/deploy checks.
+
 ### Auth flow
 
 **Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`.
@@ -173,9 +184,16 @@ matches/               # Matches list + [id]/ match detail (includes Pending/Awa
 messages/              # Messaging
 profile/               # User profile (includes availability editor)
 admin/                 # Admin panel
+feedback/              # Feedback submission form
+invite/accept/         # Invite code acceptance
 onboarding/tutorial/   # Onboarding tutorial
+onboarding/division/   # Division creation / join-by-code onboarding
 api/auth/login/        # Session-cookie login endpoint intercepted by auth middleware (route.ts fallback returns 401)
 api/auth/logout/       # Logout handler (route.ts)
+api/health/            # Health check endpoint
+api/readiness/         # Readiness check endpoint
+api/functions/add-division-member/  # Server-side proxy (Admin SDK auth) to the division-member-placeholder callable
+api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker route
 ```
 
 ### Mobile routes (`apps/mobile/app/`)
@@ -266,9 +284,13 @@ See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setu
 
 ### CI
 
-Defined in `.github/workflows/ci.yml`. Triggers: push to `main`/`claude/**`, PRs to `main`. Node 20, pnpm 9.
+Defined in `.github/workflows/ci.yml`. Triggers: push to `main`/`claude/**`, PRs to `main`. Node 22, pnpm 9.15.5. A `changes` job path-filters which downstream jobs run:
 
-Pipeline: install (`--frozen-lockfile`) → dependency audit (`pnpm audit --audit-level=high`) → typecheck → lint → test (`@tennis/shared` only). All three checks must pass before merging to `main`.
+- `lint_typecheck` (always runs): install (`--frozen-lockfile`) → typecheck → lint → build. This is the unconditional gate.
+- `shared_tests` (only if `packages/shared/**`, root `package.json`/`pnpm-lock.yaml`/`pnpm-workspace.yaml`/`tsconfig.base.json` changed): `pnpm --filter @tennis/shared test`.
+- `firebase_rules_tests` (only if `firebase/**` or `packages/shared/**` changed): Firestore/Storage emulator rules smoke test (`pnpm check:firebase-rules`, `pnpm --filter @tennis/firebase-functions test:rules`), then `pnpm audit --audit-level=high` — non-blocking (`continue-on-error: true`), falling back to a `google/osv-scanner-action` step that casts the actual deciding vote when the audit step fails.
+
+Two more workflows run independently of `ci.yml`: `.github/workflows/codeql.yml` (CodeQL JavaScript/TypeScript analysis on push/PR to `main` and a weekly schedule) and `.github/workflows/firebase-safety-guard.yml` (blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test).
 
 `.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android mobile or Wear OS preview APK builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets.
 

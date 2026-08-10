@@ -8,7 +8,7 @@
 
 ## Update — 2026-08-10 (`v1.0.1`)
 
-Package/app version markers moved to `1.0.1` without this document being updated at the time; `v1.0.0` was also never tagged in git. Both are corrected now: `v1.0.1` is tagged at the commit containing this update, and the sections below are current as of that tag. The original `v1.0.0` content is left below as historical record rather than rewritten.
+Package/app version markers moved to `1.0.1` without this document being updated at the time; `v1.0.0` was also never tagged in git. The version markers are corrected now and the sections below are current as of this update, but **neither `v1.0.0` nor `v1.0.1` has an actual git tag yet** — no commit has been identified as the `v1.0.0` point, so none should be invented here. Tagging is a pending follow-up, not a completed fact. The original `v1.0.0` content is left below as historical record rather than rewritten, except where noted.
 
 Changes since the `v1.0.0` snapshot that affect setup, deployment, or data shape:
 
@@ -16,6 +16,8 @@ Changes since the `v1.0.0` snapshot that affect setup, deployment, or data shape
 - **Firestore rules**: `profiles/{userId}` now allows a signed-in user to self-write their own `displayName`/`avatarUrl`/`tutorialDone`/`id`/`updatedAt` (previously admin-only, which silently broke every non-admin profile save on both web and mobile since `updateUserProfile()` always batches a `profiles/{uid}` write). `role` and `divisionId` remain locked to admin/Cloud Functions on this path.
 - **Known deferred limitation**: `onUserCreated` (the `identity.beforeUserCreated` blocking function) cannot be redeployed — this Firebase project is not on Google Cloud Identity Platform (GCIP), which blocking functions require. The function keeps running its previously-deployed code; self-registration is unaffected today. **Do not enable GCIP without first setting a real `ALLOWED_EMAIL_DOMAIN` value** in `firebase/.env.tennisscoring-40165` — the current (unreleased) version of this function fails closed and would reject all self-registration if it ever goes live with that value blank.
 - **Dependency audit**: the CI OSV gate was failing on 50 known vulnerabilities in transitive dev/build-tool packages (none shipped to end users). 48 fixed via `pnpm.overrides` in the root `package.json`; the remaining 2 (`image-size`, via react-native's metro bundler, no upstream fix exists) are suppressed with justification in `osv-scanner.toml`.
+- **Framework upgrades**: Next.js 14 → 16, React 18 → 19, Expo 51 → 55, React Native 0.74 → 0.83 (the "Deployable Components" section below has been updated in place to describe the current versions rather than what shipped at the `v1.0.0` snapshot).
+- **Version marker gap fixed**: `firebase/package.json` still read `1.0.0` after every other manifest moved to `1.0.1`; it is now `1.0.1` too.
 
 ---
 
@@ -37,7 +39,7 @@ The following manifests identify this baseline as `1.0.0`:
 - Firebase Functions package: `firebase/package.json`
 - Expo app metadata: `apps/mobile/app.json` (`version: 1.0.0`, Android `versionCode: 1`, iOS `buildNumber: 1`)
 
-A Git tag named `v1.0.0` should point to the commit containing this baseline. A `v1.0.1` tag points to the commit containing the 2026-08-10 update above.
+A Git tag named `v1.0.0` should point to the commit containing this baseline, and a `v1.0.1` tag should point to the commit containing the 2026-08-10 update above — **neither tag exists in the repository yet** (`git tag -l` is empty as of this update). Cutting both tags is an open follow-up.
 
 ---
 
@@ -46,7 +48,7 @@ A Git tag named `v1.0.0` should point to the commit containing this baseline. A 
 ### Web application
 
 - Location: `apps/web`
-- Framework: Next.js App Router with React 18
+- Framework: Next.js App Router with React 19
 - Authentication: Firebase email/password client auth with `next-firebase-auth-edge` session-cookie middleware
 - Major routes:
   - `/login`
@@ -63,7 +65,7 @@ A Git tag named `v1.0.0` should point to the commit containing this baseline. A 
 ### Mobile application
 
 - Location: `apps/mobile`
-- Framework: Expo 51 / React Native 0.74 with Expo Router
+- Framework: Expo 55 / React Native 0.83 with Expo Router
 - Authentication: Firebase email/password sign in and sign up
 - Major route groups:
   - `(auth)` for login/signup
