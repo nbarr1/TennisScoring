@@ -243,7 +243,7 @@ export default function MatchesPage(): React.JSX.Element {
       <main style={mainStyle}>
         <div style={styles.titleRow}>
           <h1 style={styles.pageTitle}>Matches</h1>
-          {divisionId && firebaseUser && (
+          {divisionId && firebaseUser && profile && (
             <div style={titleActionsStyle}>
               {isIosView && (
                 <button
