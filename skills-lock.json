@@ -1,71 +1,77 @@
 {
   "version": 1,
   "skills": {
+    "extension-to-functions-codebase": {
+      "source": "firebase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/extension-to-functions-codebase/SKILL.md",
+      "computedHash": "4597667cb7548b9906708ff0e5fdc1043a59119d2cb32cba1142c03e8a85f315"
+    },
     "firebase-ai-logic-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-ai-logic-basics/SKILL.md",
-      "computedHash": "aba2d689236a21ac7989286b88ecb3399d616b90f2dd8946e675466e57802c35"
+      "computedHash": "2af723026c6cb09aeedd6d0578421b5f25cd410c72a4e5135b4b174451a5eee9"
     },
     "firebase-app-hosting-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-app-hosting-basics/SKILL.md",
-      "computedHash": "562f27d560ff640a1e18ec4f5dd4ae70bd98447433c077be19292793ae095572"
+      "computedHash": "e32ac489690e6c04bf6a71ce965918fe65a192e9992e6ed887c572d7733621c2"
     },
     "firebase-auth-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-auth-basics/SKILL.md",
-      "computedHash": "f4850f578bacdda96cacaa57b5e1121ec047e99bf7d389033042b1975af91040"
+      "computedHash": "25070123c29d59098ac817dee0eee36a73b4a822e6bb925a0ebccab0c78cf1e9"
     },
     "firebase-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-basics/SKILL.md",
-      "computedHash": "8210ee53231b8299df100561d4ef776d39a293fd54403008bd738c65a856d54f"
+      "computedHash": "3a41bf302bfce4dac272575c51a02d0fc1bdac8dcb6cb5496103301b68ffbb67"
     },
     "firebase-crashlytics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-crashlytics/SKILL.md",
-      "computedHash": "62a51efdc3240eed27697e14bbb8a29ebb8c94530fd3a1c851e747b90804d69b"
+      "computedHash": "1316a59236b4e2317e1d265df80e2c6c112e855bc15404ade19f2a2fe9cf2502"
     },
     "firebase-data-connect": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-data-connect-basics/SKILL.md",
-      "computedHash": "92d3dff5c94753c4077cd44a5c7c1f5e077b8c07dfe28455776204fe4f087d81"
+      "computedHash": "e4108a3f77cda0a3cd1f883f8f8f1836f7c88af8baaf62875ef5460456aec3a1"
     },
     "firebase-firestore": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-firestore/SKILL.md",
-      "computedHash": "be5ed12b7402b1f36364e20d4f9ccd2caac90302e23427395a02570db9f1434a"
+      "computedHash": "7462e16e15fa68b814c17fa6dff22bb1ae970d5638b5e7143e046cbd70084a19"
     },
     "firebase-hosting-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-hosting-basics/SKILL.md",
-      "computedHash": "fd0fede590512379a3103b74a7c1e612e38e6948b08e763a75962cd8c7f5b8e2"
+      "computedHash": "381c7bb4200644d4a09f7f505bc5ba44b499cc74d0365d69bd3e313ea0865297"
     },
     "firebase-remote-config-basics": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-remote-config-basics/SKILL.md",
-      "computedHash": "d5e9090dec35e050be958b72b672e39bd931014ebb311bac3a46f542fc04e10d"
+      "computedHash": "4477c4ed83c5ee33df3d41f7831e7f9254aa436763f20d0c1a62c5c41f1a4564"
     },
     "firebase-security-rules-auditor": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/firebase-security-rules-auditor/SKILL.md",
-      "computedHash": "7d05c33d2e00c1d26cbd99ae174272fdd962e63b67c801e2fc050cc63e681723"
+      "computedHash": "69927a1fca3467543feb4eafaa1ff376a9b642db1095b29bfc2160c9a555ca61"
     },
     "xcode-project-setup": {
       "source": "firebase/agent-skills",
       "sourceType": "github",
       "skillPath": "skills/xcode-project-setup/SKILL.md",
-      "computedHash": "e7ddb878c879eda7a3e462cebebcebb827d90836e4cb8a11b513e54403176e7d"
+      "computedHash": "0adf19113be8a1966466e629098f4ead7b5de3a7767958f02baf1cddc9e2642e"
     }
   }
 }
