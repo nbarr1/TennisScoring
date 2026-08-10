@@ -19,7 +19,6 @@ import {
   updateDivisionPlayerEmail as updateDivisionPlayerEmailShared,
   upsertDivisionLevel,
   exportDivisionCsv,
-  backfillMissingProfiles,
   useAuthUser,
   useDivisionLevels,
   useDivisionMemberships,
@@ -191,18 +190,6 @@ export default function AdminPage(): React.JSX.Element {
       }
     });
   }, [firebaseUser, router]);
-
-  // TEMP CONSOLE HOOK — remove after the missing-profiles backfill is run.
-  // Usage in browser devtools console on this page:
-  //   await window.__backfillMissingProfiles("HvEpKayCTfVTJA9G74we")
-  useEffect(() => {
-    type BackfillHook = (divisionId: string) => ReturnType<typeof backfillMissingProfiles>;
-    (window as unknown as { __backfillMissingProfiles?: BackfillHook }).__backfillMissingProfiles = (divisionId) =>
-      backfillMissingProfiles({ divisionId });
-    return () => {
-      delete (window as unknown as { __backfillMissingProfiles?: unknown }).__backfillMissingProfiles;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
