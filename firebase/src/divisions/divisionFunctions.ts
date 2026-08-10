@@ -52,6 +52,9 @@ type BackfillDivisionSeasonLevelInput = {
   matchType?: 'singles' | 'doubles';
   overwriteExisting?: boolean;
 };
+type BackfillMissingProfilesInput = {
+  divisionId?: string;
+};
 type MergePlayerRecordsInput = {
   divisionId?: string;
   sourceUserId?: string;
@@ -75,7 +78,7 @@ function normalizeName(name: string): string {
 }
 
 
-function publicProfileUpdate(input: {
+export function publicProfileUpdate(input: {
   id: string;
   displayName?: unknown;
   avatarUrl?: unknown;
@@ -526,6 +529,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
       const existing = await db.collection('users').where('email', '==', safeEmail).limit(1).get();
       if (!existing.empty) {
         const existingUserId = existing.docs[0].id;
+        const existingUserData = existing.docs[0].data();
         await db.runTransaction(async (tx) => {
           tx.set(
             db.collection('divisions').doc(safeDivisionId),
@@ -543,9 +547,20 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
             },
             { merge: true },
           );
+          tx.set(
+            db.collection('profiles').doc(existingUserId),
+            publicProfileUpdate({
+              id: existingUserId,
+              displayName: existingUserData?.displayName,
+              avatarUrl: existingUserData?.avatarUrl,
+              divisionId: safeDivisionId,
+              role: existingUserData?.role ?? 'player',
+            }),
+            { merge: true },
+          );
         });
         await addUserToDivisionChannel(db, safeDivisionId, existingUserId);
-        const existingDisplayName = existing.docs[0].data()?.displayName ?? safeName;
+        const existingDisplayName = existingUserData?.displayName ?? safeName;
         const membershipId = await maybeUpsertMembership(existingUserId, existingDisplayName, 'registered_user');
         return { success: true, userId: existingUserId, createdPlaceholder: false, membershipId };
       }
@@ -1345,6 +1360,71 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
   }
 
   return { success: true, updatedMatches, membershipsUpserted };
+});
+
+/**
+ * Creates missing profiles/{uid} docs for a division's current leaders/players.
+ * Some legacy write paths (accepting an invite, being added by email while
+ * already registered) updated users/{uid} and the division roster without
+ * ever creating the public profile doc; this repairs those accounts.
+ */
+export const backfillMissingProfiles = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to backfill profiles.');
+  }
+
+  const { divisionId } = (request.data ?? {}) as BackfillMissingProfilesInput;
+  const safeDivisionId = divisionId?.trim();
+  if (!safeDivisionId) {
+    throw new HttpsError('invalid-argument', 'Division is required.');
+  }
+
+  const db = getFirestore();
+  const divisionSnap = await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+  const divisionData = divisionSnap.data() ?? {};
+
+  const memberIds = new Set<string>();
+  [
+    ...(Array.isArray(divisionData.playerIds) ? divisionData.playerIds : []),
+    ...(Array.isArray(divisionData.leaderIds) ? divisionData.leaderIds : []),
+  ].forEach((id: unknown) => {
+    if (typeof id === 'string' && id.trim()) memberIds.add(id);
+  });
+
+  const profileSnaps = await Promise.all(
+    [...memberIds].map((id) => db.collection('profiles').doc(id).get()),
+  );
+  const missingIds = profileSnaps.filter((snap) => !snap.exists).map((snap) => snap.id);
+  if (missingIds.length === 0) {
+    return { success: true, backfilled: 0, skipped: 0 };
+  }
+
+  const userSnaps = await Promise.all(missingIds.map((id) => db.collection('users').doc(id).get()));
+
+  let backfilled = 0;
+  for (let i = 0; i < userSnaps.length; i += 400) {
+    const batch = db.batch();
+    userSnaps.slice(i, i + 400).forEach((userSnap) => {
+      if (!userSnap.exists) return;
+      const user = userSnap.data() ?? {};
+      batch.set(
+        db.collection('profiles').doc(userSnap.id),
+        publicProfileUpdate({
+          id: userSnap.id,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+          divisionId: typeof user.divisionId === 'string' ? user.divisionId : safeDivisionId,
+          role: user.role,
+          tutorialDone: user.tutorialDone,
+        }),
+        { merge: true },
+      );
+      backfilled += 1;
+    });
+    await batch.commit();
+  }
+
+  return { success: true, backfilled, skipped: missingIds.length - backfilled };
 });
 
 export const exportDivisionCsv = onCall(callableOptions, async (request) => {

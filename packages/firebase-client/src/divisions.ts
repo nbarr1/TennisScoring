@@ -159,6 +159,17 @@ export async function backfillDivisionSeasonLevel(input: {
   };
 }
 
+export async function backfillMissingProfiles(input: {
+  divisionId: string;
+}): Promise<{ backfilled: number; skipped: number }> {
+  const callable = httpsCallable<
+    typeof input,
+    { success: boolean; backfilled: number; skipped: number }
+  >(functions, 'backfillMissingProfiles');
+  const result = await callable(input);
+  return { backfilled: result.data.backfilled, skipped: result.data.skipped };
+}
+
 export async function exportDivisionCsv(input: {
   divisionId: string;
   exportType: 'matches' | 'rankings';

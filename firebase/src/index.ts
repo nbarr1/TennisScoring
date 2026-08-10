@@ -22,6 +22,7 @@ export {
   upsertDivisionLevel,
   upsertDivisionMembership,
   backfillDivisionSeasonLevel,
+  backfillMissingProfiles,
   exportDivisionCsv,
 } from './divisions/divisionFunctions';
 

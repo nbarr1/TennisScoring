@@ -2,6 +2,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
+import { publicProfileUpdate } from '../divisions/divisionFunctions';
 
 if (!getApps().length) initializeApp();
 
@@ -304,6 +305,8 @@ export const acceptInvite = onCall(async (request) => {
 
   await db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
+    const wasIncomplete = validateUserCompleteness(userSnap.data()) === undefined;
+    const displayName = userSnap.data()?.displayName || inviteData.name;
 
     tx.update(inviteRef, {
       accepted: true,
@@ -315,12 +318,12 @@ export const acceptInvite = onCall(async (request) => {
       userRef,
       {
         id: uid,
-        displayName: userSnap.data()?.displayName || inviteData.name,
+        displayName,
         email: authEmail,
         isRegistered: true,
         inviteStatus: 'registered',
         updatedAt: Date.now(),
-        ...(validateUserCompleteness(userSnap.data()) === undefined ? {
+        ...(wasIncomplete ? {
           role: 'player',
           createdAt: Date.now(),
           contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
@@ -329,6 +332,18 @@ export const acceptInvite = onCall(async (request) => {
         } : {}),
         ...(inviteDivisionId ? { divisionId: inviteDivisionId } : {}),
       },
+      { merge: true },
+    );
+
+    tx.set(
+      db.collection('profiles').doc(uid),
+      publicProfileUpdate({
+        id: uid,
+        displayName,
+        avatarUrl: userSnap.data()?.avatarUrl,
+        divisionId: inviteDivisionId,
+        role: wasIncomplete ? 'player' : userSnap.data()?.role,
+      }),
       { merge: true },
     );
 
