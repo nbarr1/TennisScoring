@@ -12,6 +12,7 @@ export {
   upsertDivisionLevel,
   upsertDivisionMembership,
   backfillDivisionSeasonLevel,
+  backfillMissingProfiles,
   exportDivisionCsv,
   createDivision,
   joinDivisionByCode,
