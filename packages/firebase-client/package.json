@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@tennis/shared": "workspace:*",
-    "firebase": "^12.13.0",
+    "firebase": "^12.17.1",
     "tsup": "^8.0.0"
   },
   "peerDependencies": {
@@ -26,8 +26,8 @@
     "@react-native-async-storage/async-storage": ">=1.23.0"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/react": "^19.2.15"
+    "typescript": "^7.0.2",
+    "@types/react": "^19.2.18"
   },
   "peerDependenciesMeta": {
     "@react-native-async-storage/async-storage": {
