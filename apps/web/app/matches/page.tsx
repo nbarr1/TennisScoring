@@ -136,12 +136,40 @@ export default function MatchesPage(): React.JSX.Element {
   const router = useRouter();
   const { effectiveMode } = useViewMode();
   const isIosView = effectiveMode === "ios";
-  const { firebaseUser } = useAuthUser();
-  const { profile } = useUserProfile(firebaseUser?.uid ?? null);
+  const { firebaseUser, loading: authLoading, error: authError } = useAuthUser();
+  const {
+    profile,
+    loading: profileLoading,
+    error: profileError,
+  } = useUserProfile(firebaseUser?.uid ?? null);
   const { divisionId, loading: divisionLoading } = useActiveDivisionId(
     firebaseUser?.uid ?? null,
     profile?.divisionId,
   );
+
+  // TEMP DIAGNOSTIC — remove after tracing why title-action buttons aren't rendering
+  useEffect(() => {
+    console.log("[matches/page diagnostic]", {
+      authLoading,
+      authError,
+      firebaseUserUid: firebaseUser?.uid ?? null,
+      profileLoading,
+      profileError,
+      profile,
+      profileDivisionId: profile?.divisionId ?? null,
+      divisionLoading,
+      divisionId,
+    });
+  }, [
+    authLoading,
+    authError,
+    firebaseUser,
+    profileLoading,
+    profileError,
+    profile,
+    divisionLoading,
+    divisionId,
+  ]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRecord, setShowRecord] = useState(false);
