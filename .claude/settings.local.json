@@ -7,7 +7,12 @@
       "Bash(git *)",
       "mcp__Claude_Code_Remote__list_triggers",
       "mcp__Claude_Code_Remote__delete_trigger",
-      "Bash(pnpm install *)"
+      "Bash(pnpm install *)",
+      "Bash(/usr/local/share/nvm/versions/node/v22.22.1/bin/node *)",
+      "Bash(cd *)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"firebase-functions.js\")",
+      "Read(//usr/local/share/nvm/versions/node/v24.14.0/lib/node_modules/firebase-tools/lib/deploy/functions/runtimes/node/**)"
     ]
   }
 }
