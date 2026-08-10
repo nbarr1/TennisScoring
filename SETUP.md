@@ -96,12 +96,14 @@ EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=""
 
 ```bash
 APP_BASE_URL="https://your-web-domain.example"
-ALLOWED_EMAIL_DOMAIN="" # optional; set to a corporate domain to restrict signup/invites where functions enforce it
+ALLOWED_EMAIL_DOMAIN="" # fails closed: the onUserCreated blocking function REJECTS ALL self-registration while this is blank. Set it to a real domain (e.g. "yourcompany.com") before that function is live, or self-signup is completely disabled.
 GITHUB_OWNER="your-github-org-or-user"
 GITHUB_REPO="your-feedback-repo"
 GITHUB_API_URL="https://api.github.com"
 GITHUB_FEEDBACK_LABELS="feedback"
 ```
+
+`onUserCreated` is an `identity.beforeUserCreated` blocking function, which Firebase can only wire up on projects with Google Cloud Identity Platform (GCIP) enabled. On a project without GCIP, `firebase deploy --only functions` deploys the function's *code* successfully but fails to update its blocking-trigger config with `Blocking Functions may only be configured for GCIP projects` — the previously-deployed version (if any) keeps running. Enable GCIP in Cloud Console before relying on a new deploy of this function to take effect, and always set `ALLOWED_EMAIL_DOMAIN` first per the warning above.
 
 Store the feedback token in Secret Manager only:
 
