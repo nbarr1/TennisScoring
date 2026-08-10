@@ -1,0 +1,7 @@
+[[IgnoredVulns]]
+id = "GHSA-5p2g-fcmc-qvqq"
+reason = "image-size 1.2.1 (JXL/HEIF DoS via infinite loop): no patched version exists upstream as of 2026-08-10. Transitive dev-only dependency of react-native's metro bundler (via @react-native/community-cli-plugin); not present in any code shipped to end users. Revisit when a fix is published."
+
+[[IgnoredVulns]]
+id = "GHSA-w3rx-r6r6-pgpr"
+reason = "image-size 1.2.1 (second JXL/HEIF parser DoS advisory): same package/version as GHSA-5p2g-fcmc-qvqq, no patched version exists upstream as of 2026-08-10. Transitive dev-only dependency of react-native's metro bundler; not present in any code shipped to end users. Revisit when a fix is published."
