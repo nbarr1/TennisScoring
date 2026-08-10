@@ -67,6 +67,13 @@ service cloud.firestore {
 
     // ---------- Profiles (Public) ----------
     match /profiles/{userId} {
+      // Fields the owning user may sync from their own users/{uid} doc via updateUserProfile().
+      // role and divisionId are deliberately excluded: those only change through Cloud Functions
+      // (invites, division management, ranking recalculation) or admin maintenance.
+      function selfWritableProfileFields() {
+        return ['id', 'displayName', 'avatarUrl', 'tutorialDone', 'updatedAt'];
+      }
+
       // Single-document reads can afford the extra get() needed to check the target's
       // live users/{uid}.divisionId instead of this doc's own (stale) divisionId.
       allow get: if isAuth() && (
@@ -84,9 +91,25 @@ service cloud.firestore {
         isAdmin() ||
         resource.data.divisionId == getUserData().divisionId
       );
-      // Profiles are primarily managed by Cloud Functions or when updating the main user doc.
-      // Admin can update profiles directly for maintenance.
-      allow write: if isAdmin();
+      // Profiles are primarily managed by Cloud Functions. Admin can write profiles directly
+      // for maintenance. A user may also self-heal/sync their own profile doc (e.g. via
+      // updateUserProfile(), which batches a users/{uid} write with this one) for the safe
+      // fields above; divisionId must match their real division and role/divisionId can never
+      // change through this path.
+      allow create: if isAdmin() || (
+        isUser(userId) &&
+        request.resource.data.keys().hasOnly(selfWritableProfileFields().concat(['divisionId', 'role'])) &&
+        request.resource.data.id == userId &&
+        request.resource.data.get('divisionId', getUserData().divisionId) == getUserData().divisionId &&
+        request.resource.data.get('role', getUserData().role) == getUserData().role
+      );
+      allow update: if isAdmin() || (
+        isUser(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(selfWritableProfileFields()) &&
+        request.resource.data.get('divisionId', null) == resource.data.get('divisionId', null) &&
+        request.resource.data.get('role', null) == resource.data.get('role', null)
+      );
+      allow delete: if isAdmin();
     }
 
     // ---------- Users (Private) ----------

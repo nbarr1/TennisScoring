@@ -141,7 +141,8 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   if (updates.tutorialDone !== undefined) publicUpdates.tutorialDone = updates.tutorialDone;
 
   if (Object.keys(publicUpdates).length > 0) {
-    batch.update(profileDoc(uid), { ...publicUpdates, updatedAt: now });
+    // set+merge (not update) so this still succeeds if profiles/{uid} hasn't been created yet.
+    batch.set(profileDoc(uid), { id: uid, ...publicUpdates, updatedAt: now }, { merge: true });
   }
 
   await batch.commit();
