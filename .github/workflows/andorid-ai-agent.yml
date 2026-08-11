@@ -1,1 +1,57 @@
+name: Android AI Agent
 
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  android-agent:
+    if: |
+      github.event_name == 'pull_request' || 
+      (github.event.issue.pull_request && 
+       (contains(github.event.comment.body, '/apply-plan') || contains(github.event.comment.body, '/review-android')))
+    
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r .github/scripts/requirements.txt
+
+      - name: Determine Trigger Mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "AGENT_MODE=review" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event.comment.body }}" == *"/apply-plan"* ]]; then
+            echo "AGENT_MODE=apply" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          else
+            echo "AGENT_MODE=review" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          fi
+
+      - name: Run Android AI Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_NUMBER: ${{ env.PR_NUM }}
+          AGENT_MODE: ${{ env.AGENT_MODE }}
+        run: |
+          python .github/scripts/android_agent.py
