@@ -1,28 +1,32 @@
 name: Android AI Agent
 
 on:
-  pull_request:
-    types: [opened, synchronize]
-  issue_comment:
-    types: [created]
+  push:
+    branches:
+      - '**' # Triggers on push to any branch
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Agent Mode'
+        required: true
+        default: 'review'
+        type: choice
+        options:
+          - review
+          - apply
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: write
 
 jobs:
   android-agent:
-    if: |
-      github.event_name == 'pull_request' || 
-      (github.event.issue.pull_request && 
-       (contains(github.event.comment.body, '/apply-plan') || contains(github.event.comment.body, '/review-android')))
-    
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetch previous commit to enable git diff comparison
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -33,25 +37,26 @@ jobs:
         run: |
           pip install -r .github/scripts/requirements.txt
 
-      - name: Determine Trigger Mode
-        id: mode
+      - name: Determine Agent Mode
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "AGENT_MODE=review" >> $GITHUB_ENV
-            echo "PR_NUM=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          elif [[ "${{ github.event.comment.body }}" == *"/apply-plan"* ]]; then
-            echo "AGENT_MODE=apply" >> $GITHUB_ENV
-            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "AGENT_MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
           else
             echo "AGENT_MODE=review" >> $GITHUB_ENV
-            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
           fi
 
       - name: Run Android AI Agent
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PR_NUMBER: ${{ env.PR_NUM }}
           AGENT_MODE: ${{ env.AGENT_MODE }}
         run: |
           python .github/scripts/android_agent.py
+
+      - name: Commit and Push Changes (Apply Mode)
+        if: ${{ env.AGENT_MODE == 'apply' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "refactor(android-agent): Auto-apply AI code improvements" || echo "No changes to commit"
+          git push origin ${{ github.ref_name }}
