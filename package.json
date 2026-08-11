@@ -61,5 +61,11 @@
   "engines": {
     "node": "22",
     "pnpm": ">=9.15.4"
+  },
+  "dependencies": {
+    "expo-dev-client": "~55.0.37",
+    "expo": "~55.0.25",
+    "react": "19.2.0",
+    "react-native": "0.83.6"
   }
 }
