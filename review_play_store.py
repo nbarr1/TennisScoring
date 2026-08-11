@@ -1,9 +1,15 @@
-cat << 'EOF' > review_play_store.py
 import os
 import glob
 from google import genai
 
-# Initialize Gemini client using GEMINI_API_KEY environment variable
+# Verify GitHub Secret environment variable
+api_key = os.environ.get("GEMINI_API_KEY")
+if not api_key:
+    print("❌ Error: 'GEMINI_API_KEY' secret environment variable was not found in this Codespace.")
+    print("👉 Ensure the secret is added in GitHub Repo Settings -> Secrets and variables -> Codespaces.")
+    exit(1)
+
+# Initialize Gemini client using GEMINI_API_KEY from environment
 client = genai.Client()
 
 # File patterns relevant to Google Play Store technical & policy audits
@@ -35,9 +41,9 @@ if not found_files:
     print("❌ No configuration files (Android/Flutter/React Native) were found to analyze.")
     exit(1)
 
-print(f"🔍 Found {len(found_files)} relevant file(s) to analyze...")
+print(f"🔍 Found {len(found_files)} relevant file(s) in repository. Reading metadata...")
 
-# Construct the Gemini audit prompt
+# Construct prompt
 prompt = "You are an expert Google Play Console submission specialist and Android App Auditor.\n\n"
 prompt += "Analyze the following repository files for **Google Play Store readiness**:\n\n"
 
@@ -56,10 +62,11 @@ prompt += """
 Please format your analysis as a clean Markdown report with actionable recommendation categories.
 """
 
-print("🤖 Sending codebase metadata to Gemini for audit...")
+print("🤖 Authenticated with GitHub Secret. Analyzing repository with Gemini 3.6 Flash...")
 
+# Using Gemini 3.6 Flash
 response = client.models.generate_content(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash",
     contents=prompt
 )
 
@@ -71,4 +78,3 @@ print(f"\n✅ Play Store Readiness Audit complete!")
 print(f"📄 Report generated and saved to: {report_path}\n")
 print("="*60)
 print(response.text)
-EOF
