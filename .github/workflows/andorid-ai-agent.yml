@@ -1,12 +1,10 @@
 name: Android AI Agent
 
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Agent mode: review or apply'
-        required: false
-        default: 'review'
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -15,13 +13,16 @@ permissions:
 
 jobs:
   android-agent:
+    if: |
+      github.event_name == 'pull_request' || 
+      (github.event.issue.pull_request && 
+       (contains(github.event.comment.body, '/apply-plan') || contains(github.event.comment.body, '/review-android')))
+    
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -35,16 +36,22 @@ jobs:
       - name: Determine Trigger Mode
         id: mode
         run: |
-          if [ -n "${{ github.event.inputs.mode }}" ]; then
-            echo "AGENT_MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "AGENT_MODE=review" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          elif [[ "${{ github.event.comment.body }}" == *"/apply-plan"* ]]; then
+            echo "AGENT_MODE=apply" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
           else
             echo "AGENT_MODE=review" >> $GITHUB_ENV
+            echo "PR_NUM=${{ github.event.issue.number }}" >> $GITHUB_ENV
           fi
 
       - name: Run Android AI Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_NUMBER: ${{ env.PR_NUM }}
           AGENT_MODE: ${{ env.AGENT_MODE }}
         run: |
           python .github/scripts/android_agent.py
