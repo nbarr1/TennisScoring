@@ -2,11 +2,12 @@ import os
 import json
 import re
 from github import Github
-import anthropic
+from google import genai
+from google.genai import types
 
 # Initialize APIs
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 REPO_NAME = os.getenv("GITHUB_REPOSITORY")
 PR_NUMBER = int(os.getenv("PR_NUMBER"))
 MODE = os.getenv("AGENT_MODE") # "review" or "apply"
@@ -14,7 +15,9 @@ MODE = os.getenv("AGENT_MODE") # "review" or "apply"
 gh = Github(GITHUB_TOKEN)
 repo = gh.get_repo(REPO_NAME)
 pr = repo.get_pull(PR_NUMBER)
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+# Initialize Google AI Studio Client
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # File extensions relevant to Android development
 ANDROID_EXTENSIONS = ('.kt', '.java', '.xml', '.gradle', '.gradle.kts', 'AndroidManifest.xml')
@@ -32,7 +35,7 @@ def get_pr_files():
     return files_data
 
 def run_android_review(files):
-    """Performs an Android-focused review using Anthropic Claude."""
+    """Performs an Android-focused review using Google AI Studio Gemini."""
     system_prompt = """
     You are a Principal Android Architect specializing in Kotlin, Jetpack Compose, 
     Android Architecture Components (MVVM/MVI), Coroutines/Flow, Memory Management, 
@@ -64,17 +67,17 @@ def run_android_review(files):
     for f in files:
         user_prompt += f"--- FILE: {f['path']} ---\n{f['content']}\n\n"
 
-    response = anthropic_client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=4096,
-        temperature=0.2,
-        system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_prompt}
-        ]
+    # Use 'gemini-2.5-pro' for deep reasoning, or 'gemini-2.5-flash' for faster execution
+    response = gemini_client.models.generate_content(
+        model='gemini-2.5-pro',
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.2,
+        )
     )
     
-    return response.content[0].text
+    return response.text
 
 def apply_improvements(review_comment_body):
     """Extracts JSON changes from a review and applies them back to the PR branch."""
@@ -119,7 +122,7 @@ def main():
         return
 
     if MODE == "review":
-        pr.create_issue_comment("🔄 **Android AI Agent** (Claude) is analyzing your code and generating an improvement plan...")
+        pr.create_issue_comment("🔄 **Android AI Agent** (Google Gemini) is analyzing your code and generating an improvement plan...")
         review_result = run_android_review(files)
         
         comment_body = (
