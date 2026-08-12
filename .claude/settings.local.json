@@ -12,7 +12,14 @@
       "Bash(cd *)",
       "Bash(kill %1)",
       "Bash(pkill -f \"firebase-functions.js\")",
-      "Read(//usr/local/share/nvm/versions/node/v24.14.0/lib/node_modules/firebase-tools/lib/deploy/functions/runtimes/node/**)"
+      "Read(//usr/local/share/nvm/versions/node/v24.14.0/lib/node_modules/firebase-tools/lib/deploy/functions/runtimes/node/**)",
+      "Bash(gh run *)",
+      "Bash(npx eas *)",
+      "Read(//home/codespace/**)",
+      "Read(//home/codespace/.expo/**)",
+      "Bash(env)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\([f['name'] for f in d['data']['__type']['fields'] if 'build' in f['name'].lower\\(\\)]\\)\")",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }
