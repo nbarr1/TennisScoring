@@ -122,7 +122,7 @@ jobs:
         run: pnpm audit --audit-level=high
       - name: Dependency audit fallback (OSV)
         if: steps.pnpm_audit.outcome == 'failure'
-        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+        uses: google/osv-scanner-action/osv-scanner-action@v2.5.0
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
