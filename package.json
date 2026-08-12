@@ -16,15 +16,15 @@
     "check:firebase-rules": "node scripts/check-firebase-rules.mjs"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
-    "@typescript-eslint/eslint-plugin": "^8.59.4",
-    "@typescript-eslint/parser": "^8.59.4",
-    "eslint": "^10.4.0",
+    "@types/node": "^26.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "eslint": "^10.8.1",
     "firebase": "^12.17.1",
-    "firebase-admin": "^13.10.0",
-    "prettier": "^3.2.0",
-    "turbo": "^2.9.14",
-    "typescript": "^6.0.3"
+    "firebase-admin": "^14.2.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.9",
+    "typescript": "^7.0.2"
   },
   "pnpm": {
     "neverBuiltDependencies": [
@@ -63,9 +63,9 @@
     "pnpm": ">=9.15.4"
   },
   "dependencies": {
-    "expo-dev-client": "~55.0.37",
-    "expo": "~55.0.25",
-    "react": "19.2.0",
+    "expo-dev-client": "~57.0.10",
+    "expo": "~57.0.11",
+    "react": "19.2.8",
     "react-native": "0.83.6"
   }
 }
