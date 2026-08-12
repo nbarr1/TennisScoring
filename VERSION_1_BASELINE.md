@@ -8,7 +8,7 @@
 
 ## Update — 2026-08-10 (`v1.0.1`)
 
-Package/app version markers moved to `1.0.1` without this document being updated at the time; `v1.0.0` was also never tagged in git. The version markers are corrected now and the sections below are current as of this update, but **neither `v1.0.0` nor `v1.0.1` has an actual git tag yet** — no commit has been identified as the `v1.0.0` point, so none should be invented here. Tagging is a pending follow-up, not a completed fact. The original `v1.0.0` content is left below as historical record rather than rewritten, except where noted.
+Package/app version markers moved to `1.0.1` without this document being updated at the time; `v1.0.0` was also not tagged in git until this update. The version markers are corrected now and the sections below are current as of this update. Both tags now exist: `v1.0.0` points to commit `0211f1f` (2026-05-12), and `v1.0.1` points to commit `5151498` (2026-08-10). The original `v1.0.0` content is left below as historical record rather than rewritten, except where noted.
 
 Changes since the `v1.0.0` snapshot that affect setup, deployment, or data shape:
 
@@ -39,7 +39,7 @@ The following manifests identify this baseline as `1.0.0`:
 - Firebase Functions package: `firebase/package.json`
 - Expo app metadata: `apps/mobile/app.json` (`version: 1.0.0`, Android `versionCode: 1`, iOS `buildNumber: 1`)
 
-A Git tag named `v1.0.0` should point to the commit containing this baseline, and a `v1.0.1` tag should point to the commit containing the 2026-08-10 update above — **neither tag exists in the repository yet** (`git tag -l` is empty as of this update). Cutting both tags is an open follow-up.
+A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f`), and a `v1.0.1` tag points to the commit containing the 2026-08-10 update above (`5151498`).
 
 ---
 
