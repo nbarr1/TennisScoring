@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 2 # Fetch previous commit to enable git diff comparison
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
