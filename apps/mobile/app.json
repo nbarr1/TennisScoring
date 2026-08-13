@@ -14,7 +14,7 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.tennisleague.app",
+      "bundleIdentifier": "com.companytennisleague.app",
       "buildNumber": "1",
       "infoPlist": {
         "UIBackgroundModes": ["remote-notification"]
