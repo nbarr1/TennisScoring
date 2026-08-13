@@ -1,13 +1,14 @@
 {
   "project_info": {
     "project_number": "389382735268",
+    "firebase_url": "https://tennisscoring-40165-default-rtdb.firebaseio.com",
     "project_id": "tennisscoring-40165",
     "storage_bucket": "tennisscoring-40165.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:389382735268:android:f737d9ae1eed1425c8ed31",
+        "mobilesdk_app_id": "1:389382735268:android:eacb8b0498a1a20ac8ed31",
         "android_client_info": {
           "package_name": "com.companytennisleague.app"
         }
