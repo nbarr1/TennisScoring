@@ -123,6 +123,7 @@ service cloud.firestore {
           'availability',
           'tipsEnabled',
           'fcmTokens',
+          'blockedUserIds',
           'updatedAt'
         ];
       }
@@ -488,10 +489,61 @@ service cloud.firestore {
           request.auth.uid in request.resource.data.readBy &&
           request.resource.data.readBy.hasAll(resource.data.readBy) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
-        allow delete: if isAuth() &&
-          get(/databases/$(database)/documents/channels/$(channelId)).data.type == 'direct' &&
-          isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data);
+        // Direct-channel participants may delete their own conversation's messages;
+        // division leaders/admins may additionally remove a reported message from
+        // their division's group channel as part of UGC moderation.
+        allow delete: if isAuth() && (
+          (
+            get(/databases/$(database)/documents/channels/$(channelId)).data.type == 'direct' &&
+            isChannelParticipant(get(/databases/$(database)/documents/channels/$(channelId)).data)
+          ) ||
+          (
+            get(/databases/$(database)/documents/channels/$(channelId)).data.get('divisionId', null) != null &&
+            (
+              isAdmin() ||
+              isLeader(get(/databases/$(database)/documents/channels/$(channelId)).data.divisionId)
+            )
+          )
+        );
       }
+    }
+
+    // ---------- Message reports (UGC moderation) ----------
+    match /messageReports/{reportId} {
+      function reportFields() {
+        return [
+          'channelId',
+          'messageId',
+          'messageContent',
+          'messageSenderId',
+          'messageSenderName',
+          'reportedBy',
+          'reason',
+          'note',
+          'status',
+          'divisionId',
+          'createdAt'
+        ];
+      }
+
+      allow read: if isAuth() && (
+        isAdmin() ||
+        isLeader(resource.data.get('divisionId', ''))
+      );
+      allow create: if isAuth() &&
+        request.resource.data.keys().hasOnly(reportFields()) &&
+        request.resource.data.reportedBy == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.reason in ['harassment', 'spam', 'inappropriate', 'other'] &&
+        request.resource.data.divisionId is string &&
+        request.resource.data.divisionId.size() > 0 &&
+        request.resource.data.createdAt is number;
+      allow update: if isAuth() &&
+        (isAdmin() || isLeader(resource.data.get('divisionId', ''))) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedBy', 'resolvedAt']) &&
+        request.resource.data.status in ['dismissed', 'removed'] &&
+        request.resource.data.resolvedBy == request.auth.uid;
+      allow delete: if isAdmin();
     }
   }
 }

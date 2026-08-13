@@ -114,8 +114,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 - `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match`, `DEFAULT_FORMAT`, etc.
 - `ranking.ts` — `PlayerRanking`, `HeadToHead`.
-- `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability` and `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc).
-- `message.ts` — `Channel`, `Message`, `MatchReport`.
+- `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability`, `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc), `blockedUserIds?: string[]` (self-managed message-sender block list), and `accountDeleted?`/`deletedAt?` (set by the `deleteAccount` callable).
+- `message.ts` — `Channel`, `Message`, `MatchReport`, `MessageReport`, `MessageReportReason` (`'harassment' | 'spam' | 'inappropriate' | 'other'`), `MessageReportStatus`.
 - `division.ts` — `Division`.
 
 ### Firebase client package — SDK wrapper
@@ -126,9 +126,13 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - Handles SSR (isBrowser/isReactNative checks) and uses AsyncStorage for React Native persistence.
 - Exports singletons: `app`, `db`, `auth`, `storage`, `functions`, `getMessagingIfSupported()`.
 
-**`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `liveMatchesQuery`, `playerMatchesQuery`).
+**`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
 
 **`packages/firebase-client/src/divisions.ts`** — division-related Firestore helpers.
+
+**`packages/firebase-client/src/moderation.ts`** — UGC moderation helpers: `reportMessage()`, `useDivisionMessageReports()` (pending reports for a division leader/admin's review queue), `resolveMessageReport()` (dismiss, or remove the offending message and mark resolved), `blockUser()`/`unblockUser()` (writes to the caller's own `users/{uid}.blockedUserIds`).
+
+**`packages/firebase-client/src/account.ts`** — `deleteAccountCallable()`, a thin wrapper around the `deleteAccount` Cloud Function callable.
 
 **Typed React hooks** in `packages/firebase-client/src/hooks/`:
 
@@ -164,6 +168,8 @@ All Firestore reads go through these hooks; all writes go through operations exp
 **`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
 
 **`firebase/src/users/sendInvite.ts`** — invite callables: `sendInvite`, `getInvitePreview`, `acceptInvite`.
+
+**`firebase/src/users/deleteAccount.ts`** — `deleteAccount` HTTPS callable; the signed-in user deletes their own account. Blocks the call with `failed-precondition` if the caller currently leads a division (leadership must be transferred first). Scrubs PII from `users/{uid}` and `profiles/{uid}` (display name replaced with "Deleted User", email/phone/avatar/availability/FCM tokens cleared, `accountDeleted: true` set) rather than deleting the docs outright, so historical match/ranking records that reference the uid keep resolving instead of dangling; removes the uid from their division's `playerIds`; then deletes the Firebase Auth user via the Admin SDK.
 
 **`firebase/src/health/health.ts`** — `health` and `readiness` HTTP endpoints for uptime/deploy checks.
 
@@ -218,6 +224,14 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 5. Opponent calls `confirmMatchReport()` or `disputeMatchReport()`.
 6. Confirmed → `onMatchUpdate` trigger recalculates rankings and generates PDF report.
 7. Disputed → division leader resolves via `resolveDisputedReport()` callable.
+
+### Account deletion
+
+Users delete their own account from Profile (web `/profile`, mobile Profile tab). The client re-authenticates with the user's password (`reauthenticateWithCredential`) as a UX safeguard, then calls the `deleteAccount` callable, which does the actual PII scrub + Firebase Auth deletion server-side (see `firebase/src/users/deleteAccount.ts` above). Division leaders must transfer leadership before they can delete their account.
+
+### Message reporting & blocking
+
+Any channel participant can report a message (reason: `harassment | spam | inappropriate | other`, optional note) via `reportMessage()`, which writes a `messageReports/{reportId}` doc scoped to the reporter's `divisionId`. Division leaders/admins see pending reports for their division via `useDivisionMessageReports()` (mobile: Admin tab) and resolve them with `resolveMessageReport()`, either dismissing the report or removing the offending message (Firestore rules let leaders/admins delete any message in their division's channel; DM participants can already delete their own conversation's messages). Independently, any user can block another user's messages via `blockUser()`/`unblockUser()`, which write to the caller's own `users/{uid}.blockedUserIds` — this is a client-side filter (blocked senders' messages are hidden from the message list and excluded from DM search results) rather than a server-enforced send restriction.
 
 ### Wearable support
 

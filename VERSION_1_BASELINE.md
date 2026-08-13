@@ -21,6 +21,19 @@ Changes since the `v1.0.0` snapshot that affect setup, deployment, or data shape
 
 ---
 
+## Update — 2026-08-13 (`v1.0.2`)
+
+Changes since the `v1.0.1` snapshot that affect data shape or user-visible capability:
+
+- **New Cloud Function**: `deleteAccount` (`firebase/src/users/deleteAccount.ts`) — signed-in users delete their own account. Blocks with `failed-precondition` if the caller currently leads a division. Scrubs PII from `users/{uid}`/`profiles/{uid}` (kept, not deleted, so historical match/ranking records keep resolving) and deletes the Firebase Auth user via the Admin SDK.
+- **New Firestore collection**: `messageReports/{reportId}` — UGC moderation reports against channel messages, scoped by `divisionId`. Readable/resolvable by the reporting division's leaders/admins; creatable by any authenticated user reporting their own submission.
+- **New `User` fields**: `blockedUserIds?: string[]` (self-managed, client-side-enforced message block list), `accountDeleted?`/`deletedAt?`.
+- **Firestore rules**: `users/{userId}` self-writable fields now include `blockedUserIds`. Division channel messages (`channels/{channelId}/messages/{messageId}`) can now additionally be deleted by that division's leaders/admins, not just direct-message participants deleting their own conversation, to support removing a reported message.
+- **Mobile UI**: Profile tab gets a Delete Account flow (password re-auth + the callable above) and a Blocked Users list with unblock. Messages tab gets long-press → Report/Block on any other sender's message. Admin tab gets a Reported Messages review queue (dismiss or remove).
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.0.2`; `apps/mobile/app.json` moved to `version: 1.0.2`, Android `versionCode: 2`, iOS `buildNumber: 2`.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.
@@ -82,6 +95,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
   - match scoring/reporting/ranking functions: `scoreMatchPoint`, `recordHistoricMatch`, `recordMatchOnBehalf`, `resolveDisputedReport`, `recalculateDivisionRankings`, `repairAllDivisionRankings`, `onMatchUpdate`
   - division/player management functions: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles`, `exportDivisionCsv`
   - invite functions: `sendInvite`, `getInvitePreview`, `acceptInvite`
+  - account management: `deleteAccount`
   - messaging and notification trigger: `onNewMessage`
   - feedback integration: `submitFeedback`
   - auth trigger: `onUserCreated` (see the 2026-08-10 update above for a known deployment limitation)
@@ -116,7 +130,9 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
 - Track optional advanced match stats.
 - Submit, confirm, dispute, and resolve match reports.
 - Generate report artifacts and recalculate rankings from completed matches.
-- Send and receive in-app messages.
+- Send and receive in-app messages; report a message for moderation or block a sender.
+- Division leaders/admins review and resolve reported messages.
+- Delete your own account (blocked while leading a division, until leadership is transferred).
 - Send web/mobile feedback through a Firebase Function backed by a GitHub token stored only in Secret Manager.
 - Receive Firebase Cloud Messaging notifications where platform setup is complete.
 

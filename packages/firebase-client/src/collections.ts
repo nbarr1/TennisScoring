@@ -10,7 +10,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from './config';
-import type { User, PublicProfile, Match, Division, DivisionLevel, DivisionMembership, Channel, Message, PlayerRanking, HeadToHead } from '@tennis/shared';
+import type { User, PublicProfile, Match, Division, DivisionLevel, DivisionMembership, Channel, Message, MessageReport, PlayerRanking, HeadToHead } from '@tennis/shared';
 
 // Typed collection helpers
 export const usersCol = () => collection(db, 'users') as CollectionReference<User>;
@@ -46,7 +46,13 @@ export const channelDoc = (id: string) => doc(db, 'channels', id) as DocumentRef
 export const messagesCol = (channelId: string) =>
   collection(db, 'channels', channelId, 'messages') as CollectionReference<Message>;
 
+export const messageDoc = (channelId: string, messageId: string) =>
+  doc(db, 'channels', channelId, 'messages', messageId) as DocumentReference<Message>;
+
 export const h2hCol = () => collection(db, 'headToHead') as CollectionReference<HeadToHead>;
+
+export const messageReportsCol = () => collection(db, 'messageReports') as CollectionReference<MessageReport>;
+export const messageReportDoc = (id: string) => doc(db, 'messageReports', id) as DocumentReference<MessageReport>;
 
 // Common query builders
 export const divisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
@@ -75,3 +81,11 @@ export const channelMessagesQuery = (channelId: string, messageLimit = 50) =>
 
 export const userChannelsQuery = (userId: string) =>
   query(channelsCol(), where('participantIds', 'array-contains', userId), orderBy('createdAt', 'desc'));
+
+export const divisionMessageReportsQuery = (divisionId: string) =>
+  query(
+    messageReportsCol(),
+    where('divisionId', '==', divisionId),
+    where('status', '==', 'pending'),
+    orderBy('createdAt', 'desc'),
+  );

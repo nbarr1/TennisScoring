@@ -7,15 +7,25 @@ import {
   TextInput,
   Switch,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
-import { signOut } from "firebase/auth";
+import {
+  signOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+} from "firebase/auth";
 import { useRouter } from "expo-router";
+import { getDoc } from "firebase/firestore";
 import {
   auth,
   useAuthUser,
   usePrivateUser,
   updateUserProfile,
   useDivisionOptions,
+  deleteAccountCallable,
+  unblockUser,
+  profileDoc,
 } from "@tennis/firebase-client";
 import {
   DAY_LABELS,
@@ -26,6 +36,7 @@ import {
   updateAvailabilitySlot,
   validateAvailabilitySlots,
   type AvailabilitySlot,
+  type PublicProfile,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
@@ -54,6 +65,10 @@ export default function ProfileScreen() {
   );
   const [selectedDivisionId, setSelectedDivisionId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [blockedProfiles, setBlockedProfiles] = useState<PublicProfile[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -68,6 +83,40 @@ export default function ProfileScreen() {
     setAvailabilityNote(user.availability?.note ?? "");
     setSelectedDivisionId(user.divisionId ?? "");
   }, [user]);
+
+  useEffect(() => {
+    const ids = user?.blockedUserIds ?? [];
+    if (ids.length === 0) {
+      setBlockedProfiles([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(ids.map((id) => getDoc(profileDoc(id)).catch(() => null))).then(
+      (snaps) => {
+        if (cancelled) return;
+        setBlockedProfiles(
+          snaps
+            .filter((snap): snap is NonNullable<typeof snap> => !!snap?.exists())
+            .map((snap) => ({
+              ...(snap.data() as Omit<PublicProfile, "id">),
+              id: snap.id,
+            })),
+        );
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.blockedUserIds]);
+
+  async function handleUnblock(blockedUserId: string) {
+    if (!firebaseUser) return;
+    try {
+      await unblockUser(firebaseUser.uid, blockedUserId);
+    } catch {
+      Alert.alert("Could not unblock user", "Please try again.");
+    }
+  }
 
   function addSlot() {
     setAvailabilitySlots(addAvailabilitySlot);
@@ -136,6 +185,61 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  }
+
+  function handleDeleteAccountPress() {
+    Alert.alert(
+      "Delete Account",
+      "This permanently deletes your account and removes your personal data. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          style: "destructive",
+          onPress: () => setShowDeleteModal(true),
+        },
+      ],
+    );
+  }
+
+  async function confirmDeleteAccount() {
+    if (!firebaseUser?.email || !deletePassword) return;
+    setDeleting(true);
+    try {
+      const credential = EmailAuthProvider.credential(
+        firebaseUser.email,
+        deletePassword,
+      );
+      await reauthenticateWithCredential(firebaseUser, credential);
+      await deleteAccountCallable();
+      setShowDeleteModal(false);
+      setDeletePassword("");
+      setUser(null);
+      router.replace("/(auth)/login");
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (
+        code === "auth/wrong-password" ||
+        code === "auth/invalid-credential"
+      ) {
+        Alert.alert(
+          "Incorrect password",
+          "Please re-enter your password to confirm.",
+        );
+      } else if (code === "functions/failed-precondition") {
+        Alert.alert(
+          "Can't delete account",
+          "Transfer division leadership to another player before deleting your account.",
+        );
+      } else {
+        Alert.alert(
+          "Could not delete account",
+          (e as { message?: string }).message || "Please try again.",
+        );
+      }
+    } finally {
+      setDeleting(false);
+    }
   }
 
   if (loading || !user) {
@@ -382,6 +486,20 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {blockedProfiles.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Blocked Users</Text>
+          {blockedProfiles.map((p) => (
+            <View key={p.id} style={styles.row}>
+              <Text style={styles.rowValue}>{p.displayName}</Text>
+              <TouchableOpacity onPress={() => handleUnblock(p.id)}>
+                <Text style={styles.unblockText}>Unblock</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={styles.actions}>
         {editing ? (
           <>
@@ -415,7 +533,59 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutBtnText}>Sign Out</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.deleteAccountBtn}
+          onPress={handleDeleteAccountPress}
+        >
+          <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal visible={showDeleteModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter your password to permanently delete your account. This
+              cannot be undone.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              placeholder="Password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              style={[
+                styles.deleteAccountBtnSolid,
+                (!deletePassword || deleting) && styles.btnDisabled,
+              ]}
+              onPress={confirmDeleteAccount}
+              disabled={!deletePassword || deleting}
+            >
+              {deleting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.deleteAccountBtnSolidText}>
+                  Permanently Delete Account
+                </Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => {
+                setShowDeleteModal(false);
+                setDeletePassword("");
+              }}
+            >
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAwareScrollView>
   );
 }
@@ -462,6 +632,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { color: "#666", fontSize: 14 },
   rowValue: { color: "#333", fontSize: 14, fontWeight: "500" },
+  unblockText: { color: "#1a472a", fontSize: 13, fontWeight: "700" },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -512,6 +683,30 @@ const styles = StyleSheet.create({
   feedbackBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
   signOutBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
   signOutBtnText: { color: "#c0392b", fontWeight: "600", fontSize: 15 },
+  deleteAccountBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
+  deleteAccountBtnText: { color: "#999", fontWeight: "500", fontSize: 13 },
+  deleteAccountBtnSolid: {
+    backgroundColor: "#c0392b",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  deleteAccountBtnSolidText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalCard: { backgroundColor: "#fff", borderRadius: 16, padding: 20 },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#c0392b",
+    marginBottom: 8,
+  },
+  modalSubtitle: { fontSize: 13, color: "#666", marginBottom: 16 },
   btnDisabled: { opacity: 0.5 },
   divisionList: { gap: 8 },
   divisionOption: {

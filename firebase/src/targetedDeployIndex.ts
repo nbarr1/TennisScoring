@@ -21,3 +21,4 @@ export {
 export { submitFeedback } from './feedback/submitFeedback';
 
 export { sendInvite, getInvitePreview, acceptInvite } from './users/sendInvite';
+export { deleteAccount } from './users/deleteAccount';
