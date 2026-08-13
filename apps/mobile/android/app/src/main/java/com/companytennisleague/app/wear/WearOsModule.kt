@@ -1,4 +1,4 @@
-package com.tennisleague.app.wear
+package com.companytennisleague.app.wear
 
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext

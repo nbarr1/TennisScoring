@@ -100,7 +100,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
 
 ### Wearable code
 
-- Wear OS app/module code exists under `apps/mobile/android/wear`, `apps/mobile/android/app/src/main/java/com/tennisleague/app/wear`, and `apps/mobile/modules/wear-os`.
+- Wear OS app/module code exists under `apps/mobile/android/wear`, `apps/mobile/android/app/src/main/java/com/companytennisleague/app/wear`, and `apps/mobile/modules/wear-os`.
 - Apple Watch Swift/module code exists under `apps/mobile/ios/TennisScoringWatch` and `apps/mobile/modules/apple-watch`.
 - Wearable code should be kept in sync with shared `LiveScore` shape changes.
 

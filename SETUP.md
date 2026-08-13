@@ -206,6 +206,9 @@ Mobile app metadata currently identifies v1 as:
 - Expo version: `1.0.1`
 - iOS build number: `1`
 - Android version code: `1`
+- Android application ID (Google Play package name): `com.companytennisleague.app`
+
+The Android application ID is set in `apps/mobile/app.json` (`android.package`) and mirrored in the native project at `apps/mobile/android/app/build.gradle` (`namespace`/`applicationId`) and `apps/mobile/android/wear/build.gradle` (`applicationId`, which must stay identical to the phone app's so the Wear OS Data Layer API can pair them). Before building a release intended for the Play Console, register (or confirm) an Android app with this exact package name in the Firebase project console and replace `apps/mobile/google-services.json` / `apps/mobile/android/app/google-services.json` with the file Firebase generates for it — EAS builds overwrite the in-repo copy from the `GOOGLE_SERVICES_JSON` secret at build time (see `apps/mobile/scripts/prepare-eas-credentials.js`), so that secret must point at the matching file too.
 
 Build with EAS:
 

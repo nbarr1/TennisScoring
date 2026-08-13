@@ -23,7 +23,7 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="tennisleague"/>
-        <data android:scheme="com.tennisleague.app"/>
+        <data android:scheme="com.companytennisleague.app"/>
         <data android:scheme="exp+tennis-scoring"/>
       </intent-filter>
     </activity>

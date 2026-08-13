@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.tennisleague.app'
+    namespace 'com.companytennisleague.app'
     defaultConfig {
-        applicationId 'com.tennisleague.app'
+        applicationId 'com.companytennisleague.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion 34
         versionCode 1
