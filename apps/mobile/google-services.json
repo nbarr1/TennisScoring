@@ -8,38 +8,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:389382735268:android:a9ede70f49e8f7cfc8ed31",
+        "mobilesdk_app_id": "1:389382735268:android:eacb8b0498a1a20ac8ed31",
         "android_client_info": {
-          "package_name": "com.companytennisleague.com"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "389382735268-6l1a3m3e3ojm7lnkgknsrdr2nhfvcndj.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyDMs5j64TtTtXQCFKKXzstPSe8tcwKfI5o"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "389382735268-6l1a3m3e3ojm7lnkgknsrdr2nhfvcndj.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:389382735268:android:f737d9ae1eed1425c8ed31",
-        "android_client_info": {
-          "package_name": "com.tennisleague.app"
+          "package_name": "com.companytennisleague.app"
         }
       },
       "oauth_client": [
