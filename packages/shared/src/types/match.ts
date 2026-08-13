@@ -220,7 +220,7 @@ export interface Match {
   reportUrl?: string;
   tipsEnabled: boolean;
   undoSnapshot?: UndoSnapshot;
-  source?: 'live' | 'manual';
+  source?: 'live' | 'manual' | 'schedule';
   isDivisionMatch?: boolean;  // Whether this match counts toward division rankings
   createdBy: string;
   scheduledAt?: number;
