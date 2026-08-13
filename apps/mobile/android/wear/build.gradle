@@ -10,7 +10,7 @@ android {
     defaultConfig {
         // Wear OS Data Layer delivers messages between apps that share the same package name.
         // Keep this aligned with :app so the Galaxy Watch can talk to the phone app.
-        applicationId 'com.tennisleague.app'
+        applicationId 'com.companytennisleague.app'
         minSdk 26
         targetSdk rootProject.ext.targetSdkVersion
         versionCode 1
