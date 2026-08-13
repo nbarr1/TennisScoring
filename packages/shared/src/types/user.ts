@@ -53,6 +53,9 @@ export interface User {
   invitedAt?: number;
   invitedBy?: string;
   rankingSummary?: UserRankingSummary;
+  blockedUserIds?: string[];
+  accountDeleted?: boolean;
+  deletedAt?: number;
   createdAt: number; // Unix ms timestamp
   updatedAt: number;
 }

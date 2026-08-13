@@ -1,7 +1,7 @@
 {
   "name": "tennis-scoring",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "packageManager": "pnpm@9.15.5",
   "scripts": {
     "build": "turbo run build",
@@ -42,7 +42,7 @@
       "@grpc/grpc-js": ">=1.14.4",
       "body-parser": ">=1.20.6",
       "brace-expansion": ">=5.0.9",
-      "minimatch@3>brace-expansion": "1.1.12",
+      "minimatch@3>brace-expansion": ">=1.1.18",
       "fast-xml-parser": ">=5.7.0",
       "uuid": ">=11.1.1",
       "esbuild": ">=0.28.1",

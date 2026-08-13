@@ -27,6 +27,8 @@ import {
   upsertDivisionLevel,
   exportDivisionCsv,
   useDivisionLevels,
+  useDivisionMessageReports,
+  resolveMessageReport,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
@@ -38,10 +40,18 @@ import {
   type DivisionMatchType,
   type DivisionSkillLevel,
   type Match,
+  type MessageReport,
   type PlayerRanking,
   type User,
   isPrivilegedRole,
 } from "@tennis/shared";
+
+const REPORT_REASON_LABELS: Record<string, string> = {
+  harassment: "Harassment",
+  spam: "Spam",
+  inappropriate: "Inappropriate",
+  other: "Other",
+};
 
 export default function AdminScreen() {
   const { user } = useAppStore();
@@ -70,6 +80,10 @@ export default function AdminScreen() {
   const currentSeason = currentSeasonForDate();
   const seasonOptions = defaultSeasonOptions();
   const { levels: divisionLevels } = useDivisionLevels(division?.id);
+  const { reports: messageReports } = useDivisionMessageReports(division?.id);
+  const [resolvingReportId, setResolvingReportId] = useState<string | null>(
+    null,
+  );
   const [levelSeasonId, setLevelSeasonId] = useState(currentSeason.id);
   const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>("beginner");
   const [levelMatchType, setLevelMatchType] =
@@ -440,6 +454,24 @@ export default function AdminScreen() {
       );
     } finally {
       setRepairingRankings(false);
+    }
+  }
+
+  async function handleResolveReport(
+    report: MessageReport,
+    action: "dismiss" | "remove",
+  ) {
+    if (!user) return;
+    setResolvingReportId(report.id);
+    try {
+      await resolveMessageReport(report, user.id, action);
+    } catch (e) {
+      Alert.alert(
+        "Could not resolve report",
+        (e as { message?: string }).message || "Please try again.",
+      );
+    } finally {
+      setResolvingReportId(null);
     }
   }
 
@@ -894,6 +926,68 @@ export default function AdminScreen() {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Reported Messages</Text>
+            <Text style={styles.hint}>
+              Review messages flagged by players in your division.
+            </Text>
+            {messageReports.length === 0 ? (
+              <Text style={styles.hint}>No pending reports.</Text>
+            ) : (
+              messageReports.map((report) => (
+                <View key={report.id} style={styles.reportItem}>
+                  <View style={styles.reportHeader}>
+                    <Text style={styles.playerName}>
+                      {report.messageSenderName}
+                    </Text>
+                    <View style={styles.reportReasonBadge}>
+                      <Text style={styles.reportReasonBadgeText}>
+                        {REPORT_REASON_LABELS[report.reason] ?? report.reason}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.reportContent} numberOfLines={3}>
+                    "{report.messageContent}"
+                  </Text>
+                  {report.note ? (
+                    <Text style={styles.playerContact}>
+                      Reporter note: {report.note}
+                    </Text>
+                  ) : null}
+                  <View style={styles.reportActions}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove message from ${report.messageSenderName}`}
+                      style={[
+                        styles.reportActionBtn,
+                        styles.reportActionBtnDestructive,
+                        resolvingReportId === report.id && styles.btnDisabled,
+                      ]}
+                      onPress={() => handleResolveReport(report, "remove")}
+                      disabled={resolvingReportId === report.id}
+                    >
+                      <Text style={styles.reportActionBtnDestructiveText}>
+                        Remove message
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Dismiss report"
+                      style={[
+                        styles.reportActionBtn,
+                        resolvingReportId === report.id && styles.btnDisabled,
+                      ]}
+                      onPress={() => handleResolveReport(report, "dismiss")}
+                      disabled={resolvingReportId === report.id}
+                    >
+                      <Text style={styles.reportActionBtnText}>Dismiss</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          <View style={styles.card}>
             <Text style={styles.sectionTitle}>Players</Text>
             {players.length === 0 ? (
               <Text style={styles.hint}>
@@ -1087,4 +1181,50 @@ const styles = StyleSheet.create({
   },
   playerBadgeText: { color: "#555", fontWeight: "600", fontSize: 12 },
   separator: { height: 1, backgroundColor: "#f5f5f5" },
+  reportItem: {
+    borderWidth: 1,
+    borderColor: "#f0d9d9",
+    backgroundColor: "#fff8f8",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+  },
+  reportHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  reportReasonBadge: {
+    backgroundColor: "#fbeaea",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  reportReasonBadgeText: { color: "#c0392b", fontWeight: "700", fontSize: 11 },
+  reportContent: {
+    fontSize: 13,
+    color: "#555",
+    fontStyle: "italic",
+    marginBottom: 8,
+  },
+  reportActions: { flexDirection: "row", gap: 8 },
+  reportActionBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#1a472a",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  reportActionBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
+  reportActionBtnDestructive: {
+    borderColor: "#c0392b",
+    backgroundColor: "#c0392b",
+  },
+  reportActionBtnDestructiveText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 13,
+  },
 });

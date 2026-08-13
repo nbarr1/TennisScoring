@@ -12,6 +12,7 @@ export { onNewMessage } from './messaging/onNewMessage';
 
 export { onUserCreated } from './auth/onUserCreated';
 export { sendInvite, getInvitePreview, acceptInvite } from './users/sendInvite';
+export { deleteAccount } from './users/deleteAccount';
 export {
   createDivision,
   joinDivisionByCode,

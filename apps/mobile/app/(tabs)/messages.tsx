@@ -17,17 +17,45 @@ import {
   sendMessage,
   getOrCreateDM,
   searchDivisionPlayers,
+  reportMessage,
+  blockUser,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
-import type { Message, Channel, PublicProfile } from "@tennis/shared";
+import type {
+  Message,
+  Channel,
+  PublicProfile,
+  MessageReportReason,
+} from "@tennis/shared";
 import {
   KeyboardAwareBottomSheet,
   KeyboardSafeView,
 } from "../../components/KeyboardSafeView";
 
-function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
+const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
+  { value: "harassment", label: "Harassment" },
+  { value: "spam", label: "Spam" },
+  { value: "inappropriate", label: "Inappropriate" },
+  { value: "other", label: "Other" },
+];
+
+function MessageBubble({
+  message,
+  isMe,
+  onLongPress,
+}: {
+  message: Message;
+  isMe: boolean;
+  onLongPress?: () => void;
+}) {
   return (
-    <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+    <TouchableOpacity
+      style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
+      activeOpacity={isMe ? 1 : 0.7}
+      disabled={isMe || !onLongPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+    >
       {!isMe && <Text style={styles.senderName}>{message.senderName}</Text>}
       <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
         {message.content}
@@ -56,15 +84,88 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
           )}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
 function ChannelView({ channel }: { channel: Channel }) {
   const { user } = useAppStore();
-  const { messages } = useMessages(channel.id);
+  const { messages: allMessages } = useMessages(channel.id);
   const [text, setText] = useState("");
   const listRef = useRef<FlatList>(null);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [reportMessageTarget, setReportMessageTarget] =
+    useState<Message | null>(null);
+  const [reportReason, setReportReason] =
+    useState<MessageReportReason>("harassment");
+  const [reportNote, setReportNote] = useState("");
+  const [reporting, setReporting] = useState(false);
+
+  const blockedIds = new Set(user?.blockedUserIds ?? []);
+  const messages = allMessages.filter(
+    (m) => m.senderId === user?.id || !blockedIds.has(m.senderId),
+  );
+
+  function handleLongPressMessage(message: Message) {
+    setActionMessage(message);
+  }
+
+  async function handleBlockSender() {
+    if (!user || !actionMessage) return;
+    const senderId = actionMessage.senderId;
+    const senderName = actionMessage.senderName;
+    setActionMessage(null);
+    Alert.alert(
+      "Block " + senderName + "?",
+      "You won't see messages from this person anymore. You can unblock them later from your profile.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await blockUser(user.id, senderId);
+            } catch {
+              Alert.alert("Could not block user", "Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function handleOpenReport() {
+    if (!actionMessage) return;
+    setReportMessageTarget(actionMessage);
+    setReportReason("harassment");
+    setReportNote("");
+    setActionMessage(null);
+  }
+
+  async function handleSubmitReport() {
+    if (!user || !reportMessageTarget) return;
+    setReporting(true);
+    try {
+      await reportMessage({
+        channelId: channel.id,
+        message: reportMessageTarget,
+        reportedBy: user.id,
+        reason: reportReason,
+        note: reportNote,
+        divisionId: user.divisionId,
+      });
+      setReportMessageTarget(null);
+      Alert.alert(
+        "Message reported",
+        "Thanks — a division leader will review it.",
+      );
+    } catch {
+      Alert.alert("Could not submit report", "Please try again.");
+    } finally {
+      setReporting(false);
+    }
+  }
 
   async function handleSend() {
     if (!text.trim() || !user) return;
@@ -106,9 +207,18 @@ function ChannelView({ channel }: { channel: Channel }) {
         ref={listRef}
         data={messages}
         keyExtractor={(m) => m.id}
-        renderItem={({ item }) => (
-          <MessageBubble message={item} isMe={item.senderId === user?.id} />
-        )}
+        renderItem={({ item }) => {
+          const isMe = item.senderId === user?.id;
+          return (
+            <MessageBubble
+              message={item}
+              isMe={isMe}
+              onLongPress={
+                isMe ? undefined : () => handleLongPressMessage(item)
+              }
+            />
+          );
+        }}
         contentContainerStyle={styles.messageList}
         onContentSizeChange={() =>
           listRef.current?.scrollToEnd({ animated: false })
@@ -136,6 +246,98 @@ function ChannelView({ channel }: { channel: Channel }) {
           <Text style={styles.sendText}>Send</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal visible={!!actionMessage} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.actionSheetOverlay}
+          activeOpacity={1}
+          onPress={() => setActionMessage(null)}
+        >
+          <View style={styles.actionSheetCard}>
+            <Text style={styles.actionSheetTitle}>
+              {actionMessage?.senderName}
+            </Text>
+            <TouchableOpacity
+              style={styles.actionSheetOption}
+              onPress={handleOpenReport}
+            >
+              <Text style={styles.actionSheetOptionText}>
+                🚩 Report message
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionSheetOption}
+              onPress={handleBlockSender}
+            >
+              <Text style={styles.actionSheetOptionTextDestructive}>
+                🚫 Block {actionMessage?.senderName}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.actionSheetOption}
+              onPress={() => setActionMessage(null)}
+            >
+              <Text style={styles.actionSheetOptionText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={!!reportMessageTarget} transparent animationType="slide">
+        <KeyboardAwareBottomSheet style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Report Message</Text>
+            <Text style={styles.reportPreview} numberOfLines={2}>
+              "{reportMessageTarget?.content}"
+            </Text>
+            <View style={styles.chipRow}>
+              {REPORT_REASONS.map((r) => (
+                <TouchableOpacity
+                  key={r.value}
+                  style={[
+                    styles.chip,
+                    reportReason === r.value && styles.chipActive,
+                  ]}
+                  onPress={() => setReportReason(r.value)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      reportReason === r.value && styles.chipTextActive,
+                    ]}
+                  >
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={[styles.input, { minHeight: 56 }]}
+              value={reportNote}
+              onChangeText={setReportNote}
+              placeholder="Add details (optional)"
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.sendReportBtn, reporting && styles.btnDisabled]}
+              onPress={handleSubmitReport}
+              disabled={reporting}
+            >
+              {reporting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.sendReportBtnText}>Submit Report</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setReportMessageTarget(null)}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAwareBottomSheet>
+      </Modal>
     </KeyboardSafeView>
   );
 }
@@ -159,7 +361,10 @@ export default function MessagesScreen() {
     setDmSearching(true);
     try {
       const results = await searchDivisionPlayers(divisionId, text);
-      setDmResults(results.filter((u) => u.id !== user?.id));
+      const blockedIds = new Set(user?.blockedUserIds ?? []);
+      setDmResults(
+        results.filter((u) => u.id !== user?.id && !blockedIds.has(u.id)),
+      );
     } catch {
       setDmResults([]);
     } finally {
@@ -448,4 +653,61 @@ const styles = StyleSheet.create({
   },
   cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
   cancelText: { color: "#888", fontSize: 15 },
+  btnDisabled: { opacity: 0.5 },
+  actionSheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  actionSheetCard: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 12,
+    paddingBottom: 28,
+  },
+  actionSheetTitle: {
+    textAlign: "center",
+    color: "#999",
+    fontSize: 12,
+    fontWeight: "600",
+    paddingVertical: 8,
+  },
+  actionSheetOption: {
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    alignItems: "center",
+  },
+  actionSheetOptionText: { fontSize: 16, color: "#333", fontWeight: "500" },
+  actionSheetOptionTextDestructive: {
+    fontSize: 16,
+    color: "#c0392b",
+    fontWeight: "600",
+  },
+  reportPreview: {
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
+    marginBottom: 16,
+  },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  chip: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  chipText: { color: "#555", fontWeight: "600", fontSize: 13 },
+  chipTextActive: { color: "#1a472a" },
+  sendReportBtn: {
+    backgroundColor: "#1a472a",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  sendReportBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 });

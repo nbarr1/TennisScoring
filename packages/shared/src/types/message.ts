@@ -43,3 +43,24 @@ export interface MatchReport {
   pdfUrl: string;
   generatedAt: number;
 }
+
+export type MessageReportReason = 'harassment' | 'spam' | 'inappropriate' | 'other';
+
+export type MessageReportStatus = 'pending' | 'dismissed' | 'removed';
+
+export interface MessageReport {
+  id: string;
+  channelId: string;
+  messageId: string;
+  messageContent: string;
+  messageSenderId: string;
+  messageSenderName: string;
+  reportedBy: string;
+  reason: MessageReportReason;
+  note?: string;
+  status: MessageReportStatus;
+  divisionId?: string;
+  createdAt: number;
+  resolvedBy?: string;
+  resolvedAt?: number;
+}
