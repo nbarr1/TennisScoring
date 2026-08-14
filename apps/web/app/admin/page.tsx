@@ -23,6 +23,11 @@ import {
   useDivisionLevels,
   useDivisionMemberships,
   upsertDivisionMembership,
+  useRankings,
+  previewRoundRobinSchedule,
+  publishRoundRobinSchedule,
+  useDivisionMessageReports,
+  resolveMessageReport,
 } from "@tennis/firebase-client";
 import {
   currentSeasonForDate,
@@ -35,6 +40,9 @@ import {
   type Match,
   type PlayerRanking,
   type User,
+  type RoundRobinMatchup,
+  type MessageReport,
+  type MessageReportReason,
   isPrivilegedRole,
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
@@ -127,6 +135,42 @@ export default function AdminPage(): React.JSX.Element {
   );
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
+  const [rrSeasonId, setRrSeasonId] = useState(currentSeason.id);
+  const [rrDivisionLevelId, setRrDivisionLevelId] = useState("");
+  const [rrSelectedPlayerIds, setRrSelectedPlayerIds] = useState<string[]>([]);
+  const [rrDoubleRoundRobin, setRrDoubleRoundRobin] = useState(false);
+  const [rrIntervalDays, setRrIntervalDays] = useState(7);
+  const [rrStartDate, setRrStartDate] = useState("");
+  const [rrSeedByRankings, setRrSeedByRankings] = useState(true);
+  const [rrClearExisting, setRrClearExisting] = useState(false);
+  const [rrPreview, setRrPreview] = useState<RoundRobinMatchup[] | null>(null);
+  const [rrPublishing, setRrPublishing] = useState(false);
+  const [rrMessage, setRrMessage] = useState("");
+  const rrLevelsForSeason = useMemo(
+    () => divisionLevels.filter((level) => level.seasonId === rrSeasonId),
+    [divisionLevels, rrSeasonId],
+  );
+  const { memberships: rrMemberships } = useDivisionMemberships(
+    division?.id,
+    rrSeasonId,
+    rrDivisionLevelId || null,
+  );
+  const { rankings: rrRankings } = useRankings(division?.id ?? null, {
+    seasonId: rrSeasonId,
+    divisionLevelId: rrDivisionLevelId,
+  });
+  const rrNameById = useMemo(
+    () => new Map(rrMemberships.map((m) => [m.userId, m.displayNameSnapshot] as const)),
+    [rrMemberships],
+  );
+  const [resolvingReportId, setResolvingReportId] = useState<string | null>(null);
+  const { reports: messageReports } = useDivisionMessageReports(division?.id);
+  const REPORT_REASON_LABELS: Record<MessageReportReason, string> = {
+    harassment: "Harassment",
+    spam: "Spam",
+    inappropriate: "Inappropriate",
+    other: "Other",
+  };
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -179,6 +223,21 @@ export default function AdminPage(): React.JSX.Element {
     if (newPlayerDivisionLevelId && adminSeasonLevels.some((level) => level.id === newPlayerDivisionLevelId)) return;
     setNewPlayerDivisionLevelId(adminSeasonLevels[0]?.id ?? "");
   }, [adminSeasonLevels, newPlayerDivisionLevelId]);
+
+  useEffect(() => {
+    if (rrLevelsForSeason.length === 0) {
+      setRrDivisionLevelId("");
+      return;
+    }
+    if (!rrLevelsForSeason.some((level) => level.id === rrDivisionLevelId)) {
+      setRrDivisionLevelId(rrLevelsForSeason[0].id);
+    }
+  }, [rrLevelsForSeason, rrDivisionLevelId]);
+
+  useEffect(() => {
+    setRrSelectedPlayerIds(rrMemberships.map((m) => m.userId));
+    setRrPreview(null);
+  }, [rrMemberships]);
 
   // Gate: redirect players who are not leaders/admins away from this page.
   useEffect(() => {
@@ -611,6 +670,89 @@ export default function AdminPage(): React.JSX.Element {
 
 
 
+
+  function toggleRrPlayer(userId: string) {
+    setRrPreview(null);
+    setRrSelectedPlayerIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+    );
+  }
+
+  function handleRrGeneratePreview() {
+    setRrMessage("");
+    if (rrSelectedPlayerIds.length < 2) {
+      setPageError("Choose at least 2 players to generate a schedule.");
+      return;
+    }
+    setPageError("");
+    setRrPreview(
+      previewRoundRobinSchedule({
+        playerIds: rrSelectedPlayerIds,
+        doubleRoundRobin: rrDoubleRoundRobin,
+        seedByRankings: rrSeedByRankings,
+        rankings: rrRankings,
+      }),
+    );
+  }
+
+  async function handleRrPublish() {
+    if (!division || !rrSeasonId || !rrDivisionLevelId || !rrPreview) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rrStartDate)) {
+      setPageError("Please enter the start date as YYYY-MM-DD.");
+      return;
+    }
+    const startAt = Date.parse(`${rrStartDate}T18:00:00`);
+    if (!startAt || Number.isNaN(startAt)) {
+      setPageError("Could not parse that start date.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `This will create ${rrPreview.length} match${rrPreview.length === 1 ? "" : "es"}${
+        rrClearExisting ? " and remove the previously generated schedule for this level" : ""
+      }. Continue?`,
+    );
+    if (!confirmed) return;
+    setRrPublishing(true);
+    setPageError("");
+    setRrMessage("");
+    try {
+      const level = rrLevelsForSeason.find((l) => l.id === rrDivisionLevelId);
+      const result = await publishRoundRobinSchedule({
+        divisionId: division.id,
+        seasonId: rrSeasonId,
+        divisionLevelId: rrDivisionLevelId,
+        matchType: level?.matchType,
+        playerIds: rrSelectedPlayerIds,
+        doubleRoundRobin: rrDoubleRoundRobin,
+        startAt,
+        intervalDays: rrIntervalDays,
+        clearExisting: rrClearExisting,
+      });
+      setRrPreview(null);
+      setRrMessage(
+        `Created ${result.matchesCreated} match${result.matchesCreated === 1 ? "" : "es"} across ${result.roundsCreated} round${result.roundsCreated === 1 ? "" : "s"}.`,
+      );
+    } catch (e) {
+      setPageError((e as { message?: string }).message || "Could not publish schedule. Please try again.");
+    } finally {
+      setRrPublishing(false);
+    }
+  }
+
+  async function handleResolveReport(
+    report: MessageReport,
+    action: "dismiss" | "remove",
+  ) {
+    if (!firebaseUser) return;
+    setResolvingReportId(report.id);
+    try {
+      await resolveMessageReport(report, firebaseUser.uid, action);
+    } catch (e) {
+      setPageError((e as { message?: string }).message || "Could not resolve report. Please try again.");
+    } finally {
+      setResolvingReportId(null);
+    }
+  }
 
   async function repairRankings() {
     if (!division) return;
@@ -1235,6 +1377,182 @@ export default function AdminPage(): React.JSX.Element {
               )}
             </div>
 <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Round-Robin Scheduler</h2>
+              <p style={styles.hint}>
+                Auto-generate a round-robin fixture list for a season and division level.
+              </p>
+              <div style={styles.row}>
+                <label style={styles.filterLabel}>
+                  Season
+                  <select
+                    style={styles.input}
+                    value={rrSeasonId}
+                    onChange={(e) => setRrSeasonId(e.target.value)}
+                  >
+                    {seasonOptions.map((season) => (
+                      <option key={season.id} value={season.id}>{season.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={styles.filterLabel}>
+                  Division Level
+                  <select
+                    style={styles.input}
+                    value={rrDivisionLevelId}
+                    onChange={(e) => { setRrDivisionLevelId(e.target.value); setRrPreview(null); }}
+                    disabled={rrLevelsForSeason.length === 0}
+                  >
+                    {rrLevelsForSeason.length === 0 ? (
+                      <option value="">No levels for this season</option>
+                    ) : (
+                      rrLevelsForSeason.map((level) => (
+                        <option key={level.id} value={level.id}>{level.name}</option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              </div>
+
+              <p style={styles.subTitle}>Players ({rrSelectedPlayerIds.length} selected)</p>
+              {rrMemberships.length === 0 ? (
+                <p style={styles.hint}>No active players in this season/level yet.</p>
+              ) : (
+                <div style={styles.levelGrid}>
+                  {rrMemberships.map((m) => {
+                    const selected = rrSelectedPlayerIds.includes(m.userId);
+                    return (
+                      <button
+                        type="button"
+                        key={m.userId}
+                        style={{
+                          ...styles.playerToggle,
+                          ...(selected ? styles.playerToggleActive : {}),
+                        }}
+                        onClick={() => toggleRrPlayer(m.userId)}
+                      >
+                        {selected ? "✓ " : ""}{m.displayNameSnapshot}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <p style={styles.subTitle}>Format</p>
+              <div style={styles.row}>
+                <select
+                  style={styles.input}
+                  value={rrDoubleRoundRobin ? "double" : "single"}
+                  onChange={(e) => { setRrDoubleRoundRobin(e.target.value === "double"); setRrPreview(null); }}
+                  aria-label="Round-robin format"
+                >
+                  <option value="single">Single round robin</option>
+                  <option value="double">Double round robin</option>
+                </select>
+                <select
+                  style={styles.input}
+                  value={rrIntervalDays}
+                  onChange={(e) => setRrIntervalDays(Number(e.target.value))}
+                  aria-label="Round interval"
+                >
+                  {[3, 7, 14].map((days) => (
+                    <option key={days} value={days}>Every {days} days</option>
+                  ))}
+                </select>
+                <input
+                  style={styles.input}
+                  type="text"
+                  value={rrStartDate}
+                  onChange={(e) => setRrStartDate(e.target.value)}
+                  placeholder="Round 1 start date (YYYY-MM-DD)"
+                  aria-label="Round 1 start date"
+                />
+              </div>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={rrSeedByRankings}
+                  onChange={(e) => { setRrSeedByRankings(e.target.checked); setRrPreview(null); }}
+                />
+                Seed pairings by current ranking
+              </label>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={rrClearExisting}
+                  onChange={(e) => setRrClearExisting(e.target.checked)}
+                />
+                Clear previously generated schedule for this level
+              </label>
+
+              <div style={styles.editorActions}>
+                <button style={styles.btnSecondary} onClick={handleRrGeneratePreview}>
+                  Generate Preview
+                </button>
+              </div>
+
+              {rrPreview && (
+                <div style={styles.mergeBox}>
+                  <p style={styles.subTitle}>
+                    Preview — {rrPreview.length} match{rrPreview.length === 1 ? "" : "es"}
+                  </p>
+                  {Array.from(new Set(rrPreview.map((m) => m.round))).map((round) => (
+                    <div key={round} style={{ marginBottom: 10 }}>
+                      <p style={{ ...styles.hint, fontWeight: 700, color: "var(--green-dark)", marginBottom: 4 }}>
+                        Round {round}
+                      </p>
+                      {rrPreview.filter((m) => m.round === round).map((m, idx) => (
+                        <p key={idx} style={{ ...styles.hint, marginBottom: 2 }}>
+                          {rrNameById.get(m.player1Id) ?? m.player1Id} vs {rrNameById.get(m.player2Id) ?? m.player2Id}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+                  <button style={styles.btn} onClick={handleRrPublish} disabled={rrPublishing}>
+                    {rrPublishing ? "Publishing…" : "Publish Schedule"}
+                  </button>
+                </div>
+              )}
+              {rrMessage && <p role="status" aria-live="polite" style={styles.success}>{rrMessage}</p>}
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>Reported Messages</h2>
+              <p style={styles.hint}>Review messages flagged by players in your division.</p>
+              {messageReports.length === 0 ? (
+                <p style={styles.hint}>No pending reports.</p>
+              ) : (
+                messageReports.map((report) => (
+                  <div key={report.id} style={styles.mergeBox}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <strong>{report.messageSenderName}</strong>
+                      <span style={styles.playerBadge}>
+                        {REPORT_REASON_LABELS[report.reason] ?? report.reason}
+                      </span>
+                    </div>
+                    <p style={styles.hint}>&ldquo;{report.messageContent}&rdquo;</p>
+                    {report.note && <p style={styles.hint}>Reporter note: {report.note}</p>}
+                    <div style={styles.editorActions}>
+                      <button
+                        style={styles.dangerBtn}
+                        onClick={() => handleResolveReport(report, "remove")}
+                        disabled={resolvingReportId === report.id}
+                      >
+                        Remove message
+                      </button>
+                      <button
+                        style={styles.btnSecondary}
+                        onClick={() => handleResolveReport(report, "dismiss")}
+                        disabled={resolvingReportId === report.id}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={styles.card}>
               <h2 style={styles.sectionTitle}>Ranking Repair</h2>
               <p style={styles.hint}>
                 Rebuild rankings and head-to-head records from completed matches
@@ -1399,5 +1717,40 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 10px",
     borderRadius: 20,
     fontSize: 12,
+  },
+  playerToggle: {
+    border: "1px solid #ddd",
+    borderRadius: 999,
+    padding: "8px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#555",
+    background: "#fff",
+    cursor: "pointer",
+  },
+  playerToggleActive: {
+    borderColor: "var(--green-dark)",
+    background: "#e8f5e9",
+    color: "var(--green-dark)",
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 14,
+    color: "#444",
+    padding: "8px 0",
+    borderTop: "1px solid #f0f0f0",
+  },
+  dangerBtn: {
+    background: "#c0392b",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "10px 20px",
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
   },
 };

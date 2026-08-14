@@ -11,16 +11,25 @@ import {
   sendMessage,
   getOrCreateDM,
   searchDivisionPlayers,
-  useUserProfile,
+  usePrivateUser,
   profileDoc,
   deleteDirectChannel,
+  reportMessage,
+  blockUser,
 } from "@tennis/firebase-client";
 import { getDoc } from "firebase/firestore";
-import type { Channel, Message, PublicProfile } from "@tennis/shared";
+import type { Channel, Message, PublicProfile, MessageReportReason } from "@tennis/shared";
+
+const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
+  { value: "harassment", label: "Harassment" },
+  { value: "spam", label: "Spam" },
+  { value: "inappropriate", label: "Inappropriate" },
+  { value: "other", label: "Other" },
+];
 
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
-  const { profile } = useUserProfile(firebaseUser?.uid ?? null);
+  const { user: profile } = usePrivateUser(firebaseUser?.uid ?? null);
   const { channels } = useChannels(firebaseUser?.uid ?? null);
   const [active, setActive] = useState<Channel | null>(null);
   const [showNewDm, setShowNewDm] = useState(false);
@@ -115,6 +124,8 @@ export default function MessagesPage(): React.JSX.Element {
               currentUserName={
                 profile?.displayName ?? firebaseUser?.displayName ?? "You"
               }
+              divisionId={profile?.divisionId}
+              blockedUserIds={profile?.blockedUserIds ?? []}
               title={channelLabel(active)}
               onDeleted={() => setActive(null)}
             />
@@ -130,6 +141,7 @@ export default function MessagesPage(): React.JSX.Element {
         <NewDmModal
           currentUserId={firebaseUser.uid}
           divisionId={profile.divisionId}
+          blockedUserIds={profile.blockedUserIds ?? []}
           onClose={() => setShowNewDm(false)}
           onCreated={(channel) => {
             setActive(channel);
@@ -144,11 +156,13 @@ export default function MessagesPage(): React.JSX.Element {
 function NewDmModal({
   currentUserId,
   divisionId,
+  blockedUserIds,
   onClose,
   onCreated,
 }: {
   currentUserId: string;
   divisionId: string;
+  blockedUserIds: string[];
   onClose: () => void;
   onCreated: (channel: Channel) => void;
 }) {
@@ -167,7 +181,8 @@ function NewDmModal({
       setSearching(true);
       try {
         const r = await searchDivisionPlayers(divisionId, searchText);
-        setResults(r.filter((u) => u.id !== currentUserId));
+        const blockedIds = new Set(blockedUserIds);
+        setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
       } catch {
         setResults([]);
       } finally {
@@ -175,7 +190,7 @@ function NewDmModal({
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [searchText, divisionId, currentUserId]);
+  }, [searchText, divisionId, currentUserId, blockedUserIds]);
 
   async function handlePick(user: PublicProfile) {
     setCreating(true);
@@ -256,24 +271,86 @@ function ChatPane({
   channel,
   currentUserId,
   currentUserName,
+  divisionId,
+  blockedUserIds,
   title,
   onDeleted,
 }: {
   channel: Channel;
   currentUserId: string;
   currentUserName: string;
+  divisionId?: string;
+  blockedUserIds: string[];
   title: string;
   onDeleted: () => void;
 }) {
-  const { messages } = useMessages(channel.id);
+  const { messages: allMessages } = useMessages(channel.id);
   const [text, setText] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [actionMessage, setActionMessage] = useState<Message | null>(null);
+  const [reportTarget, setReportTarget] = useState<Message | null>(null);
+  const [reportReason, setReportReason] = useState<MessageReportReason>("harassment");
+  const [reportNote, setReportNote] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [actionError, setActionError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const blockedIds = new Set(blockedUserIds);
+  const messages = allMessages.filter(
+    (m) => m.senderId === currentUserId || !blockedIds.has(m.senderId),
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  function handleOpenReport() {
+    if (!actionMessage) return;
+    setReportTarget(actionMessage);
+    setReportReason("harassment");
+    setReportNote("");
+    setReportError("");
+    setActionMessage(null);
+  }
+
+  async function handleSubmitReport() {
+    if (!reportTarget) return;
+    setReporting(true);
+    setReportError("");
+    try {
+      await reportMessage({
+        channelId: channel.id,
+        message: reportTarget,
+        reportedBy: currentUserId,
+        reason: reportReason,
+        note: reportNote,
+        divisionId,
+      });
+      setReportTarget(null);
+    } catch {
+      setReportError("Could not submit report. Please try again.");
+    } finally {
+      setReporting(false);
+    }
+  }
+
+  async function handleBlockSender() {
+    if (!actionMessage) return;
+    const senderId = actionMessage.senderId;
+    const senderName = actionMessage.senderName;
+    setActionMessage(null);
+    const confirmed = window.confirm(
+      `Block ${senderName}? You won't see messages from this person anymore. You can unblock them later from your profile.`,
+    );
+    if (!confirmed) return;
+    try {
+      await blockUser(currentUserId, senderId);
+    } catch {
+      setActionError("Could not block user. Please try again.");
+    }
+  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -323,6 +400,7 @@ function ChatPane({
         )}
       </div>
       {deleteMessage && <div role="alert" style={styles.threadError}>{deleteMessage}</div>}
+      {actionError && <div role="alert" style={styles.threadError}>{actionError}</div>}
 
       <div style={styles.messageList}>
         {messages.map((m) => (
@@ -330,6 +408,7 @@ function ChatPane({
             key={m.id}
             message={m}
             isMe={m.senderId === currentUserId}
+            onOpenActions={() => setActionMessage(m)}
           />
         ))}
         <div ref={bottomRef} />
@@ -355,11 +434,97 @@ function ChatPane({
           Send
         </button>
       </form>
+
+      {actionMessage && (
+        <div style={styles.modalOverlay} onClick={() => setActionMessage(null)}>
+          <div style={styles.actionSheetCard} onClick={(e) => e.stopPropagation()}>
+            <h3 style={styles.modalTitle}>{actionMessage.senderName}</h3>
+            <button type="button" style={styles.actionSheetOption} onClick={handleOpenReport}>
+              🚩 Report message
+            </button>
+            <button
+              type="button"
+              style={{ ...styles.actionSheetOption, color: "#c0392b" }}
+              onClick={handleBlockSender}
+            >
+              🚫 Block {actionMessage.senderName}
+            </button>
+            <button
+              type="button"
+              style={styles.modalCancel}
+              onClick={() => setActionMessage(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reportTarget && (
+        <div style={styles.modalOverlay} onClick={() => setReportTarget(null)}>
+          <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <h3 style={styles.modalTitle}>Report message</h3>
+            <p style={styles.reportPreview}>&ldquo;{reportTarget.content}&rdquo;</p>
+            <div style={styles.chipRow}>
+              {REPORT_REASONS.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  style={{
+                    ...styles.chip,
+                    ...(reportReason === r.value ? styles.chipActive : {}),
+                  }}
+                  onClick={() => setReportReason(r.value)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <label htmlFor="report-note" style={styles.label}>
+              Details (optional)
+            </label>
+            <textarea
+              id="report-note"
+              style={{ ...styles.modalInput, minHeight: 64, resize: "vertical" as const }}
+              value={reportNote}
+              onChange={(e) => setReportNote(e.target.value)}
+              placeholder="Add details (optional)"
+            />
+            {reportError && <div role="alert" style={styles.error}>{reportError}</div>}
+            <div style={styles.modalBtns}>
+              <button
+                type="button"
+                style={{ ...styles.modalCancel, width: "auto" }}
+                onClick={() => setReportTarget(null)}
+                disabled={reporting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.sendBtn}
+                onClick={handleSubmitReport}
+                disabled={reporting}
+              >
+                {reporting ? "Submitting…" : "Submit report"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
+function MessageBubble({
+  message,
+  isMe,
+  onOpenActions,
+}: {
+  message: Message;
+  isMe: boolean;
+  onOpenActions?: () => void;
+}) {
   return (
     <div
       style={{
@@ -367,7 +532,21 @@ function MessageBubble({ message, isMe }: { message: Message; isMe: boolean }) {
         ...(isMe ? styles.bubbleMe : styles.bubbleThem),
       }}
     >
-      {!isMe && <div style={styles.senderName}>{message.senderName}</div>}
+      {!isMe && (
+        <div style={styles.bubbleTopRow}>
+          <div style={styles.senderName}>{message.senderName}</div>
+          {onOpenActions && (
+            <button
+              type="button"
+              aria-label={`Message actions for ${message.senderName}`}
+              style={styles.bubbleActionsBtn}
+              onClick={onOpenActions}
+            >
+              ⋯
+            </button>
+          )}
+        </div>
+      )}
       <div style={styles.bubbleText}>{message.content}</div>
       {message.sharedContact && (
         <div style={styles.contactActions}>
@@ -524,6 +703,54 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#333",
     cursor: "pointer",
   },
+  modalBtns: {
+    display: "flex",
+    gap: 12,
+    justifyContent: "flex-end",
+    marginTop: 16,
+  },
+  actionSheetCard: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 12,
+    maxWidth: 320,
+    width: "100%",
+  },
+  actionSheetOption: {
+    display: "block",
+    width: "100%",
+    textAlign: "left" as const,
+    padding: "12px 14px",
+    background: "transparent",
+    border: "none",
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#222",
+    cursor: "pointer",
+  },
+  reportPreview: {
+    fontSize: 13,
+    color: "#666",
+    fontStyle: "italic" as const,
+    marginBottom: 12,
+  },
+  chipRow: { display: "flex", gap: 8, flexWrap: "wrap" as const, marginBottom: 12 },
+  chip: {
+    border: "1px solid #ddd",
+    borderRadius: 999,
+    padding: "6px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#555",
+    background: "#fff",
+    cursor: "pointer",
+  },
+  chipActive: {
+    borderColor: "var(--green-dark)",
+    background: "#e8f5e9",
+    color: "var(--green-dark)",
+  },
   channelBtn: {
     display: "block",
     width: "100%",
@@ -633,7 +860,23 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottomLeftRadius: 4,
     boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
   },
-  senderName: { fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 },
+  bubbleTopRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
+  senderName: { fontSize: 11, fontWeight: 700, color: "#888" },
+  bubbleActionsBtn: {
+    background: "transparent",
+    border: "none",
+    color: "#aaa",
+    cursor: "pointer",
+    fontSize: 14,
+    lineHeight: 1,
+    padding: "0 2px",
+  },
   bubbleText: { lineHeight: 1.5 },
   contactActions: { display: "flex", gap: 12, marginTop: 8 },
   contactLink: { color: "var(--green-dark)", fontWeight: 700, fontSize: 12 },

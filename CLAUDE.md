@@ -197,9 +197,9 @@ layout.tsx             # Root layout
 login/                 # Login page
 dashboard/             # Main dashboard
 matches/               # Matches list + [id]/ match detail (includes Pending/Awaiting/Upcoming scheduling sections)
-messages/              # Messaging
-profile/               # User profile (includes availability editor)
-admin/                 # Admin panel
+messages/              # Messaging (includes per-message report/block actions)
+profile/               # User profile (includes availability editor, blocked users list, account deletion)
+admin/                 # Admin panel (includes round-robin scheduler and reported-message review queue)
 feedback/              # Feedback submission form
 invite/accept/         # Invite code acceptance
 onboarding/tutorial/   # Onboarding tutorial
@@ -240,15 +240,15 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 
 ### Round-robin match scheduling
 
-Division leaders/admins generate a full season's fixtures from the Admin tab's "Round-Robin Scheduler" (`apps/mobile/app/round-robin-scheduler.tsx`): pick a season + division level, select players (defaults to that season/level's active `DivisionMembership` roster), configure single/double round robin, round interval, start date, and optional ranking-based seeding, then "Generate Preview" (client-side, via `previewRoundRobinSchedule()`) before "Publish Schedule" (server-side, via `publishRoundRobinSchedule()`) actually creates the matches. Preview and publish share the same `generateRoundRobinSchedule()` algorithm from `@tennis/shared`, so the preview is guaranteed to match what gets created.
+Division leaders/admins generate a full season's fixtures from the Admin tab's "Round-Robin Scheduler" (mobile: `apps/mobile/app/round-robin-scheduler.tsx`; web: the "Round-Robin Scheduler" card on `/admin`): pick a season + division level, select players (defaults to that season/level's active `DivisionMembership` roster), configure single/double round robin, round interval, start date, and optional ranking-based seeding, then "Generate Preview" (client-side, via `previewRoundRobinSchedule()`) before "Publish Schedule" (server-side, via `publishRoundRobinSchedule()`) actually creates the matches. Preview and publish share the same `generateRoundRobinSchedule()` algorithm from `@tennis/shared`, so the preview is guaranteed to match what gets created.
 
 ### Account deletion
 
-Users delete their own account from Profile (web `/profile`, mobile Profile tab). The client re-authenticates with the user's password (`reauthenticateWithCredential`) as a UX safeguard, then calls the `deleteAccount` callable, which does the actual PII scrub + Firebase Auth deletion server-side (see `firebase/src/users/deleteAccount.ts` above). Division leaders must transfer leadership before they can delete their account.
+Users delete their own account from Profile (web `/profile`, mobile Profile tab). The client re-authenticates with the user's password (`reauthenticateWithCredential`) as a UX safeguard, then calls the `deleteAccount` callable, which does the actual PII scrub + Firebase Auth deletion server-side (see `firebase/src/users/deleteAccount.ts` above). Division leaders must transfer leadership before they can delete their account. On web, after the callable succeeds the client also signs out of Firebase Auth and posts to `/api/auth/logout` to clear the session cookie before redirecting to `/login`.
 
 ### Message reporting & blocking
 
-Any channel participant can report a message (reason: `harassment | spam | inappropriate | other`, optional note) via `reportMessage()`, which writes a `messageReports/{reportId}` doc scoped to the reporter's `divisionId`. Division leaders/admins see pending reports for their division via `useDivisionMessageReports()` (mobile: Admin tab) and resolve them with `resolveMessageReport()`, either dismissing the report or removing the offending message (Firestore rules let leaders/admins delete any message in their division's channel; DM participants can already delete their own conversation's messages). Independently, any user can block another user's messages via `blockUser()`/`unblockUser()`, which write to the caller's own `users/{uid}.blockedUserIds` — this is a client-side filter (blocked senders' messages are hidden from the message list and excluded from DM search results) rather than a server-enforced send restriction.
+Any channel participant can report a message (reason: `harassment | spam | inappropriate | other`, optional note) via `reportMessage()`, which writes a `messageReports/{reportId}` doc scoped to the reporter's `divisionId`. Division leaders/admins see pending reports for their division via `useDivisionMessageReports()` (mobile: Admin tab; web: the "Reported Messages" card on `/admin`) and resolve them with `resolveMessageReport()`, either dismissing the report or removing the offending message (Firestore rules let leaders/admins delete any message in their division's channel; DM participants can already delete their own conversation's messages). Independently, any user can block another user's messages via `blockUser()`/`unblockUser()`, which write to the caller's own `users/{uid}.blockedUserIds` — this is a client-side filter (blocked senders' messages are hidden from the message list and excluded from DM search results on both web and mobile) rather than a server-enforced send restriction. Both apps' Profile screens list currently-blocked users with an unblock action.
 
 ### Wearable support
 

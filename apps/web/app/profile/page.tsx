@@ -4,11 +4,18 @@ export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getDoc } from "firebase/firestore";
+import { EmailAuthProvider, reauthenticateWithCredential, signOut } from "firebase/auth";
 import {
+  auth,
   useAuthUser,
   usePrivateUser,
   updateUserProfile,
   useDivisionOptions,
+  deleteAccountCallable,
+  unblockUser,
+  profileDoc,
 } from "@tennis/firebase-client";
 import {
   DAYS_OF_WEEK,
@@ -20,10 +27,12 @@ import {
   validateAvailabilitySlots,
   type AvailabilitySlot,
   type DayOfWeek,
+  type PublicProfile,
 } from "@tennis/shared";
 const NOTIFICATION_OPT_IN_KEY = "tennis-notifications-opt-in";
 
 export default function ProfilePage(): React.JSX.Element {
+  const router = useRouter();
   const { firebaseUser, loading: authLoading } = useAuthUser();
   const { user, loading: userLoading } = usePrivateUser(
     firebaseUser?.uid ?? null,
@@ -48,6 +57,11 @@ export default function ProfilePage(): React.JSX.Element {
     user?.divisionId,
   );
   const [selectedDivisionId, setSelectedDivisionId] = useState("");
+  const [blockedProfiles, setBlockedProfiles] = useState<PublicProfile[]>([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -62,6 +76,80 @@ export default function ProfilePage(): React.JSX.Element {
     setAvailabilityNote(user.availability?.note ?? "");
     setSelectedDivisionId(user.divisionId ?? "");
   }, [user]);
+
+  useEffect(() => {
+    const ids = user?.blockedUserIds ?? [];
+    if (ids.length === 0) {
+      setBlockedProfiles([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(ids.map((id) => getDoc(profileDoc(id)).catch(() => null))).then(
+      (snaps) => {
+        if (cancelled) return;
+        setBlockedProfiles(
+          snaps
+            .filter((snap): snap is NonNullable<typeof snap> => !!snap?.exists())
+            .map((snap) => ({
+              ...(snap.data() as Omit<PublicProfile, "id">),
+              id: snap.id,
+            })),
+        );
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.blockedUserIds]);
+
+  async function handleUnblock(blockedUserId: string) {
+    if (!firebaseUser) return;
+    try {
+      await unblockUser(firebaseUser.uid, blockedUserId);
+    } catch {
+      setError("Could not unblock user. Please try again.");
+    }
+  }
+
+  function handleDeleteAccountPress() {
+    setDeleteError("");
+    setDeletePassword("");
+    setShowDeleteModal(true);
+  }
+
+  async function confirmDeleteAccount() {
+    if (!firebaseUser?.email || !deletePassword) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const credential = EmailAuthProvider.credential(
+        firebaseUser.email,
+        deletePassword,
+      );
+      await reauthenticateWithCredential(firebaseUser, credential);
+      await deleteAccountCallable();
+      setShowDeleteModal(false);
+      setDeletePassword("");
+      await signOut(auth);
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.replace("/login");
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
+        setDeleteError("Incorrect password. Please re-enter your password to confirm.");
+      } else if (code === "functions/failed-precondition") {
+        setDeleteError(
+          "Transfer division leadership to another player before deleting your account.",
+        );
+      } else {
+        setDeleteError(
+          (e as { message?: string }).message || "Could not delete account. Please try again.",
+        );
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function addSlot() {
     setAvailabilitySlots(addAvailabilitySlot);
@@ -294,6 +382,24 @@ export default function ProfilePage(): React.JSX.Element {
           </button>
         </div>
 
+        {blockedProfiles.length > 0 && (
+          <div style={styles.card}>
+            <h2 style={styles.sectionTitle}>Blocked users</h2>
+            {blockedProfiles.map((p) => (
+              <div key={p.id} style={styles.blockedRow}>
+                <span>{p.displayName}</span>
+                <button
+                  type="button"
+                  style={styles.unblockBtn}
+                  onClick={() => handleUnblock(p.id)}
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {error && <div role="alert" style={styles.error}>{error}</div>}
 
         <div style={styles.actions}>
@@ -306,7 +412,67 @@ export default function ProfilePage(): React.JSX.Element {
             </span>
           )}
         </div>
+
+        <div style={styles.dangerCard}>
+          <h2 style={styles.sectionTitle}>Delete account</h2>
+          <p style={styles.helper}>
+            Permanently deletes your account and removes your personal data. This cannot be undone.
+            Division leaders must transfer leadership first.
+          </p>
+          <button
+            type="button"
+            style={styles.dangerBtn}
+            onClick={handleDeleteAccountPress}
+          >
+            Delete account
+          </button>
+        </div>
       </main>
+
+      {showDeleteModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowDeleteModal(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            style={styles.modalCard}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-account-title" style={styles.modalTitle}>Confirm account deletion</h3>
+            <p style={styles.helper}>
+              Enter your password to permanently delete your account. This cannot be undone.
+            </p>
+            <label htmlFor="delete-password" style={styles.label}>Password</label>
+            <input
+              id="delete-password"
+              type="password"
+              style={styles.input}
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              autoComplete="current-password"
+            />
+            {deleteError && <div role="alert" style={styles.error}>{deleteError}</div>}
+            <div style={styles.modalBtns}>
+              <button
+                type="button"
+                style={styles.modalCancel}
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.dangerBtn}
+                onClick={confirmDeleteAccount}
+                disabled={!deletePassword || deleting}
+              >
+                {deleting ? "Deleting…" : "Permanently delete account"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -470,5 +636,80 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     cursor: "pointer",
     marginBottom: 12,
+  },
+  blockedRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 0",
+    borderBottom: "1px solid #f0f0f0",
+    fontSize: 14,
+    color: "#333",
+  },
+  unblockBtn: {
+    background: "transparent",
+    color: "var(--green-dark)",
+    border: "1px solid var(--green-dark)",
+    borderRadius: 8,
+    padding: "6px 12px",
+    fontWeight: 600,
+    fontSize: 12,
+    cursor: "pointer",
+  },
+  dangerCard: {
+    background: "#fff4f4",
+    border: "1px solid #f3c9c4",
+    borderRadius: 14,
+    padding: 28,
+    marginBottom: 20,
+  },
+  dangerBtn: {
+    background: "#c0392b",
+    color: "#fff",
+    border: "none",
+    borderRadius: 10,
+    padding: "12px 20px",
+    fontWeight: 700,
+    fontSize: 14,
+    cursor: "pointer",
+  },
+  modalOverlay: {
+    position: "fixed" as const,
+    inset: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+    padding: 16,
+  },
+  modalCard: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 28,
+    maxWidth: 420,
+    width: "100%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  modalBtns: {
+    display: "flex",
+    gap: 12,
+    justifyContent: "flex-end",
+    marginTop: 16,
+  },
+  modalCancel: {
+    background: "#f0f0f0",
+    color: "#333",
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 20px",
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: "pointer",
   },
 };
