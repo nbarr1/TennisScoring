@@ -91,7 +91,7 @@ android {
     defaultConfig {
         applicationId 'com.companytennisleague.app'
         minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion 34
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.1"
 
