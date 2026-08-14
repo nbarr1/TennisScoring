@@ -20,3 +20,6 @@ export * from "./tips/tips";
 
 // Profile utilities
 export * from "./profile/profileUtils";
+
+// Legal content
+export * from "./legal/privacyPolicy";

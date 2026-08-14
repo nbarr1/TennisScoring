@@ -110,6 +110,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/tips/tips.ts`** — tip display logic consumed by UI layers.
 
+**`packages/shared/src/legal/privacyPolicy.ts`** — `PRIVACY_POLICY_SECTIONS`, `PRIVACY_POLICY_INTRO`, `PRIVACY_POLICY_LAST_UPDATED`: the single source of truth for the privacy policy copy, rendered identically by the mobile screen (`apps/mobile/app/privacy-policy.tsx`) and the public web page (`apps/web/app/privacy/page.tsx`) so the two never drift apart.
+
 **`packages/shared/src/scheduling/roundRobin.ts`**:
 
 - `generateRoundRobinSchedule(playerIds: string[], options?: { doubleRoundRobin?: boolean }): RoundRobinMatchup[]` — pure Berger/circle-rotation round-robin generator. Order-agnostic (pre-sort `playerIds` by ranking for seeded pairings); odd counts get a synthetic bye that rotates through the pool but never produces a matchup. `doubleRoundRobin` reruns the same rotation and mirrors it with sides swapped, continuing round numbers from where leg 1 ended.
@@ -183,7 +185,7 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 ### Auth flow
 
-**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`.
+**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, and a handful of `api/*` routes from the auth check — any future public-facing page must be added to that exclusion list or it will silently redirect signed-out visitors to `/login`.
 
 **Mobile**: Firebase email/password authentication is handled in `apps/mobile/app/(auth)/login.tsx`. `AuthGuard` in `apps/mobile/app/_layout.tsx` enforces: auth → division selection → tutorial → main tabs. State lives in Zustand (`apps/mobile/store/appStore.ts`): `{ user: User | null, divisionId: string | null }`.
 
@@ -202,6 +204,7 @@ feedback/              # Feedback submission form
 invite/accept/         # Invite code acceptance
 onboarding/tutorial/   # Onboarding tutorial
 onboarding/division/   # Division creation / join-by-code onboarding
+privacy/                # Public privacy policy page (excluded from the auth middleware matcher — must render for signed-out visitors)
 api/auth/login/        # Session-cookie login endpoint intercepted by auth middleware (route.ts fallback returns 401)
 api/auth/logout/       # Logout handler (route.ts)
 api/health/            # Health check endpoint
@@ -217,9 +220,10 @@ Uses Expo Router with file-based group routing:
 ```text
 (auth)/          # Auth group (login/signup screens)
 (onboarding)/    # Onboarding group
-(tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor; admin includes the round-robin scheduler entry point)
+(tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor and a Privacy Policy link; admin includes the round-robin scheduler entry point)
 match/           # Match detail screens
 round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
+privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
 ```
 
 ### Match scheduling and report workflow

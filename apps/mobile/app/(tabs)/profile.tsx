@@ -530,6 +530,12 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.feedbackBtn} onPress={handleFeedback}>
           <Text style={styles.feedbackBtnText}>Provide feedback</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.feedbackBtn}
+          onPress={() => router.push("/privacy-policy")}
+        >
+          <Text style={styles.feedbackBtnText}>Privacy Policy</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutBtnText}>Sign Out</Text>
         </TouchableOpacity>
