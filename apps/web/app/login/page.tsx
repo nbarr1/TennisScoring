@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
@@ -132,6 +133,10 @@ export default function LoginPage(): React.JSX.Element {
         <button style={styles.toggleBtn} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>
           {mode === 'signin' ? "Don't have an account? Create one" : 'Already have an account? Sign in'}
         </button>
+
+        <Link href="/privacy" style={styles.privacyLink}>
+          Privacy Policy
+        </Link>
       </div>
     </main>
   );
@@ -151,4 +156,5 @@ const styles: Record<string, React.CSSProperties> = {
   button: { background: 'var(--green-dark)', color: 'white', border: 'none', borderRadius: 12, padding: '15px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginTop: 8 },
   buttonDisabled: { opacity: 0.6, cursor: 'not-allowed' },
   toggleBtn: { marginTop: 20, background: 'none', border: 'none', color: 'var(--green-dark)', fontSize: 14, fontWeight: 500, cursor: 'pointer', width: '100%' },
+  privacyLink: { display: 'block', marginTop: 16, textAlign: 'center' as const, color: 'var(--muted)', fontSize: 13, textDecoration: 'none' },
 };

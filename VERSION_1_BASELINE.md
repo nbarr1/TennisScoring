@@ -46,6 +46,17 @@ Changes since the `v1.0.2` snapshot that affect data shape or user-visible capab
 
 ---
 
+## Update — 2026-08-14 (`v1.0.4`)
+
+Changes since the `v1.0.3` snapshot that affect user-visible capability or Play Store readiness:
+
+- **Privacy policy added** — TennisScoring previously had no privacy policy anywhere (mobile, web, or repo docs), an open blocker already flagged by this repo's own `play_store_readiness_report.md`. Content lives once in `packages/shared/src/legal/privacyPolicy.ts` and is rendered identically by a new mobile screen (`apps/mobile/app/privacy-policy.tsx`, linked from Profile) and a new **public** web page (`apps/web/app/privacy/page.tsx`). The policy is adapted from — not copied from — the reference Android app's version, corrected for what TennisScoring actually has (email/password auth only, no avatar upload) and what it has that the Android app doesn't (web app, wearable companions, PDF reports in Cloud Storage, feedback relayed to GitHub issues).
+- **`apps/web/middleware.ts`** — the auth-redirect matcher now excludes `privacy` alongside `login`/`invite/`, so the page renders for signed-out visitors instead of bouncing them to `/login`. This is the one change in this update that would silently break the whole feature if missed; verified directly against a running server (`curl` returned `200` with full page content, no redirect).
+- **Play Store follow-up (manual, outside this repo)**: once `apps/web` is deployed, the resulting `https://<web-domain>/privacy` URL should be entered in Google Play Console under App Content → Privacy Policy.
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.0.4`; `apps/mobile/app.json` moved to `version: 1.0.4`, Android `versionCode: 4`, iOS `buildNumber: 4`.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.
@@ -86,6 +97,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
   - `/feedback`
   - `/invite/accept`
   - `/onboarding/tutorial`
+  - `/privacy` (public, excluded from the auth middleware)
 
 ### Mobile application
 

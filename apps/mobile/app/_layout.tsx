@@ -211,6 +211,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Provide Feedback' }} />
               <Stack.Screen name="round-robin-scheduler" options={{ headerShown: true, title: 'Round-Robin Scheduler' }} />
+              <Stack.Screen name="privacy-policy" options={{ headerShown: true, title: 'Privacy Policy' }} />
               <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
             </Stack>
           </AuthGuard>
