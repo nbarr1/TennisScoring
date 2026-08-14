@@ -11,6 +11,7 @@ export * from "./divisions";
 export * from "./feedback";
 export * from "./account";
 export * from "./moderation";
+export * from "./schedule";
 export * from "./hooks/useMatch";
 export * from "./hooks/useRankings";
 export * from "./hooks/useMessages";

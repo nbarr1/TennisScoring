@@ -12,6 +12,9 @@ export * from "./types/export";
 export * from "./scoring/scoreEngine";
 export * from "./scoring/rankingEngine";
 
+// Scheduling
+export * from "./scheduling/roundRobin";
+
 // Tips
 export * from "./tips/tips";
 

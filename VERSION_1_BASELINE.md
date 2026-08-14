@@ -34,6 +34,18 @@ Changes since the `v1.0.1` snapshot that affect data shape or user-visible capab
 
 ---
 
+## Update — 2026-08-13 (`v1.0.3`)
+
+Changes since the `v1.0.2` snapshot that affect data shape or user-visible capability:
+
+- **New Cloud Function**: `publishRoundRobinSchedule` (`firebase/src/matches/scheduleFunctions.ts`) — division leaders/admins generate and publish a round-robin fixture list for a season/division level in one step. Runs the Berger/circle-rotation algorithm from `packages/shared/src/scheduling/roundRobin.ts` and bulk-writes each fixture as a `Match` doc with `status: 'scheduled'`, `source: 'schedule'` directly (leader scheduling authority, not the player propose/accept flow — players can still postpone/cancel individual fixtures afterward). `clearExisting` only removes previously-generated (`source: 'schedule'`) fixtures for that division/season/level, never matches players scheduled themselves.
+- **New shared module**: `packages/shared/src/scheduling/roundRobin.ts` — pure, order-agnostic `generateRoundRobinSchedule()`, unit-tested (`packages/shared/src/scheduling/__tests__/roundRobin.test.ts`).
+- **`Match.source` widened**: `'live' | 'manual'` → `'live' | 'manual' | 'schedule'` (additive).
+- **Mobile UI**: new Admin-only screen `apps/mobile/app/round-robin-scheduler.tsx` (season/level selection, player checklist, single/double round-robin toggle, interval + start-date controls, ranking-based seeding, live preview before publish), reached from a new "Round-Robin Scheduler" button on the Admin tab.
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.0.3`; `apps/mobile/app.json` moved to `version: 1.0.3`, Android `versionCode: 3`, iOS `buildNumber: 3`.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.
@@ -96,6 +108,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
   - division/player management functions: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles`, `exportDivisionCsv`
   - invite functions: `sendInvite`, `getInvitePreview`, `acceptInvite`
   - account management: `deleteAccount`
+  - scheduling: `publishRoundRobinSchedule`
   - messaging and notification trigger: `onNewMessage`
   - feedback integration: `submitFeedback`
   - auth trigger: `onUserCreated` (see the 2026-08-10 update above for a known deployment limitation)
@@ -133,6 +146,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
 - Send and receive in-app messages; report a message for moderation or block a sender.
 - Division leaders/admins review and resolve reported messages.
 - Delete your own account (blocked while leading a division, until leadership is transferred).
+- Division leaders/admins auto-generate and publish a round-robin match schedule for a season/division level.
 - Send web/mobile feedback through a Firebase Function backed by a GitHub token stored only in Secret Manager.
 - Receive Firebase Cloud Messaging notifications where platform setup is complete.
 

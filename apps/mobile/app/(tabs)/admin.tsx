@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { useRouter } from "expo-router";
 import { onSnapshot, getDoc, getDocs, query, where } from "firebase/firestore";
 import {
   divisionsCol,
@@ -54,6 +55,7 @@ const REPORT_REASON_LABELS: Record<string, string> = {
 };
 
 export default function AdminScreen() {
+  const router = useRouter();
   const { user } = useAppStore();
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
@@ -892,6 +894,19 @@ export default function AdminScreen() {
               disabled={exportingCsv}
             >
               <Text style={styles.secondaryBtnText}>Share Rankings CSV</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Open round-robin scheduler"
+              style={styles.secondaryBtn}
+              onPress={() =>
+                router.push({
+                  pathname: "/round-robin-scheduler",
+                  params: { divisionId: division.id },
+                })
+              }
+            >
+              <Text style={styles.secondaryBtnText}>Round-Robin Scheduler</Text>
             </TouchableOpacity>
           </View>
 

@@ -4,6 +4,7 @@ export {
   recordHistoricMatch,
   recordMatchOnBehalf,
 } from './matches/matchFunctions';
+export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
 
 export {
   addDivisionMemberPlaceholder,

@@ -110,9 +110,13 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/tips/tips.ts`** — tip display logic consumed by UI layers.
 
+**`packages/shared/src/scheduling/roundRobin.ts`**:
+
+- `generateRoundRobinSchedule(playerIds: string[], options?: { doubleRoundRobin?: boolean }): RoundRobinMatchup[]` — pure Berger/circle-rotation round-robin generator. Order-agnostic (pre-sort `playerIds` by ranking for seeded pairings); odd counts get a synthetic bye that rotates through the pool but never produces a matchup. `doubleRoundRobin` reruns the same rotation and mirrors it with sides swapped, continuing round numbers from where leg 1 ended.
+
 **`packages/shared/src/types/`** — all shared types; import from `@tennis/shared`, never duplicate in apps:
 
-- `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match`, `DEFAULT_FORMAT`, etc.
+- `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match` (`source?: 'live' | 'manual' | 'schedule'`), `DEFAULT_FORMAT`, etc.
 - `ranking.ts` — `PlayerRanking`, `HeadToHead`.
 - `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability`, `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc), `blockedUserIds?: string[]` (self-managed message-sender block list), and `accountDeleted?`/`deletedAt?` (set by the `deleteAccount` callable).
 - `message.ts` — `Channel`, `Message`, `MatchReport`, `MessageReport`, `MessageReportReason` (`'harassment' | 'spam' | 'inappropriate' | 'other'`), `MessageReportStatus`.
@@ -133,6 +137,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 **`packages/firebase-client/src/moderation.ts`** — UGC moderation helpers: `reportMessage()`, `useDivisionMessageReports()` (pending reports for a division leader/admin's review queue), `resolveMessageReport()` (dismiss, or remove the offending message and mark resolved), `blockUser()`/`unblockUser()` (writes to the caller's own `users/{uid}.blockedUserIds`).
 
 **`packages/firebase-client/src/account.ts`** — `deleteAccountCallable()`, a thin wrapper around the `deleteAccount` Cloud Function callable.
+
+**`packages/firebase-client/src/schedule.ts`** — `previewRoundRobinSchedule()` (runs `generateRoundRobinSchedule()` from `@tennis/shared` entirely client-side, optionally pre-sorting by ranking, for an instant preview) and `publishRoundRobinSchedule()` (`httpsCallable` wrapper for the `publishRoundRobinSchedule` Cloud Function that actually writes the generated matches).
 
 **Typed React hooks** in `packages/firebase-client/src/hooks/`:
 
@@ -170,6 +176,8 @@ All Firestore reads go through these hooks; all writes go through operations exp
 **`firebase/src/users/sendInvite.ts`** — invite callables: `sendInvite`, `getInvitePreview`, `acceptInvite`.
 
 **`firebase/src/users/deleteAccount.ts`** — `deleteAccount` HTTPS callable; the signed-in user deletes their own account. Blocks the call with `failed-precondition` if the caller currently leads a division (leadership must be transferred first). Scrubs PII from `users/{uid}` and `profiles/{uid}` (display name replaced with "Deleted User", email/phone/avatar/availability/FCM tokens cleared, `accountDeleted: true` set) rather than deleting the docs outright, so historical match/ranking records that reference the uid keep resolving instead of dangling; removes the uid from their division's `playerIds`; then deletes the Firebase Auth user via the Admin SDK.
+
+**`firebase/src/matches/scheduleFunctions.ts`** — `publishRoundRobinSchedule` HTTPS callable; division leaders/admins generate and publish a round-robin fixture list. Validates every supplied `playerId` belongs to the division (same check `recordMatchOnBehalf` uses), runs `generateRoundRobinSchedule()` from `@tennis/shared`, and bulk-writes each matchup as a `Match` doc with `status: 'scheduled'` and `source: 'schedule'` directly (not `proposed`) since the leader has scheduling authority — players can still postpone/cancel individual fixtures afterward. `clearExisting` only deletes previously-generated (`source: 'schedule'`) scheduled matches for that division/season/level, never matches players scheduled themselves.
 
 **`firebase/src/health/health.ts`** — `health` and `readiness` HTTP endpoints for uptime/deploy checks.
 
@@ -209,8 +217,9 @@ Uses Expo Router with file-based group routing:
 ```text
 (auth)/          # Auth group (login/signup screens)
 (onboarding)/    # Onboarding group
-(tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor)
+(tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor; admin includes the round-robin scheduler entry point)
 match/           # Match detail screens
+round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
 ```
 
 ### Match scheduling and report workflow
@@ -224,6 +233,10 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 5. Opponent calls `confirmMatchReport()` or `disputeMatchReport()`.
 6. Confirmed → `onMatchUpdate` trigger recalculates rankings and generates PDF report.
 7. Disputed → division leader resolves via `resolveDisputedReport()` callable.
+
+### Round-robin match scheduling
+
+Division leaders/admins generate a full season's fixtures from the Admin tab's "Round-Robin Scheduler" (`apps/mobile/app/round-robin-scheduler.tsx`): pick a season + division level, select players (defaults to that season/level's active `DivisionMembership` roster), configure single/double round robin, round interval, start date, and optional ranking-based seeding, then "Generate Preview" (client-side, via `previewRoundRobinSchedule()`) before "Publish Schedule" (server-side, via `publishRoundRobinSchedule()`) actually creates the matches. Preview and publish share the same `generateRoundRobinSchedule()` algorithm from `@tennis/shared`, so the preview is guaranteed to match what gets created.
 
 ### Account deletion
 

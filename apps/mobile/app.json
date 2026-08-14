@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tennis League",
     "slug": "tennis-scoring",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.companytennisleague.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "UIBackgroundModes": ["remote-notification"]
       }
@@ -26,7 +26,7 @@
         "backgroundColor": "#1a472a"
       },
       "package": "com.companytennisleague.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
