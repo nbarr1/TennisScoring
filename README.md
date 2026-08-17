@@ -1,8 +1,8 @@
 # 🎾 TennisScoring
 
-**GE Vernova Tennis League — Version 1.0.4 baseline**
+**GE Vernova Tennis League — Version 1.0.5 baseline**
 
-TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marked the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features; `1.0.2` added mobile account deletion and message reporting/blocking; `1.0.3` added the round-robin match scheduler; `1.0.4` adds a privacy policy (in-app screen and a public web page).
+TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marked the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features; `1.0.2` added mobile account deletion and message reporting/blocking; `1.0.3` added the round-robin match scheduler; `1.0.4` adds a privacy policy (in-app screen and a public web page); `1.0.5` fixes the mobile privacy policy screen so it's reachable before signing in, and links it from the login/signup screen.
 
 **Status:** the web application is live and functional. The mobile application is usable today via a sideloaded Android APK build, but is still being refined — the Google Play Store listing is being finalized ahead of a public release.
 
@@ -10,7 +10,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 ## ✅ Current v1 Condition
 
-- **Version marker:** `1.0.4` in the workspace manifests and Expo app metadata.
+- **Version marker:** `1.0.5` in the workspace manifests and Expo app metadata.
 - **Web app:** live and functional in production.
 - **Mobile app:** functional and installable via a sideloaded Android APK; still being refined ahead of finalizing the Google Play Store listing.
 - **Repository shape:** monorepo with web, mobile, Firebase Functions, Firebase client utilities, and shared domain logic.

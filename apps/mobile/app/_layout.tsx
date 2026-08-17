@@ -123,6 +123,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const inAuth = segments[0] === '(auth)';
   const inOnboarding = segments[0] === '(onboarding)';
   const inTutorial = (segments as string[])[1] === 'tutorial';
+  // Play Store review requires the privacy policy to be reachable without
+  // signing in first (it's linked from the login/signup screen), so it's
+  // exempt from the auth redirect like `(auth)` itself.
+  const inPrivacyPolicy = segments[0] === 'privacy-policy';
 
   useEffect(() => {
     if (!dataLoading) {
@@ -137,7 +141,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (dataLoading) return;
 
     if (!firebaseUser) {
-      if (!inAuth) router.replace('/(auth)/login');
+      if (!inAuth && !inPrivacyPolicy) router.replace('/(auth)/login');
       return;
     }
 
@@ -188,7 +192,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // render a loading screen instead of the stale route's content (e.g. the
   // Rankings tab briefly flashing before AuthGuard routes to onboarding).
   if (!firebaseUser) {
-    if (!inAuth) return <LoadingScreen />;
+    if (!inAuth && !inPrivacyPolicy) return <LoadingScreen />;
   } else {
     const hasDivision = !!profile?.divisionId;
     if (inAuth) return <LoadingScreen />;
