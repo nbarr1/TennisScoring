@@ -57,6 +57,17 @@ Changes since the `v1.0.3` snapshot that affect user-visible capability or Play 
 
 ---
 
+## Update — 2026-08-17 (`v1.0.5`)
+
+Changes since the `v1.0.4` snapshot that affect Play Store readiness:
+
+- **Mobile privacy policy screen bug fix** — `apps/mobile/app/privacy-policy.tsx` existed since `v1.0.4` but was unreachable for signed-out users: `AuthGuard` in `apps/mobile/app/_layout.tsx` redirected any route other than `(auth)` straight to `/login` while signed out, so the privacy policy could only be viewed after creating an account. `AuthGuard` now exempts the `privacy-policy` route from that redirect, matching how the web app's `/privacy` route is already excluded from its auth middleware.
+- **Mobile login/signup screen** (`apps/mobile/app/(auth)/login.tsx`) gets a "Privacy Policy" link below the sign-in/sign-up toggle, mirroring the equivalent link already on the web login page (`apps/web/app/login/page.tsx`). This makes the policy discoverable before account creation on mobile, not just from the Profile tab afterward.
+- **`play_store_readiness_report.md`** — the Privacy Policy & Compliance section (previously stale, written before `v1.0.4` added the policy) is corrected to reflect the current in-repo state and calls out the one step that still has to happen manually in Google Play Console: entering the deployed `https://<web-domain>/privacy` URL under App Content → Privacy Policy.
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.0.5`; `apps/mobile/app.json` moved to `version: 1.0.5`, Android `versionCode: 5`, iOS `buildNumber: 5`.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.

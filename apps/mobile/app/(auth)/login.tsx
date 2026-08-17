@@ -15,6 +15,7 @@ import {
 } from "firebase/auth";
 import { auth, db } from "@tennis/firebase-client";
 import { doc, setDoc } from "firebase/firestore";
+import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 
 type Mode = "signin" | "signup";
@@ -187,6 +188,15 @@ export default function LoginScreen() {
               : "Already have an account? Sign in"}
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="View Privacy Policy"
+          style={styles.privacyLink}
+          onPress={() => router.push("/privacy-policy")}
+        >
+          <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAwareScrollView>
   );
@@ -222,4 +232,6 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   toggleBtn: { alignItems: "center", paddingVertical: 12 },
   toggleText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
+  privacyLink: { alignItems: "center", paddingVertical: 4 },
+  privacyLinkText: { color: "#888", fontSize: 13 },
 });

@@ -72,12 +72,16 @@ Key issues include production declaration of system overlays (`SYSTEM_ALERT_WIND
 ---
 
 ### 5. Privacy Policy & Compliance
-* **Status:** ⚠️ **Action Needed**
+* **Status:** ✅ **RESOLVED (in-repo)** — ⚠️ **one manual step remains outside this repo**
 * **Analysis:**
   * The application includes core dependencies on Firebase (`@tennis/firebase-client`, `firebase-auth`, `expo-notifications`) and sensitive permissions (`RECORD_AUDIO`).
   * **Google Play Requirement:** Any app collecting user authentication data, push tokens, or using runtime permissions MUST link an accessible Privacy Policy in:
     1. Google Play Console (**App Content > Privacy Policy**).
     2. Within the mobile app itself (e.g., Settings or About screen).
+  * **Current state:** The privacy policy copy is defined once in `packages/shared/src/legal/privacyPolicy.ts` and rendered identically by:
+    1. A public web page at `apps/web/app/privacy/page.tsx` (route `/privacy`), explicitly excluded from the auth middleware's redirect matcher so it renders for signed-out visitors — this is the URL to enter in Play Console.
+    2. A mobile screen at `apps/mobile/app/privacy-policy.tsx`, reachable both from the Profile tab (signed-in) and from a "Privacy Policy" link on the login/signup screen (`apps/mobile/app/(auth)/login.tsx`) so it's visible before account creation, matching the web login page. `apps/mobile/app/_layout.tsx`'s `AuthGuard` explicitly exempts the `privacy-policy` route from the sign-in redirect so it stays reachable without an account.
+  * **Remaining manual step (outside this repo):** once `apps/web` is deployed, enter the resulting `https://<web-domain>/privacy` URL in Google Play Console under **App Content → Privacy Policy**. No repository change can complete this — it's a Play Console configuration field.
 
 ---
 
@@ -105,7 +109,7 @@ Key issues include production declaration of system overlays (`SYSTEM_ALERT_WIND
     - User Identity / Accounts (Firebase Auth)
     - Audio Data (`RECORD_AUDIO`)
     - Device identifiers & Crash Data (Firebase / Expo)
-- [ ] **Privacy Policy**: Create and publish a Privacy Policy URL covering Firebase authentication, push notifications, and audio recordings.
+- [x] **Privacy Policy**: Published in-app (mobile screen + public web page, see §5 above). ⚠️ Still enter the deployed `/privacy` URL in Google Play Console → App Content → Privacy Policy before submission.
 
 ### 📋 Final Quality Assurance
 - [ ] Run release build generation via EAS: `eas build --platform android --profile production`.
