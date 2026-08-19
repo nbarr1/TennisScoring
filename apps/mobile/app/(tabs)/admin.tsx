@@ -74,6 +74,8 @@ export default function AdminScreen() {
   const [editEmail, setEditEmail] = useState("");
   const [newDivisionName, setNewDivisionName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState(false);
   const [repairingRankings, setRepairingRankings] = useState(false);
@@ -106,99 +108,120 @@ export default function AdminScreen() {
       setLoading(false);
       return;
     }
+    setLoading(true);
+    setLoadError(null);
     const q = query(
       divisionsCol(),
       where("leaderIds", "array-contains", user.id),
     );
     let activeId = 0;
-    const unsub = onSnapshot(q, async (snap) => {
-      // Prevent older async snapshot work from overwriting state after a newer snapshot arrives.
-      const currentId = ++activeId;
-      let div: Division | null = null;
+    const unsub = onSnapshot(
+      q,
+      async (snap) => {
+        // Prevent older async snapshot work from overwriting state after a newer snapshot arrives.
+        const currentId = ++activeId;
+        try {
+          let div: Division | null = null;
 
-      if (!snap.empty) {
-        div = {
-          id: snap.docs[0].id,
-          ...(snap.docs[0].data() as Omit<Division, "id">),
-        };
-      } else if (user.divisionId) {
-        const divisionSnap = await getDoc(divisionDoc(user.divisionId));
-        if (divisionSnap.exists()) {
-          div = {
-            id: divisionSnap.id,
-            ...(divisionSnap.data() as Omit<Division, "id">),
-          };
+          if (!snap.empty) {
+            div = {
+              id: snap.docs[0].id,
+              ...(snap.docs[0].data() as Omit<Division, "id">),
+            };
+          } else if (user.divisionId) {
+            const divisionSnap = await getDoc(divisionDoc(user.divisionId));
+            if (divisionSnap.exists()) {
+              div = {
+                id: divisionSnap.id,
+                ...(divisionSnap.data() as Omit<Division, "id">),
+              };
+            }
+          }
+
+          if (currentId !== activeId) return;
+
+          setDivision(div);
+          if (div) {
+            const activeDivision = div;
+            const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
+              await Promise.all([
+                activeDivision.playerIds.length
+                  ? Promise.all(
+                      activeDivision.playerIds.map((id) => getDoc(userDoc(id))),
+                    )
+                  : Promise.resolve([]),
+                getDocs(
+                  query(usersCol(), where("divisionId", "==", activeDivision.id)),
+                ),
+                getDocs(rankingsCol(activeDivision.id)),
+              ]);
+            const byId = new Map<string, User>();
+            const addProfile = (id: string, data: Omit<User, "id">) => {
+              byId.set(id, { id, ...data });
+            };
+            divisionMemberProfiles.forEach((d) => {
+              if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
+            });
+            divisionProfileSnap.docs.forEach((d) =>
+              addProfile(d.id, d.data() as Omit<User, "id">),
+            );
+            rankingSnap.docs.forEach((d) => {
+              const ranking = d.data() as PlayerRanking;
+              const userId = ranking.userId || d.id;
+              if (byId.has(userId)) return;
+              byId.set(userId, {
+                id: userId,
+                displayName: ranking.displayName,
+                email: "",
+                contactPreferences: {
+                  allowEmail: false,
+                  allowSMS: false,
+                  allowInApp: true,
+                },
+                divisionId: activeDivision.id,
+                role: "player",
+                fcmTokens: [],
+                tipsEnabled: true,
+                isRegistered: false,
+                inviteStatus: "none",
+                createdAt: ranking.updatedAt ?? 0,
+                updatedAt: ranking.updatedAt ?? 0,
+              });
+            });
+
+            if (currentId !== activeId) return;
+
+            setPlayers(
+              [...byId.values()].sort((a, b) =>
+                a.displayName.localeCompare(b.displayName),
+              ),
+            );
+          } else {
+            setPlayers([]);
+          }
+          setLoading(false);
+        } catch (err) {
+          if (currentId !== activeId) return;
+          console.error("[AdminScreen] failed to load division data:", err);
+          setLoadError(
+            "Could not load division data. Check your connection and try again.",
+          );
+          setLoading(false);
         }
-      }
-
-      if (currentId !== activeId) return;
-
-      setDivision(div);
-      if (div) {
-        const activeDivision = div;
-        const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
-          await Promise.all([
-            activeDivision.playerIds.length
-              ? Promise.all(
-                  activeDivision.playerIds.map((id) => getDoc(userDoc(id))),
-                )
-              : Promise.resolve([]),
-            getDocs(
-              query(usersCol(), where("divisionId", "==", activeDivision.id)),
-            ),
-            getDocs(rankingsCol(activeDivision.id)),
-          ]);
-        const byId = new Map<string, User>();
-        const addProfile = (id: string, data: Omit<User, "id">) => {
-          byId.set(id, { id, ...data });
-        };
-        divisionMemberProfiles.forEach((d) => {
-          if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
-        });
-        divisionProfileSnap.docs.forEach((d) =>
-          addProfile(d.id, d.data() as Omit<User, "id">),
+      },
+      (err) => {
+        console.error("[AdminScreen] division listener error:", err);
+        setLoadError(
+          "Could not load division data. Check your connection and try again.",
         );
-        rankingSnap.docs.forEach((d) => {
-          const ranking = d.data() as PlayerRanking;
-          const userId = ranking.userId || d.id;
-          if (byId.has(userId)) return;
-          byId.set(userId, {
-            id: userId,
-            displayName: ranking.displayName,
-            email: "",
-            contactPreferences: {
-              allowEmail: false,
-              allowSMS: false,
-              allowInApp: true,
-            },
-            divisionId: activeDivision.id,
-            role: "player",
-            fcmTokens: [],
-            tipsEnabled: true,
-            isRegistered: false,
-            inviteStatus: "none",
-            createdAt: ranking.updatedAt ?? 0,
-            updatedAt: ranking.updatedAt ?? 0,
-          });
-        });
-
-        if (currentId !== activeId) return;
-
-        setPlayers(
-          [...byId.values()].sort((a, b) =>
-            a.displayName.localeCompare(b.displayName),
-          ),
-        );
-      } else {
-        setPlayers([]);
-      }
-      setLoading(false);
-    });
+        setLoading(false);
+      },
+    );
     return () => {
       activeId++;
       unsub();
     };
-  }, [user?.id, user?.divisionId]);
+  }, [user?.id, user?.divisionId, loadRetryKey]);
 
   async function handleCreateDivision() {
     if (!user || !newDivisionName.trim()) return;
@@ -492,6 +515,23 @@ export default function AdminScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#1a472a" />
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.accessDenied}>⚠ Something went wrong</Text>
+        <Text style={styles.accessHint}>{loadError}</Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading division data"
+          style={styles.retryBtn}
+          onPress={() => setLoadRetryKey((key) => key + 1)}
+        >
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -1071,6 +1111,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   accessHint: { fontSize: 14, color: "#888", textAlign: "center" },
+  retryBtn: {
+    marginTop: 16,
+    backgroundColor: "#1a472a",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryBtnText: { color: "#fff", fontWeight: "600", fontSize: 15 },
   pageTitle: {
     fontSize: 26,
     fontWeight: "800",
