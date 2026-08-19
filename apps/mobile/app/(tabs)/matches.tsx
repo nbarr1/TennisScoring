@@ -183,6 +183,8 @@ export default function MatchesScreen() {
   const { user, divisionId } = useAppStore();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
   const [createMode, setCreateMode] = useState<"live" | "historic">("live");
@@ -209,13 +211,22 @@ export default function MatchesScreen() {
   useEffect(() => {
     if (!divisionId) return;
     setLoading(true);
+    setLoadError(null);
     const q = divisionMatchesQuery(divisionId);
-    const unsub = onSnapshot(q, (snap) => {
-      setMatches(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Match));
-      setLoading(false);
-    });
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setMatches(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Match));
+        setLoading(false);
+      },
+      (err) => {
+        console.error("[MatchesScreen] matches listener error:", err);
+        setLoadError("Could not load matches. Check your connection and try again.");
+        setLoading(false);
+      },
+    );
     return unsub;
-  }, [divisionId]);
+  }, [divisionId, loadRetryKey]);
 
   useEffect(() => {
     if (
@@ -437,6 +448,23 @@ export default function MatchesScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#1a472a" />
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.emptyTitle}>Something went wrong</Text>
+        <Text style={styles.emptyBody}>{loadError}</Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading matches"
+          style={styles.retryBtn}
+          onPress={() => setLoadRetryKey((key) => key + 1)}
+        >
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -1388,6 +1416,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyBody: { fontSize: 14, color: "#666", textAlign: "center" },
+  retryBtn: {
+    marginTop: 16,
+    backgroundColor: "#1a472a",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  retryBtnText: { color: "#fff", fontWeight: "600", fontSize: 15 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
