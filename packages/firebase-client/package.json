@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@tennis/shared": "workspace:*",
-    "firebase": "^12.17.1",
+    "firebase": "^12.18.0",
     "tsup": "^8.0.0"
   },
   "peerDependencies": {
