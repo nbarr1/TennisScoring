@@ -13,6 +13,15 @@ updates:
       # and typescript-eslint all depend on. Majors must be adopted manually.
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+      # react-native-reanimated's version is dictated by what expo-modules-core
+      # accepts as a react-native-worklets peer, not by what reanimated publishes.
+      # 4.6.0 requires worklets 0.12.x while expo-modules-core 57 accepts
+      # ^0.7.4 || ^0.8.0 || ^0.9.0 || ^0.10.0 — disjoint ranges, so pnpm installs
+      # no worklets at all and Metro cannot resolve it. Only 0.12.0-nightly builds
+      # exist upstream. Bump this alongside an Expo SDK upgrade, not on its own.
+      - dependency-name: react-native-reanimated
+        update-types:
+          ['version-update:semver-major', 'version-update:semver-minor']
     groups:
       monorepo-npm:
         patterns:

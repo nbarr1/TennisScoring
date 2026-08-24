@@ -35,7 +35,7 @@
     "react": "19.2.8",
     "react-native": "0.83.1",
     "react-native-gesture-handler": "~3.2.1",
-    "react-native-reanimated": "~4.6.0",
+    "react-native-reanimated": "~4.5.3",
     "react-native-safe-area-context": "5.9.1",
     "react-native-screens": "4.27.0",
     "zustand": "^5.0.15"
