@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, 'claude/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'claude/**']
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
