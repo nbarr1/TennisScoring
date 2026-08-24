@@ -26,21 +26,29 @@ jobs:
         uses: dorny/paths-filter@v4
         with:
           filters: |
+            # Every filter includes this workflow itself. A PR that edits only
+            # ci.yml would otherwise run nothing but lint_typecheck, so a change
+            # to a filtered job's own steps lands with that job skipped — which
+            # is how the osv-scanner action bump in PR #287 reached review with
+            # firebase_rules_tests, the job containing the edited step, skipped.
             shared_or_root:
               - 'packages/shared/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
+              - '.github/workflows/ci.yml'
             firebase:
               - 'firebase/**'
               - 'packages/shared/**'
+              - '.github/workflows/ci.yml'
             mobile:
               - 'apps/mobile/**'
               - 'packages/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
 
   lint_typecheck:
     needs: changes
