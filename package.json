@@ -23,7 +23,7 @@
     "firebase-admin": "^14.2.0",
     "prettier": "^3.9.6",
     "turbo": "^2.10.10",
-    "typescript": "^7.0.2"
+    "typescript": "^6.0.3"
   },
   "pnpm": {
     "neverBuiltDependencies": [
