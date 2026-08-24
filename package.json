@@ -19,10 +19,10 @@
     "@types/node": "^26.2.0",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "eslint": "^10.8.1",
-    "firebase-admin": "^14.2.0",
+    "eslint": "^10.9.0",
+    "firebase-admin": "^14.3.0",
     "prettier": "^3.9.6",
-    "turbo": "^2.10.10",
+    "turbo": "^2.10.11",
     "typescript": "^6.0.3"
   },
   "pnpm": {
