@@ -19,21 +19,36 @@ jobs:
     outputs:
       shared_or_root: ${{ steps.filter.outputs.shared_or_root }}
       firebase: ${{ steps.filter.outputs.firebase }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - uses: actions/checkout@v6
       - id: filter
         uses: dorny/paths-filter@v4
         with:
           filters: |
+            # Every filter includes this workflow itself. A PR that edits only
+            # ci.yml would otherwise run nothing but lint_typecheck, so a change
+            # to a filtered job's own steps lands with that job skipped — which
+            # is how the osv-scanner action bump in PR #287 reached review with
+            # firebase_rules_tests, the job containing the edited step, skipped.
             shared_or_root:
               - 'packages/shared/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
+              - '.github/workflows/ci.yml'
             firebase:
               - 'firebase/**'
               - 'packages/shared/**'
+              - '.github/workflows/ci.yml'
+            mobile:
+              - 'apps/mobile/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
 
   lint_typecheck:
     needs: changes
@@ -126,3 +141,59 @@ jobs:
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
+
+  # Nothing else compiles the mobile app: lint_typecheck only runs tsc and eslint
+  # over it, and `pnpm build` has no mobile target. That gap let an Expo 57 upgrade
+  # land a release-breaking regression on the default branch — Metro emitted ES
+  # private class fields that hermes-compiler 0.14.0 (the version react-native
+  # 0.83.1 pins, and the one Gradle invokes with hermesEnabled=true) cannot parse,
+  # so every EAS Android build would have failed at the bytecode step. Bundling
+  # alone would not have caught it; the bytecode compile is the part that fails.
+  mobile_bundle:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # The app imports both workspace packages by their built dist output.
+      - name: Build workspace dependencies
+        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+      # app.config.js hard-fails when CI=true and these are unset. They are
+      # deliberately placeholders, not secrets: this check only needs the module
+      # graph to resolve and compile, and real values would make the job unusable
+      # on fork and Dependabot pull requests, which cannot read repository secrets.
+      - name: Bundle for release (Metro)
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_APP_ID: ci-placeholder
+        run: |
+          mkdir -p "$RUNNER_TEMP/mobile-bundle/assets"
+          npx expo export:embed \
+            --platform android \
+            --dev false \
+            --bundle-output "$RUNNER_TEMP/mobile-bundle/index.android.bundle" \
+            --assets-dest "$RUNNER_TEMP/mobile-bundle/assets"
+      # Compiles with the exact hermesc the Android Gradle build uses, so a syntax
+      # feature the pinned Hermes cannot handle fails here instead of in EAS.
+      - name: Compile bundle to Hermes bytecode
+        run: |
+          node_modules/hermes-compiler/hermesc/linux64-bin/hermesc \
+            -emit-binary \
+            -out "$RUNNER_TEMP/mobile-bundle/index.android.hbc" \
+            "$RUNNER_TEMP/mobile-bundle/index.android.bundle" \
+            -O
+          ls -la "$RUNNER_TEMP/mobile-bundle/index.android.hbc"
