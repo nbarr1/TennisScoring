@@ -31,11 +31,43 @@ updates:
       - dependency-name: '@babel/core'
         update-types: ['version-update:semver-major']
     groups:
+      # The Expo SDK constrains this whole set: react-native is pinned to an
+      # exact version by expo, reanimated is bounded by the react-native-worklets
+      # peer expo-modules-core accepts, and the Babel packages must stay on 7
+      # because babel-preset-expo's plugins assert it. They move together, with
+      # an SDK upgrade — so group them rather than letting one of them sit in the
+      # general group and hold back unrelated updates, which is what happened
+      # when a single reanimated bump blocked nineteen other packages.
+      expo-toolchain:
+        patterns:
+          - 'expo'
+          - 'expo-*'
+          - '@expo/*'
+          - 'react-native'
+          - 'react-native-*'
+          - '@react-native/*'
+          - '@react-native-*/*'
+          - '@react-navigation/*'
+          - 'metro'
+          - 'metro-*'
+          - 'babel-preset-expo'
+          - '@babel/*'
       monorepo-npm:
         patterns:
           - '*'
         exclude-patterns:
+          - 'expo'
+          - 'expo-*'
+          - '@expo/*'
           - 'react-native'
+          - 'react-native-*'
+          - '@react-native/*'
+          - '@react-native-*/*'
+          - '@react-navigation/*'
+          - 'metro'
+          - 'metro-*'
+          - 'babel-preset-expo'
+          - '@babel/*'
 
   - package-ecosystem: github-actions
     directory: '/'
