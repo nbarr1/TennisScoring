@@ -72,5 +72,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!login|invite/|privacy|api/health|api/readiness|api/functions/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
+  // robots.txt and sitemap.xml must stay public: they are crawler entry points,
+  // and gating them behind auth makes every crawler follow a 307 to /login instead
+  // of reading them. Any future public-facing route belongs in this list too.
+  matcher: ['/((?!login|invite/|privacy|robots\\.txt|sitemap\\.xml|api/health|api/readiness|api/functions/|api/auth/logout|auth/|_next|favicon.ico|.*\\.(?:svg|png|jpg|ico)).*)'],
 };

@@ -195,7 +195,7 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 ### Auth flow
 
-**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, `auth/`, and a handful of `api/*` routes (`api/health`, `api/readiness`, `api/functions/`, `api/auth/logout`) from the auth check — any future public-facing page must be added to that exclusion list or it will silently redirect signed-out visitors to `/login`. Note that `robots.ts` and `sitemap.ts` are **not** currently excluded.
+**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, `robots.txt`, `sitemap.xml`, `auth/`, and a handful of `api/*` routes (`api/health`, `api/readiness`, `api/functions/`, `api/auth/logout`) from the auth check — any future public-facing page or crawler-facing file must be added to that exclusion list or it will silently redirect signed-out visitors (and every crawler) to `/login`.
 
 **Mobile**: Firebase email/password authentication is handled in `apps/mobile/app/(auth)/login.tsx`. `AuthGuard` in `apps/mobile/app/_layout.tsx` enforces: auth → division selection → tutorial → main tabs. State lives in Zustand (`apps/mobile/store/appStore.ts`): `{ user: User | null, divisionId: string | null }`.
 
@@ -306,6 +306,9 @@ NEXT_PUBLIC_FIREBASE_APP_ID / EXPO_PUBLIC_FIREBASE_APP_ID
 
 # Web session cookie / Next.js
 NEXTAUTH_SECRET, NEXTAUTH_URL
+
+# Public site origin for robots.txt / sitemap.xml / page metadata (build-time inlined)
+NEXT_PUBLIC_SITE_URL
 
 # Cloud Functions only
 FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY

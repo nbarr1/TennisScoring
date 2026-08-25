@@ -13,6 +13,20 @@ buildscript {
   }
 }
 
+// Single source of truth for the app version, shared by :app and :wear.
+// This native project is committed, so `expo prebuild` never regenerates the
+// module build.gradle files from app.json. Hardcoding versions there is what
+// silently shipped builds stamped 1.0.1/versionCode 1 (and 1.0.0/1 on :wear)
+// long after app.json had moved to 1.0.5/5. Bump app.json alone.
+def expoAppConfig = new groovy.json.JsonSlurper()
+    .parseText(file("${rootDir}/../app.json").text).expo
+if (!expoAppConfig?.version || expoAppConfig?.android?.versionCode == null) {
+  throw new GradleException(
+      "Could not read expo.version / expo.android.versionCode from ${rootDir}/../app.json")
+}
+ext.appVersionName = expoAppConfig.version
+ext.appVersionCode = expoAppConfig.android.versionCode
+
 allprojects {
   repositories {
     google()

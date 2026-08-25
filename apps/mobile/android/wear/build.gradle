@@ -13,8 +13,17 @@ android {
         applicationId 'com.companytennisleague.app'
         minSdk 26
         targetSdk rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName '1.0.0'
+        // Versioned in lockstep with :app from app.json, via rootProject.ext
+        // (see android/build.gradle). These were pinned at 1.0.0/1 by hand and
+        // had drifted four releases behind the phone app.
+        //
+        // NOTE: :app and :wear deliberately share an applicationId (above), so if
+        // this APK is ever published to the same Play listing as the phone app it
+        // will need a versionCode distinct from :app's. That does not apply today:
+        // release here is debug-signed for internal distribution only, which Play
+        // does not accept.
+        versionCode rootProject.ext.appVersionCode
+        versionName rootProject.ext.appVersionName
     }
 
 
