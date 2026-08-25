@@ -22,6 +22,14 @@ updates:
       - dependency-name: react-native-reanimated
         update-types:
           ['version-update:semver-major', 'version-update:semver-minor']
+      # The Expo 57 / React Native 0.83 Babel toolchain is Babel 7 throughout.
+      # babel-preset-expo pulls in @babel/preset-typescript, which calls
+      # assertVersion("^7.0.0-0"), so @babel/core 8 fails the Metro transform
+      # outright ("Requires Babel ^7.0.0-0, but was loaded with 8.0.1").
+      # The pnpm override pins ^7.29.6; a major bump defeats it rather than
+      # being blocked by it, so keep majors out of the auto-bump entirely.
+      - dependency-name: '@babel/core'
+        update-types: ['version-update:semver-major']
     groups:
       monorepo-npm:
         patterns:
