@@ -81,7 +81,7 @@ scripts/cleanup-branches.sh --remote      # Also prunes remote-tracking refs
 
 ```text
 apps/web/          # Next.js 14.2.0 web app (@tennis/web)
-apps/mobile/       # Expo 51 / React Native 0.74 mobile app (@tennis/mobile)
+apps/mobile/       # Expo 57 / React Native 0.86 mobile app (@tennis/mobile)
 packages/shared/   # Core business logic (scoring, ranking, types) — no framework deps (@tennis/shared)
 packages/firebase-client/  # Firebase SDK wrapper with React hooks (@tennis/firebase-client)
 firebase/          # Cloud Functions, Firestore rules, indexes (@tennis/firebase-functions)

@@ -74,7 +74,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 - **Monorepo:** pnpm workspaces and Turborepo.
 - **Language:** TypeScript with strict settings for app/package code.
 - **Web app:** Next.js 16, React 19, Firebase Web SDK, `next-firebase-auth-edge`.
-- **Mobile app:** Expo 55, React Native 0.83, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
+- **Mobile app:** Expo 57, React Native 0.86, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
 - **Backend:** Firebase Cloud Functions v2/v1 mix, Firestore, Storage, Authentication, FCM, `firebase-admin`, `pdf-lib`.
 - **Shared packages:** `@tennis/shared` for domain logic and `@tennis/firebase-client` for Firebase SDK wrappers/hooks.
 - **Testing:** Jest/ts-jest for shared scoring, ranking, profile, and status metadata tests.
