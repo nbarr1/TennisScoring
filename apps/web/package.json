@@ -1,6 +1,9 @@
 {
   "name": "@tennis/web",
   "version": "1.0.5",
+  "engines": {
+    "node": "22.x"
+  },
   "private": true,
   "packageManager": "pnpm@9.15.5",
   "scripts": {

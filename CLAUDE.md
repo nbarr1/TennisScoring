@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Full-stack tennis league scoring application (currently at version 1.0.5, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
-**Prerequisites:** Node.js 22 (matches CI, the root workspace `engines` field, and Firebase Functions runtime/deploy parity), pnpm 9.15.5+, Firebase CLI, and EAS CLI.
+**Prerequisites:** Node.js 22, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
+
+`.nvmrc` is the single source of truth for the Node version: every CI workflow reads it via `setup-node`'s `node-version-file`, so bumping the major means editing that one file. The declarations that cannot read it must be moved in step — the root and `firebase/` `engines.node` fields, `apps/web/package.json`'s `engines.node` (which is what Vercel reads, since `apps/web` is its root directory), and the four `node` pins in `apps/mobile/eas.json`. They drifted once already: EAS built on 20.19.2 and Vercel on 24.x while CI ran 22.
 
 
 ## Versioning

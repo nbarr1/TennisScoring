@@ -60,7 +60,7 @@ jobs:
           version: 9.15.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -88,7 +88,7 @@ jobs:
           version: 9.15.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -106,7 +106,7 @@ jobs:
           version: 9.15.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -160,7 +160,7 @@ jobs:
           version: 9.15.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -219,9 +219,15 @@ jobs:
   #
   # Restricted to one ABI: the failures this catches are C++ API and codegen
   # mismatches, which are identical across architectures, so a second ABI would
-  # double the runtime and find nothing new. Release stays unsigned — signing is
-  # EAS/Play's job, and this build exists to prove the code compiles, not to
-  # produce anything installable.
+  # double the runtime and find nothing new. Note this also means the uploaded
+  # APK installs on arm64-v8a devices only — not on a standard x86_64 emulator.
+  #
+  # The release is signed with the checked-in debug keystore via
+  # android.allowDebugReleaseSigning, so the APK is installable for manual smoke
+  # testing. That is not a new precedent: eas.json's preview and wear-preview
+  # profiles already trigger the same branch in app/build.gradle via
+  # EAS_BUILD_PROFILE. It is not a distributable artifact — real release signing
+  # stays with EAS/Play.
   mobile_native:
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
@@ -234,7 +240,7 @@ jobs:
           version: 9.15.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
       # settings.gradle resolves the react-native and expo Gradle plugins through
       # `node --print require.resolve(...)`, so node_modules has to exist before
@@ -274,8 +280,21 @@ jobs:
         run: |
           ./gradlew :app:assembleRelease \
             -PreactNativeArchitectures=arm64-v8a \
+            -Pandroid.allowDebugReleaseSigning=true \
             --no-daemon \
             --stacktrace
       - name: Report built artifacts
         if: always()
         run: find apps/mobile/android/app/build/outputs -name '*.apk' -exec ls -la {} + || true
+      # Debug-keystore signed and arm64-v8a only: for manual smoke testing on a
+      # real device, never for distribution.
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          # On pull_request, github.sha is the ephemeral merge commit, not the
+          # PR head — an artifact named after it matches no commit in the branch.
+          name: app-release-arm64-v8a-${{ github.event.pull_request.head.sha || github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
