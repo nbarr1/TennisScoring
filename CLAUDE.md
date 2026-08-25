@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Full-stack tennis league scoring application at the Version 1.0.0 baseline with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
+Full-stack tennis league scoring application (currently at version 1.0.5, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
 **Prerequisites:** Node.js 22 (matches CI, the root workspace `engines` field, and Firebase Functions runtime/deploy parity), pnpm 9.15.5+, Firebase CLI, and EAS CLI.
 
 
-## Version 1.0.0 baseline
+## Versioning
 
-- Treat `v1.0.0` as the first functional/deployable repository baseline.
-- Update README, SETUP, VERSION_1_BASELINE, and package/app version markers whenever a future feature changes setup, deployment, data shape, or user-visible capabilities.
-- A Git tag named `v1.0.0` should point at the baseline commit.
+- Treat `v1.0.0` as the first functional/deployable repository baseline; a Git tag named `v1.0.0` should point at the baseline commit.
+- The root `package.json` and all five workspace packages currently carry version `1.0.5` and are bumped together — never let them drift apart.
+- Update README, SETUP, VERSION_1_BASELINE, CHANGELOG, and package/app version markers whenever a feature changes setup, deployment, data shape, or user-visible capabilities.
 
 ## Commands
 
@@ -29,6 +29,7 @@ pnpm test                  # Run tests (currently @tennis/shared only)
 pnpm clean                 # Remove all dist/build artifacts and node_modules
 pnpm test:shared            # Alias for `pnpm --filter @tennis/shared test`
 pnpm check:firebase-rules    # Static guard against dangerous Firestore/Storage rules patterns
+pnpm check:mobile-codegen    # Run RN codegen over every autolinked native module (catches EAS-only failures)
 pnpm backfill:season-level   # One-off script: backfill division season/level data in Firestore
 pnpm backfill:profiles       # One-off script: backfill missing profiles/{uid} docs
 ```
@@ -80,7 +81,7 @@ scripts/cleanup-branches.sh --remote      # Also prunes remote-tracking refs
 ### Monorepo layout
 
 ```text
-apps/web/          # Next.js 14.2.0 web app (@tennis/web)
+apps/web/          # Next.js 16.3.2 web app (@tennis/web)
 apps/mobile/       # Expo 57 / React Native 0.86 mobile app (@tennis/mobile)
 packages/shared/   # Core business logic (scoring, ranking, types) — no framework deps (@tennis/shared)
 packages/firebase-client/  # Firebase SDK wrapper with React hooks (@tennis/firebase-client)
@@ -110,6 +111,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/tips/tips.ts`** — tip display logic consumed by UI layers.
 
+**`packages/shared/src/profile/profileUtils.ts`** — availability-editor logic shared by both apps' profile screens: `createDefaultAvailabilitySlot()`, `addAvailabilitySlot()`, `updateAvailabilitySlot()`, `removeAvailabilitySlot()`, `cycleAvailabilitySlotDay()`, `validateAvailabilitySlots()`, `buildAvailability()`, and `buildUserProfileUpdates()`.
+
 **`packages/shared/src/legal/privacyPolicy.ts`** — `PRIVACY_POLICY_SECTIONS`, `PRIVACY_POLICY_INTRO`, `PRIVACY_POLICY_LAST_UPDATED`: the single source of truth for the privacy policy copy, rendered identically by the mobile screen (`apps/mobile/app/privacy-policy.tsx`) and the public web page (`apps/web/app/privacy/page.tsx`) so the two never drift apart.
 
 **`packages/shared/src/scheduling/roundRobin.ts`**:
@@ -122,7 +125,10 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - `ranking.ts` — `PlayerRanking`, `HeadToHead`.
 - `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability`, `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc), `blockedUserIds?: string[]` (self-managed message-sender block list), and `accountDeleted?`/`deletedAt?` (set by the `deleteAccount` callable).
 - `message.ts` — `Channel`, `Message`, `MatchReport`, `MessageReport`, `MessageReportReason` (`'harassment' | 'spam' | 'inappropriate' | 'other'`), `MessageReportStatus`.
-- `division.ts` — `Division`.
+- `division.ts` — the season/level/membership model as well as `Division`: `Season`, `SeasonHalf`, `SeasonStatus`, `DivisionLevel`, `DivisionSkillLevel`, `DivisionMatchType`, `DivisionMembership` (+ `DivisionMembershipRole`/`Status`/`Source`), and helpers `seasonId()`, `divisionMembershipId()`, `formatSeasonName()`, `currentSeasonForDate()`, `defaultSeasonOptions()`, `formatDivisionLevelName()`.
+- `invite.ts` — `Invite`.
+- `feedback.ts` — `FeedbackCategory`, `SubmitFeedbackInput`, `SubmitFeedbackResult`.
+- `export.ts` — `CsvExportType`, `CsvExportRequest`, `CsvExportResult`, plus the `escapeCsvValue()`/`toCsv()` helpers shared by the `exportDivisionCsv` callable and its callers.
 
 ### Firebase client package — SDK wrapper
 
@@ -140,6 +146,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/firebase-client/src/account.ts`** — `deleteAccountCallable()`, a thin wrapper around the `deleteAccount` Cloud Function callable.
 
+**`packages/firebase-client/src/feedback.ts`** — `submitFeedback()`, the client wrapper around the `submitFeedback` Cloud Function. Apps call this; they never talk to GitHub directly.
+
 **`packages/firebase-client/src/schedule.ts`** — `previewRoundRobinSchedule()` (runs `generateRoundRobinSchedule()` from `@tennis/shared` entirely client-side, optionally pre-sorting by ranking, for an instant preview) and `publishRoundRobinSchedule()` (`httpsCallable` wrapper for the `publishRoundRobinSchedule` Cloud Function that actually writes the generated matches).
 
 **Typed React hooks** in `packages/firebase-client/src/hooks/`:
@@ -148,7 +156,9 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - `useRankings` — division rankings subscription. Falls back to recomputing rankings directly from completed matches (via `completedDivisionMatchesQuery` + `computeRankings`) when Firestore rankings are absent or stale.
 - `useMessages` — channel/message subscription.
 - `useUser` — user profile subscription.
-- `useNotifications` — Firebase Cloud Messaging setup and FCM token registration.
+- `useDivisionOptions` — the divisions a given user belongs to (also exported as the one-shot `getUserDivisionOptions()`), used by the division switchers on both apps.
+
+Note that `useNotifications` (FCM setup and token registration) is **not** in this package — it lives in `apps/mobile/hooks/useNotifications.ts`, and the web equivalent is `apps/web/app/FcmProvider.tsx`.
 
 All Firestore reads go through these hooks; all writes go through operations exported from `collections.ts` and `divisions.ts`. Never call Firestore directly from apps.
 
@@ -185,7 +195,7 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 ### Auth flow
 
-**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, and a handful of `api/*` routes from the auth check — any future public-facing page must be added to that exclusion list or it will silently redirect signed-out visitors to `/login`.
+**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, `auth/`, and a handful of `api/*` routes (`api/health`, `api/readiness`, `api/functions/`, `api/auth/logout`) from the auth check — any future public-facing page must be added to that exclusion list or it will silently redirect signed-out visitors to `/login`. Note that `robots.ts` and `sitemap.ts` are **not** currently excluded.
 
 **Mobile**: Firebase email/password authentication is handled in `apps/mobile/app/(auth)/login.tsx`. `AuthGuard` in `apps/mobile/app/_layout.tsx` enforces: auth → division selection → tutorial → main tabs. State lives in Zustand (`apps/mobile/store/appStore.ts`): `{ user: User | null, divisionId: string | null }`.
 
@@ -211,6 +221,10 @@ api/health/            # Health check endpoint
 api/readiness/         # Readiness check endpoint
 api/functions/add-division-member/  # Server-side proxy (Admin SDK auth) to the division-member-placeholder callable
 api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker route
+robots.ts              # Generated /robots.txt
+sitemap.ts             # Generated /sitemap.xml
+FcmProvider.tsx        # Web FCM setup/token registration (mounted from the root layout)
+shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx
 ```
 
 ### Mobile routes (`apps/mobile/app/`)
@@ -308,21 +322,39 @@ See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setu
 ### Testing
 
 - Tests live in `packages/shared/src/**/__tests__/` following `*.test.ts` naming.
-- Test files cover score engine, ranking engine, profile utilities, and match status metadata.
-- Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes to `main` or `claude/**` branches.
+- Test files cover the score engine, ranking engine, round-robin scheduler, profile utilities, division/season helpers, and match status metadata.
+- Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes and pull requests targeting `main` or `claude/**`, and only when the `shared_or_root` path filter matches.
 - Test runner: Jest 29 + ts-jest. Build tool: tsup 8.
 - Add tests when modifying scoring or ranking logic — the score engine is extensively tested.
 
 ### CI
 
-Defined in `.github/workflows/ci.yml`. Triggers: push to `main`/`claude/**`, PRs to `main`. Node 22, pnpm 9.15.5. A `changes` job path-filters which downstream jobs run:
+Defined in `.github/workflows/ci.yml`. Triggers: push **and** pull request to `main`/`claude/**`. Node 22, pnpm 9.15.5. A `changes` job path-filters which downstream jobs run. **Every filter also includes `.github/workflows/ci.yml` itself** — otherwise a PR editing only `ci.yml` would land a change to a filtered job with that very job skipped. Keep that entry in any new filter you add.
 
-- `lint_typecheck` (always runs): install (`--frozen-lockfile`) → typecheck → lint → build. This is the unconditional gate.
-- `shared_tests` (only if `packages/shared/**`, root `package.json`/`pnpm-lock.yaml`/`pnpm-workspace.yaml`/`tsconfig.base.json` changed): `pnpm --filter @tennis/shared test`.
-- `firebase_rules_tests` (only if `firebase/**` or `packages/shared/**` changed): Firestore/Storage emulator rules smoke test (`pnpm check:firebase-rules`, `pnpm --filter @tennis/firebase-functions test:rules`), then `pnpm audit --audit-level=high` — non-blocking (`continue-on-error: true`), falling back to a `google/osv-scanner-action` step that casts the actual deciding vote when the audit step fails.
+- `lint_typecheck` (always runs): install (`--frozen-lockfile`) → typecheck → lint → **build**. This is the unconditional gate. The build step runs last (it is the most expensive) and exists because only a real bundler catches a bad module path that `typecheck` waves through behind an `as any`.
+- `shared_tests` (filter `shared_or_root`: `packages/shared/**`, root `package.json`/`pnpm-lock.yaml`/`pnpm-workspace.yaml`/`tsconfig.base.json`): `pnpm --filter @tennis/shared test`.
+- `firebase_rules_tests` (filter `firebase`: `firebase/**` or `packages/shared/**`): sets up Temurin JDK 21 (firebase-tools 15 refuses to start the emulators on anything older), then `pnpm check:firebase-rules` → `pnpm --filter @tennis/firebase-functions test:rules` → `pnpm audit --audit-level=high`. The rules checks deliberately run **before** the audit, so a failing audit can never suppress the rules signal. The audit step is `continue-on-error` only so the `google/osv-scanner-action` fallback step casts the deciding vote; the pair together is still blocking. Suppressed advisories with justifications live in `osv-scanner.toml`.
+- `mobile_bundle` (filter `mobile`: `apps/mobile/**`, `packages/**`, root manifests): builds the workspace deps, runs `pnpm check:mobile-codegen`, bundles for release with `expo export:embed`, then compiles that bundle with the exact pinned `hermesc` the Android Gradle build uses. Nothing else exercises Metro or Hermes, and each stage catches a distinct class of EAS-only failure.
+- `mobile_native` (same `mobile` filter): the only job that compiles C++. Sets up JDK 17 and NDK `27.1.12297006` (pinned by react-native 0.86.2's version catalog), then runs `./gradlew :app:assembleRelease` for `arm64-v8a` only — the failures it catches (C++ API and codegen mismatches) are architecture-independent, and the APK is unsigned because the job exists to prove the code compiles, not to ship anything.
 
-Two more workflows run independently of `ci.yml`: `.github/workflows/codeql.yml` (CodeQL JavaScript/TypeScript analysis on push/PR to `main` and a weekly schedule) and `.github/workflows/firebase-safety-guard.yml` (blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test).
+The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIREBASE_*` vars, not secrets: `app.config.js` hard-fails when `CI=true` and they are unset, and real secrets would make both jobs unusable on fork and Dependabot pull requests. Do not replace them with repository secrets.
+
+Other workflows run independently of `ci.yml`: `.github/workflows/codeql.yml` (CodeQL JavaScript/TypeScript analysis on push/PR to `main` and a weekly schedule) and `.github/workflows/firebase-safety-guard.yml` (blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test).
 
 `.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android mobile or Wear OS preview APK builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets.
 
 `.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
+
+`.github/workflows/andorid-ai-agent.yml` — a Python-based review/apply agent (the filename is misspelled as committed; match it exactly when referencing the workflow) that runs on push to any branch and via `workflow_dispatch` with a `review`/`apply` mode input. It holds `contents: write`; its helper scripts live in `.github/scripts/`.
+
+### Dependency constraints
+
+`.github/dependabot.yml` and the root `pnpm.overrides` encode constraints that were each learned from a broken build. Read the comments there before bumping anything in this set:
+
+- **`react-native` is pinned by the Expo SDK.** Dependabot ignores its minor/patch bumps; it must be moved *with* every Expo SDK upgrade to the version in `expo/bundledNativeModules.json`. Leaving it behind on 0.83.1 under SDK 57 (which wants 0.86.2) broke the Android native build.
+- **TypeScript majors are manual.** TypeScript 7 is the native (tsgo) port and drops the JS compiler API that `tsup --dts`, `ts-jest`, and typescript-eslint all need.
+- **`react-native-reanimated` minors/majors are ignored**, because its version is dictated by the `react-native-worklets` peer range `expo-modules-core` accepts, not by what reanimated publishes.
+- **The Babel toolchain stays on 7.** `babel-preset-expo` asserts `^7.0.0-0`, so `@babel/core` 8 fails the Metro transform outright. The `^7.29.6` override pins it; a major bump defeats the override rather than being blocked by it.
+- Expo-constrained packages are grouped separately (`expo-toolchain`) from everything else (`monorepo-npm`) so one blocked native package cannot hold back unrelated updates.
+- **Web React is overridden to 18.2.0.** `apps/web/package.json` declares `react`/`react-dom` 19.2.8, but the root `@tennis/web>react` / `@tennis/web>react-dom` overrides force 18.2.0, which is what actually installs. Change the override, not just the app manifest, or the two will keep disagreeing.
+- `pnpm.neverBuiltDependencies` skips install scripts for `react-native-screens`, `react-native-reanimated`, and `react-native-gesture-handler`.
