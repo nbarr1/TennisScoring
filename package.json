@@ -13,7 +13,8 @@
     "test:shared": "pnpm --filter @tennis/shared test",
     "backfill:season-level": "node scripts/backfill-division-season-level.mjs --",
     "backfill:profiles": "node scripts/backfill-profiles.mjs --",
-    "check:firebase-rules": "node scripts/check-firebase-rules.mjs"
+    "check:firebase-rules": "node scripts/check-firebase-rules.mjs",
+    "check:mobile-codegen": "node scripts/check-mobile-codegen.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
