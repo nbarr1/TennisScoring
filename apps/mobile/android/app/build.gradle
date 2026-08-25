@@ -4,6 +4,19 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
+// Version comes from app.json so the JS and native projects cannot drift apart.
+// This native project is committed, so `expo prebuild` never regenerates this
+// file from app.json — which is why hardcoded values here kept shipping builds
+// stamped 1.0.1/versionCode 1 for weeks after app.json had moved to 1.0.5/5.
+// Bump app.json alone; this reads whatever is there.
+def expoConfig = new groovy.json.JsonSlurper().parseText(file("${projectRoot}/app.json").text).expo
+def appVersionName = expoConfig?.version
+def appVersionCode = expoConfig?.android?.versionCode
+if (!appVersionName || appVersionCode == null) {
+    throw new GradleException(
+        "Could not read expo.version / expo.android.versionCode from ${projectRoot}/app.json")
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -92,8 +105,8 @@ android {
         applicationId 'com.companytennisleague.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.1"
+        versionCode appVersionCode
+        versionName appVersionName
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
