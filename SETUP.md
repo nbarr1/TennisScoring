@@ -6,7 +6,7 @@ This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/pass
 
 ## Prerequisites
 
-- Node.js 22 for local web/mobile/Firebase Functions development and CI parity (CI, the root workspace `engines` field, and the Functions runtime all pin Node 22).
+- Node.js 22 for local web/mobile/Firebase Functions development and CI parity. `.nvmrc` is the single source of truth — CI workflows read it directly, and the root/`firebase/`/`apps/web` `engines.node` fields, plus the `node` pins in `apps/mobile/eas.json`, are all held at 22 to match.
 - pnpm 9.15.5 or newer.
 - Firebase CLI (`npm i -g firebase-tools`) for emulators, rules, and Functions deployment.
 - EAS CLI (`npm i -g eas-cli`) for mobile cloud builds.
