@@ -41,7 +41,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@babel/core": "^8.0.1",
+    "@babel/core": "^7.29.6",
     "@babel/plugin-transform-modules-commonjs": "8.0.1",
     "@types/react": "~19.2.18",
     "typescript": "~6.0.3"
