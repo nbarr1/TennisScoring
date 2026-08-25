@@ -167,6 +167,15 @@ jobs:
       # The app imports both workspace packages by their built dist output.
       - name: Build workspace dependencies
         run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+      # Gradle runs codegen for every autolinked native module before it ever
+      # bundles JavaScript, and it enforces rules Metro never sees. Bundling
+      # alone missed react-native-screens 4.27.0, whose command specs use
+      # React.ComponentRef<> where react-native 0.83.1's parser requires
+      # React.ElementRef<> — it bundled cleanly and failed the EAS build at
+      # generateCodegenSchemaFromJavaScript. Run codegen first: it is seconds,
+      # and it fails on exactly what the native build would reject.
+      - name: Codegen (autolinked native modules)
+        run: pnpm check:mobile-codegen
       # app.config.js hard-fails when CI=true and these are unset. They are
       # deliberately placeholders, not secrets: this check only needs the module
       # graph to resolve and compile, and real values would make the job unusable
