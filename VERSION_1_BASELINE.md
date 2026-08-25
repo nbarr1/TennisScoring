@@ -16,7 +16,7 @@ Changes since the `v1.0.0` snapshot that affect setup, deployment, or data shape
 - **Firestore rules**: `profiles/{userId}` now allows a signed-in user to self-write their own `displayName`/`avatarUrl`/`tutorialDone`/`id`/`updatedAt` (previously admin-only, which silently broke every non-admin profile save on both web and mobile since `updateUserProfile()` always batches a `profiles/{uid}` write). `role` and `divisionId` remain locked to admin/Cloud Functions on this path.
 - **Known deferred limitation**: `onUserCreated` (the `identity.beforeUserCreated` blocking function) cannot be redeployed — this Firebase project is not on Google Cloud Identity Platform (GCIP), which blocking functions require. The function keeps running its previously-deployed code; self-registration is unaffected today. **Do not enable GCIP without first setting a real `ALLOWED_EMAIL_DOMAIN` value** in `firebase/.env.tennisscoring-40165` — the current (unreleased) version of this function fails closed and would reject all self-registration if it ever goes live with that value blank.
 - **Dependency audit**: the CI OSV gate was failing on 50 known vulnerabilities in transitive dev/build-tool packages (none shipped to end users). 48 fixed via `pnpm.overrides` in the root `package.json`; the remaining 2 (`image-size`, via react-native's metro bundler, no upstream fix exists) are suppressed with justification in `osv-scanner.toml`.
-- **Framework upgrades**: Next.js 14 → 16, React 18 → 19, Expo 51 → 55, React Native 0.74 → 0.83 (the "Deployable Components" section below has been updated in place to describe the current versions rather than what shipped at the `v1.0.0` snapshot).
+- **Framework upgrades**: Next.js 14 → 16, React 18 → 19, Expo 51 → 57, React Native 0.74 → 0.86 (the "Deployable Components" section below has been updated in place to describe the current versions rather than what shipped at the `v1.0.0` snapshot).
 - **Version marker gap fixed**: `firebase/package.json` still read `1.0.0` after every other manifest moved to `1.0.1`; it is now `1.0.1` too.
 
 ---
@@ -113,7 +113,7 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
 ### Mobile application
 
 - Location: `apps/mobile`
-- Framework: Expo 55 / React Native 0.83 with Expo Router
+- Framework: Expo 57 / React Native 0.86 with Expo Router
 - Authentication: Firebase email/password sign in and sign up
 - Major route groups:
   - `(auth)` for login/signup

@@ -206,3 +206,76 @@ jobs:
             "$RUNNER_TEMP/mobile-bundle/index.android.bundle" \
             -O
           ls -la "$RUNNER_TEMP/mobile-bundle/index.android.hbc"
+
+  # mobile_bundle stops at JavaScript: it bundles and compiles to Hermes bytecode,
+  # but never compiles a line of C++. That left the native half of an EAS build
+  # completely unverified, and it is where the Expo 57 upgrade actually broke.
+  # react-native was left on 0.83.1 while expo moved to SDK 57 (which wants
+  # 0.86.2), so expo-modules-core's NativeArrayBuffer.cpp called
+  # jsi::ArrayBuffer::tryGetMutableBuffer — an API that does not exist before
+  # react-native 0.86. Codegen passed, Metro bundled, Hermes compiled, and the
+  # build still died at :expo-modules-core:buildCMakeRelWithDebInfo after eight
+  # minutes of EAS time. This job runs that same CMake compile on a pull request.
+  #
+  # Restricted to one ABI: the failures this catches are C++ API and codegen
+  # mismatches, which are identical across architectures, so a second ABI would
+  # double the runtime and find nothing new. Release stays unsigned — signing is
+  # EAS/Play's job, and this build exists to prove the code compiles, not to
+  # produce anything installable.
+  mobile_native:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      # settings.gradle resolves the react-native and expo Gradle plugins through
+      # `node --print require.resolve(...)`, so node_modules has to exist before
+      # Gradle can configure anything.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build workspace dependencies
+        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+      # Android Gradle Plugin 8.12, pinned by react-native 0.86.2's version
+      # catalog, requires JDK 17 or newer.
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      # react-native 0.86.2 pins this exact NDK in gradle/libs.versions.toml, and
+      # AGP fails rather than substituting whichever NDK the runner image ships.
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null
+      # Gradle bundles the JavaScript itself as part of assembleRelease, so it
+      # needs the same placeholders mobile_bundle uses — app.config.js hard-fails
+      # when CI=true and they are unset. They are deliberately not secrets, so this
+      # job still runs on fork and Dependabot pull requests.
+      - name: Assemble release (native compile)
+        working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_APP_ID: ci-placeholder
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            --no-daemon \
+            --stacktrace
+      - name: Report built artifacts
+        if: always()
+        run: find apps/mobile/android/app/build/outputs -name '*.apk' -exec ls -la {} + || true

@@ -5,7 +5,11 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # react-native is constrained by the Expo SDK version; do not auto-bump
+      # react-native is constrained by the Expo SDK version; do not auto-bump it
+      # on its own. It must still be moved *with* every Expo SDK upgrade to the
+      # version in expo/bundledNativeModules.json — leaving it behind is what
+      # stranded the app on 0.83.1 under SDK 57 (which wants 0.86.2) and broke
+      # the Android native build. Check that file when bumping expo.
       - dependency-name: react-native
         update-types: ['version-update:semver-minor', 'version-update:semver-patch']
       # TypeScript 7 is the native (tsgo) port and no longer exposes the
@@ -17,12 +21,13 @@ updates:
       # accepts as a react-native-worklets peer, not by what reanimated publishes.
       # 4.6.0 requires worklets 0.12.x while expo-modules-core 57 accepts
       # ^0.7.4 || ^0.8.0 || ^0.9.0 || ^0.10.0 — disjoint ranges, so pnpm installs
-      # no worklets at all and Metro cannot resolve it. Only 0.12.0-nightly builds
-      # exist upstream. Bump this alongside an Expo SDK upgrade, not on its own.
+      # no worklets at all and Metro cannot resolve it. Stable worklets 0.12.x
+      # now exists, but expo-modules-core still does not accept it, so the ranges
+      # remain disjoint. Bump this alongside an Expo SDK upgrade, not on its own.
       - dependency-name: react-native-reanimated
         update-types:
           ['version-update:semver-major', 'version-update:semver-minor']
-      # The Expo 57 / React Native 0.83 Babel toolchain is Babel 7 throughout.
+      # The Expo 57 / React Native 0.86 Babel toolchain is Babel 7 throughout.
       # babel-preset-expo pulls in @babel/preset-typescript, which calls
       # assertVersion("^7.0.0-0"), so @babel/core 8 fails the Metro transform
       # outright ("Requires Babel ^7.0.0-0, but was loaded with 8.0.1").
@@ -30,15 +35,6 @@ updates:
       # being blocked by it, so keep majors out of the auto-bump entirely.
       - dependency-name: '@babel/core'
         update-types: ['version-update:semver-major']
-      # react-native-screens 4.27.0 switched its codegen command specs to
-      # React.ComponentRef<> (the React 19 rename of React.ElementRef<>), but
-      # react-native 0.83.1's codegen parser hard-requires React.ElementRef<>
-      # and throws otherwise, failing Gradle's
-      # generateCodegenSchemaFromJavaScript task. 4.25.1 and 4.26.0 still use
-      # the old name. Bump alongside an Expo SDK upgrade that moves react-native.
-      - dependency-name: react-native-screens
-        update-types:
-          ['version-update:semver-major', 'version-update:semver-minor']
     groups:
       # The Expo SDK constrains this whole set: react-native is pinned to an
       # exact version by expo, reanimated is bounded by the react-native-worklets
