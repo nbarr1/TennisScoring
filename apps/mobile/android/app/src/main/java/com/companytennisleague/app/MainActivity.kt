@@ -20,6 +20,25 @@ class MainActivity : ReactActivity() {
   }
 
   /**
+   * react-native-screens adds a fragment per screen to the FragmentManager and
+   * never prunes them from the saved instance state, and each one also leaves an
+   * entry in the activity-result registry. A single session accumulated ~644
+   * fragments (1.1 MB) plus 540 KB of registry keys, so the Bundle handed to
+   * system_server on activityStopped blew the ~1 MB Binder limit and took the
+   * process down with TransactionTooLargeException every time the app was
+   * backgrounded.
+   *
+   * Dropping those keys costs nothing here: onCreate above already passes null
+   * to super, so the restored state was being discarded anyway.
+   */
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    outState.remove("android:support:fragments")
+    outState.remove("android:fragments")
+    outState.remove("androidx.lifecycle.BundlableSavedStateRegistry.key")
+  }
+
+  /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule
    * rendering of the component.
    */
