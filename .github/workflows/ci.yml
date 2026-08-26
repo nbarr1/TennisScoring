@@ -290,7 +290,7 @@ jobs:
       # real device, never for distribution.
       - name: Upload APK
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # On pull_request, github.sha is the ephemeral merge commit, not the
           # PR head — an artifact named after it matches no commit in the branch.
