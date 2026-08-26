@@ -1,6 +1,6 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { auth, useAuthUser, usePrivateUser } from '@tennis/firebase-client';
@@ -108,14 +108,37 @@ function DiagnosticScreen({
   );
 }
 
-function AuthGuard({ children }: { children: React.ReactNode }) {
+/**
+ * Covers the navigator instead of replacing it.
+ *
+ * The gate must never unmount `<Stack>`: `router.replace()` is a no-op without a
+ * mounted navigator, so a guard that swaps the navigator out for a spinner has no
+ * way to navigate itself back out. A device bugreport caught exactly that -- the
+ * tree churning at roughly ten mounts per second, which both pinned the UI on a
+ * spinner and piled up ~570 screen fragments a minute until the saved-state
+ * parcel exceeded the Binder limit and killed the process on backgrounding.
+ */
+function GateOverlay({ children }: { children: ReactNode }) {
+  return <View style={[StyleSheet.absoluteFill, styles.overlay]}>{children}</View>;
+}
+
+// TEMPORARY DIAGNOSTIC -- remove once the churn is confirmed gone.
+// Keeping the navigator mounted stops the fragment leak, but it would not stop
+// something re-rendering this component at 10Hz; that would just get cheaper and
+// quieter. This surfaces it in `adb logcat` (and in a bugreport's SYSTEM LOG) as
+// a ReactNativeJS warning instead of silently burning battery.
+const gateRenders = { count: 0, since: Date.now() };
+
+function AuthGate() {
   const { firebaseUser, loading: authLoading, error: authError } = useAuthUser();
   const [retryKey, setRetryKey] = useState(0);
   const { user: profile, loading: profileLoading, error: profileError } = usePrivateUser(firebaseUser?.uid ?? null, retryKey);
   const router = useRouter();
   const segments = useSegments();
-  const { setUser } = useAppStore();
-  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  // Selector, not destructuring: subscribing to the whole store re-rendered this
+  // component on every unrelated write.
+  const setUser = useAppStore((state) => state.setUser);
+  const [gateTimedOut, setGateTimedOut] = useState(false);
 
   useNotifications(firebaseUser?.uid);
 
@@ -127,15 +150,41 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   // signing in first (it's linked from the login/signup screen), so it's
   // exempt from the auth redirect like `(auth)` itself.
   const inPrivacyPolicy = segments[0] === 'privacy-policy';
+  const hasDivision = !!profile?.divisionId;
+
+  // True while the current route is not where the redirect effect wants it.
+  // Mirrors that effect's branches exactly, so the overlay is up for precisely
+  // as long as a replace() is outstanding.
+  const routeMismatch = !dataLoading && (
+    !firebaseUser
+      ? !inAuth && !inPrivacyPolicy
+      : inAuth || (!hasDivision && !inOnboarding) || (hasDivision && inOnboarding && !inTutorial)
+  );
+  const gating = dataLoading || routeMismatch;
 
   useEffect(() => {
-    if (!dataLoading) {
-      setLoadingTimedOut(false);
+    gateRenders.count += 1;
+    const elapsed = Date.now() - gateRenders.since;
+    if (elapsed >= 5000) {
+      if (gateRenders.count > 25) {
+        console.warn(`[AuthGate] ${gateRenders.count} renders in ${elapsed}ms - unexpected re-render churn`);
+      }
+      gateRenders.count = 0;
+      gateRenders.since = Date.now();
+    }
+  });
+
+  // Covers route mismatches too, not just data loading. The old guard had no
+  // timeout once dataLoading went false, so a route that never resolved showed a
+  // bare spinner forever with no way to diagnose it from the device.
+  useEffect(() => {
+    if (!gating) {
+      setGateTimedOut(false);
       return;
     }
-    const timeout = setTimeout(() => setLoadingTimedOut(true), 15000);
+    const timeout = setTimeout(() => setGateTimedOut(true), 15000);
     return () => clearTimeout(timeout);
-  }, [dataLoading, retryKey]);
+  }, [gating, retryKey]);
 
   useEffect(() => {
     if (dataLoading) return;
@@ -147,7 +196,6 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     if (profile) setUser(profile);
 
-    const hasDivision = !!profile?.divisionId;
     const tutorialDone = !!profile?.tutorialDone;
     const tabsDest = tutorialDone ? '/(tabs)' : '/(onboarding)/tutorial';
 
@@ -158,49 +206,57 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (hasDivision && inOnboarding && !inTutorial) {
       router.replace(tabsDest);
     }
-  }, [firebaseUser, dataLoading, profile, router, segments, setUser, retryKey]);
+  }, [
+    firebaseUser,
+    dataLoading,
+    profile,
+    hasDivision,
+    router,
+    setUser,
+    retryKey,
+    inAuth,
+    inOnboarding,
+    inTutorial,
+    inPrivacyPolicy,
+  ]);
 
-  if (authError || profileError) {
-    const error = authError ?? profileError;
+  const error = authError ?? profileError;
+  if (error) {
     return (
-      <DiagnosticScreen
-        title="Could not finish loading"
-        message="The app could not load your account data. This is usually caused by a temporary network issue, a Firebase configuration problem, or missing account data."
-        details={`uid=${firebaseUser?.uid ?? 'none'}\nerror=${error?.message ?? 'unknown'}`}
-        onRetry={() => setRetryKey((key) => key + 1)}
-        onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
-      />
-    );
-  }
-
-  if (dataLoading) {
-    if (loadingTimedOut) {
-      return (
+      <GateOverlay>
         <DiagnosticScreen
-          title="Still loading"
-          message="Loading is taking longer than expected. You can keep waiting, retry the account listener, or sign out and try again."
-          details={`authLoading=${authLoading}\nprofileLoading=${profileLoading}\nuid=${firebaseUser?.uid ?? 'none'}`}
+          title="Could not finish loading"
+          message="The app could not load your account data. This is usually caused by a temporary network issue, a Firebase configuration problem, or missing account data."
+          details={`uid=${firebaseUser?.uid ?? 'none'}\nerror=${error.message ?? 'unknown'}`}
           onRetry={() => setRetryKey((key) => key + 1)}
           onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
         />
+      </GateOverlay>
+    );
+  }
+
+  if (gating) {
+    if (gateTimedOut) {
+      return (
+        <GateOverlay>
+          <DiagnosticScreen
+            title="Still loading"
+            message="Loading is taking longer than expected. You can keep waiting, retry the account listener, or sign out and try again."
+            details={`authLoading=${authLoading}\nprofileLoading=${profileLoading}\nrouteMismatch=${routeMismatch}\nsegments=${segments.join('/') || '(none)'}\nuid=${firebaseUser?.uid ?? 'none'}`}
+            onRetry={() => setRetryKey((key) => key + 1)}
+            onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
+          />
+        </GateOverlay>
       );
     }
-    return <LoadingScreen />;
+    return (
+      <GateOverlay>
+        <LoadingScreen />
+      </GateOverlay>
+    );
   }
 
-  // Mirror the redirect conditions above: while a replace() is in flight,
-  // render a loading screen instead of the stale route's content (e.g. the
-  // Rankings tab briefly flashing before AuthGuard routes to onboarding).
-  if (!firebaseUser) {
-    if (!inAuth && !inPrivacyPolicy) return <LoadingScreen />;
-  } else {
-    const hasDivision = !!profile?.divisionId;
-    if (inAuth) return <LoadingScreen />;
-    if (!hasDivision && !inOnboarding) return <LoadingScreen />;
-    if (hasDivision && inOnboarding && !inTutorial) return <LoadingScreen />;
-  }
-
-  return <>{children}</>;
+  return null;
 }
 
 export default function RootLayout() {
@@ -208,7 +264,7 @@ export default function RootLayout() {
     <RootErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
-          <AuthGuard>
+          <View style={{ flex: 1 }}>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(onboarding)" />
@@ -218,9 +274,20 @@ export default function RootLayout() {
               <Stack.Screen name="privacy-policy" options={{ headerShown: true, title: 'Privacy Policy' }} />
               <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
             </Stack>
-          </AuthGuard>
+            <AuthGate />
+          </View>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </RootErrorBoundary>
   );
 }
+
+const styles = StyleSheet.create({
+  overlay: {
+    backgroundColor: '#f5f5f0',
+    // The navigator below is a native (react-native-screens) view, so JS sibling
+    // order alone is not enough to guarantee the overlay draws on top of it.
+    zIndex: 1000,
+    elevation: 24,
+  },
+});

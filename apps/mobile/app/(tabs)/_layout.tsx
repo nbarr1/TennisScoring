@@ -8,8 +8,10 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 }
 
 export default function TabLayout() {
-  const { user } = useAppStore();
-  const isAdmin = isPrivilegedRole(user?.role);
+  // Selector, not destructuring: subscribing to the whole store re-rendered
+  // the whole tab navigator on every unrelated write.
+  const role = useAppStore((state) => state.user?.role);
+  const isAdmin = isPrivilegedRole(role);
 
   return (
     <Tabs
