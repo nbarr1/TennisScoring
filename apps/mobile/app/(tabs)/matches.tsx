@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import {
   formatScoreDisplay,
   formatGameScore,
   getMatchStatusMetadata,
+  currentSeasonForDate,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -181,6 +182,10 @@ function MatchCard({
 
 export default function MatchesScreen() {
   const { user, divisionId } = useAppStore();
+  // A match is tagged to the season current when it's logged, matching web's
+  // matches/dashboard pages — otherwise it falls outside every season-scoped
+  // standings view (see useRankings' seasonId filter) and never counts.
+  const seasonId = useMemo(() => currentSeasonForDate().id, []);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -328,6 +333,7 @@ export default function MatchesScreen() {
               player2Name: guestName.trim(),
               player2IsGuest: true,
               divisionId,
+              seasonId,
               createdBy: user.id,
             }
           : {
@@ -336,6 +342,7 @@ export default function MatchesScreen() {
               player1Name: user.displayName,
               player2Name: selectedOpponent!.displayName,
               divisionId,
+              seasonId,
               createdBy: user.id,
             },
       );
@@ -400,6 +407,7 @@ export default function MatchesScreen() {
           player1Id: selectedPlayer1!.id,
           player2Id: selectedOpponent!.id,
           divisionId,
+          seasonId,
           sets: parsed,
           notifyPlayers: true,
         });
@@ -413,6 +421,7 @@ export default function MatchesScreen() {
                 player2Name: guestName.trim(),
                 player2IsGuest: true,
                 divisionId,
+                seasonId,
                 createdBy: user.id,
                 sets: parsed,
               }
@@ -422,6 +431,7 @@ export default function MatchesScreen() {
                 player1Name: user.displayName,
                 player2Name: selectedOpponent!.displayName,
                 divisionId,
+                seasonId,
                 createdBy: user.id,
                 sets: parsed,
               },
@@ -607,6 +617,7 @@ export default function MatchesScreen() {
         <ProposeMatchModal
           currentUser={user}
           divisionId={divisionId}
+          seasonId={seasonId}
           onClose={() => setShowPropose(false)}
         />
       )}
@@ -1056,10 +1067,12 @@ export default function MatchesScreen() {
 function ProposeMatchModal({
   currentUser,
   divisionId,
+  seasonId,
   onClose,
 }: {
   currentUser: { id: string; displayName: string };
   divisionId: string;
+  seasonId: string;
   onClose: () => void;
 }) {
   const [searchText, setSearchText] = useState("");
@@ -1116,6 +1129,7 @@ function ProposeMatchModal({
         player1Name: currentUser.displayName,
         player2Name: selectedOpponent.displayName,
         divisionId,
+        seasonId,
         createdBy: currentUser.id,
         scheduledAt: ts,
       });

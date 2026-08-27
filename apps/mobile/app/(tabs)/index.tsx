@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useRankings, recalculateDivisionRankings } from '@tennis/firebase-client';
+import { currentSeasonForDate, defaultSeasonOptions } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
 import type { PlayerRanking } from '@tennis/shared';
 
@@ -22,7 +23,13 @@ function RankingRow({ item, index }: { item: PlayerRanking; index: number }) {
 
 export default function RankingsScreen() {
   const { divisionId, user } = useAppStore();
-  const { rankings, loading } = useRankings(divisionId);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(
+    () => currentSeasonForDate().id,
+  );
+  // Matches web's dashboard: standings are scoped to one season at a time, since
+  // matches from every season otherwise pool into a single all-time ranking.
+  const { rankings, loading } = useRankings(divisionId, { seasonId: selectedSeasonId });
   const router = useRouter();
   const [recalculating, setRecalculating] = useState(false);
 
@@ -41,16 +48,47 @@ export default function RankingsScreen() {
     }
   }
 
+  const seasonSelector = (
+    <View style={styles.seasonSection}>
+      <Text style={styles.seasonLabel}>Season</Text>
+      <View style={styles.chipRow}>
+        {seasonOptions.map((season) => (
+          <TouchableOpacity
+            key={season.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Show standings for ${season.name}`}
+            accessibilityState={{ selected: selectedSeasonId === season.id }}
+            style={[styles.chip, selectedSeasonId === season.id && styles.chipActive]}
+            onPress={() => setSelectedSeasonId(season.id)}
+          >
+            <Text
+              style={[
+                styles.chipText,
+                selectedSeasonId === season.id && styles.chipTextActive,
+              ]}
+            >
+              {season.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a472a" />
+      <View style={styles.container}>
+        {seasonSelector}
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#1a472a" />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {seasonSelector}
       {rankings.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>No Rankings Yet</Text>
@@ -113,6 +151,13 @@ export default function RankingsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f0' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  seasonSection: { paddingHorizontal: 16, paddingTop: 16 },
+  seasonLabel: { fontSize: 12, fontWeight: '700', color: '#555', marginBottom: 8, textTransform: 'uppercase' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1, borderColor: '#ddd', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff' },
+  chipActive: { borderColor: '#1a472a', backgroundColor: '#e8f5e9' },
+  chipText: { color: '#555', fontWeight: '600', fontSize: 13 },
+  chipTextActive: { color: '#1a472a' },
   list: { padding: 16 },
   tableHeader: { marginBottom: 12 },
   tableHeaderText: { fontSize: 20, fontWeight: '700', color: '#1a472a' },
