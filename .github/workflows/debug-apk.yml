@@ -1,0 +1,111 @@
+name: Debug APK (installable, real Firebase config)
+
+# Manual only. ci.yml's mobile_native job builds the same APK but deliberately
+# passes `ci-placeholder` for every EXPO_PUBLIC_FIREBASE_* value, because it must
+# also run on fork and Dependabot pull requests where secrets are unavailable.
+# Gradle bundles the JavaScript during assembleRelease, so those placeholders are
+# compiled into the bundle and the resulting APK can never reach Firebase: it
+# shows the login screen and then fails every sign-in with auth/api-key-not-valid.
+#
+# This workflow exists to produce the other kind of build — one an engineer can
+# actually install on a phone and sign into — for field debugging when a local
+# Android toolchain or EAS build quota is not available. workflow_dispatch only,
+# so secrets are never exposed to an untrusted pull request.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.5
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      # settings.gradle resolves the react-native and expo Gradle plugins through
+      # `node --print require.resolve(...)`, so node_modules has to exist before
+      # Gradle can configure anything.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build workspace dependencies
+        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+      # Android Gradle Plugin 8.12, pinned by react-native 0.86.2's version
+      # catalog, requires JDK 17 or newer.
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      # react-native 0.86.2 pins this exact NDK in gradle/libs.versions.toml, and
+      # AGP fails rather than substituting whichever NDK the runner image ships.
+      - name: Install Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null
+      # The secrets are named NEXT_PUBLIC_* because the web app claimed them
+      # first; the same Firebase project backs both apps. These are client-side
+      # config values that ship inside every published build, not credentials.
+      - name: Assemble release
+        working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Pandroid.allowDebugReleaseSigning=true \
+            --no-daemon \
+            --stacktrace
+      - name: Fail if the bundle carries placeholder config
+        # Cheap guard against the exact trap this workflow exists to avoid: if a
+        # secret is unset, the env var is empty rather than absent and the build
+        # still succeeds, producing another APK that cannot sign in.
+        run: |
+          bundle=apps/mobile/android/app/build/generated/assets/react/release/index.android.bundle
+          if grep -q 'ci-placeholder' "$bundle"; then
+            echo "::error::Bundle contains ci-placeholder — Firebase secrets are not set on this repository."
+            exit 1
+          fi
+          echo "No placeholder values found in the bundle."
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-apk-arm64-v8a-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Install instructions
+        if: success()
+        run: |
+          {
+            echo "## Installable APK"
+            echo ""
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Ref: \`$GITHUB_REF_NAME\`"
+            echo "- ABI: arm64-v8a only"
+            echo ""
+            echo "Download the artifact below, unzip it, then:"
+            echo ""
+            echo '```'
+            echo "adb uninstall com.companytennisleague.app"
+            echo "adb install -r app-release.apk"
+            echo '```'
+            echo ""
+            echo "The uninstall is required: this APK is debug-keystore signed, so it"
+            echo "cannot upgrade over a Play-signed or EAS-signed install."
+          } >> "$GITHUB_STEP_SUMMARY"
