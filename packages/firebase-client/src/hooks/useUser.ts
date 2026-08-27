@@ -148,6 +148,13 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   await batch.commit();
 }
 
+/**
+ * Deliberately does not bump `updatedAt`. `arrayUnion` is a genuine no-op when
+ * the token is already registered, but any `updatedAt: Date.now()` alongside it
+ * is not — it rewrites the doc on every launch, which fires the `usePrivateUser`
+ * snapshot listener, which hands AuthGate a fresh `profile` identity, which
+ * re-runs its redirect effect for a value that did not change.
+ */
 export async function registerFcmToken(uid: string, token: string): Promise<void> {
-  await updateDoc(userDoc(uid), { fcmTokens: arrayUnion(token), updatedAt: Date.now() });
+  await updateDoc(userDoc(uid), { fcmTokens: arrayUnion(token) });
 }
