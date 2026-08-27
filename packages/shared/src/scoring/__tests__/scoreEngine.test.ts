@@ -1,6 +1,21 @@
 import { applyPoint, createInitialScore, formatGameScore, formatScoreDisplay } from '../scoreEngine';
 import { DEFAULT_FORMAT } from '../../types/match';
 
+/** Firestore's update()/set() reject any object containing an explicit `undefined` value. */
+function assertNoUndefinedValues(value: unknown, path = 'nextScore'): void {
+  if (value === undefined) {
+    throw new Error(`Found undefined at ${path} — Firestore would reject this write`);
+  }
+  if (value === null || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => assertNoUndefinedValues(item, `${path}[${i}]`));
+    return;
+  }
+  for (const [key, val] of Object.entries(value)) {
+    assertNoUndefinedValues(val, `${path}.${key}`);
+  }
+}
+
 describe('scoreEngine', () => {
   describe('basic game progression', () => {
     it('advances from 0 to 15', () => {
@@ -108,6 +123,25 @@ describe('scoreEngine', () => {
       score = winGames(score, 'player1', 1); // 6-5
       score = winGames(score, 'player2', 1); // 6-6 → tiebreak
       expect(score.isTiebreak).toBe(true);
+    });
+  });
+
+  describe('Firestore write safety', () => {
+    it('never leaves an explicit undefined on the very first point of a match', () => {
+      const score = createInitialScore(DEFAULT_FORMAT);
+      const result = applyPoint(score, 'player1', DEFAULT_FORMAT);
+      assertNoUndefinedValues(result.nextScore);
+    });
+
+    it('never leaves an explicit undefined across a full game/set/tiebreak sequence', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      for (let i = 0; i < 200; i++) {
+        const scorer = i % 2 === 0 ? 'player1' : 'player2';
+        const result = applyPoint(score, scorer, DEFAULT_FORMAT);
+        assertNoUndefinedValues(result.nextScore);
+        score = result.nextScore;
+        if (result.matchWinner) break;
+      }
     });
   });
 

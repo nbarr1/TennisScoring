@@ -64,10 +64,10 @@ function deepCloneScore(score: LiveScore): LiveScore {
     ...score,
     sets: score.sets.map((s) => ({
       ...s,
-      tiebreak: s.tiebreak ? { ...s.tiebreak } : undefined,
+      ...(s.tiebreak && { tiebreak: { ...s.tiebreak } }),
     })),
     currentGame: { ...score.currentGame },
-    tiebreakScore: score.tiebreakScore ? { ...score.tiebreakScore } : undefined,
+    ...(score.tiebreakScore && { tiebreakScore: { ...score.tiebreakScore } }),
   };
 }
 
