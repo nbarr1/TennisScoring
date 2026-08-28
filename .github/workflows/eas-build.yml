@@ -11,6 +11,7 @@ on:
         options:
           - mobile
           - wear
+          - wear-production
   pull_request:
     branches: [main]
     paths:
@@ -47,6 +48,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "name=production" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.target }}" = "wear-production" ]; then
+            echo "name=wear-production" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.inputs.target }}" = "wear" ]; then
             echo "name=wear-preview" >> "$GITHUB_OUTPUT"
           else
