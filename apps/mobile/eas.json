@@ -59,6 +59,20 @@
       "node": "22.23.2",
       "pnpm": "9.15.5",
       "environment": "preview"
+    },
+    "wear-production": {
+      "autoIncrement": true,
+      "android": {
+        "gradleCommand": ":wear:bundleRelease",
+        "applicationArchivePath": "android/wear/build/outputs/**/*.{aab,apk}"
+      },
+      "prebuildCommand": "pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build",
+      "env": {
+        "APP_ENV": "production"
+      },
+      "node": "22.23.2",
+      "pnpm": "9.15.5",
+      "environment": "production"
     }
   }
 }

@@ -223,7 +223,9 @@ The `apps/mobile/eas.json` profiles run this prebuild command before cloud build
 pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
 ```
 
-Wear OS preview APK builds use the `wear-preview` EAS profile. The GitHub Actions `EAS Build (Android APKs)` workflow can build either the mobile APK or Wear OS APK through the `target` input.
+Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and leaves the signing config unset in `apps/mobile/android/wear/build.gradle` so EAS-managed release signing applies (register the Wear module's release keystore with `eas credentials --platform android`, run from `apps/mobile`, before the first `wear-production` build). The GitHub Actions `EAS Build (Android APKs)` workflow can trigger any of the mobile APK, Wear OS preview APK, or Wear OS production bundle through the `target` input (`mobile`, `wear`, `wear-production`).
+
+Because `:app` and `:wear` share an `applicationId` (see the comment in `apps/mobile/android/wear/build.gradle`), decide before submitting whether the Wear app will live under the same Play Store listing as the phone app or as its own listing — the former requires a `versionCode` distinct from `:app`'s, which isn't wired up yet since no production Wear release has shipped.
 
 ---
 

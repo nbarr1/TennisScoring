@@ -18,10 +18,8 @@ android {
         // had drifted four releases behind the phone app.
         //
         // NOTE: :app and :wear deliberately share an applicationId (above), so if
-        // this APK is ever published to the same Play listing as the phone app it
-        // will need a versionCode distinct from :app's. That does not apply today:
-        // release here is debug-signed for internal distribution only, which Play
-        // does not accept.
+        // this APK/AAB is ever published to the same Play listing as the phone app
+        // it will need a versionCode distinct from :app's.
         versionCode rootProject.ext.appVersionCode
         versionName rootProject.ext.appVersionName
     }
@@ -38,8 +36,16 @@ android {
 
     buildTypes {
         release {
-            // Ensure the Wear APK produced by :wear:assembleRelease is signed and installable for internal distribution.
-            signingConfig signingConfigs.debug
+            // Mirrors :app/build.gradle: debug-sign only for internal-distribution
+            // profiles (wear-preview). A real Play submission (wear-production)
+            // leaves signingConfig unset so EAS-managed release signing
+            // (`eas credentials`) is applied instead — Play rejects debug-signed
+            // release builds.
+            def allowDebugReleaseSigning = ((findProperty('android.allowDebugReleaseSigning') ?: 'false').toBoolean()) ||
+                ((System.getenv('EAS_BUILD_PROFILE') ?: '').toLowerCase() in ['preview', 'wear-preview'])
+            if (allowDebugReleaseSigning) {
+                signingConfig signingConfigs.debug
+            }
         }
     }
 }
