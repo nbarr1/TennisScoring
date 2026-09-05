@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Added an implementation plan for doubles match tracking and fixed-partnership team rankings, covering the shared side/team helpers, the `doublesRankings` collection, Firestore rules changes, and the web/mobile surfaces involved.
 - Added production release readiness plan documenting concrete release gating, distribution, and post-release patch workflow (dated 2026-05-28).
 - Clarified Phase 0 release-candidate freeze instructions so deployment does not assume a local `main` branch exists.
 - Added `backfillMissingProfiles`, `health`, and `readiness` Cloud Functions.
