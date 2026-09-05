@@ -1,4 +1,4 @@
-export type CsvExportType = 'matches' | 'rankings';
+export type CsvExportType = 'matches' | 'rankings' | 'doublesRankings';
 
 export interface CsvExportRequest {
   divisionId: string;

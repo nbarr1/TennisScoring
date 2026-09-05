@@ -2,8 +2,33 @@ import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { DEFAULT_FORMAT, EMPTY_STATS, applyPoint, computeRankings, currentSeasonForDate, extractMatchTotals, isPrivilegedRole } from '@tennis/shared';
-import type { Match, HeadToHead, Player, PlayerMatchStats, ReportSubmission } from '@tennis/shared';
+import {
+  DEFAULT_FORMAT,
+  EMPTY_STATS,
+  applyPoint,
+  computeRankings,
+  computeDoublesRankings,
+  currentSeasonForDate,
+  extractMatchTotals,
+  isPrivilegedRole,
+  doublesTeamId,
+  doublesHeadToHeadId,
+  formatDoublesTeamName,
+  sidePlayerIds,
+  sideDisplayName,
+  sideOfPlayer,
+  opposingSide as opposingMatchSide,
+} from '@tennis/shared';
+import type {
+  Match,
+  HeadToHead,
+  Player,
+  PlayerMatchStats,
+  ReportSubmission,
+  DoublesTeamRankingInput,
+} from '@tennis/shared';
+
+import { buildDoublesMatchFields, requestsDoubles } from './doublesSides';
 
 if (!getApps().length) initializeApp();
 
@@ -31,6 +56,8 @@ type RecalculateRankingsResult = {
   matchesNormalized: number;
   rankingsWritten: number;
   rankingsDeleted: number;
+  doublesRankingsWritten: number;
+  doublesRankingsDeleted: number;
   headToHeadsWritten: number;
   headToHeadsDeleted: number;
 };
@@ -49,8 +76,27 @@ function validateMatchCompleteness(match: Match): Match | undefined {
   if (!Array.isArray(match.liveScore?.sets) || match.liveScore.sets.length === 0) {
     return undefined;
   }
+  if (match.matchType === 'doubles') {
+    // A doubles result is only countable when both partnerships are complete;
+    // a half-populated side would otherwise resolve to a one-player "team".
+    const side1 = sidePlayerIds(match, 'player1');
+    const side2 = sidePlayerIds(match, 'player2');
+    if (side1.length !== 2 || side2.length !== 2) return undefined;
+    if (new Set([...side1, ...side2]).size !== 4) return undefined;
+  }
   return match;
 }
+
+/** Per-partnership totals accumulated during the doubles pass. */
+type DoublesTeamTotals = RankingStats & {
+  playerIds: string[];
+  displayName: string;
+  // Every season/level this team's counted matches came from. A single entry
+  // means the value is unambiguous and can be written onto the standings row,
+  // which is what the doublesRankings season/level queries filter on.
+  seasonIds: Set<string>;
+  divisionLevelIds: Set<string>;
+};
 
 function cloneStats(stats: Match['stats']): Match['stats'] {
   return {
@@ -245,10 +291,56 @@ function rankingsRelevantFieldsChanged(before: Match, after: Match): boolean {
     before.player2Id !== after.player2Id ||
     before.player2IsGuest !== after.player2IsGuest ||
     before.isDivisionMatch !== after.isDivisionMatch ||
+    before.matchType !== after.matchType ||
+    JSON.stringify(before.side1 ?? null) !== JSON.stringify(after.side1 ?? null) ||
+    JSON.stringify(before.side2 ?? null) !== JSON.stringify(after.side2 ?? null) ||
     before.winner !== after.winner ||
     JSON.stringify(before.liveScore?.sets ?? []) !==
       JSON.stringify(after.liveScore?.sets ?? [])
   );
+}
+
+/** FCM tokens for a set of users, skipping guests and users with no tokens. */
+async function fcmTokensForUsers(
+  db: ReturnType<typeof getFirestore>,
+  userIds: string[],
+): Promise<string[]> {
+  const realIds = userIds.filter((id) => typeof id === 'string' && id.length > 0 && id !== 'guest');
+  if (realIds.length === 0) return [];
+  const snaps = await Promise.all(realIds.map((id) => db.collection('users').doc(id).get()));
+  return snaps.flatMap((snap) => (snap.data()?.fcmTokens as string[] | undefined) ?? []);
+}
+
+/**
+ * FCM tokens for everyone on one side of a match.
+ *
+ * Singles resolves to the single player; doubles reaches both partners, so a
+ * partner is never left out of a proposal or report notification.
+ */
+async function fcmTokensForSide(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  side: Player,
+): Promise<string[]> {
+  return fcmTokensForUsers(db, sidePlayerIds(match, side));
+}
+
+/** The display name to use for a side in notification copy. */
+async function notificationNameForSide(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  side: Player,
+  fallback: string,
+): Promise<string> {
+  const sideName = sideDisplayName(match, side).trim();
+  if (sideName) return sideName;
+  const ids = sidePlayerIds(match, side);
+  if (ids.length === 0) return fallback;
+  const snaps = await Promise.all(ids.map((id) => db.collection('users').doc(id).get()));
+  const names = snaps
+    .map((snap) => (snap.data()?.displayName as string | undefined)?.trim())
+    .filter((name): name is string => !!name);
+  return names.length > 0 ? formatDoublesTeamName(names) : fallback;
 }
 
 async function notifyMatchProposed(
@@ -256,15 +348,13 @@ async function notifyMatchProposed(
   match: Match,
   matchId: string,
 ) {
-  const opponentSnap = await db.collection('users').doc(match.player2Id).get();
-  const opponent = opponentSnap.data();
-  if (!opponent?.fcmTokens?.length) return;
+  const tokens = await fcmTokensForSide(db, match, 'player2');
+  if (tokens.length === 0) return;
 
-  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
-  const proposerName = proposerSnap.data()?.displayName ?? 'A player';
+  const proposerName = await notificationNameForSide(db, match, 'player1', 'A player');
 
   await getMessaging().sendEachForMulticast({
-    tokens: opponent.fcmTokens,
+    tokens,
     notification: {
       title: 'New Match Proposal',
       body: `${proposerName} proposed a match. Accept or decline.`,
@@ -280,15 +370,13 @@ async function notifyMatchAccepted(
   match: Match,
   matchId: string,
 ) {
-  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
-  const proposer = proposerSnap.data();
-  if (!proposer?.fcmTokens?.length) return;
+  const tokens = await fcmTokensForSide(db, match, 'player1');
+  if (tokens.length === 0) return;
 
-  const opponentSnap = await db.collection('users').doc(match.player2Id).get();
-  const opponentName = opponentSnap.data()?.displayName ?? 'Your opponent';
+  const opponentName = await notificationNameForSide(db, match, 'player2', 'Your opponent');
 
   await getMessaging().sendEachForMulticast({
-    tokens: proposer.fcmTokens,
+    tokens,
     notification: {
       title: 'Match Accepted',
       body: `${opponentName} accepted your match proposal.`,
@@ -304,13 +392,12 @@ async function notifyMatchProposalCancelled(
   match: Match,
   matchId: string,
 ) {
-  // Notify the proposer. If the proposer themselves withdrew, the message is still informative.
-  const proposerSnap = await db.collection('users').doc(match.player1Id).get();
-  const proposer = proposerSnap.data();
-  if (!proposer?.fcmTokens?.length) return;
+  // Notify the proposing side. If they withdrew themselves, the message is still informative.
+  const tokens = await fcmTokensForSide(db, match, 'player1');
+  if (tokens.length === 0) return;
 
   await getMessaging().sendEachForMulticast({
-    tokens: proposer.fcmTokens,
+    tokens,
     notification: {
       title: 'Match Proposal Cancelled',
       body: 'Your match proposal was cancelled.',
@@ -327,18 +414,12 @@ async function notifyOpponentOfSubmission(
   matchId: string,
   submission: ReportSubmission,
 ) {
-  // The opponent is whichever player did NOT submit
-  const opponentId =
-    submission.submittedBy === match.player1Id
-      ? match.player2Id
-      : match.player1Id;
+  // The opposing side reviews the report — never the submitter or their partner.
+  const submitterSide = sideOfPlayer(match, submission.submittedBy) ?? 'player1';
+  const opponentSide = opposingMatchSide(submitterSide);
 
-  // No notification for guest opponents
-  if (!opponentId || opponentId === 'guest') return;
-
-  const opponentSnap = await db.collection('users').doc(opponentId).get();
-  const opponent = opponentSnap.data();
-  if (!opponent?.fcmTokens?.length) return;
+  const tokens = await fcmTokensForSide(db, match, opponentSide);
+  if (tokens.length === 0) return;
 
   const submitterSnap = await db
     .collection('users')
@@ -347,7 +428,7 @@ async function notifyOpponentOfSubmission(
   const submitterName = submitterSnap.data()?.displayName ?? 'Your opponent';
 
   await getMessaging().sendEachForMulticast({
-    tokens: opponent.fcmTokens,
+    tokens,
     notification: {
       title: 'Match Report Submitted',
       body: `${submitterName} has submitted the match report. Review and confirm or dispute.`,
@@ -496,6 +577,108 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
   return response;
 });
 
+/**
+ * Folds one completed doubles match into the per-team totals and the shared
+ * head-to-head map.
+ *
+ * Both partners' results land on a single row keyed by `doublesTeamId`, so the
+ * same pairing accumulates across a season without any team registration step.
+ * Returns false when the match should not count (a member outside the roster,
+ * or a side that does not resolve to a distinct team).
+ */
+function accumulateDoublesMatch(
+  match: Match,
+  ctx: {
+    divisionId: string;
+    hasDivisionRoster: boolean;
+    divisionPlayerIdSet: Set<string>;
+    rosterDisplayNames: Map<string, string>;
+    teamTotals: Map<string, DoublesTeamTotals>;
+    h2hAccum: Map<string, HeadToHead>;
+  },
+): boolean {
+  const side1Ids = sidePlayerIds(match, 'player1');
+  const side2Ids = sidePlayerIds(match, 'player2');
+
+  // Both partnerships must be fully inside the division: a team is ranked as a
+  // unit, so crediting a pair with one outside member would distort the table.
+  if (ctx.hasDivisionRoster) {
+    const everyoneInDivision = [...side1Ids, ...side2Ids].every((id) =>
+      ctx.divisionPlayerIdSet.has(id),
+    );
+    if (!everyoneInDivision) return false;
+  }
+
+  const team1Id = doublesTeamId(side1Ids);
+  const team2Id = doublesTeamId(side2Ids);
+  if (!team1Id || !team2Id || team1Id === team2Id) return false;
+
+  const nameFor = (ids: string[], side: Player) => {
+    const rosterNames = ids.map((id) => ctx.rosterDisplayNames.get(id)).filter(Boolean) as string[];
+    if (rosterNames.length === ids.length) return formatDoublesTeamName(rosterNames);
+    return sideDisplayName(match, side) || formatDoublesTeamName(ids);
+  };
+
+  const ensureTeam = (teamId: string, ids: string[], side: Player) => {
+    const existing = ctx.teamTotals.get(teamId);
+    if (existing) return existing;
+    const created: DoublesTeamTotals = {
+      ...emptyRankingStats(),
+      playerIds: ids,
+      displayName: nameFor(ids, side),
+      seasonIds: new Set<string>(),
+      divisionLevelIds: new Set<string>(),
+    };
+    ctx.teamTotals.set(teamId, created);
+    return created;
+  };
+
+  const team1 = ensureTeam(team1Id, side1Ids, 'player1');
+  const team2 = ensureTeam(team2Id, side2Ids, 'player2');
+
+  for (const team of [team1, team2]) {
+    if (match.seasonId) team.seasonIds.add(match.seasonId);
+    if (match.divisionLevelId) team.divisionLevelIds.add(match.divisionLevelId);
+  }
+
+  const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(match.liveScore.sets);
+  const team1Won = match.winner === 'player1';
+
+  if (team1Won) team1.matchesWon++;
+  else team1.matchesLost++;
+  team1.setsWon += p1Sets;
+  team1.setsLost += p2Sets;
+  team1.gamesWon += p1Games;
+  team1.gamesLost += p2Games;
+
+  if (team1Won) team2.matchesLost++;
+  else team2.matchesWon++;
+  team2.setsWon += p2Sets;
+  team2.setsLost += p1Sets;
+  team2.gamesWon += p2Games;
+  team2.gamesLost += p1Games;
+
+  const h2hId = doublesHeadToHeadId(team1Id, team2Id);
+  const [h2hFirstId, h2hSecondId] = [team1Id, team2Id].sort();
+  if (!ctx.h2hAccum.has(h2hId)) {
+    ctx.h2hAccum.set(h2hId, {
+      id: h2hId,
+      divisionId: ctx.divisionId,
+      player1Id: h2hFirstId,
+      player2Id: h2hSecondId,
+      player1Wins: 0,
+      player2Wins: 0,
+      matchType: 'doubles',
+    });
+  }
+  const h2h = ctx.h2hAccum.get(h2hId)!;
+  const winningTeamId = team1Won ? team1Id : team2Id;
+  if (winningTeamId === h2hFirstId) h2h.player1Wins++;
+  else h2h.player2Wins++;
+
+  return true;
+}
+
 export async function recalculateRankings(
   divisionId: string,
   options: RecalculateRankingsOptions = {},
@@ -512,6 +695,8 @@ export async function recalculateRankings(
     matchesNormalized: 0,
     rankingsWritten: 0,
     rankingsDeleted: 0,
+    doublesRankingsWritten: 0,
+    doublesRankingsDeleted: 0,
     headToHeadsWritten: 0,
     headToHeadsDeleted: 0,
   };
@@ -573,7 +758,11 @@ export async function recalculateRankings(
   result.completedMatchesScanned = matchesSnap.size;
 
   const statsMap = new Map<string, RankingStats>();
+  // Doubles totals accumulate per fixed partnership, keyed by doublesTeamId.
+  const doublesTeamTotals = new Map<string, DoublesTeamTotals>();
 
+  // Singles and doubles head-to-head records share one map (and one collection)
+  // so the stale-record prune below stays correct for both.
   const h2hAccum = new Map<string, HeadToHead>();
   const writer = db.bulkWriter();
 
@@ -596,6 +785,20 @@ export async function recalculateRankings(
       } else {
         result.skippedMissingScore += 1;
       }
+      continue;
+    }
+
+    if (match.matchType === 'doubles') {
+      const counted = accumulateDoublesMatch(match, {
+        divisionId,
+        hasDivisionRoster,
+        divisionPlayerIdSet,
+        rosterDisplayNames,
+        teamTotals: doublesTeamTotals,
+        h2hAccum,
+      });
+      if (counted) result.countedMatches += 1;
+      else result.skippedNonDivisionMatches += 1;
       continue;
     }
 
@@ -757,6 +960,59 @@ export async function recalculateRankings(
     );
   }
 
+  // Doubles standings: one row per fixed partnership, in a sibling collection
+  // so the singles prune above can never delete a team row and vice versa.
+  const onlyValue = (values: Set<string>): string | undefined =>
+    values.size === 1 ? [...values][0] : undefined;
+
+  const doublesInputs: DoublesTeamRankingInput[] = [...doublesTeamTotals.entries()].map(
+    ([teamId, totals]) => {
+      const teamSeasonId = onlyValue(totals.seasonIds) ?? activeSeasonId;
+      const teamLevelId = onlyValue(totals.divisionLevelIds);
+      return {
+        teamId,
+        playerIds: totals.playerIds,
+        displayName: totals.displayName,
+        divisionId,
+        season: teamSeasonId,
+        seasonId: teamSeasonId,
+        // Only when every counted match shares one level; omitted rather than
+        // written as undefined, which Firestore rejects.
+        ...(teamLevelId ? { divisionLevelId: teamLevelId } : {}),
+        matchesWon: totals.matchesWon,
+        matchesLost: totals.matchesLost,
+        setsWon: totals.setsWon,
+        setsLost: totals.setsLost,
+        gamesWon: totals.gamesWon,
+        gamesLost: totals.gamesLost,
+      };
+    },
+  );
+  const doublesRankings = computeDoublesRankings(doublesInputs, [...h2hAccum.values()]);
+
+  const doublesRankingIds = new Set(doublesRankings.map((ranking) => ranking.teamId));
+  const existingDoublesSnap = await db
+    .collection('divisions')
+    .doc(divisionId)
+    .collection('doublesRankings')
+    .get();
+  for (const doc of existingDoublesSnap.docs) {
+    if (!doublesRankingIds.has(doc.id)) {
+      writer.delete(doc.ref);
+      result.doublesRankingsDeleted += 1;
+    }
+  }
+
+  for (const ranking of doublesRankings) {
+    const ref = db
+      .collection('divisions')
+      .doc(divisionId)
+      .collection('doublesRankings')
+      .doc(ranking.teamId);
+    writer.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
+    result.doublesRankingsWritten += 1;
+  }
+
   const h2hIds = new Set([...h2hAccum.keys()]);
   const existingH2HSnap = await db
     .collection('headToHead')
@@ -789,6 +1045,8 @@ type RecordHistoricMatchInput = {
   seasonId?: string;
   divisionLevelId?: string;
   matchType?: Match['matchType'];
+  side1PlayerIds?: unknown;
+  side2PlayerIds?: unknown;
   sets?: { p1?: number; p2?: number }[];
   isDivisionMatch?: boolean;
 };
@@ -800,6 +1058,8 @@ type RecordMatchOnBehalfInput = {
   matchType?: Match['matchType'];
   player1Id?: string;
   player2Id?: string;
+  side1PlayerIds?: unknown;
+  side2PlayerIds?: unknown;
   sets?: { p1?: number; p2?: number }[];
   isDivisionMatch?: boolean;
   notifyPlayers?: boolean;
@@ -957,7 +1217,7 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, player1Name, player2Name, player2IsGuest, sets, isDivisionMatch } =
+  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, player1Name, player2Name, player2IsGuest, side1PlayerIds, side2PlayerIds, sets, isDivisionMatch } =
     (request.data ?? {}) as RecordHistoricMatchInput;
   const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
   const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
@@ -969,6 +1229,56 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
     ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
     : [];
   const isGuest = player2IsGuest === true;
+
+  // Doubles: the two side rosters fully determine every flat field, so this
+  // path validates them and writes directly. Guests are not supported, since a
+  // team standing needs four resolvable accounts.
+  if (requestsDoubles({ matchType: safeMatchType, side1PlayerIds, side2PlayerIds })) {
+    if (!safeDivisionId) {
+      throw new functions.https.HttpsError('invalid-argument', 'divisionId is required');
+    }
+    const db = getFirestore();
+    const doublesFields = await buildDoublesMatchFields({
+      db,
+      divisionId: safeDivisionId,
+      side1PlayerIds,
+      side2PlayerIds,
+    });
+    if (!doublesFields.playerIds.includes(request.auth.uid)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Players can only record doubles matches they played in',
+      );
+    }
+
+    const { score, winner } = buildManualCompletedScore(safeSets);
+    const now = Date.now();
+    const matchData: Omit<Match, 'id'> = {
+      divisionId: safeDivisionId,
+      ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
+      ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
+      ...doublesFields,
+      format: DEFAULT_FORMAT,
+      status: 'pending_report',
+      liveScore: score,
+      stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+      advancedStatsEnabled: false,
+      winner,
+      tipsEnabled: false,
+      source: 'manual',
+      isDivisionMatch: isDivisionMatch ?? true,
+      createdBy: request.auth.uid,
+      completedAt: now,
+      createdAt: now,
+      reportSubmission: {
+        submittedBy: request.auth.uid,
+        submittedAt: now,
+        status: 'pending_confirmation',
+      },
+    };
+    const matchRef = await db.collection('matches').add(matchData);
+    return { success: true, matchId: matchRef.id, status: matchData.status };
+  }
 
   if (!safeDivisionId || !safePlayer1Id || !safePlayer2Id) {
     throw new functions.https.HttpsError(
@@ -1081,7 +1391,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, sets, isDivisionMatch, notifyPlayers } =
+  const { divisionId, seasonId, divisionLevelId, matchType, player1Id, player2Id, side1PlayerIds, side2PlayerIds, sets, isDivisionMatch, notifyPlayers } =
     (request.data ?? {}) as RecordMatchOnBehalfInput;
   const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
   const safePlayer1Id = typeof player1Id === 'string' ? player1Id.trim() : '';
@@ -1093,25 +1403,33 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
     ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
     : [];
 
-  if (!safeDivisionId || !safePlayer1Id || !safePlayer2Id) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'divisionId, player1Id, and player2Id are required',
-    );
+  // Doubles payloads carry side rosters instead of the two flat player ids.
+  const isDoubles = requestsDoubles({ matchType: safeMatchType, side1PlayerIds, side2PlayerIds });
+
+  if (!safeDivisionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'divisionId is required');
   }
-  if (safePlayer1Id === safePlayer2Id) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Choose two different players',
-    );
+  if (!isDoubles) {
+    if (!safePlayer1Id || !safePlayer2Id) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'divisionId, player1Id, and player2Id are required',
+      );
+    }
+    if (safePlayer1Id === safePlayer2Id) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Choose two different players',
+      );
+    }
   }
 
   const db = getFirestore();
   const [actorSnap, divisionSnap, player1Snap, player2Snap] = await Promise.all([
     db.collection('users').doc(request.auth.uid).get(),
     db.collection('divisions').doc(safeDivisionId).get(),
-    db.collection('users').doc(safePlayer1Id).get(),
-    db.collection('users').doc(safePlayer2Id).get(),
+    isDoubles ? Promise.resolve(null) : db.collection('users').doc(safePlayer1Id).get(),
+    isDoubles ? Promise.resolve(null) : db.collection('users').doc(safePlayer2Id).get(),
   ]);
 
   const actor = actorSnap.data();
@@ -1129,7 +1447,56 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
   if (!divisionSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'Division not found');
   }
-  if (!player1Snap.exists || !player2Snap.exists) {
+
+  // Doubles: side rosters replace the two-player fields entirely. The leader is
+  // recording on the players' behalf, so they need not be in the match.
+  if (isDoubles) {
+    const doublesFields = await buildDoublesMatchFields({
+      db,
+      divisionId: safeDivisionId,
+      side1PlayerIds,
+      side2PlayerIds,
+    });
+    const { score: doublesScore, winner: doublesWinner } = buildManualCompletedScore(safeSets);
+    const recordedAt = Date.now();
+    const doublesMatchData: Omit<Match, 'id'> = {
+      divisionId: safeDivisionId,
+      ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
+      ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
+      ...doublesFields,
+      format: DEFAULT_FORMAT,
+      status: 'completed',
+      liveScore: doublesScore,
+      stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
+      advancedStatsEnabled: false,
+      winner: doublesWinner,
+      tipsEnabled: false,
+      source: 'manual',
+      isDivisionMatch: isDivisionMatch ?? true,
+      createdBy: request.auth.uid,
+      completedAt: recordedAt,
+      createdAt: recordedAt,
+      reportSubmission: {
+        submittedBy: request.auth.uid,
+        submittedAt: recordedAt,
+        status: 'confirmed',
+        confirmedBy: request.auth.uid,
+        confirmedAt: recordedAt,
+      },
+    };
+    const doublesRef = await db.collection('matches').add(doublesMatchData);
+    if (notifyPlayers !== false) {
+      await notifyPlayersMatchRecorded(
+        db,
+        { id: doublesRef.id, ...doublesMatchData },
+        doublesRef.id,
+        actor?.displayName ?? actor?.email ?? 'A league administrator',
+      );
+    }
+    return { success: true, matchId: doublesRef.id };
+  }
+
+  if (!player1Snap?.exists || !player2Snap?.exists) {
     throw new functions.https.HttpsError('not-found', 'Both players must exist');
   }
 
@@ -1328,6 +1695,10 @@ export const repairAllDivisionRankings = functions.https.onCall(
         matchesNormalized: acc.matchesNormalized + result.matchesNormalized,
         rankingsWritten: acc.rankingsWritten + result.rankingsWritten,
         rankingsDeleted: acc.rankingsDeleted + result.rankingsDeleted,
+        doublesRankingsWritten:
+          acc.doublesRankingsWritten + result.doublesRankingsWritten,
+        doublesRankingsDeleted:
+          acc.doublesRankingsDeleted + result.doublesRankingsDeleted,
         headToHeadsWritten:
           acc.headToHeadsWritten + result.headToHeadsWritten,
         headToHeadsDeleted:
@@ -1341,6 +1712,8 @@ export const repairAllDivisionRankings = functions.https.onCall(
         matchesNormalized: 0,
         rankingsWritten: 0,
         rankingsDeleted: 0,
+        doublesRankingsWritten: 0,
+        doublesRankingsDeleted: 0,
         headToHeadsWritten: 0,
         headToHeadsDeleted: 0,
       },

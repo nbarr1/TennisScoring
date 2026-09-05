@@ -54,11 +54,34 @@ service cloud.firestore {
       return isAuth() && request.auth.uid in leaderIds;
     }
 
+    // Members of one side of a match. Doubles matches carry both partners in
+    // side1/side2; singles matches (and any doc written before those fields
+    // existed) fall back to the flat player id.
+    function sideOnePlayerIds(matchData) {
+      return matchData.get('side1', {}).get('playerIds', [matchData.player1Id]);
+    }
+
+    function sideTwoPlayerIds(matchData) {
+      return matchData.get('side2', {}).get('playerIds', [matchData.player2Id]);
+    }
+
+    // A doubles partner is a participant even though they are neither
+    // player1Id nor player2Id, so playerIds is the authoritative roster.
+    // (storage.rules already checks membership this way.)
     function isMatchParticipant(matchData) {
       return isAuth() && (
         request.auth.uid == matchData.player1Id ||
-        request.auth.uid == matchData.player2Id
+        request.auth.uid == matchData.player2Id ||
+        request.auth.uid in matchData.get('playerIds', [])
       );
+    }
+
+    // True when the caller is on the side opposing the report's submitter, so a
+    // submitter's own partner can never confirm their team's report.
+    function isOpposingSideOfSubmitter(existing) {
+      return existing.reportSubmission.submittedBy in sideOnePlayerIds(existing)
+        ? request.auth.uid in sideTwoPlayerIds(existing)
+        : request.auth.uid in sideOnePlayerIds(existing);
     }
 
     function isChannelParticipant(channelData) {
@@ -201,6 +224,16 @@ service cloud.firestore {
         );
         allow write: if false; // Cloud Functions only
       }
+
+      // Doubles team standings, one doc per fixed partnership (Cloud Functions)
+      match /doublesRankings/{teamId} {
+        allow read: if isAuth() && (
+          isAdmin() ||
+          isDivisionAffiliated(divisionId) ||
+          isDivisionRosterMember(divisionId)
+        );
+        allow write: if false; // Cloud Functions only
+      }
     }
 
     // ---------- Matches ----------
@@ -222,7 +255,7 @@ service cloud.firestore {
 
     function isAcceptProposalUpdate(existing, incoming, changed) {
       return existing.status == 'proposed' && incoming.status == 'scheduled' &&
-        request.auth.uid == existing.player2Id &&
+        request.auth.uid in sideTwoPlayerIds(existing) &&
         changed.hasOnly(['status']);
     }
 
@@ -253,7 +286,9 @@ service cloud.firestore {
       let toDisputed  = incoming.status == 'disputed'  && existing.status == 'pending_report';
       let isConfirmOrDispute = toCompleted || toDisputed;
       let hasSubmission = 'reportSubmission' in existing;
-      let isNotSubmitter = hasSubmission && request.auth.uid != existing.reportSubmission.submittedBy;
+      let isNotSubmitter = hasSubmission &&
+        request.auth.uid != existing.reportSubmission.submittedBy &&
+        isOpposingSideOfSubmitter(existing);
       let preservesOriginalSubmission = hasSubmission &&
         incoming.reportSubmission.submittedBy == existing.reportSubmission.submittedBy &&
         incoming.reportSubmission.submittedAt == existing.reportSubmission.submittedAt;

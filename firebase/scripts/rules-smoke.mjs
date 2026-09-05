@@ -21,6 +21,16 @@ await expectDenied(
 );
 
 await expectDenied(
+  'firestore unauthenticated doubles rankings read',
+  fetch(`${base}/divisions/divA/doublesRankings/uidA_uidB`)
+);
+
+await expectDenied(
+  'firestore unauthenticated match read',
+  fetch(`${base}/matches/match1`)
+);
+
+await expectDenied(
   'storage unauthenticated avatar read',
   fetch(`${storageBase}/avatars%2Fu1%2Fprofile.png?alt=media`)
 );

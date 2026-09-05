@@ -1,12 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useRankings, recalculateDivisionRankings } from '@tennis/firebase-client';
+import { useRankings, useDoublesRankings, recalculateDivisionRankings } from '@tennis/firebase-client';
 import { currentSeasonForDate, defaultSeasonOptions } from '@tennis/shared';
 import { useAppStore } from '../../store/appStore';
-import type { PlayerRanking } from '@tennis/shared';
+import type { DivisionMatchType } from '@tennis/shared';
 
-function RankingRow({ item, index }: { item: PlayerRanking; index: number }) {
+/** One standings row, normalized so singles and doubles render identically. */
+type StandingsRow = {
+  key: string;
+  displayName: string;
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  setsLost: number;
+  gameDifferential: number;
+};
+
+function RankingRow({ item, index }: { item: StandingsRow; index: number }) {
   const medalEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
   return (
     <View style={[styles.row, index === 0 && styles.rowFirst]}>
@@ -29,7 +40,20 @@ export default function RankingsScreen() {
   );
   // Matches web's dashboard: standings are scoped to one season at a time, since
   // matches from every season otherwise pool into a single all-time ranking.
-  const { rankings, loading } = useRankings(divisionId, { seasonId: selectedSeasonId });
+  const [matchTypeFilter, setMatchTypeFilter] = useState<DivisionMatchType>('singles');
+  const { rankings: singlesRankings, loading: singlesLoading } = useRankings(
+    matchTypeFilter === 'singles' ? divisionId : null,
+    { seasonId: selectedSeasonId },
+  );
+  const { rankings: doublesRankings, loading: doublesLoading } = useDoublesRankings(
+    matchTypeFilter === 'doubles' ? divisionId : null,
+    { seasonId: selectedSeasonId },
+  );
+  const isDoubles = matchTypeFilter === 'doubles';
+  const loading = isDoubles ? doublesLoading : singlesLoading;
+  const rankings: StandingsRow[] = isDoubles
+    ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
+    : singlesRankings.map((r) => ({ ...r, key: r.userId }));
   const router = useRouter();
   const [recalculating, setRecalculating] = useState(false);
 
@@ -50,6 +74,25 @@ export default function RankingsScreen() {
 
   const seasonSelector = (
     <View style={styles.seasonSection}>
+      <Text style={styles.seasonLabel}>Format</Text>
+      <View style={styles.chipRow}>
+        {(['singles', 'doubles'] as DivisionMatchType[]).map((option) => (
+          <TouchableOpacity
+            key={option}
+            accessibilityRole="button"
+            accessibilityLabel={`Show ${option} standings`}
+            accessibilityState={{ selected: matchTypeFilter === option }}
+            style={[styles.chip, matchTypeFilter === option && styles.chipActive]}
+            onPress={() => setMatchTypeFilter(option)}
+          >
+            <Text
+              style={[styles.chipText, matchTypeFilter === option && styles.chipTextActive]}
+            >
+              {option === 'singles' ? 'Singles' : 'Doubles'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <Text style={styles.seasonLabel}>Season</Text>
       <View style={styles.chipRow}>
         {seasonOptions.map((season) => (
@@ -92,7 +135,11 @@ export default function RankingsScreen() {
       {rankings.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>No Rankings Yet</Text>
-          <Text style={styles.emptyBody}>Complete matches to see the standings.</Text>
+          <Text style={styles.emptyBody}>
+            {isDoubles
+              ? 'Complete doubles matches to see team standings.'
+              : 'Complete matches to see the standings.'}
+          </Text>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Start a match"
@@ -119,11 +166,13 @@ export default function RankingsScreen() {
       ) : (
         <FlatList
           data={rankings}
-          keyExtractor={(item) => item.userId}
+          keyExtractor={(item) => item.key}
           renderItem={({ item, index }) => <RankingRow item={item} index={index} />}
           ListHeaderComponent={
             <View style={styles.tableHeader}>
-              <Text style={styles.tableHeaderText}>Division Standings</Text>
+              <Text style={styles.tableHeaderText}>
+                {isDoubles ? 'Doubles Team Standings' : 'Division Standings'}
+              </Text>
               <Text style={styles.tableSubHeader}>Sorted: W · Sets · Games · Diff · H2H</Text>
               {canRecalculate && (
                 <TouchableOpacity

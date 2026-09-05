@@ -1,6 +1,6 @@
 {
   "name": "@tennis/firebase-functions",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "build": "pnpm --filter @tennis/shared build && esbuild src/index.ts --bundle --platform=node --external:firebase-admin --external:firebase-admin/app --external:firebase-admin/auth --external:firebase-admin/firestore --external:firebase-admin/messaging --external:firebase-functions --external:firebase-functions/v2 --external:pdf-lib --outfile=lib/index.js --format=cjs",

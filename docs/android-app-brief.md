@@ -6,7 +6,7 @@ Hand this document to a build agent as the complete brief for a **native Android
 
 A native Android client (Kotlin + Jetpack Compose) for an existing tennis league scoring platform. It must interoperate live with an existing Firebase project that already backs a Next.js web app and an Expo/React Native mobile app — same Firestore schema, same Cloud Functions, same Firebase Auth users. Build only the Android client; do not modify or fork the backend.
 
-Core capabilities: propose/accept/schedule matches, live point-by-point scoring with full tennis rules (deuce/ad, tiebreaks, best-of-3/5/pro-set), win/loss report submission and confirmation, division rankings, division/player/season management, in-app messaging, push notifications, a feedback form, an admin panel for division leaders, and a Wear OS companion app that mirrors live score to the watch and accepts point input from it.
+Core capabilities: propose/accept/schedule matches, live point-by-point scoring with full tennis rules (deuce/ad, tiebreaks, best-of-3/5/pro-set), win/loss report submission and confirmation, singles and doubles play, division rankings and doubles team standings, division/player/season management, in-app messaging, push notifications, a feedback form, an admin panel for division leaders, and a Wear OS companion app that mirrors live score to the watch and accepts point input from it.
 
 ## 2. Tech stack
 
@@ -29,6 +29,7 @@ divisions/{divisionId}                       — Division
 divisions/{divisionId}/levels/{levelId}      — DivisionLevel
 divisions/{divisionId}/memberships/{id}      — DivisionMembership (id = `${seasonId}_${levelId}_${userId}`)
 divisions/{divisionId}/rankings/{userId}     — PlayerRanking
+divisions/{divisionId}/doublesRankings/{teamId} — DoublesTeamRanking (teamId = sorted member uids joined by '_')
 matches/{matchId}                            — Match (top-level collection, filter by divisionId)
 channels/{channelId}                         — Channel
 channels/{channelId}/messages/{messageId}    — Message
@@ -42,6 +43,7 @@ Never write Firestore documents directly outside these shapes; never invent new 
 - Completed matches for ranking fallback: `where(divisionId==X) where(status=='completed')`
 - Matches for a player: `where(playerIds array-contains uid) orderBy(createdAt desc)`
 - Rankings: `orderBy(rank asc)` under `divisions/{id}/rankings`
+- Doubles team standings: `orderBy(rank asc)` under `divisions/{id}/doublesRankings`
 - Channels for a user: `where(participantIds array-contains uid) orderBy(createdAt desc)`
 - Messages in a channel: `orderBy(createdAt asc) limit(50)`
 
@@ -60,13 +62,15 @@ Never write Firestore documents directly outside these shapes; never invent new 
 
 **DivisionMembership** (`divisions/{id}/memberships/{id}`, `id = seasonId_levelId_userId`): `id, divisionId, seasonId, divisionLevelId, userId, displayNameSnapshot, emailSnapshot?, phoneSnapshot?, role: player|division_leader, status: active|waitlisted|removed, source: registered_user|placeholder|imported|migration, assignedBy, createdAt, updatedAt`.
 
-**Match** (`matches/{id}`): `id, divisionId, seasonId?, divisionLevelId?, matchType?: singles|doubles, side1?{playerIds:[String], displayName?}, side2?{same}, player1Id, player2Id, player1Name?, player2Name?, player2IsGuest?, playerIds:[String], format: {setsToWin, gamesPerSet, tiebreakAt, finalSetTiebreak}, status: proposed|scheduled|in_progress|pending_report|completed|disputed|cancelled, liveScore: LiveScore (§4), stats: MatchStats, advancedStatsEnabled?, currentSetStartedAt?, matchDurationMs?, reportSubmission?{submittedBy, submittedAt, status: pending_confirmation|confirmed|disputed, confirmedBy?, confirmedAt?, disputedBy?, disputedAt?, leaderNotifiedAt?}, winner?: player1|player2, reportUrl?, tipsEnabled, undoSnapshot?, source?: live|manual, isDivisionMatch?, createdBy, scheduledAt?, startedAt?, completedAt?, createdAt`.
+**Match** (`matches/{id}`): `id, divisionId, seasonId?, divisionLevelId?, matchType?: singles|doubles, side1?{playerIds:[String], displayName?}, side2?{same} (populated on doubles matches; player1Id/player2Id hold each side's first member and player1Name/player2Name mirror the team display name), player1Id, player2Id, player1Name?, player2Name?, player2IsGuest?, playerIds:[String], format: {setsToWin, gamesPerSet, tiebreakAt, finalSetTiebreak}, status: proposed|scheduled|in_progress|pending_report|completed|disputed|cancelled, liveScore: LiveScore (§4), stats: MatchStats, advancedStatsEnabled?, currentSetStartedAt?, matchDurationMs?, reportSubmission?{submittedBy, submittedAt, status: pending_confirmation|confirmed|disputed, confirmedBy?, confirmedAt?, disputedBy?, disputedAt?, leaderNotifiedAt?}, winner?: player1|player2, reportUrl?, tipsEnabled, undoSnapshot?, source?: live|manual, isDivisionMatch?, createdBy, scheduledAt?, startedAt?, completedAt?, createdAt`.
 
 **Channel** (`channels/{id}`): `id, type: division|direct, divisionId?, participantIds:[String], name?, lastMessage?{content, senderId, senderName, timestamp}, createdAt`.
 
 **Message** (`channels/{id}/messages/{id}`): `id, channelId, senderId, senderName, content, type: text|system|contact_share, sharedContact?{phone?, email?}, readBy:[String], createdAt`.
 
 **PlayerRanking** (`divisions/{id}/rankings/{userId}`): `userId, displayName, divisionId, season, seasonId?, divisionLevelId?, matchType?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`.
+
+**DoublesTeamRanking** (`divisions/{id}/doublesRankings/{teamId}`): `teamId, playerIds:[String], displayName, divisionId, season, seasonId?, divisionLevelId?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`. One row per fixed partnership; `teamId` is the sorted pair of member uids, so the same pairing always resolves to the same row.
 
 **HeadToHead** (`headToHead/{id}`): `id, divisionId, player1Id, player2Id, player1Wins, player2Wins`.
 

@@ -78,7 +78,20 @@ export default function RoundRobinSchedulerScreen() {
     return memberships.find((m) => m.userId === userId)?.displayNameSnapshot ?? userId;
   }
 
+  // The generator pairs individuals, so it cannot fill a doubles level yet.
+  // publishRoundRobinSchedule rejects doubles server-side; this stops the flow
+  // before a leader builds a preview they cannot publish.
+  const selectedLevelIsDoubles =
+    divisionLevels.find((l) => l.id === divisionLevelId)?.matchType === "doubles";
+
   function handleGeneratePreview() {
+    if (selectedLevelIsDoubles) {
+      Alert.alert(
+        "Doubles not supported",
+        "Round-robin scheduling is not yet available for doubles levels. Create doubles matches from the Matches tab instead.",
+      );
+      return;
+    }
     if (selectedPlayerIds.length < 2) {
       Alert.alert("Select players", "Choose at least 2 players to generate a schedule.");
       return;
@@ -95,6 +108,7 @@ export default function RoundRobinSchedulerScreen() {
 
   async function handlePublish() {
     if (!user || !divisionId || !seasonId || !divisionLevelId || !preview) return;
+    if (selectedLevelIsDoubles) return;
     if (!DATE_RE.test(startDate)) {
       Alert.alert("Invalid date", "Please enter the start date as YYYY-MM-DD.");
       return;

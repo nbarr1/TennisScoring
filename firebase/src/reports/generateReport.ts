@@ -4,7 +4,13 @@ import { getStorage } from 'firebase-admin/storage';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import type { Match, User } from '@tennis/shared';
-import { EMPTY_STATS, formatScoreDisplay } from '@tennis/shared';
+import {
+  EMPTY_STATS,
+  formatScoreDisplay,
+  formatDoublesTeamName,
+  sidePlayerIds,
+  sideDisplayName,
+} from '@tennis/shared';
 
 if (!getApps().length) initializeApp();
 
@@ -26,16 +32,27 @@ export const generateMatchReport = functions.firestore.onDocumentWritten(
 async function createAndStoreReport(matchId: string, match: Match) {
   const db = getFirestore();
 
-  const [p1Snap, p2Snap] = await Promise.all([
-    db.collection('users').doc(match.player1Id).get(),
-    match.player2IsGuest
-      ? Promise.resolve(null)
-      : db.collection('users').doc(match.player2Id).get(),
+  // Resolve each side's name from its roster, so a doubles report reads
+  // "Ann Smith / Bob Jones" rather than only the side's first player.
+  const resolveSideName = async (side: 'player1' | 'player2', fallback: string) => {
+    if (side === 'player2' && match.player2IsGuest) {
+      return match.player2Name ?? fallback;
+    }
+    const ids = sidePlayerIds(match, side);
+    const snaps = await Promise.all(ids.map((id) => db.collection('users').doc(id).get()));
+    const names = snaps
+      .map((snap) => (snap.data() as User | undefined)?.displayName?.trim())
+      .filter((name): name is string => !!name);
+    if (names.length === ids.length && names.length > 0) {
+      return formatDoublesTeamName(names);
+    }
+    return sideDisplayName(match, side) || fallback;
+  };
+
+  const [p1Name, p2Name] = await Promise.all([
+    resolveSideName('player1', 'Player 1'),
+    resolveSideName('player2', 'Guest'),
   ]);
-  const p1 = p1Snap.data() as User;
-  const p2 = p2Snap?.data() as User | undefined;
-  const p1Name = p1?.displayName ?? match.player1Name ?? 'Player 1';
-  const p2Name = p2?.displayName ?? match.player2Name ?? 'Guest';
   const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
   const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
   const pct = (won: number, total: number) => (total > 0 ? `${Math.round((won / total) * 100)}%` : '—');

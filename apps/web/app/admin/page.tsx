@@ -150,6 +150,11 @@ export default function AdminPage(): React.JSX.Element {
     () => divisionLevels.filter((level) => level.seasonId === rrSeasonId),
     [divisionLevels, rrSeasonId],
   );
+  // The generator pairs individuals, so it cannot fill a doubles level yet.
+  // publishRoundRobinSchedule rejects doubles server-side; this disables the UI
+  // so a leader learns that before building a preview.
+  const rrSelectedLevelIsDoubles =
+    rrLevelsForSeason.find((level) => level.id === rrDivisionLevelId)?.matchType === "doubles";
   const { memberships: rrMemberships } = useDivisionMemberships(
     division?.id,
     rrSeasonId,
@@ -680,6 +685,12 @@ export default function AdminPage(): React.JSX.Element {
 
   function handleRrGeneratePreview() {
     setRrMessage("");
+    if (rrSelectedLevelIsDoubles) {
+      setPageError(
+        "Round-robin scheduling is not yet available for doubles levels. Create doubles matches from the Matches page instead.",
+      );
+      return;
+    }
     if (rrSelectedPlayerIds.length < 2) {
       setPageError("Choose at least 2 players to generate a schedule.");
       return;
@@ -697,6 +708,7 @@ export default function AdminPage(): React.JSX.Element {
 
   async function handleRrPublish() {
     if (!division || !rrSeasonId || !rrDivisionLevelId || !rrPreview) return;
+    if (rrSelectedLevelIsDoubles) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rrStartDate)) {
       setPageError("Please enter the start date as YYYY-MM-DD.");
       return;
@@ -1484,8 +1496,19 @@ export default function AdminPage(): React.JSX.Element {
                 Clear previously generated schedule for this level
               </label>
 
+              {rrSelectedLevelIsDoubles && (
+                <p style={styles.hint}>
+                  Round-robin scheduling is not yet available for doubles levels. Create
+                  doubles matches from the Matches page instead.
+                </p>
+              )}
+
               <div style={styles.editorActions}>
-                <button style={styles.btnSecondary} onClick={handleRrGeneratePreview}>
+                <button
+                  style={styles.btnSecondary}
+                  onClick={handleRrGeneratePreview}
+                  disabled={rrSelectedLevelIsDoubles}
+                >
                   Generate Preview
                 </button>
               </div>

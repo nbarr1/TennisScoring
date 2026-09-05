@@ -68,6 +68,20 @@ Changes since the `v1.0.4` snapshot that affect Play Store readiness:
 
 ---
 
+## Update — 2026-09-05 (`v1.1.0`)
+
+Changes since the `v1.0.5` snapshot:
+
+- **Doubles match tracking** — four-player matches with two fixed partnerships can be proposed, scored, reported, and confirmed on web and mobile. `Match` now populates the previously unused `matchType`, `side1`, and `side2` fields; `player1Id`/`player2Id` hold each side's first member and `player1Name`/`player2Name` mirror the team display name, so existing indexes, rules, queries, and renderers keep working. Singles documents are unchanged and no data migration is required.
+- **Team standings** — `divisions/{divisionId}/doublesRankings/{teamId}` holds one row per fixed partnership, written by `recalculateRankings()` via the new `computeDoublesRankings()`. A team is identified by the sorted pair of its members' user ids (`doublesTeamId`), so a partnership accumulates one row across a season with no registration step. The collection is a sibling of `rankings` so the two prune independently.
+- **New Cloud Function** — `createDoublesMatch` creates doubles matches server-side, since the client `allow create` rule pins `playerIds` to a two-element array and validating four players' division membership in rules would exceed the per-request document access limit. `recordHistoricMatch` and `recordMatchOnBehalf` also accept doubles side rosters.
+- **Security rules** — `isMatchParticipant` now consults `playerIds` so a doubles partner can read and update their match (matching what `storage.rules` already did); either opponent can accept a doubles proposal; and report confirmation requires the *opposing* side, so a submitter's partner can no longer confirm their own team's report.
+- **Scoring engine untouched** — `Player` was already a side label rather than a person, so `scoreEngine.ts` and the `LiveScore` shape needed no changes, and neither wearable module was modified. Serving is tracked at side level; there is no per-partner serve rotation.
+- **Deliberately out of scope** — round-robin doubles scheduling (rejected server-side and disabled in both admin surfaces rather than silently creating unplayable 1v1 fixtures), admin team management, and per-individual doubles statistics.
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.1.0`; `apps/mobile/app.json` moved to `version: 1.1.0`, Android `versionCode: 6`, iOS `buildNumber: 6`.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.

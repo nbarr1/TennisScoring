@@ -123,6 +123,9 @@ function buildRankingsFromMatches(
     if (!match.winner) continue;
     if (match.isDivisionMatch === false) continue;
     if (!match.liveScore?.sets?.length) continue;
+    // Doubles results belong to the team standings (useDoublesRankings), never
+    // to a player's singles row.
+    if (match.matchType === 'doubles') continue;
     countedMatchCount += 1;
 
     const { player1Id, player2Id, winner, liveScore } = match;

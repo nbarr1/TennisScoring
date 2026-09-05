@@ -7,13 +7,27 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useRankings,
+  useDoublesRankings,
   useAuthUser,
   useUserProfile,
   useActiveDivisionId,
   useDivisionLevels,
 } from "@tennis/firebase-client";
 import { currentSeasonForDate, defaultSeasonOptions } from "@tennis/shared";
-import type { PlayerRanking } from "@tennis/shared";
+import type { DivisionMatchType } from "@tennis/shared";
+
+/** One standings row, normalized so singles and doubles render identically. */
+type StandingsRow = {
+  key: string;
+  displayName: string;
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
+  gameDifferential: number;
+};
 
 export default function DashboardPage(): React.JSX.Element {
   const router = useRouter();
@@ -29,19 +43,36 @@ export default function DashboardPage(): React.JSX.Element {
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
   const [selectedSeasonId, setSelectedSeasonId] = useState(currentSeason.id);
   const [selectedLevelId, setSelectedLevelId] = useState("all");
+  const [matchTypeFilter, setMatchTypeFilter] = useState<DivisionMatchType>("singles");
   const { levels: divisionLevels } = useDivisionLevels(divisionId);
+  // Only levels of the selected format, so picking Doubles cannot leave a
+  // singles level selected underneath it.
   const seasonLevels = divisionLevels.filter(
-    (level) => level.seasonId === selectedSeasonId,
+    (level) => level.seasonId === selectedSeasonId && level.matchType === matchTypeFilter,
   );
   const activeLevelId =
     selectedLevelId !== "all" &&
     seasonLevels.some((level) => level.id === selectedLevelId)
       ? selectedLevelId
       : undefined;
-  const { rankings, loading } = useRankings(divisionId, {
+  const rankingFilters = {
     seasonId: selectedSeasonId,
     divisionLevelId: activeLevelId,
-  });
+  };
+  const { rankings: singlesRankings, loading: singlesLoading } = useRankings(
+    matchTypeFilter === "singles" ? divisionId : null,
+    rankingFilters,
+  );
+  const { rankings: doublesRankings, loading: doublesLoading } = useDoublesRankings(
+    matchTypeFilter === "doubles" ? divisionId : null,
+    rankingFilters,
+  );
+
+  const isDoubles = matchTypeFilter === "doubles";
+  const loading = isDoubles ? doublesLoading : singlesLoading;
+  const rows: StandingsRow[] = isDoubles
+    ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
+    : singlesRankings.map((r) => ({ ...r, key: r.userId }));
 
   useEffect(() => {
     if (profileLoading || !profile) return;
@@ -61,6 +92,20 @@ export default function DashboardPage(): React.JSX.Element {
         </p>
 
         <div style={styles.filterBar} aria-label="Standings filters">
+          <label style={styles.filterLabel}>
+            Format
+            <select
+              style={styles.select}
+              value={matchTypeFilter}
+              onChange={(e) => {
+                setMatchTypeFilter(e.target.value as DivisionMatchType);
+                setSelectedLevelId("all");
+              }}
+            >
+              <option value="singles">Singles</option>
+              <option value="doubles">Doubles</option>
+            </select>
+          </label>
           <label style={styles.filterLabel}>
             Season
             <select
@@ -101,23 +146,25 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
         ) : loading || divisionLoading ? (
           <div style={styles.loading}>Loading rankings…</div>
-        ) : rankings.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div style={styles.empty}>
-            No matches completed yet. Rankings appear after the first match.
+            {isDoubles
+              ? "No doubles matches completed yet. Team standings appear after the first match."
+              : "No matches completed yet. Rankings appear after the first match."}
           </div>
         ) : (
           <div style={styles.table}>
             <div style={styles.tableHeader}>
               <span style={styles.thRank}>#</span>
-              <span style={styles.thName}>Player</span>
+              <span style={styles.thName}>{isDoubles ? "Team" : "Player"}</span>
               <span style={styles.thStat}>W</span>
               <span style={styles.thStat}>L</span>
               <span style={styles.thStat}>Sets (W/Total)</span>
               <span style={styles.thStat}>Games (W/Total)</span>
               <span style={styles.thStat}>+/-</span>
             </div>
-            {rankings.map((r, i) => (
-              <RankingRow key={r.userId} ranking={r} index={i} />
+            {rows.map((r, i) => (
+              <RankingRow key={r.key} ranking={r} index={i} />
             ))}
           </div>
         )}
@@ -130,7 +177,7 @@ function RankingRow({
   ranking,
   index,
 }: {
-  ranking: PlayerRanking;
+  ranking: StandingsRow;
   index: number;
 }) {
   const medal =

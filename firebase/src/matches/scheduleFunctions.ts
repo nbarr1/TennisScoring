@@ -72,6 +72,15 @@ export const publishRoundRobinSchedule = functions.https.onCall(async (request) 
       'divisionId, seasonId, and divisionLevelId are required',
     );
   }
+  if (safeMatchType === 'doubles') {
+    // The round-robin generator pairs individuals, so publishing it into a
+    // doubles level would create 1v1 matches there. Reject rather than write
+    // fixtures that cannot be played.
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Round-robin scheduling is not yet available for doubles division levels',
+    );
+  }
   if (safePlayerIds.length < 2) {
     throw new functions.https.HttpsError('invalid-argument', 'At least 2 players are required');
   }

@@ -10,7 +10,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import { db } from './config';
-import type { User, PublicProfile, Match, Division, DivisionLevel, DivisionMembership, Channel, Message, MessageReport, PlayerRanking, HeadToHead } from '@tennis/shared';
+import type { User, PublicProfile, Match, Division, DivisionLevel, DivisionMembership, Channel, Message, MessageReport, PlayerRanking, DoublesTeamRanking, HeadToHead } from '@tennis/shared';
 
 // Typed collection helpers
 export const usersCol = () => collection(db, 'users') as CollectionReference<User>;
@@ -24,6 +24,11 @@ export const divisionDoc = (id: string) => doc(db, 'divisions', id) as DocumentR
 
 export const rankingsCol = (divisionId: string) =>
   collection(db, 'divisions', divisionId, 'rankings') as CollectionReference<PlayerRanking>;
+
+// Doubles standings live in a sibling of `rankings` so singles and doubles
+// tables never pool together and neither recompute can prune the other's docs.
+export const doublesRankingsCol = (divisionId: string) =>
+  collection(db, 'divisions', divisionId, 'doublesRankings') as CollectionReference<DoublesTeamRanking>;
 
 export const divisionLevelsCol = (divisionId: string) =>
   collection(db, 'divisions', divisionId, 'levels') as CollectionReference<DivisionLevel>;
@@ -72,6 +77,9 @@ export const playerMatchesQuery = (playerId: string) =>
 
 export const rankingsQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
   query(rankingsCol(divisionId), orderBy('rank', 'asc'), ...extra);
+
+export const doublesRankingsQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
+  query(doublesRankingsCol(divisionId), orderBy('rank', 'asc'), ...extra);
 
 export const divisionMembershipsQuery = (divisionId: string, seasonId: string, ...extra: QueryConstraint[]) =>
   query(divisionMembershipsCol(divisionId), where('seasonId', '==', seasonId), ...extra);

@@ -20,6 +20,7 @@ import {
   recordMatchOnBehalf,
   searchDivisionPlayers,
   proposeMatch,
+  proposeDoublesMatch,
   acceptMatchProposal,
   declineMatchProposal,
 } from "@tennis/firebase-client";
@@ -28,11 +29,13 @@ import {
   formatGameScore,
   getMatchStatusMetadata,
   currentSeasonForDate,
+  sideOfPlayer,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, PublicProfile } from "@tennis/shared";
+import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -489,12 +492,14 @@ export default function MatchesScreen() {
   const liveMatches = matches
     .filter((m) => m.status === "in_progress")
     .map((m) => toItem(m));
+  // Side membership rather than player2Id/player1Id, so a doubles partner sees
+  // the proposal too instead of only the side's first player.
   const pendingInvites = matches
-    .filter((m) => m.status === "proposed" && m.player2Id === uid)
+    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "pending"));
   const awaitingOpponent = matches
-    .filter((m) => m.status === "proposed" && m.player1Id === uid)
+    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "awaiting"));
   const upcomingMatches = matches
@@ -1078,10 +1083,25 @@ function ProposeMatchModal({
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
   const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
+  const [isDoubles, setIsDoubles] = useState(false);
+  // Doubles slots: the signed-in player always fills side 1's first seat.
+  const [partner, setPartner] = useState<PublicProfile | null>(null);
+  const [opponent1, setOpponent1] = useState<PublicProfile | null>(null);
+  const [opponent2, setOpponent2] = useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const doublesChosenIds = [
+    currentUser.id,
+    partner?.id,
+    opponent1?.id,
+    opponent2?.id,
+  ].filter((id): id is string => !!id);
+  const opponentReady = isDoubles
+    ? !!(partner && opponent1 && opponent2)
+    : !!selectedOpponent;
 
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
@@ -1103,7 +1123,7 @@ function ProposeMatchModal({
   }, [searchText, divisionId, selectedOpponent, currentUser.id]);
 
   async function handleSubmit() {
-    if (!selectedOpponent) return;
+    if (!opponentReady) return;
     if (!DATE_RE.test(date)) {
       Alert.alert("Invalid date", "Please enter the date as YYYY-MM-DD.");
       return;
@@ -1123,6 +1143,21 @@ function ProposeMatchModal({
     }
     setSubmitting(true);
     try {
+      if (isDoubles) {
+        await proposeDoublesMatch({
+          side1PlayerIds: [currentUser.id, partner!.id],
+          side2PlayerIds: [opponent1!.id, opponent2!.id],
+          divisionId,
+          seasonId,
+          scheduledAt: ts,
+        });
+        onClose();
+        return;
+      }
+      if (!selectedOpponent) {
+        Alert.alert("Select an opponent", "Choose who you want to play.");
+        return;
+      }
       await proposeMatch({
         player1Id: currentUser.id,
         player2Id: selectedOpponent.id,
@@ -1147,7 +1182,83 @@ function ProposeMatchModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Propose a Match</Text>
 
-            {selectedOpponent ? (
+            <Text style={styles.modalLabel}>Format</Text>
+            <View style={styles.formatRow}>
+              {([false, true] as const).map((doubles) => (
+                <TouchableOpacity
+                  key={doubles ? "doubles" : "singles"}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Propose a ${doubles ? "doubles" : "singles"} match`}
+                  accessibilityState={{ selected: isDoubles === doubles }}
+                  style={[styles.formatChip, isDoubles === doubles && styles.formatChipActive]}
+                  onPress={() => setIsDoubles(doubles)}
+                >
+                  <Text
+                    style={[
+                      styles.formatChipText,
+                      isDoubles === doubles && styles.formatChipTextActive,
+                    ]}
+                  >
+                    {doubles ? "Doubles" : "Singles"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {isDoubles ? (
+              <>
+                <PlayerSlotPicker
+                  label="Your partner"
+                  divisionId={divisionId}
+                  excludeIds={doublesChosenIds}
+                  selected={partner}
+                  onSelect={setPartner}
+                  onClear={() => setPartner(null)}
+                />
+                <PlayerSlotPicker
+                  label="Opponent 1"
+                  divisionId={divisionId}
+                  excludeIds={doublesChosenIds}
+                  selected={opponent1}
+                  onSelect={setOpponent1}
+                  onClear={() => setOpponent1(null)}
+                />
+                <PlayerSlotPicker
+                  label="Opponent 2"
+                  divisionId={divisionId}
+                  excludeIds={doublesChosenIds}
+                  selected={opponent2}
+                  onSelect={setOpponent2}
+                  onClear={() => setOpponent2(null)}
+                />
+                {opponentReady && (
+                  <>
+                    <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
+                    <TextInput
+                      accessibilityLabel="Match date"
+                      style={styles.input}
+                      value={date}
+                      onChangeText={setDate}
+                      placeholder="2026-05-10"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      maxLength={10}
+                    />
+                    <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
+                    <TextInput
+                      accessibilityLabel="Match time"
+                      style={styles.input}
+                      value={time}
+                      onChangeText={setTime}
+                      placeholder="18:30"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      maxLength={5}
+                    />
+                  </>
+                )}
+              </>
+            ) : selectedOpponent ? (
               <>
                 <View style={styles.selectedPlayer}>
                   <View style={styles.playerChip}>
@@ -1259,16 +1370,16 @@ function ProposeMatchModal({
                 accessibilityRole="button"
                 accessibilityLabel="Send match proposal"
                 accessibilityState={{
-                  disabled: submitting || !selectedOpponent || !date || !time,
+                  disabled: submitting || !opponentReady || !date || !time,
                   busy: submitting,
                 }}
                 style={[
                   styles.createBtn,
-                  (submitting || !selectedOpponent || !date || !time) &&
+                  (submitting || !opponentReady || !date || !time) &&
                     styles.createBtnDisabled,
                 ]}
                 onPress={handleSubmit}
-                disabled={submitting || !selectedOpponent || !date || !time}
+                disabled={submitting || !opponentReady || !date || !time}
               >
                 {submitting ? (
                   <ActivityIndicator color="#fff" />
@@ -1487,6 +1598,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 12,
   },
+  formatRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  formatChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#fff",
+  },
+  formatChipActive: { backgroundColor: "#1a472a", borderColor: "#1a472a" },
+  formatChipText: { fontSize: 14, fontWeight: "600", color: "#475569" },
+  formatChipTextActive: { color: "#fff" },
   selectedPlayer: {
     flexDirection: "row",
     alignItems: "center",
