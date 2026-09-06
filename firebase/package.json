@@ -24,7 +24,7 @@
   "devDependencies": {
     "@tennis/shared": "workspace:*",
     "typescript": "^6.0.3",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.1",
     "esbuild": "0.28.0"
   }
 }
