@@ -114,7 +114,7 @@ jobs:
       # refuses to start on a JDK older than 21. The runner's preinstalled JDK is
       # older, so without this the emulator exits before the smoke test runs.
       - name: Set up Java for the Firebase emulators
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -252,7 +252,7 @@ jobs:
       # Android Gradle Plugin 8.12, pinned by react-native 0.86.2's version
       # catalog, requires JDK 17 or newer.
       - name: Set up Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
