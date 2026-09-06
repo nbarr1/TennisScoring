@@ -45,7 +45,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
       # react-native 0.86.2 pins this exact NDK in gradle/libs.versions.toml, and
       # AGP fails rather than substituting whichever NDK the runner image ships.
       - name: Install Android NDK
