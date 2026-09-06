@@ -35,6 +35,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * their division; players can still postpone or cancel individual fixtures
  * afterward through the existing match-detail actions.
  */
+const DOUBLES_NOT_SUPPORTED_MESSAGE =
+  'Round-robin scheduling is not yet available for doubles division levels';
+
 export const publishRoundRobinSchedule = functions.https.onCall(async (request) => {
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
@@ -72,6 +75,14 @@ export const publishRoundRobinSchedule = functions.https.onCall(async (request) 
       'divisionId, seasonId, and divisionLevelId are required',
     );
   }
+  // Cheap pre-check; the authoritative test against the stored level runs
+  // below, once the level document has been read.
+  if (safeMatchType === 'doubles') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      DOUBLES_NOT_SUPPORTED_MESSAGE,
+    );
+  }
   if (safePlayerIds.length < 2) {
     throw new functions.https.HttpsError('invalid-argument', 'At least 2 players are required');
   }
@@ -80,13 +91,29 @@ export const publishRoundRobinSchedule = functions.https.onCall(async (request) 
   }
 
   const db = getFirestore();
-  const [actorSnap, divisionSnap] = await Promise.all([
+  const [actorSnap, divisionSnap, levelSnap] = await Promise.all([
     db.collection('users').doc(request.auth.uid).get(),
     db.collection('divisions').doc(safeDivisionId).get(),
+    db
+      .collection('divisions')
+      .doc(safeDivisionId)
+      .collection('levels')
+      .doc(safeDivisionLevelId)
+      .get(),
   ]);
 
   if (!divisionSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'Division not found');
+  }
+
+  // The generator pairs individuals, so publishing into a doubles level would
+  // create unplayable 1v1 fixtures. Decided by the stored level rather than the
+  // payload, so an older client that omits matchType cannot slip past it.
+  if (levelSnap.data()?.matchType === 'doubles') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      DOUBLES_NOT_SUPPORTED_MESSAGE,
+    );
   }
 
   const actor = actorSnap.data();

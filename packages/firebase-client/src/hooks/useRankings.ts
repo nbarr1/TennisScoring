@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { onSnapshot, query, where } from 'firebase/firestore';
 import { rankingsQuery, completedDivisionMatchesQuery, usersCol } from '../collections';
-import { computeRankings, extractMatchTotals } from '@tennis/shared';
+import { computeRankings, extractMatchTotals, isDoublesMatch } from '@tennis/shared';
 import type { PlayerRanking, Match, HeadToHead, User } from '@tennis/shared';
 
 function hasRankingStats(ranking: PlayerRanking): boolean {
@@ -123,6 +123,11 @@ function buildRankingsFromMatches(
     if (!match.winner) continue;
     if (match.isDivisionMatch === false) continue;
     if (!match.liveScore?.sets?.length) continue;
+    // Real doubles results belong to the team standings (useDoublesRankings).
+    // Tested on side shape, not on `matchType`: that label is stamped from the
+    // division level onto ordinary two-player matches too, and skipping those
+    // would drop them out of the singles table.
+    if (isDoublesMatch(match)) continue;
     countedMatchCount += 1;
 
     const { player1Id, player2Id, winner, liveScore } = match;

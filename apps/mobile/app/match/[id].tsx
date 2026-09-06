@@ -39,6 +39,9 @@ import {
   formatScoreDisplay,
   formatGameScore,
   getTipsForTriggers,
+  isMatchParticipant,
+  canRespondToReport,
+  isDoublesMatch,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import {
@@ -497,11 +500,7 @@ export default function MatchScreen() {
   const [linkSearching, setLinkSearching] = useState(false);
   const [linking, setLinking] = useState(false);
 
-  const isParticipant = !!(
-    user &&
-    match &&
-    (match.player1Id === user.id || match.player2Id === user.id)
-  );
+  const isParticipant = !!(user && match && isMatchParticipant(match, user.id));
   const isAdminOrLeader =
     user?.role === "division_leader" || user?.role === "admin";
   const canManage = isParticipant || isAdminOrLeader;
@@ -509,8 +508,12 @@ export default function MatchScreen() {
   // Derived report-submission state
   const submission = match?.reportSubmission;
   const iSubmitted = !!(submission && submission.submittedBy === user?.id);
+  // Only the opposing side reviews a report — never the submitter's own partner.
   const opponentSubmitted = !!(
-    submission && submission.submittedBy !== user?.id
+    submission &&
+    match &&
+    user &&
+    canRespondToReport(match, user.id, submission.submittedBy)
   );
   const isPendingMyReview =
     opponentSubmitted && submission?.status === "pending_confirmation";
@@ -1087,9 +1090,14 @@ export default function MatchScreen() {
                         { backgroundColor: isP1 ? COURT.pA : COURT.pB },
                       ]}
                     />
-                    <Text style={styles.panelNameText} numberOfLines={1}>
-                      {isP1 ? p1Name : p2Name}
-                    </Text>
+                    <View style={styles.panelNameCol}>
+                      <Text style={styles.panelNameText} numberOfLines={1}>
+                        {isP1 ? p1Name : p2Name}
+                      </Text>
+                      {isDoublesMatch(match) && (
+                        <Text style={styles.panelFormatText}>Doubles</Text>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.panelSetsCell}>
                     {scoreRows.map((set) => (
@@ -1340,22 +1348,24 @@ export default function MatchScreen() {
           </View>
         )}
 
-      {/* I submitted — waiting for opponent */}
+      {/* My side submitted — waiting for the opposing side. In doubles this also
+          covers the submitter's partner, who cannot confirm their own team's report. */}
       {isParticipant &&
         match.status === "pending_report" &&
-        iSubmitted &&
+        !isPendingMyReview &&
         submission?.status === "pending_confirmation" && (
           <View style={styles.reportSection}>
             <Text style={styles.reportTitle}>Report Submitted</Text>
             <Text style={styles.reportScore}>{scoreDisplay}</Text>
             <View style={styles.waitingBadge}>
               <Text style={styles.waitingText}>
-                ⏳ Waiting for opponent to confirm
+                ⏳ Waiting for the opposing side to confirm
               </Text>
             </View>
             <Text style={styles.reportHint}>
-              Your opponent has been notified. Once they confirm, the report
-              will be finalised and rankings updated.
+              {iSubmitted
+                ? "The opposing side has been notified. Once they confirm, the report will be finalised and rankings updated."
+                : "Your partner submitted the report. Once the opposing side confirms, it will be finalised and rankings updated."}
             </Text>
           </View>
         )}
@@ -1366,7 +1376,7 @@ export default function MatchScreen() {
           <Text style={styles.reportTitle}>Review Match Report</Text>
           <Text style={styles.reportScore}>{scoreDisplay}</Text>
           <Text style={styles.reportHint}>
-            Your opponent submitted the final score above. Confirm if it's
+            The opposing side submitted the final score above. Confirm if it's
             correct, or dispute to escalate to your division leader.
           </Text>
           <TouchableOpacity
@@ -1903,6 +1913,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   panelColorBar: { width: 5, height: 28, borderRadius: 999 },
+  panelNameCol: { flex: 1, minWidth: 0 },
+  panelFormatText: {
+    fontSize: 10,
+    color: "#94a3b8",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
   panelNameText: {
     flex: 1,
     color: COURT.line,

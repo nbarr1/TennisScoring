@@ -15,6 +15,7 @@ import {
   recordMatchOnBehalf,
   searchDivisionPlayers,
   proposeMatch,
+  proposeDoublesMatch,
   createMatch,
   startMatch,
   acceptMatchProposal,
@@ -30,8 +31,10 @@ import {
   getMatchStatusMetadata,
   currentSeasonForDate,
   defaultSeasonOptions,
+  sideOfPlayer,
 } from "@tennis/shared";
 import type { Match, PublicProfile } from "@tennis/shared";
+import { PlayerSlotPicker } from "../shared/PlayerSlotPicker";
 
 function formatScheduledAt(ts?: number): string {
   if (!ts) return "Time TBD";
@@ -215,11 +218,13 @@ export default function MatchesPage(): React.JSX.Element {
 
   const uid = firebaseUser?.uid;
   const liveMatches = matches.filter((m) => m.status === "in_progress");
+  // Side membership rather than player2Id/player1Id, so a doubles partner sees
+  // the proposal too instead of only the side's first player.
   const pendingInvites = matches
-    .filter((m) => m.status === "proposed" && m.player2Id === uid)
+    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const awaitingOpponent = matches
-    .filter((m) => m.status === "proposed" && m.player1Id === uid)
+    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
   const upcomingMatches = matches
     .filter((m) => m.status === "scheduled")
@@ -1208,14 +1213,28 @@ function ProposeMatchModal({
   matchType?: "singles" | "doubles";
   onClose: () => void;
 }) {
+  const isDoubles = matchType === "doubles";
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
   const [selectedOpponent, setSelectedOpponent] =
     useState<PublicProfile | null>(null);
+  // Doubles slots: the signed-in player always fills side 1's first seat.
+  const [partner, setPartner] = useState<PublicProfile | null>(null);
+  const [opponent1, setOpponent1] = useState<PublicProfile | null>(null);
+  const [opponent2, setOpponent2] = useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const doublesChosenIds = [
+    currentUser.id,
+    partner?.id,
+    opponent1?.id,
+    opponent2?.id,
+  ].filter((id): id is string => !!id);
+  const doublesReady = !!(partner && opponent1 && opponent2);
+  const opponentReady = isDoubles ? doublesReady : !!selectedOpponent;
   useEffect(() => {
     if (!searchText.trim() || selectedOpponent) {
       setSearchResults([]);
@@ -1237,8 +1256,8 @@ function ProposeMatchModal({
 
   async function handleSubmit() {
     setError("");
-    if (!selectedOpponent) {
-      setError("Select an opponent.");
+    if (!opponentReady) {
+      setError(isDoubles ? "Choose a partner and both opponents." : "Select an opponent.");
       return;
     }
     const ts = Date.parse(scheduledAt);
@@ -1252,6 +1271,22 @@ function ProposeMatchModal({
     }
     setSubmitting(true);
     try {
+      if (isDoubles) {
+        await proposeDoublesMatch({
+          side1PlayerIds: [currentUser.id, partner!.id],
+          side2PlayerIds: [opponent1!.id, opponent2!.id],
+          divisionId,
+          seasonId,
+          divisionLevelId,
+          scheduledAt: ts,
+        });
+        onClose();
+        return;
+      }
+      if (!selectedOpponent) {
+        setError("Select an opponent.");
+        return;
+      }
       await proposeMatch({
         player1Id: currentUser.id,
         player2Id: selectedOpponent.id,
@@ -1283,7 +1318,40 @@ function ProposeMatchModal({
       >
         <h2 id="propose-match-title" style={modalStyles.title}>Propose a Match</h2>
 
-        {selectedOpponent ? (
+        {isDoubles ? (
+          <>
+            <p style={modalStyles.muted}>
+              Doubles — you and your partner against the opposing pair.
+            </p>
+            <PlayerSlotPicker
+              label="Your partner"
+              inputId="proposal-partner-search"
+              divisionId={divisionId}
+              excludeIds={doublesChosenIds}
+              selected={partner}
+              onSelect={setPartner}
+              onClear={() => setPartner(null)}
+            />
+            <PlayerSlotPicker
+              label="Opponent 1"
+              inputId="proposal-opponent1-search"
+              divisionId={divisionId}
+              excludeIds={doublesChosenIds}
+              selected={opponent1}
+              onSelect={setOpponent1}
+              onClear={() => setOpponent1(null)}
+            />
+            <PlayerSlotPicker
+              label="Opponent 2"
+              inputId="proposal-opponent2-search"
+              divisionId={divisionId}
+              excludeIds={doublesChosenIds}
+              selected={opponent2}
+              onSelect={setOpponent2}
+              onClear={() => setOpponent2(null)}
+            />
+          </>
+        ) : selectedOpponent ? (
           <>
             <div style={modalStyles.selectedRow}>
               <div>
@@ -1342,7 +1410,7 @@ function ProposeMatchModal({
           </>
         )}
 
-        {selectedOpponent && (
+        {opponentReady && (
           <div style={{ marginTop: 14 }}>
             <label htmlFor="proposal-scheduled-at" style={modalStyles.label}>When?</label>
             <input
@@ -1371,12 +1439,12 @@ function ProposeMatchModal({
             type="button"
             style={{
               ...modalStyles.submitBtn,
-              ...(!selectedOpponent || !scheduledAt || submitting
+              ...(!opponentReady || !scheduledAt || submitting
                 ? modalStyles.btnDisabled
                 : {}),
             }}
             onClick={handleSubmit}
-            disabled={!selectedOpponent || !scheduledAt || submitting}
+            disabled={!opponentReady || !scheduledAt || submitting}
           >
             {submitting ? "Sending…" : "Send Proposal"}
           </button>

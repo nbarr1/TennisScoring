@@ -158,6 +158,9 @@ export async function recordHistoricMatch(params: {
   seasonId?: string;
   divisionLevelId?: string;
   matchType?: Match['matchType'];
+  /** Doubles only: both members of each side. The server derives every flat field from these. */
+  side1PlayerIds?: string[];
+  side2PlayerIds?: string[];
   createdBy: string;
   sets: { p1: number; p2: number }[];
   isDivisionMatch?: boolean;
@@ -176,6 +179,8 @@ export async function recordHistoricMatch(params: {
     seasonId: params.seasonId,
     divisionLevelId: params.divisionLevelId,
     matchType: params.matchType,
+    side1PlayerIds: params.side1PlayerIds,
+    side2PlayerIds: params.side2PlayerIds,
     sets: params.sets,
     isDivisionMatch: params.isDivisionMatch,
   });
@@ -191,6 +196,9 @@ export async function recordMatchOnBehalf(params: {
   seasonId?: string;
   divisionLevelId?: string;
   matchType?: Match['matchType'];
+  /** Doubles only: both members of each side. The server derives every flat field from these. */
+  side1PlayerIds?: string[];
+  side2PlayerIds?: string[];
   sets: { p1: number; p2: number }[];
   isDivisionMatch?: boolean;
   notifyPlayers?: boolean;
@@ -310,6 +318,45 @@ export async function proposeMatch(params: {
   };
   const ref = await addDoc(matchesCol(), matchData as Match);
   return ref.id;
+}
+
+/**
+ * Creates a doubles match (four players, two fixed partnerships).
+ *
+ * Goes through a Cloud Function rather than a direct write: the client-side
+ * create rule pins `playerIds` to a two-element array, and validating four
+ * players' division membership in rules would exceed the per-request document
+ * access limit. The server derives `side1`/`side2`, the team display names, and
+ * the flat `player1*`/`player2*` fields from the two side rosters.
+ */
+export async function createDoublesMatch(params: {
+  side1PlayerIds: string[];
+  side2PlayerIds: string[];
+  divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  status?: 'proposed' | 'scheduled';
+  scheduledAt?: number;
+  isDivisionMatch?: boolean;
+}): Promise<string> {
+  const callable = httpsCallable<
+    typeof params,
+    { success: boolean; matchId: string; status: Match['status'] }
+  >(functions, 'createDoublesMatch');
+  const result = await callable(params);
+  return result.data.matchId;
+}
+
+/** Proposes a doubles match — the opposing pair accepts or declines it. */
+export async function proposeDoublesMatch(params: {
+  side1PlayerIds: string[];
+  side2PlayerIds: string[];
+  divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  scheduledAt: number;
+}): Promise<string> {
+  return createDoublesMatch({ ...params, status: 'proposed' });
 }
 
 /** Opponent accepts a proposed match — moves it to 'scheduled'. */

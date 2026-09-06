@@ -7,6 +7,7 @@ export {
   recalculateDivisionRankings,
   repairAllDivisionRankings,
 } from './matches/matchFunctions';
+export { createDoublesMatch } from './matches/doublesFunctions';
 export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
 export { generateMatchReport } from './reports/generateReport';
 export { onNewMessage } from './messaging/onNewMessage';

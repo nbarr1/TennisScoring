@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Full-stack tennis league scoring application (currently at version 1.0.5, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
+Full-stack tennis league scoring application (currently at version 1.1.0, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
 **Prerequisites:** Node.js 22, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
 
@@ -14,7 +14,7 @@ Full-stack tennis league scoring application (currently at version 1.0.5, built 
 ## Versioning
 
 - Treat `v1.0.0` as the first functional/deployable repository baseline; a Git tag named `v1.0.0` should point at the baseline commit.
-- The root `package.json` and all five workspace packages currently carry version `1.0.5` and are bumped together — never let them drift apart.
+- The root `package.json` and all five workspace packages currently carry version `1.1.0` and are bumped together — never let them drift apart.
 - Update README, SETUP, VERSION_1_BASELINE, CHANGELOG, and package/app version markers whenever a feature changes setup, deployment, data shape, or user-visible capabilities.
 
 ## Commands
@@ -108,8 +108,13 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 **`packages/shared/src/scoring/rankingEngine.ts`**:
 
 - `computeRankings(inputs: RankingInput[], headToHeads: HeadToHead[]): PlayerRanking[]` — sorted by matches won → sets won → games won → game differential → head-to-head.
+- `computeDoublesRankings(inputs: DoublesTeamRankingInput[], headToHeads: HeadToHead[]): DoublesTeamRanking[]` — the same ordering applied to fixed partnerships. Both wrap one internal `rankEntities()` so the tiebreak order is defined once.
 - `updateRankingWithMatchResult(existing, won, setsWon, setsLost, gamesWon, gamesLost): RankingInput` — helper to update a single player's running totals.
 - `extractMatchTotals(sets): { p1Sets, p2Sets, p1Games, p2Games }` — derives set/game counts from a completed match's set array.
+
+**`packages/shared/src/match/matchSides.ts`** — the side accessors every consumer should use instead of reading `player1Id`/`player2Id` directly. `Player` (`'player1' | 'player2'`) is a *side* label, not a person: singles carries one player per side, doubles carries two. `sidePlayerIds()`, `sideDisplayName()`, `sideOfPlayer()`, `opposingSide()`, `isDoublesMatch()`, `isMatchParticipant()`, `arePartners()`, and `canRespondToReport()` all fall back to the flat fields, so legacy singles documents with no `side1`/`side2` behave identically.
+
+**`packages/shared/src/doubles/doublesTeam.ts`** — doubles team identity. `doublesTeamId(playerIds)` sorts and joins the member ids, so a partnership is stable and order-independent without any team collection or registration step. Also `doublesTeamPlayerIds()`, `formatDoublesTeamName()` (`"Ann Smith / Bob Jones"`), and `doublesHeadToHeadId()` (prefixed `doubles_` so it cannot collide with a singles head-to-head id).
 
 **`packages/shared/src/tips/tips.ts`** — tip display logic consumed by UI layers.
 
@@ -123,8 +128,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/types/`** — all shared types; import from `@tennis/shared`, never duplicate in apps:
 
-- `match.ts` — `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match` (`source?: 'live' | 'manual' | 'schedule'`), `DEFAULT_FORMAT`, etc.
-- `ranking.ts` — `PlayerRanking`, `HeadToHead`.
+- `match.ts` — `MatchSide` (`{ playerIds, displayName? }`), `TennisPoint`, `MatchFormat`, `MatchStatus` (`'proposed' | 'scheduled' | 'in_progress' | 'pending_report' | 'completed' | 'disputed' | 'cancelled'`), `MATCH_STATUS_METADATA`, `getMatchStatusMetadata`, `ServiceSide`, `Player`, `MatchFormat_Config`, `LiveScore`, `Match` (`source?: 'live' | 'manual' | 'schedule'`), `DEFAULT_FORMAT`, etc.
+- `ranking.ts` — `PlayerRanking`, `DoublesTeamRanking` (one row per fixed partnership), `HeadToHead` (whose `player1Id`/`player2Id` hold team ids on doubles records, tagged with `matchType`).
 - `user.ts` — `UserRole`, `User`, `UserProfile`, `Availability`, `AvailabilitySlot`, `DayOfWeek`, `DAYS_OF_WEEK`, `DAY_LABELS`. `User` also carries `availability?: Availability`, `rankingSummary?` (a denormalized snapshot of the player's current standings written by Cloud Functions on every ranking recalc), `blockedUserIds?: string[]` (self-managed message-sender block list), and `accountDeleted?`/`deletedAt?` (set by the `deleteAccount` callable).
 - `message.ts` — `Channel`, `Message`, `MatchReport`, `MessageReport`, `MessageReportReason` (`'harassment' | 'spam' | 'inappropriate' | 'other'`), `MessageReportStatus`.
 - `division.ts` — the season/level/membership model as well as `Division`: `Season`, `SeasonHalf`, `SeasonStatus`, `DivisionLevel`, `DivisionSkillLevel`, `DivisionMatchType`, `DivisionMembership` (+ `DivisionMembershipRole`/`Status`/`Source`), and helpers `seasonId()`, `divisionMembershipId()`, `formatSeasonName()`, `currentSeasonForDate()`, `defaultSeasonOptions()`, `formatDivisionLevelName()`.
@@ -155,7 +160,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 **Typed React hooks** in `packages/firebase-client/src/hooks/`:
 
 - `useMatch` — real-time match subscription. Also exports `proposeMatch()`, `acceptMatchProposal()`, `declineMatchProposal()` for the scheduling workflow.
-- `useRankings` — division rankings subscription. Falls back to recomputing rankings directly from completed matches (via `completedDivisionMatchesQuery` + `computeRankings`) when Firestore rankings are absent or stale.
+- `useRankings` — division rankings subscription. Falls back to recomputing rankings directly from completed matches (via `completedDivisionMatchesQuery` + `computeRankings`) when Firestore rankings are absent or stale. Doubles matches are skipped, since their results belong to the team standings.
+- `useDoublesRankings` — doubles team standings subscription over `divisions/{divisionId}/doublesRankings`, with the same client-side recompute fallback keyed on `doublesTeamId`.
 - `useMessages` — channel/message subscription.
 - `useUser` — user profile subscription.
 - `useDivisionOptions` — the divisions a given user belongs to (also exported as the one-shot `getUserDivisionOptions()`), used by the division switchers on both apps.
@@ -173,11 +179,15 @@ All Firestore reads go through these hooks; all writes go through operations exp
   - Proposal accepted (`proposed` → `scheduled`) → FCM notification to proposer.
   - Proposal cancelled (`proposed` → `cancelled`) → FCM notification to proposer.
   - Report submitted → FCM notification to opponent.
-  - Report confirmed → calls `recalculateRankings()` (reads all completed matches in division, recomputes via `computeRankings()` from `@tennis/shared`, writes to `divisions/{divId}/rankings/{userId}`, `headToHead/{h2hId}`, and a denormalized `rankingSummary` on `users/{userId}`).
+  - Report confirmed → calls `recalculateRankings()` (reads all completed matches in division, recomputes via `computeRankings()` from `@tennis/shared`, writes to `divisions/{divId}/rankings/{userId}`, `headToHead/{h2hId}`, and a denormalized `rankingSummary` on `users/{userId}`). Completed **doubles** matches are diverted to a second pass that accumulates per fixed partnership and writes `divisions/{divId}/doublesRankings/{seasonId}__{teamId}` via `computeDoublesRankings()`. Standings are bucketed **per season**, and ranks are computed within each season, so a partnership returning for a second season gets its own row rather than an inflated all-time total. The two ranking collections are pruned independently; doubles head-to-head records share the `headToHead` collection under a `doubles_`-prefixed, season-scoped id, so the existing prune stays correct.
   - Report disputed → FCM notification to division leader.
 - `resolveDisputedReport` — HTTPS callable; division leaders resolve disputed reports.
 - `recalculateDivisionRankings` — HTTPS callable; leaders/admins manually trigger ranking recalculation.
 - Rankings are **never** incrementally updated — always recomputed from scratch.
+
+**`firebase/src/matches/doublesFunctions.ts`** — `createDoublesMatch` HTTPS callable; creates a `proposed` or `scheduled` doubles match between two fixed partnerships, and the caller must be one of the four players. Doubles creation is server-side rather than a direct client write because the `allow create` rule pins `playerIds` to a two-element array and validating four players' division membership in rules would exceed the per-request document access limit.
+
+**`firebase/src/matches/doublesSides.ts`** — `buildDoublesMatchFields()` validates two side rosters (two distinct players each, all four in the division) and derives the whole doubles document shape; `requestsDoubles()` detects a doubles payload. Shared by `createDoublesMatch`, `recordHistoricMatch`, and `recordMatchOnBehalf` so all three write identical documents.
 
 **`firebase/src/reports/generateReport.ts`** — Firestore trigger on match completion; generates a PDF report via `pdf-lib` and stores it in Cloud Storage.
 
@@ -226,7 +236,7 @@ api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker ro
 robots.ts              # Generated /robots.txt
 sitemap.ts             # Generated /sitemap.xml
 FcmProvider.tsx        # Web FCM setup/token registration (mounted from the root layout)
-shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx
+shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker
 ```
 
 ### Mobile routes (`apps/mobile/app/`)
@@ -253,6 +263,34 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 5. Opponent calls `confirmMatchReport()` or `disputeMatchReport()`.
 6. Confirmed → `onMatchUpdate` trigger recalculates rankings and generates PDF report.
 7. Disputed → division leader resolves via `resolveDisputedReport()` callable.
+
+### Doubles matches and team rankings
+
+A doubles match is four players in two **fixed partnerships**. There is no team collection and no team registration: a team is identified by `doublesTeamId(playerIds)` — the sorted pair of its members' user ids — so the same pairing accumulates onto one standings row per season.
+
+Document shape (singles matches are unchanged and carry no `side1`/`side2`):
+
+```text
+matchType: 'doubles'
+side1: { playerIds: [uidA, uidB], displayName: "Ann Smith / Bob Jones" }
+side2: { playerIds: [uidC, uidD], displayName: "Cara Lee / Dan Ruiz" }
+player1Id: uidA            // each side's first member, so existing indexes/rules/queries keep working
+player2Id: uidC
+player1Name / player2Name  // mirror the team display name, so renderers that read the flat fields are correct
+playerIds: [uidA, uidB, uidC, uidD]
+```
+
+Consequences worth knowing before changing this code:
+
+- `Player` (`'player1' | 'player2'`) is a **side** label. The score engine treats it as opaque, so `scoreEngine.ts` needs no doubles-specific code and `LiveScore` is unchanged — which is also why neither wearable module has to change.
+- Serving is tracked at **side** level only. There is no per-partner serve rotation and no receiver-court tracking.
+- Because the team name is mirrored into `player1Name`/`player2Name`, most display code is correct without modification. What genuinely needs side awareness is participant checks (`isMatchParticipant`), the proposal inbox filters (`sideOfPlayer`), and report confirmation (`canRespondToReport`).
+- A report is confirmed by the **opposing side** — never by the submitter or their partner. Enforced in `firestore.rules` (`isOpposingSideOfSubmitter`) and mirrored in both apps.
+- Guests are singles-only: a team standing needs four resolvable accounts.
+- Round-robin scheduling does not support doubles. `publishRoundRobinSchedule` rejects a doubles level with `failed-precondition`, and both admin surfaces disable the generator for one.
+- Doubles matches create doubles standings only; the singles ranking fallback in `useRankings` skips them.
+- **`matchType` is a label, never the discriminator.** It is stamped from the division level onto every match created in it, so an ordinary two-player match inside a "Beginner Doubles" level carries `matchType: 'doubles'`, and it is client-writable. Every singles/doubles fork tests `isDoublesMatch()`, which checks the *shape* — two sides of two players each. Treating the label as the discriminator silently drops those two-player matches out of the singles standings.
+- **`side1`/`side2` are not in the `matchFields()` allow-list**, so clients cannot write them. They decide standings credit and report authorization, and no rule can tie them to `playerIds`; a client could otherwise name four uninvolved players and have their teams credited. Doubles matches are created by `createDoublesMatch`, which uses the Admin SDK. The creator must be on side 1, mirroring the singles `player1Id == request.auth.uid` rule.
 
 ### Round-robin match scheduling
 

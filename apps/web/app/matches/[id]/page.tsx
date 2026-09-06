@@ -13,6 +13,10 @@ import {
   EMPTY_STATS,
   formatScoreDisplay,
   formatGameScore,
+  isMatchParticipant,
+  canRespondToReport,
+  sidePlayerIds,
+  isDoublesMatch,
 } from '@tennis/shared';
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
@@ -68,7 +72,8 @@ export default function MatchPage(): React.JSX.Element {
   }
 
   const uid = firebaseUser?.uid;
-  const isParticipant = uid === match.player1Id || uid === match.player2Id;
+  const isParticipant = !!uid && isMatchParticipant(match, uid);
+  const canReviewReport = !!uid && canRespondToReport(match, uid, match.reportSubmission?.submittedBy);
   const submission = match.reportSubmission;
   const p1Name = match.player1Name ?? 'Player 1';
   const p2Name = match.player2Name ?? 'Player 2';
@@ -272,6 +277,17 @@ export default function MatchPage(): React.JSX.Element {
               {p2Name}{match.player2IsGuest ? ' (Guest)' : ''}
             </span>
           </div>
+          {isDoublesMatch(match) && (
+            <div style={styles.doublesRosterRow}>
+              <span style={styles.doublesRosterLabel}>
+                {sidePlayerIds(match, 'player1').length} players
+              </span>
+              <span style={styles.doublesRosterLabel}>Doubles</span>
+              <span style={styles.doublesRosterLabel}>
+                {sidePlayerIds(match, 'player2').length} players
+              </span>
+            </div>
+          )}
         </div>
 
         {canManage && (
@@ -310,22 +326,26 @@ export default function MatchPage(): React.JSX.Element {
         {/* Report actions */}
         {isParticipant && match.status === 'pending_report' && !submission && (
           <div style={styles.reportSection}>
-            <p style={styles.reportHint}>Match over — submit the final score report for your opponent to confirm.</p>
+            <p style={styles.reportHint}>Match over — submit the final score report for the opposing side to confirm.</p>
             <button style={styles.primaryBtn} onClick={handleSubmit} disabled={actionLoading}>
               {actionLoading ? 'Submitting…' : 'Submit Match Report'}
             </button>
           </div>
         )}
 
-        {isParticipant && match.status === 'pending_report' && submission?.submittedBy === uid && (
+        {isParticipant && match.status === 'pending_report' && submission && !canReviewReport && (
           <div style={styles.reportSection}>
-            <span style={styles.waitingBadge}>⏳ Waiting for opponent to confirm the report</span>
+            <span style={styles.waitingBadge}>
+              {submission.submittedBy === uid
+                ? '⏳ Waiting for the opposing side to confirm the report'
+                : '⏳ Your partner submitted the report — waiting for the opposing side to confirm'}
+            </span>
           </div>
         )}
 
-        {isParticipant && match.status === 'pending_report' && submission && submission.submittedBy !== uid && (
+        {isParticipant && match.status === 'pending_report' && submission && canReviewReport && (
           <div style={styles.reportSection}>
-            <p style={styles.reportHint}>Your opponent has submitted the match report. Please review the score above and confirm or dispute.</p>
+            <p style={styles.reportHint}>The opposing side has submitted the match report. Review the score above and confirm or dispute.</p>
             <div style={styles.reportBtns}>
               <button style={styles.confirmBtn} onClick={handleConfirm} disabled={actionLoading}>
                 {actionLoading ? '…' : '✓ Confirm Score'}
@@ -558,6 +578,19 @@ const styles: Record<string, React.CSSProperties> = {
   iosScoreboard: { padding: '20px 0 24px' },
   badgeRow: { display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const },
   historicBadge: { fontWeight: 600, fontSize: 12, color: '#1a472a', background: '#ffdc60', padding: '3px 10px', borderRadius: 12 },
+  doublesRosterRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 8,
+  } as const,
+  doublesRosterLabel: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  } as const,
   playerNamesRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 18 },
   playerNameLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: 600 },
   playerNameWinner: { color: '#ffdc60' },

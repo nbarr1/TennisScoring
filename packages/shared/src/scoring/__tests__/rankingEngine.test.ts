@@ -1,5 +1,5 @@
-import { computeRankings, extractMatchTotals } from '../rankingEngine';
-import type { RankingInput } from '../rankingEngine';
+import { computeRankings, computeDoublesRankings, extractMatchTotals } from '../rankingEngine';
+import type { RankingInput, DoublesTeamRankingInput } from '../rankingEngine';
 import type { HeadToHead } from '../../types/ranking';
 
 const makePlayer = (
@@ -199,5 +199,158 @@ describe('rankingEngine', () => {
     expect(rankings.find((r) => r.userId === 'b')!.rank).toBe(1);
     expect(rankings.find((r) => r.userId === 'c')!.rank).toBe(2);
     expect(rankings.find((r) => r.userId === 'a')!.rank).toBe(3);
+  });
+});
+
+const makeTeam = (
+  overrides: Partial<DoublesTeamRankingInput> & { teamId: string },
+): DoublesTeamRankingInput => ({
+  teamId: overrides.teamId,
+  playerIds: overrides.playerIds ?? overrides.teamId.split('_'),
+  displayName: overrides.displayName ?? overrides.teamId,
+  divisionId: 'div1',
+  season: '2024',
+  matchesWon: overrides.matchesWon ?? 0,
+  matchesLost: overrides.matchesLost ?? 0,
+  setsWon: overrides.setsWon ?? 0,
+  setsLost: overrides.setsLost ?? 0,
+  gamesWon: overrides.gamesWon ?? 0,
+  gamesLost: overrides.gamesLost ?? 0,
+  ...(overrides.seasonId ? { seasonId: overrides.seasonId } : {}),
+  ...(overrides.divisionLevelId ? { divisionLevelId: overrides.divisionLevelId } : {}),
+});
+
+describe('computeDoublesRankings', () => {
+  it('ranks teams by matches won', () => {
+    const teams = [
+      makeTeam({ teamId: 'ann_bob', matchesWon: 1, matchesLost: 2 }),
+      makeTeam({ teamId: 'cara_dan', matchesWon: 3, matchesLost: 0 }),
+    ];
+    const rankings = computeDoublesRankings(teams, []);
+    expect(rankings[0].teamId).toBe('cara_dan');
+    expect(rankings[0].rank).toBe(1);
+    expect(rankings[1].rank).toBe(2);
+  });
+
+  it('breaks a matches-won tie on sets won', () => {
+    const teams = [
+      makeTeam({ teamId: 'ann_bob', matchesWon: 2, setsWon: 4 }),
+      makeTeam({ teamId: 'cara_dan', matchesWon: 2, setsWon: 5 }),
+    ];
+    expect(computeDoublesRankings(teams, [])[0].teamId).toBe('cara_dan');
+  });
+
+  it('breaks a sets tie on games won', () => {
+    const teams = [
+      makeTeam({ teamId: 'ann_bob', matchesWon: 2, setsWon: 4, gamesWon: 30 }),
+      makeTeam({ teamId: 'cara_dan', matchesWon: 2, setsWon: 4, gamesWon: 34 }),
+    ];
+    expect(computeDoublesRankings(teams, [])[0].teamId).toBe('cara_dan');
+  });
+
+  it('breaks a games-won tie on game differential', () => {
+    const teams = [
+      makeTeam({ teamId: 'ann_bob', matchesWon: 2, setsWon: 4, gamesWon: 30, gamesLost: 25 }),
+      makeTeam({ teamId: 'cara_dan', matchesWon: 2, setsWon: 4, gamesWon: 30, gamesLost: 20 }),
+    ];
+    expect(computeDoublesRankings(teams, [])[0].teamId).toBe('cara_dan');
+  });
+
+  it('breaks an otherwise exact tie on team head-to-head', () => {
+    const teams = [
+      makeTeam({ teamId: 'ann_bob', matchesWon: 2, setsWon: 4, gamesWon: 30, gamesLost: 20 }),
+      makeTeam({ teamId: 'cara_dan', matchesWon: 2, setsWon: 4, gamesWon: 30, gamesLost: 20 }),
+    ];
+    const h2h: HeadToHead[] = [
+      {
+        id: 'doubles_ann_bob_cara_dan',
+        divisionId: 'div1',
+        player1Id: 'ann_bob',
+        player2Id: 'cara_dan',
+        player1Wins: 2,
+        player2Wins: 1,
+        matchType: 'doubles',
+      },
+    ];
+    expect(computeDoublesRankings(teams, h2h)[0].teamId).toBe('ann_bob');
+  });
+
+  it('falls back to display name when teams are completely level', () => {
+    const teams = [
+      makeTeam({ teamId: 'cara_dan', displayName: 'Cara Lee / Dan Ruiz', matchesWon: 1 }),
+      makeTeam({ teamId: 'ann_bob', displayName: 'Ann Smith / Bob Jones', matchesWon: 1 }),
+    ];
+    expect(computeDoublesRankings(teams, [])[0].teamId).toBe('ann_bob');
+  });
+
+  it('derives matchesPlayed and gameDifferential, and keeps the member ids', () => {
+    const teams = [
+      makeTeam({
+        teamId: 'ann_bob',
+        playerIds: ['ann', 'bob'],
+        matchesWon: 3,
+        matchesLost: 1,
+        gamesWon: 40,
+        gamesLost: 28,
+      }),
+    ];
+    const [row] = computeDoublesRankings(teams, []);
+    expect(row.matchesPlayed).toBe(4);
+    expect(row.gameDifferential).toBe(12);
+    expect(row.playerIds).toEqual(['ann', 'bob']);
+    expect(row.updatedAt).toBeGreaterThan(0);
+  });
+
+  it('carries seasonId and divisionLevelId through to the row', () => {
+    // The doublesRankings queries filter on these fields, so a row written
+    // without them would be invisible to a season- or level-scoped standings view.
+    const [row] = computeDoublesRankings(
+      [
+        makeTeam({
+          teamId: 'ann_bob',
+          seasonId: 'spring-2026',
+          divisionLevelId: 'level-1',
+          matchesWon: 1,
+        }),
+      ],
+      [],
+    );
+    expect(row.seasonId).toBe('spring-2026');
+    expect(row.divisionLevelId).toBe('level-1');
+  });
+
+  it('omits divisionLevelId rather than emitting undefined when it is unset', () => {
+    // Firestore rejects an explicit undefined, so the field must be absent.
+    const [row] = computeDoublesRankings([makeTeam({ teamId: 'ann_bob' })], []);
+    expect('divisionLevelId' in row).toBe(false);
+  });
+
+  it('ranks each call independently from 1, which per-season bucketing relies on', () => {
+    // recalculateRankings groups partnerships by season and calls this once per
+    // season, so that rank 1 means "best that season" rather than "best across
+    // every season pooled together".
+    const spring = computeDoublesRankings(
+      [
+        makeTeam({ teamId: 'ann_bob', seasonId: 'spring-2026', matchesWon: 1 }),
+        makeTeam({ teamId: 'cara_dan', seasonId: 'spring-2026', matchesWon: 5 }),
+      ],
+      [],
+    );
+    const fall = computeDoublesRankings(
+      [makeTeam({ teamId: 'ann_bob', seasonId: 'fall-2026', matchesWon: 2 })],
+      [],
+    );
+
+    expect(spring.map((r) => r.rank)).toEqual([1, 2]);
+    expect(spring[0].teamId).toBe('cara_dan');
+    // The same partnership tops its own season despite a lower win count than
+    // the other season's leader.
+    expect(fall[0].rank).toBe(1);
+    expect(fall[0].teamId).toBe('ann_bob');
+    expect(fall[0].seasonId).toBe('fall-2026');
+  });
+
+  it('returns an empty table for no teams', () => {
+    expect(computeDoublesRankings([], [])).toEqual([]);
   });
 });

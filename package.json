@@ -1,7 +1,7 @@
 {
   "name": "tennis-scoring",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.1.0",
   "packageManager": "pnpm@9.15.5",
   "scripts": {
     "build": "turbo run build",

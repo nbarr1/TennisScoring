@@ -14,6 +14,7 @@ export * from "./moderation";
 export * from "./schedule";
 export * from "./hooks/useMatch";
 export * from "./hooks/useRankings";
+export * from "./hooks/useDoublesRankings";
 export * from "./hooks/useMessages";
 export * from "./hooks/useUser";
 export * from "./hooks/useDivisionOptions";

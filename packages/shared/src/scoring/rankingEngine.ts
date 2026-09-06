@@ -1,4 +1,4 @@
-import type { PlayerRanking, HeadToHead } from '../types/ranking';
+import type { PlayerRanking, DoublesTeamRanking, HeadToHead } from '../types/ranking';
 
 export interface RankingInput {
   userId: string;
@@ -11,6 +11,57 @@ export interface RankingInput {
   setsLost: number;
   gamesWon: number;
   gamesLost: number;
+}
+
+/**
+ * One doubles partnership's running totals. Mirrors `RankingInput` but is keyed
+ * on the team rather than an individual, so both partners' results land on the
+ * same row.
+ */
+export interface DoublesTeamRankingInput {
+  teamId: string;
+  playerIds: string[];
+  displayName: string;
+  divisionId: string;
+  season: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  setsLost: number;
+  gamesWon: number;
+  gamesLost: number;
+}
+
+/** The fields the shared comparator needs, whatever the entity is keyed on. */
+interface RankableTotals {
+  displayName: string;
+  matchesWon: number;
+  matchesLost: number;
+  setsWon: number;
+  gamesWon: number;
+  gameDifferential: number;
+}
+
+/**
+ * Sorts entities into standings order and assigns 1-based ranks.
+ *
+ * Shared by singles and doubles so the tiebreak order is defined once:
+ * matches won -> sets won -> games won -> game differential -> head-to-head ->
+ * display name. `keyOf` supplies the id used for head-to-head lookups (a user
+ * id for singles, a team id for doubles).
+ */
+function rankEntities<T extends RankableTotals>(
+  entities: T[],
+  keyOf: (entity: T) => string,
+  headToHeads: HeadToHead[],
+): T[] {
+  const h2hMap = buildH2HMap(headToHeads);
+  const sorted = entities.sort((a, b) =>
+    compareRankableTotals(a, b, keyOf(a), keyOf(b), h2hMap),
+  );
+  return sorted.map((entity, i) => ({ ...entity, rank: i + 1 }));
 }
 
 export function computeRankings(
@@ -27,11 +78,31 @@ export function computeRankings(
     updatedAt: now,
   }));
 
-  const h2hMap = buildH2HMap(headToHeads);
+  return rankEntities(players, (p) => p.userId, headToHeads);
+}
 
-  const sorted = players.sort((a, b) => compareRankings(a, b, h2hMap));
+/**
+ * Doubles standings, one row per fixed partnership.
+ *
+ * `headToHeads` are team-vs-team records (their `player1Id`/`player2Id` hold
+ * team ids), so a partnership that swept another partnership outranks it on the
+ * head-to-head tiebreak exactly as two individuals would.
+ */
+export function computeDoublesRankings(
+  inputs: DoublesTeamRankingInput[],
+  headToHeads: HeadToHead[]
+): DoublesTeamRanking[] {
+  const now = Date.now();
 
-  return sorted.map((p, i) => ({ ...p, rank: i + 1 }));
+  const teams: DoublesTeamRanking[] = inputs.map((t) => ({
+    ...t,
+    matchesPlayed: t.matchesWon + t.matchesLost,
+    gameDifferential: t.gamesWon - t.gamesLost,
+    rank: 0,
+    updatedAt: now,
+  }));
+
+  return rankEntities(teams, (t) => t.teamId, headToHeads);
 }
 
 function buildH2HMap(h2hs: HeadToHead[]): Map<string, Map<string, number>> {
@@ -46,9 +117,11 @@ function buildH2HMap(h2hs: HeadToHead[]): Map<string, Map<string, number>> {
   return map;
 }
 
-function compareRankings(
-  a: PlayerRanking,
-  b: PlayerRanking,
+function compareRankableTotals(
+  a: RankableTotals,
+  b: RankableTotals,
+  aKey: string,
+  bKey: string,
   h2hMap: Map<string, Map<string, number>>
 ): number {
   // 1. Matches won
@@ -60,8 +133,8 @@ function compareRankings(
   // 4. Game differential
   if (b.gameDifferential !== a.gameDifferential) return b.gameDifferential - a.gameDifferential;
   // 5. Head-to-head
-  const aWinsVsB = h2hMap.get(a.userId)?.get(b.userId) ?? 0;
-  const bWinsVsA = h2hMap.get(b.userId)?.get(a.userId) ?? 0;
+  const aWinsVsB = h2hMap.get(aKey)?.get(bKey) ?? 0;
+  const bWinsVsA = h2hMap.get(bKey)?.get(aKey) ?? 0;
   if (aWinsVsB !== bWinsVsA) return bWinsVsA - aWinsVsB;
   // 6. Alphabetical tiebreaker for stable sort
   return a.displayName.localeCompare(b.displayName);
