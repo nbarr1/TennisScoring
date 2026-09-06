@@ -17,6 +17,7 @@ import {
   sidePlayerIds,
   sideDisplayName,
   sideOfPlayer,
+  isDoublesMatch,
   opposingSide as opposingMatchSide,
 } from '@tennis/shared';
 import type {
@@ -76,27 +77,32 @@ function validateMatchCompleteness(match: Match): Match | undefined {
   if (!Array.isArray(match.liveScore?.sets) || match.liveScore.sets.length === 0) {
     return undefined;
   }
-  if (match.matchType === 'doubles') {
-    // A doubles result is only countable when both partnerships are complete;
-    // a half-populated side would otherwise resolve to a one-player "team".
-    const side1 = sidePlayerIds(match, 'player1');
-    const side2 = sidePlayerIds(match, 'player2');
-    if (side1.length !== 2 || side2.length !== 2) return undefined;
-    if (new Set([...side1, ...side2]).size !== 4) return undefined;
-  }
   return match;
 }
 
-/** Per-partnership totals accumulated during the doubles pass. */
+/**
+ * One partnership's totals within one season.
+ *
+ * Standings are bucketed per (team, season) rather than per team: a
+ * partnership that returns for a second season would otherwise show all-time
+ * totals stamped with whichever single season happened to win the tie-break,
+ * inflating the current season and vanishing from the previous one.
+ */
 type DoublesTeamTotals = RankingStats & {
+  teamId: string;
+  seasonId: string;
   playerIds: string[];
   displayName: string;
-  // Every season/level this team's counted matches came from. A single entry
-  // means the value is unambiguous and can be written onto the standings row,
-  // which is what the doublesRankings season/level queries filter on.
-  seasonIds: Set<string>;
+  // Levels this team played in during this season. A single entry means the
+  // value is unambiguous and can be written onto the standings row, which is
+  // what the doublesRankings level query filters on.
   divisionLevelIds: Set<string>;
 };
+
+/** Standings document id: unique per partnership per season. */
+function doublesRankingDocId(seasonId: string, teamId: string): string {
+  return `${seasonId}__${teamId}`;
+}
 
 function cloneStats(stats: Match['stats']): Match['stats'] {
   return {
@@ -593,10 +599,13 @@ function accumulateDoublesMatch(
     hasDivisionRoster: boolean;
     divisionPlayerIdSet: Set<string>;
     rosterDisplayNames: Map<string, string>;
+    activeSeasonId: string;
     teamTotals: Map<string, DoublesTeamTotals>;
     h2hAccum: Map<string, HeadToHead>;
   },
 ): boolean {
+  // Matches predating season tagging fall into the division's active season.
+  const seasonId = match.seasonId?.trim() || ctx.activeSeasonId;
   const side1Ids = sidePlayerIds(match, 'player1');
   const side2Ids = sidePlayerIds(match, 'player2');
 
@@ -620,16 +629,18 @@ function accumulateDoublesMatch(
   };
 
   const ensureTeam = (teamId: string, ids: string[], side: Player) => {
-    const existing = ctx.teamTotals.get(teamId);
+    const key = doublesRankingDocId(seasonId, teamId);
+    const existing = ctx.teamTotals.get(key);
     if (existing) return existing;
     const created: DoublesTeamTotals = {
       ...emptyRankingStats(),
+      teamId,
+      seasonId,
       playerIds: ids,
       displayName: nameFor(ids, side),
-      seasonIds: new Set<string>(),
       divisionLevelIds: new Set<string>(),
     };
-    ctx.teamTotals.set(teamId, created);
+    ctx.teamTotals.set(key, created);
     return created;
   };
 
@@ -637,7 +648,6 @@ function accumulateDoublesMatch(
   const team2 = ensureTeam(team2Id, side2Ids, 'player2');
 
   for (const team of [team1, team2]) {
-    if (match.seasonId) team.seasonIds.add(match.seasonId);
     if (match.divisionLevelId) team.divisionLevelIds.add(match.divisionLevelId);
   }
 
@@ -658,7 +668,7 @@ function accumulateDoublesMatch(
   team2.gamesWon += p2Games;
   team2.gamesLost += p1Games;
 
-  const h2hId = doublesHeadToHeadId(team1Id, team2Id);
+  const h2hId = doublesHeadToHeadId(team1Id, team2Id, seasonId);
   const [h2hFirstId, h2hSecondId] = [team1Id, team2Id].sort();
   if (!ctx.h2hAccum.has(h2hId)) {
     ctx.h2hAccum.set(h2hId, {
@@ -757,6 +767,10 @@ export async function recalculateRankings(
 
   result.completedMatchesScanned = matchesSnap.size;
 
+  const activeSeasonId = typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()
+    ? division.activeSeasonId
+    : currentSeasonForDate().id;
+
   const statsMap = new Map<string, RankingStats>();
   // Doubles totals accumulate per fixed partnership, keyed by doublesTeamId.
   const doublesTeamTotals = new Map<string, DoublesTeamTotals>();
@@ -788,12 +802,13 @@ export async function recalculateRankings(
       continue;
     }
 
-    if (match.matchType === 'doubles') {
+    if (isDoublesMatch(match)) {
       const counted = accumulateDoublesMatch(match, {
         divisionId,
         hasDivisionRoster,
         divisionPlayerIdSet,
         rosterDisplayNames,
+        activeSeasonId,
         teamTotals: doublesTeamTotals,
         h2hAccum,
       });
@@ -900,9 +915,6 @@ export async function recalculateRankings(
     userSnaps.map((s) => [s.id, (s.data()?.displayName ?? s.id).trim()]),
   );
 
-  const activeSeasonId = typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()
-    ? division.activeSeasonId
-    : currentSeasonForDate().id;
   const rankingInputs = playerIds.map((userId) => ({
     userId,
     displayName: displayNames.get(userId) ?? userId,
@@ -965,19 +977,30 @@ export async function recalculateRankings(
   const onlyValue = (values: Set<string>): string | undefined =>
     values.size === 1 ? [...values][0] : undefined;
 
-  const doublesInputs: DoublesTeamRankingInput[] = [...doublesTeamTotals.entries()].map(
-    ([teamId, totals]) => {
-      const teamSeasonId = onlyValue(totals.seasonIds) ?? activeSeasonId;
+  // Rank within each season separately, so rank 1 means "best that season"
+  // rather than "best across every season pooled together".
+  const totalsBySeason = new Map<string, DoublesTeamTotals[]>();
+  for (const totals of doublesTeamTotals.values()) {
+    const bucket = totalsBySeason.get(totals.seasonId);
+    if (bucket) bucket.push(totals);
+    else totalsBySeason.set(totals.seasonId, [totals]);
+  }
+
+  const doublesH2Hs = [...h2hAccum.values()];
+  const doublesRankingDocIds = new Set<string>();
+
+  for (const [seasonId, seasonTotals] of totalsBySeason) {
+    const doublesInputs: DoublesTeamRankingInput[] = seasonTotals.map((totals) => {
       const teamLevelId = onlyValue(totals.divisionLevelIds);
       return {
-        teamId,
+        teamId: totals.teamId,
         playerIds: totals.playerIds,
         displayName: totals.displayName,
         divisionId,
-        season: teamSeasonId,
-        seasonId: teamSeasonId,
-        // Only when every counted match shares one level; omitted rather than
-        // written as undefined, which Firestore rejects.
+        season: seasonId,
+        seasonId,
+        // Only when every counted match in this season shared one level;
+        // omitted rather than written as undefined, which Firestore rejects.
         ...(teamLevelId ? { divisionLevelId: teamLevelId } : {}),
         matchesWon: totals.matchesWon,
         matchesLost: totals.matchesLost,
@@ -986,31 +1009,31 @@ export async function recalculateRankings(
         gamesWon: totals.gamesWon,
         gamesLost: totals.gamesLost,
       };
-    },
-  );
-  const doublesRankings = computeDoublesRankings(doublesInputs, [...h2hAccum.values()]);
+    });
 
-  const doublesRankingIds = new Set(doublesRankings.map((ranking) => ranking.teamId));
+    for (const ranking of computeDoublesRankings(doublesInputs, doublesH2Hs)) {
+      const docId = doublesRankingDocId(seasonId, ranking.teamId);
+      doublesRankingDocIds.add(docId);
+      const ref = db
+        .collection('divisions')
+        .doc(divisionId)
+        .collection('doublesRankings')
+        .doc(docId);
+      writer.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
+      result.doublesRankingsWritten += 1;
+    }
+  }
+
   const existingDoublesSnap = await db
     .collection('divisions')
     .doc(divisionId)
     .collection('doublesRankings')
     .get();
   for (const doc of existingDoublesSnap.docs) {
-    if (!doublesRankingIds.has(doc.id)) {
+    if (!doublesRankingDocIds.has(doc.id)) {
       writer.delete(doc.ref);
       result.doublesRankingsDeleted += 1;
     }
-  }
-
-  for (const ranking of doublesRankings) {
-    const ref = db
-      .collection('divisions')
-      .doc(divisionId)
-      .collection('doublesRankings')
-      .doc(ranking.teamId);
-    writer.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
-    result.doublesRankingsWritten += 1;
   }
 
   const h2hIds = new Set([...h2hAccum.keys()]);
@@ -1157,10 +1180,15 @@ async function notifyPlayersMatchRecorded(
   matchId: string,
   recorderName: string,
 ): Promise<void> {
-  const userSnaps = await Promise.all([
-    db.collection('users').doc(match.player1Id).get(),
-    db.collection('users').doc(match.player2Id).get(),
-  ]);
+  // Every player on both sides — in doubles the two partners are neither
+  // player1Id nor player2Id and would otherwise never be told.
+  const recipientIds = [
+    ...sidePlayerIds(match, 'player1'),
+    ...sidePlayerIds(match, 'player2'),
+  ].filter((id) => id && id !== 'guest');
+  const userSnaps = await Promise.all(
+    recipientIds.map((id) => db.collection('users').doc(id).get()),
+  );
   const playerNames = `${match.player1Name ?? 'Player 1'} vs ${match.player2Name ?? 'Player 2'}`;
   const link = matchLinkForId(matchId);
   const htmlLink = escapeHtml(link);

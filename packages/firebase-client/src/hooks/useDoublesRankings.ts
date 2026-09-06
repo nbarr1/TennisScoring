@@ -9,6 +9,7 @@ import {
   formatDoublesTeamName,
   sidePlayerIds,
   sideDisplayName,
+  isDoublesMatch,
 } from '@tennis/shared';
 import type {
   DoublesTeamRanking,
@@ -60,7 +61,8 @@ function buildDoublesRankingsFromMatches(
   let countedMatchCount = 0;
 
   for (const match of matches) {
-    if (match.matchType !== 'doubles') continue;
+    // Shape, not the `matchType` label — see isDoublesMatch.
+    if (!isDoublesMatch(match)) continue;
     if (!match.winner) continue;
     if (match.isDivisionMatch === false) continue;
     if (!match.liveScore?.sets?.length) continue;

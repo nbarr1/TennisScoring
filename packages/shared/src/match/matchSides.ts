@@ -24,8 +24,20 @@ export function opposingSide(side: Player): Player {
   return side === 'player1' ? 'player2' : 'player1';
 }
 
+/**
+ * True when the document actually has two full partnerships.
+ *
+ * Deliberately tests the *shape*, not `matchType`. `matchType` is a label
+ * stamped from the division level onto every match created in it, so an
+ * ordinary two-player match inside a "Beginner Doubles" level carries
+ * `matchType: 'doubles'` while being a singles match. It is also
+ * client-writable. The side rosters are the only trustworthy signal.
+ */
 export function isDoublesMatch(match: MatchSidesLike): boolean {
-  return match.matchType === 'doubles';
+  return (
+    sidePlayerIds(match, 'player1').length === 2 &&
+    sidePlayerIds(match, 'player2').length === 2
+  );
 }
 
 /**

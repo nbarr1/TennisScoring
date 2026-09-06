@@ -60,10 +60,14 @@ export const createDoublesMatch = functions.https.onCall(async (request) => {
     side2PlayerIds,
   });
 
-  if (!doublesFields.playerIds.includes(request.auth.uid)) {
+  // The creator must be on side 1, mirroring the singles rule
+  // `player1Id == request.auth.uid`. This keeps "the proposer is on the
+  // proposing side" true, so the proposer can never also satisfy the
+  // accept-proposal rule and confirm their own match.
+  if (!doublesFields.side1?.playerIds.includes(request.auth.uid)) {
     throw new functions.https.HttpsError(
       'permission-denied',
-      'You can only create a doubles match you are playing in',
+      'You must be on the first side of a doubles match you create',
     );
   }
 

@@ -364,14 +364,18 @@ service cloud.firestore {
     }
 
     match /matches/{matchId} {
+      // NOTE: 'side1'/'side2' are deliberately absent. They decide doubles
+      // standings credit and report authorization, and no rule here can tie
+      // them to playerIds, so a client could otherwise create a match naming
+      // four uninvolved players and have their teams credited. Doubles
+      // matches are created by the createDoublesMatch callable, which uses
+      // the Admin SDK and bypasses these rules.
       function matchFields() {
         return [
           'divisionId',
           'seasonId',
           'divisionLevelId',
           'matchType',
-          'side1',
-          'side2',
           'player1Id',
           'player2Id',
           'player1Name',

@@ -51,8 +51,19 @@ export function formatDoublesTeamName(displayNames: readonly string[]): string {
  *
  * Prefixed so it can share the `headToHead` collection with singles records
  * (whose ids are `${userId}_${userId}`) without any chance of collision.
+ *
+ * Pass `seasonId` to scope the record to one season, matching how doubles
+ * standings are bucketed — otherwise a season's tiebreak would be decided by
+ * an all-time record.
  */
-export function doublesHeadToHeadId(teamAId: string, teamBId: string): string {
+export function doublesHeadToHeadId(
+  teamAId: string,
+  teamBId: string,
+  seasonId?: string,
+): string {
   const [first, second] = [teamAId, teamBId].sort();
-  return [DOUBLES_H2H_PREFIX, first, second].join(TEAM_ID_SEPARATOR);
+  const parts = [DOUBLES_H2H_PREFIX];
+  if (seasonId && seasonId.trim().length > 0) parts.push(seasonId.trim());
+  parts.push(first, second);
+  return parts.join(TEAM_ID_SEPARATOR);
 }

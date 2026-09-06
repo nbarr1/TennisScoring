@@ -29,7 +29,7 @@ divisions/{divisionId}                       — Division
 divisions/{divisionId}/levels/{levelId}      — DivisionLevel
 divisions/{divisionId}/memberships/{id}      — DivisionMembership (id = `${seasonId}_${levelId}_${userId}`)
 divisions/{divisionId}/rankings/{userId}     — PlayerRanking
-divisions/{divisionId}/doublesRankings/{teamId} — DoublesTeamRanking (teamId = sorted member uids joined by '_')
+divisions/{divisionId}/doublesRankings/{seasonId}__{teamId} — DoublesTeamRanking (teamId = sorted member uids joined by '_')
 matches/{matchId}                            — Match (top-level collection, filter by divisionId)
 channels/{channelId}                         — Channel
 channels/{channelId}/messages/{messageId}    — Message
@@ -43,7 +43,7 @@ Never write Firestore documents directly outside these shapes; never invent new 
 - Completed matches for ranking fallback: `where(divisionId==X) where(status=='completed')`
 - Matches for a player: `where(playerIds array-contains uid) orderBy(createdAt desc)`
 - Rankings: `orderBy(rank asc)` under `divisions/{id}/rankings`
-- Doubles team standings: `orderBy(rank asc)` under `divisions/{id}/doublesRankings`
+- Doubles team standings: `orderBy(rank asc)` under `divisions/{id}/doublesRankings`, filtered by `seasonId`
 - Channels for a user: `where(participantIds array-contains uid) orderBy(createdAt desc)`
 - Messages in a channel: `orderBy(createdAt asc) limit(50)`
 
@@ -70,7 +70,7 @@ Never write Firestore documents directly outside these shapes; never invent new 
 
 **PlayerRanking** (`divisions/{id}/rankings/{userId}`): `userId, displayName, divisionId, season, seasonId?, divisionLevelId?, matchType?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`.
 
-**DoublesTeamRanking** (`divisions/{id}/doublesRankings/{teamId}`): `teamId, playerIds:[String], displayName, divisionId, season, seasonId?, divisionLevelId?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`. One row per fixed partnership; `teamId` is the sorted pair of member uids, so the same pairing always resolves to the same row.
+**DoublesTeamRanking** (`divisions/{id}/doublesRankings/{seasonId}__{teamId}`): `teamId, playerIds:[String], displayName, divisionId, season, seasonId?, divisionLevelId?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`. One row per fixed partnership **per season**; `teamId` is the sorted pair of member uids, so the same pairing always resolves to the same row within a season. `rank` is 1-based within its season.
 
 **HeadToHead** (`headToHead/{id}`): `id, divisionId, player1Id, player2Id, player1Wins, player2Wins`.
 

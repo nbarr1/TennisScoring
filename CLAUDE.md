@@ -179,7 +179,7 @@ All Firestore reads go through these hooks; all writes go through operations exp
   - Proposal accepted (`proposed` → `scheduled`) → FCM notification to proposer.
   - Proposal cancelled (`proposed` → `cancelled`) → FCM notification to proposer.
   - Report submitted → FCM notification to opponent.
-  - Report confirmed → calls `recalculateRankings()` (reads all completed matches in division, recomputes via `computeRankings()` from `@tennis/shared`, writes to `divisions/{divId}/rankings/{userId}`, `headToHead/{h2hId}`, and a denormalized `rankingSummary` on `users/{userId}`). Completed **doubles** matches are diverted to a second pass that accumulates per fixed partnership and writes `divisions/{divId}/doublesRankings/{teamId}` via `computeDoublesRankings()`. The two ranking collections are pruned independently; doubles head-to-head records share the `headToHead` collection under a `doubles_`-prefixed id, so the existing prune stays correct.
+  - Report confirmed → calls `recalculateRankings()` (reads all completed matches in division, recomputes via `computeRankings()` from `@tennis/shared`, writes to `divisions/{divId}/rankings/{userId}`, `headToHead/{h2hId}`, and a denormalized `rankingSummary` on `users/{userId}`). Completed **doubles** matches are diverted to a second pass that accumulates per fixed partnership and writes `divisions/{divId}/doublesRankings/{seasonId}__{teamId}` via `computeDoublesRankings()`. Standings are bucketed **per season**, and ranks are computed within each season, so a partnership returning for a second season gets its own row rather than an inflated all-time total. The two ranking collections are pruned independently; doubles head-to-head records share the `headToHead` collection under a `doubles_`-prefixed, season-scoped id, so the existing prune stays correct.
   - Report disputed → FCM notification to division leader.
 - `resolveDisputedReport` — HTTPS callable; division leaders resolve disputed reports.
 - `recalculateDivisionRankings` — HTTPS callable; leaders/admins manually trigger ranking recalculation.
@@ -266,7 +266,7 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 
 ### Doubles matches and team rankings
 
-A doubles match is four players in two **fixed partnerships**. There is no team collection and no team registration: a team is identified by `doublesTeamId(playerIds)` — the sorted pair of its members' user ids — so the same pairing accumulates onto one standings row across a season.
+A doubles match is four players in two **fixed partnerships**. There is no team collection and no team registration: a team is identified by `doublesTeamId(playerIds)` — the sorted pair of its members' user ids — so the same pairing accumulates onto one standings row per season.
 
 Document shape (singles matches are unchanged and carry no `side1`/`side2`):
 
@@ -289,6 +289,8 @@ Consequences worth knowing before changing this code:
 - Guests are singles-only: a team standing needs four resolvable accounts.
 - Round-robin scheduling does not support doubles. `publishRoundRobinSchedule` rejects a doubles level with `failed-precondition`, and both admin surfaces disable the generator for one.
 - Doubles matches create doubles standings only; the singles ranking fallback in `useRankings` skips them.
+- **`matchType` is a label, never the discriminator.** It is stamped from the division level onto every match created in it, so an ordinary two-player match inside a "Beginner Doubles" level carries `matchType: 'doubles'`, and it is client-writable. Every singles/doubles fork tests `isDoublesMatch()`, which checks the *shape* — two sides of two players each. Treating the label as the discriminator silently drops those two-player matches out of the singles standings.
+- **`side1`/`side2` are not in the `matchFields()` allow-list**, so clients cannot write them. They decide standings credit and report authorization, and no rule can tie them to `playerIds`; a client could otherwise name four uninvolved players and have their teams credited. Doubles matches are created by `createDoublesMatch`, which uses the Admin SDK. The creator must be on side 1, mirroring the singles `player1Id == request.auth.uid` rule.
 
 ### Round-robin match scheduling
 

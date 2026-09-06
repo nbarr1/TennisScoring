@@ -69,6 +69,20 @@ describe('doublesHeadToHeadId', () => {
     );
   });
 
+  it('scopes to a season when one is supplied, so seasons cannot conflate', () => {
+    const spring = doublesHeadToHeadId('ann_bob', 'cara_dan', 'spring-2026');
+    const fall = doublesHeadToHeadId('ann_bob', 'cara_dan', 'fall-2026');
+    expect(spring).not.toBe(fall);
+    expect(spring).not.toBe(doublesHeadToHeadId('ann_bob', 'cara_dan'));
+    expect(spring.startsWith('doubles_spring-2026_')).toBe(true);
+  });
+
+  it('ignores a blank season, falling back to the unscoped id', () => {
+    expect(doublesHeadToHeadId('ann_bob', 'cara_dan', '  ')).toBe(
+      doublesHeadToHeadId('ann_bob', 'cara_dan'),
+    );
+  });
+
   it('is prefixed so it cannot collide with a singles head-to-head id', () => {
     const singlesStyleId = ['ann', 'bob'].sort().join('_');
     expect(doublesHeadToHeadId('ann_bob', 'cara_dan')).not.toBe(singlesStyleId);
@@ -101,6 +115,27 @@ describe('matchSides accessors', () => {
     expect(sidePlayerIds(singlesMatch, 'player2')).toEqual(['bob']);
     expect(sideDisplayName(singlesMatch, 'player1')).toBe('Ann Smith');
     expect(isDoublesMatch(singlesMatch)).toBe(false);
+  });
+
+  it('does not treat a two-player match tagged matchType doubles as doubles', () => {
+    // `matchType` is stamped from the division level onto every match created
+    // in it, so an ordinary singles match inside a "Beginner Doubles" level
+    // carries the label. Counting it as doubles drops it from singles standings.
+    const mislabelled: MatchSidesLike = { ...singlesMatch, matchType: 'doubles' };
+    expect(isDoublesMatch(mislabelled)).toBe(false);
+  });
+
+  it('does not treat a half-populated side as doubles', () => {
+    const halfPopulated: MatchSidesLike = {
+      ...doublesMatch,
+      side2: { playerIds: ['cara'] },
+    };
+    expect(isDoublesMatch(halfPopulated)).toBe(false);
+  });
+
+  it('treats a four-player match with no matchType label as doubles', () => {
+    const unlabelled: MatchSidesLike = { ...doublesMatch, matchType: undefined };
+    expect(isDoublesMatch(unlabelled)).toBe(true);
   });
 
   it('reads both partners off a doubles side', () => {
