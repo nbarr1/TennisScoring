@@ -325,6 +325,31 @@ describe('computeDoublesRankings', () => {
     expect('divisionLevelId' in row).toBe(false);
   });
 
+  it('ranks each call independently from 1, which per-season bucketing relies on', () => {
+    // recalculateRankings groups partnerships by season and calls this once per
+    // season, so that rank 1 means "best that season" rather than "best across
+    // every season pooled together".
+    const spring = computeDoublesRankings(
+      [
+        makeTeam({ teamId: 'ann_bob', seasonId: 'spring-2026', matchesWon: 1 }),
+        makeTeam({ teamId: 'cara_dan', seasonId: 'spring-2026', matchesWon: 5 }),
+      ],
+      [],
+    );
+    const fall = computeDoublesRankings(
+      [makeTeam({ teamId: 'ann_bob', seasonId: 'fall-2026', matchesWon: 2 })],
+      [],
+    );
+
+    expect(spring.map((r) => r.rank)).toEqual([1, 2]);
+    expect(spring[0].teamId).toBe('cara_dan');
+    // The same partnership tops its own season despite a lower win count than
+    // the other season's leader.
+    expect(fall[0].rank).toBe(1);
+    expect(fall[0].teamId).toBe('ann_bob');
+    expect(fall[0].seasonId).toBe('fall-2026');
+  });
+
   it('returns an empty table for no teams', () => {
     expect(computeDoublesRankings([], [])).toEqual([]);
   });
