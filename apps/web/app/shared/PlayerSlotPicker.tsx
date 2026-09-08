@@ -44,18 +44,22 @@ export function PlayerSlotPicker({
       setResults([]);
       return;
     }
+    let active = true;
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
         const found = await searchDivisionPlayers(divisionId, searchText);
-        setResults(found.filter((u) => !excludeIds.includes(u.id)));
+        if (active) setResults(found.filter((u) => !excludeIds.includes(u.id)));
       } catch {
-        setResults([]);
+        if (active) setResults([]);
       } finally {
-        setSearching(false);
+        if (active) setSearching(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
     // Keyed on excludeKey rather than excludeIds so a new array identity each
     // render does not restart the search.
   }, [searchText, divisionId, selected, excludeKey, excludeIds]);

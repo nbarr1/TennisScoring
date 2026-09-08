@@ -1,4 +1,4 @@
-import type { DivisionMatchType } from './division';
+import type { DivisionMatchType } from "./division";
 
 export interface PlayerRanking {
   userId: string;
@@ -7,7 +7,7 @@ export interface PlayerRanking {
   season: string;
   seasonId?: string;
   divisionLevelId?: string;
-  matchType?: 'singles' | 'doubles';
+  matchType?: "singles" | "doubles";
   rank: number;
   matchesPlayed: number;
   matchesWon: number;
@@ -54,4 +54,6 @@ export interface HeadToHead {
   player1Wins: number;
   player2Wins: number;
   matchType?: DivisionMatchType;
+  seasonId?: string;
+  divisionLevelId?: string;
 }

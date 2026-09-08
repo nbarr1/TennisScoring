@@ -47,18 +47,22 @@ export function PlayerSlotPicker({
       setResults([]);
       return;
     }
+    let active = true;
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
         const found = await searchDivisionPlayers(divisionId, searchText);
-        setResults(found.filter((u) => !excludeIds.includes(u.id)));
+        if (active) setResults(found.filter((u) => !excludeIds.includes(u.id)));
       } catch {
-        setResults([]);
+        if (active) setResults([]);
       } finally {
-        setSearching(false);
+        if (active) setSearching(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
     // excludeKey stands in for excludeIds so a new array identity each render
     // does not restart the search.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,7 +103,9 @@ export function PlayerSlotPicker({
           autoCapitalize="none"
           autoCorrect={false}
         />
-        {searching && <ActivityIndicator style={pickerStyles.spinner} color="#1a472a" />}
+        {searching && (
+          <ActivityIndicator style={pickerStyles.spinner} color="#1a472a" />
+        )}
       </View>
       {results.map((item) => (
         <TouchableOpacity
