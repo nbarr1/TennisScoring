@@ -1,9 +1,16 @@
-import * as functions from 'firebase-functions/v2';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getApps, initializeApp } from 'firebase-admin/app';
-import { DEFAULT_FORMAT, EMPTY_STATS, createInitialScore } from '@tennis/shared';
-import type { Match } from '@tennis/shared';
-import { buildDoublesMatchFields } from './doublesSides';
+import * as functions from "firebase-functions/v2";
+import { getFirestore } from "firebase-admin/firestore";
+import { getApps, initializeApp } from "firebase-admin/app";
+import {
+  DEFAULT_FORMAT,
+  EMPTY_STATS,
+  createInitialScore,
+} from "@tennis/shared";
+import type { Match } from "@tennis/shared";
+import {
+  buildDoublesMatchFields,
+  validateDoublesCompetition,
+} from "./doublesSides";
 
 if (!getApps().length) initializeApp();
 
@@ -29,7 +36,10 @@ type CreateDoublesMatchInput = {
  */
 export const createDoublesMatch = functions.https.onCall(async (request) => {
   if (!request.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Must be signed in",
+    );
   }
 
   const {
@@ -43,13 +53,19 @@ export const createDoublesMatch = functions.https.onCall(async (request) => {
     isDivisionMatch,
   } = (request.data ?? {}) as CreateDoublesMatchInput;
 
-  const safeDivisionId = typeof divisionId === 'string' ? divisionId.trim() : '';
-  const safeSeasonId = typeof seasonId === 'string' ? seasonId.trim() : '';
-  const safeDivisionLevelId = typeof divisionLevelId === 'string' ? divisionLevelId.trim() : '';
-  const safeStatus: Match['status'] = status === 'proposed' ? 'proposed' : 'scheduled';
+  const safeDivisionId =
+    typeof divisionId === "string" ? divisionId.trim() : "";
+  const safeSeasonId = typeof seasonId === "string" ? seasonId.trim() : "";
+  const safeDivisionLevelId =
+    typeof divisionLevelId === "string" ? divisionLevelId.trim() : "";
+  const safeStatus: Match["status"] =
+    status === "proposed" ? "proposed" : "scheduled";
 
   if (!safeDivisionId) {
-    throw new functions.https.HttpsError('invalid-argument', 'divisionId is required');
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "divisionId is required",
+    );
   }
 
   const db = getFirestore();
@@ -59,6 +75,13 @@ export const createDoublesMatch = functions.https.onCall(async (request) => {
     side1PlayerIds,
     side2PlayerIds,
   });
+  await validateDoublesCompetition({
+    db,
+    divisionId: safeDivisionId,
+    seasonId: safeSeasonId || undefined,
+    divisionLevelId: safeDivisionLevelId || undefined,
+    playerIds: doublesFields.playerIds,
+  });
 
   // The creator must be on side 1, mirroring the singles rule
   // `player1Id == request.auth.uid`. This keeps "the proposer is on the
@@ -66,13 +89,13 @@ export const createDoublesMatch = functions.https.onCall(async (request) => {
   // accept-proposal rule and confirm their own match.
   if (!doublesFields.side1?.playerIds.includes(request.auth.uid)) {
     throw new functions.https.HttpsError(
-      'permission-denied',
-      'You must be on the first side of a doubles match you create',
+      "permission-denied",
+      "You must be on the first side of a doubles match you create",
     );
   }
 
   const now = Date.now();
-  const matchData: Omit<Match, 'id'> = {
+  const matchData: Omit<Match, "id"> = {
     divisionId: safeDivisionId,
     ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
     ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
@@ -83,13 +106,13 @@ export const createDoublesMatch = functions.https.onCall(async (request) => {
     stats: { player1: { ...EMPTY_STATS }, player2: { ...EMPTY_STATS } },
     advancedStatsEnabled: false,
     tipsEnabled: true,
-    source: 'live',
+    source: "live",
     isDivisionMatch: isDivisionMatch ?? true,
     createdBy: request.auth.uid,
-    ...(typeof scheduledAt === 'number' ? { scheduledAt } : {}),
+    ...(typeof scheduledAt === "number" ? { scheduledAt } : {}),
     createdAt: now,
   };
 
-  const matchRef = await db.collection('matches').add(matchData);
+  const matchRef = await db.collection("matches").add(matchData);
   return { success: true, matchId: matchRef.id, status: safeStatus };
 });
