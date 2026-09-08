@@ -62,7 +62,7 @@ export function PlayerSlotPicker({
     };
     // Keyed on excludeKey rather than excludeIds so a new array identity each
     // render does not restart the search.
-  }, [searchText, divisionId, selected, excludeKey, excludeIds]);
+  }, [searchText, divisionId, selected, excludeKey]);
 
   if (selected) {
     return (

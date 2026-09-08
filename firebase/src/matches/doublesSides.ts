@@ -177,8 +177,10 @@ export async function validateDoublesCompetition(params: {
     const activePlayerIds = new Set(
       membershipsSnap.docs
         .map((doc) => doc.data())
-        .filter((membership) =>
-          membership.seasonId === seasonId && membership.status === "active")
+        .filter(
+          (membership) =>
+            membership.seasonId === seasonId && membership.status === "active",
+        )
         .map((membership) => membership.userId as string),
     );
     if (!playerIds.every((id) => activePlayerIds.has(id))) {
@@ -206,15 +208,17 @@ export async function validateDoublesCompetition(params: {
   }
 }
 
-/** True when a callable payload asks for a doubles match. */
+/**
+ * True when a callable payload asks for a doubles match.
+ *
+ * Roster validation belongs to `buildDoublesMatchFields`. Keeping this check
+ * limited to the discriminator ensures a malformed doubles request is rejected
+ * there instead of falling through to the singles path.
+ */
 export function requestsDoubles(input: {
   matchType?: string;
   side1PlayerIds?: unknown;
   side2PlayerIds?: unknown;
 }): boolean {
-  return (
-    input.matchType === "doubles" &&
-    Array.isArray(input.side1PlayerIds) &&
-    Array.isArray(input.side2PlayerIds)
-  );
+  return input.matchType === "doubles";
 }
