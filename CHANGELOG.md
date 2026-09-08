@@ -26,7 +26,9 @@
 - Singles/doubles is decided by the match's *shape* (two sides of two players) rather than by the `matchType` label. The label is stamped from the division level onto every match created in it, so ordinary two-player matches inside a doubles level were being dropped from singles standings.
 - Clients can no longer write `side1`/`side2`: they are out of the Firestore `matchFields()` allow-list. Because they decide doubles standings credit and report authorization, a member could otherwise create a match naming four uninvolved players and have those partnerships credited, or forge a `side2` to accept their own proposal. `createDoublesMatch` now also requires the creator to be on side 1.
 - Recording a doubles match on behalf of players notifies all four, not just each side's first player.
-- Doubles standings are bucketed per season (`{seasonId}__{teamId}`) with ranks computed within each season, so a partnership playing across two seasons no longer shows inflated all-time totals under the current one.
+- Doubles standings are bucketed independently per season and division level, so results and head-to-head tiebreaks cannot leak across competition buckets. Ranking, team, and head-to-head document IDs use collision-safe opaque encoding rather than delimiter-based concatenation.
+- Doubles match callables validate requested seasons and levels and require all four players to have active membership in the selected level before standings-affecting data is written.
+- Web and mobile doubles player pickers now ignore stale asynchronous search responses.
 - `publishRoundRobinSchedule` reads the stored division level to reject doubles, so an older client that omits `matchType` cannot publish 1v1 fixtures into a doubles level.
 - Added production release readiness plan documenting concrete release gating, distribution, and post-release patch workflow (dated 2026-05-28).
 - Clarified Phase 0 release-candidate freeze instructions so deployment does not assume a local `main` branch exists.
@@ -47,4 +49,3 @@
 
 ### Changed
 - Bumped workspace and app versions from 1.0.0 to 1.0.1 for patch release.
-

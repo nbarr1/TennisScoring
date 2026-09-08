@@ -1,7 +1,7 @@
-import * as functions from 'firebase-functions/v2';
-import { getFirestore } from 'firebase-admin/firestore';
-import { formatDoublesTeamName } from '@tennis/shared';
-import type { Match, MatchSide } from '@tennis/shared';
+import * as functions from "firebase-functions/v2";
+import { getFirestore } from "firebase-admin/firestore";
+import { formatDoublesTeamName } from "@tennis/shared";
+import type { Match, MatchSide } from "@tennis/shared";
 
 /**
  * The doubles-specific fields of a match document.
@@ -13,27 +13,41 @@ import type { Match, MatchSide } from '@tennis/shared';
  */
 export type DoublesMatchFields = Pick<
   Match,
-  'matchType' | 'side1' | 'side2' | 'player1Id' | 'player2Id' | 'player1Name' | 'player2Name' | 'playerIds' | 'player2IsGuest'
+  | "matchType"
+  | "side1"
+  | "side2"
+  | "player1Id"
+  | "player2Id"
+  | "player1Name"
+  | "player2Name"
+  | "playerIds"
+  | "player2IsGuest"
 >;
 
 const PLAYERS_PER_SIDE = 2;
 
 function normalizeSideIds(raw: unknown, label: string): string[] {
   if (!Array.isArray(raw)) {
-    throw new functions.https.HttpsError('invalid-argument', `${label} must be an array of user ids`);
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      `${label} must be an array of user ids`,
+    );
   }
   const ids = raw
-    .filter((id): id is string => typeof id === 'string')
+    .filter((id): id is string => typeof id === "string")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
   if (ids.length !== PLAYERS_PER_SIDE) {
     throw new functions.https.HttpsError(
-      'invalid-argument',
+      "invalid-argument",
       `${label} must list exactly ${PLAYERS_PER_SIDE} players`,
     );
   }
   if (new Set(ids).size !== PLAYERS_PER_SIDE) {
-    throw new functions.https.HttpsError('invalid-argument', `${label} lists the same player twice`);
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      `${label} lists the same player twice`,
+    );
   }
   return ids;
 }
@@ -52,35 +66,42 @@ export async function buildDoublesMatchFields(params: {
   side2PlayerIds: unknown;
 }): Promise<DoublesMatchFields> {
   const { db, divisionId } = params;
-  const side1Ids = normalizeSideIds(params.side1PlayerIds, 'side1PlayerIds');
-  const side2Ids = normalizeSideIds(params.side2PlayerIds, 'side2PlayerIds');
+  const side1Ids = normalizeSideIds(params.side1PlayerIds, "side1PlayerIds");
+  const side2Ids = normalizeSideIds(params.side2PlayerIds, "side2PlayerIds");
 
   const allIds = [...side1Ids, ...side2Ids];
   if (new Set(allIds).size !== allIds.length) {
     throw new functions.https.HttpsError(
-      'invalid-argument',
-      'A player cannot appear on both sides of a doubles match',
+      "invalid-argument",
+      "A player cannot appear on both sides of a doubles match",
     );
   }
 
   const [divisionSnap, ...playerSnaps] = await Promise.all([
-    db.collection('divisions').doc(divisionId).get(),
-    ...allIds.map((id) => db.collection('users').doc(id).get()),
+    db.collection("divisions").doc(divisionId).get(),
+    ...allIds.map((id) => db.collection("users").doc(id).get()),
   ]);
 
   if (!divisionSnap.exists) {
-    throw new functions.https.HttpsError('not-found', 'Division not found');
+    throw new functions.https.HttpsError("not-found", "Division not found");
   }
 
   const division = divisionSnap.data();
-  const divisionPlayerIds: string[] = Array.isArray(division?.playerIds) ? division.playerIds : [];
-  const leaderIds: string[] = Array.isArray(division?.leaderIds) ? division.leaderIds : [];
+  const divisionPlayerIds: string[] = Array.isArray(division?.playerIds)
+    ? division.playerIds
+    : [];
+  const leaderIds: string[] = Array.isArray(division?.leaderIds)
+    ? division.leaderIds
+    : [];
 
   const namesById = new Map<string, string>();
   playerSnaps.forEach((snap, index) => {
     const id = allIds[index];
     if (!snap.exists) {
-      throw new functions.https.HttpsError('not-found', 'Every selected player must exist');
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Every selected player must exist",
+      );
     }
     const data = snap.data();
     const inDivision =
@@ -89,20 +110,27 @@ export async function buildDoublesMatchFields(params: {
       leaderIds.includes(id);
     if (!inDivision) {
       throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Every selected player must belong to the selected division',
+        "failed-precondition",
+        "Every selected player must belong to the selected division",
       );
     }
     namesById.set(id, (data?.displayName as string | undefined)?.trim() || id);
   });
 
-  const nameFor = (ids: string[]) => formatDoublesTeamName(ids.map((id) => namesById.get(id) ?? id));
+  const nameFor = (ids: string[]) =>
+    formatDoublesTeamName(ids.map((id) => namesById.get(id) ?? id));
 
-  const side1: MatchSide = { playerIds: side1Ids, displayName: nameFor(side1Ids) };
-  const side2: MatchSide = { playerIds: side2Ids, displayName: nameFor(side2Ids) };
+  const side1: MatchSide = {
+    playerIds: side1Ids,
+    displayName: nameFor(side1Ids),
+  };
+  const side2: MatchSide = {
+    playerIds: side2Ids,
+    displayName: nameFor(side2Ids),
+  };
 
   return {
-    matchType: 'doubles',
+    matchType: "doubles",
     side1,
     side2,
     player1Id: side1Ids[0],
@@ -114,6 +142,70 @@ export async function buildDoublesMatchFields(params: {
   };
 }
 
+/** Validate client-supplied competition buckets before they can affect standings. */
+export async function validateDoublesCompetition(params: {
+  db: ReturnType<typeof getFirestore>;
+  divisionId: string;
+  seasonId?: string;
+  divisionLevelId?: string;
+  playerIds: string[];
+}): Promise<void> {
+  const { db, divisionId, seasonId, divisionLevelId, playerIds } = params;
+  if (divisionLevelId && !seasonId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "seasonId is required when divisionLevelId is supplied",
+    );
+  }
+  if (!seasonId) return;
+
+  const divisionRef = db.collection("divisions").doc(divisionId);
+  if (divisionLevelId) {
+    const [levelSnap, membershipsSnap] = await Promise.all([
+      divisionRef.collection("levels").doc(divisionLevelId).get(),
+      divisionRef
+        .collection("memberships")
+        .where("divisionLevelId", "==", divisionLevelId)
+        .get(),
+    ]);
+    if (!levelSnap.exists || levelSnap.data()?.seasonId !== seasonId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Selected division level is not available for that season",
+      );
+    }
+    const activePlayerIds = new Set(
+      membershipsSnap.docs
+        .map((doc) => doc.data())
+        .filter((membership) =>
+          membership.seasonId === seasonId && membership.status === "active")
+        .map((membership) => membership.userId as string),
+    );
+    if (!playerIds.every((id) => activePlayerIds.has(id))) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Every selected player must be active in the selected division level",
+      );
+    }
+    return;
+  }
+
+  const [divisionSnap, levelsSnap] = await Promise.all([
+    divisionRef.get(),
+    divisionRef
+      .collection("levels")
+      .where("seasonId", "==", seasonId)
+      .limit(1)
+      .get(),
+  ]);
+  if (divisionSnap.data()?.activeSeasonId !== seasonId && levelsSnap.empty) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Selected season is not available in this division",
+    );
+  }
+}
+
 /** True when a callable payload asks for a doubles match. */
 export function requestsDoubles(input: {
   matchType?: string;
@@ -121,7 +213,7 @@ export function requestsDoubles(input: {
   side2PlayerIds?: unknown;
 }): boolean {
   return (
-    input.matchType === 'doubles' &&
+    input.matchType === "doubles" &&
     Array.isArray(input.side1PlayerIds) &&
     Array.isArray(input.side2PlayerIds)
   );

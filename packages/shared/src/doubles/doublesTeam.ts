@@ -7,30 +7,54 @@
  * one standings row across a season without anyone registering a team first.
  */
 
-const TEAM_ID_SEPARATOR = '_';
-const DOUBLES_H2H_PREFIX = 'doubles';
+const DOUBLES_H2H_PREFIX = "doubles";
+
+/** Encode arbitrary Firebase ids without relying on a reserved delimiter. */
+function encodeIdParts(parts: readonly string[]): string {
+  return parts.map((part) => `${part.length}:${part}`).join("");
+}
+
+function decodeIdParts(value: string): string[] {
+  const parts: string[] = [];
+  let offset = 0;
+  while (offset < value.length) {
+    const colon = value.indexOf(":", offset);
+    if (colon < 0) return [];
+    const lengthText = value.slice(offset, colon);
+    if (!/^\d+$/.test(lengthText)) return [];
+    const length = Number(lengthText);
+    const start = colon + 1;
+    const end = start + length;
+    if (!Number.isSafeInteger(length) || end > value.length) return [];
+    parts.push(value.slice(start, end));
+    offset = end;
+  }
+  return parts;
+}
 
 function normalizeIds(playerIds: readonly string[]): string[] {
   return playerIds
-    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .filter(
+      (id): id is string => typeof id === "string" && id.trim().length > 0,
+    )
     .map((id) => id.trim());
 }
 
 /**
  * Stable, order-independent id for a partnership.
  *
- * Ids are sorted before joining, so [a, b] and [b, a] produce the same team.
+ * Ids are sorted before encoding, so [a, b] and [b, a] produce the same team.
  * Returns an empty string when no usable ids are supplied.
  */
 export function doublesTeamId(playerIds: readonly string[]): string {
   const ids = Array.from(new Set(normalizeIds(playerIds))).sort();
-  return ids.join(TEAM_ID_SEPARATOR);
+  return encodeIdParts(ids);
 }
 
 /** The member ids encoded in a team id, in sorted order. */
 export function doublesTeamPlayerIds(teamId: string): string[] {
-  if (typeof teamId !== 'string' || teamId.trim().length === 0) return [];
-  return teamId.split(TEAM_ID_SEPARATOR).filter((id) => id.length > 0);
+  if (typeof teamId !== "string" || teamId.trim().length === 0) return [];
+  return decodeIdParts(teamId);
 }
 
 /**
@@ -41,16 +65,19 @@ export function doublesTeamPlayerIds(teamId: string): string[] {
  */
 export function formatDoublesTeamName(displayNames: readonly string[]): string {
   const names = displayNames
-    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+    .filter(
+      (name): name is string =>
+        typeof name === "string" && name.trim().length > 0,
+    )
     .map((name) => name.trim());
-  return names.join(' / ');
+  return names.join(" / ");
 }
 
 /**
  * Head-to-head document id for a doubles pairing.
  *
- * Prefixed so it can share the `headToHead` collection with singles records
- * (whose ids are `${userId}_${userId}`) without any chance of collision.
+ * Encoded with a doubles marker so it can share the `headToHead` collection
+ * with singles records without collisions.
  *
  * Pass `seasonId` to scope the record to one season, matching how doubles
  * standings are bucketed — otherwise a season's tiebreak would be decided by
@@ -60,10 +87,15 @@ export function doublesHeadToHeadId(
   teamAId: string,
   teamBId: string,
   seasonId?: string,
+  divisionLevelId?: string,
+  divisionId?: string,
 ): string {
   const [first, second] = [teamAId, teamBId].sort();
   const parts = [DOUBLES_H2H_PREFIX];
+  if (divisionId && divisionId.trim().length > 0) parts.push(divisionId.trim());
   if (seasonId && seasonId.trim().length > 0) parts.push(seasonId.trim());
+  if (divisionLevelId && divisionLevelId.trim().length > 0)
+    parts.push(divisionLevelId.trim());
   parts.push(first, second);
-  return parts.join(TEAM_ID_SEPARATOR);
+  return encodeIdParts(parts);
 }

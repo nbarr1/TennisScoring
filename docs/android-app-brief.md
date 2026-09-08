@@ -29,11 +29,11 @@ divisions/{divisionId}                       — Division
 divisions/{divisionId}/levels/{levelId}      — DivisionLevel
 divisions/{divisionId}/memberships/{id}      — DivisionMembership (id = `${seasonId}_${levelId}_${userId}`)
 divisions/{divisionId}/rankings/{userId}     — PlayerRanking
-divisions/{divisionId}/doublesRankings/{seasonId}__{teamId} — DoublesTeamRanking (teamId = sorted member uids joined by '_')
+divisions/{divisionId}/doublesRankings/{rankingId} — DoublesTeamRanking (opaque collision-safe ranking/team ids)
 matches/{matchId}                            — Match (top-level collection, filter by divisionId)
 channels/{channelId}                         — Channel
 channels/{channelId}/messages/{messageId}    — Message
-headToHead/{h2hId}                           — HeadToHead (id = sorted([p1Id,p2Id]).join('_'))
+headToHead/{h2hId}                           — HeadToHead (opaque id; inspect matchType and explicit scope fields)
 ```
 
 Never write Firestore documents directly outside these shapes; never invent new top-level collections. Common queries to replicate:
@@ -70,7 +70,7 @@ Never write Firestore documents directly outside these shapes; never invent new 
 
 **PlayerRanking** (`divisions/{id}/rankings/{userId}`): `userId, displayName, divisionId, season, seasonId?, divisionLevelId?, matchType?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`.
 
-**DoublesTeamRanking** (`divisions/{id}/doublesRankings/{seasonId}__{teamId}`): `teamId, playerIds:[String], displayName, divisionId, season, seasonId?, divisionLevelId?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`. One row per fixed partnership **per season**; `teamId` is the sorted pair of member uids, so the same pairing always resolves to the same row within a season. `rank` is 1-based within its season.
+**DoublesTeamRanking** (`divisions/{id}/doublesRankings/{rankingId}`): `teamId, playerIds:[String], displayName, divisionId, season, seasonId?, divisionLevelId?, rank, matchesPlayed, matchesWon, matchesLost, setsWon, setsLost, gamesWon, gamesLost, gameDifferential, updatedAt`. One row per fixed partnership **per season and division level**. `rankingId` and `teamId` are opaque collision-safe encodings; clients identify members from `playerIds`, not by splitting an id. `rank` is 1-based within its season/level bucket.
 
 **HeadToHead** (`headToHead/{id}`): `id, divisionId, player1Id, player2Id, player1Wins, player2Wins`.
 
