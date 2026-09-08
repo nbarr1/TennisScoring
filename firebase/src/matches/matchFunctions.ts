@@ -81,9 +81,9 @@ function validateMatchCompleteness(match: Match): Match | undefined {
 }
 
 /**
- * One partnership's totals within one season.
+ * One partnership's totals within one season and division level.
  *
- * Standings are bucketed per (team, season) rather than per team: a
+ * Standings are bucketed per (team, season, level) rather than per team: a
  * partnership that returns for a second season would otherwise show all-time
  * totals stamped with whichever single season happened to win the tie-break,
  * inflating the current season and vanishing from the previous one.

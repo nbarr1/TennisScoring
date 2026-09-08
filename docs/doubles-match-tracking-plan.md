@@ -1,5 +1,7 @@
 # Doubles match tracking and team rankings
 
+> **Status: implemented.** This document is retained as historical design context. Where examples below differ from the current implementation, the code and the architecture notes in `CLAUDE.md` are authoritative. In particular, current IDs use collision-safe length-prefixed encoding and standings are scoped by season and division level.
+
 ## Context
 
 The app runs tennis leagues but only supports 1v1 play end to end. A division leader can already create a **doubles division level** (`DivisionLevel.matchType: 'singles' | 'doubles'`, `packages/shared/src/types/division.ts:4,27`) and both admin screens expose the picker — but every match created inside such a level is still a singles match. Doubles is a label with nothing behind it.
@@ -55,9 +57,9 @@ The single reuse point for every consumer. Works on legacy singles docs via fall
 
 ### New: `packages/shared/src/doubles/doublesTeam.ts`
 
-- `doublesTeamId(playerIds: string[]): string` — `[...ids].sort().join('_')`, order independent, stable across matches. This is what makes partnerships "fixed" without a team collection.
+- `doublesTeamId(playerIds: string[]): string` — sorts and length-prefix encodes the ids; order independent, stable across matches, and safe when ids contain delimiter characters. This is what makes partnerships "fixed" without a team collection.
 - `formatDoublesTeamName(names: string[]): string` — `"Ann Smith / Bob Jones"`
-- `doublesHeadToHeadId(teamA, teamB): string` — `doubles_${[teamA, teamB].sort().join('_')}`. The `doubles_` prefix guarantees no collision with the existing singles h2h id scheme (`${a}_${b}`, `matchFunctions.ts:657`).
+- `doublesHeadToHeadId(...)` — produces an opaque, collision-safe id scoped by division, season, and division level so records cannot overwrite another competition bucket.
 
 ### `packages/shared/src/types/ranking.ts`
 
@@ -106,7 +108,7 @@ Export the two new modules.
 
 ### New collection
 
-`divisions/{divisionId}/doublesRankings/{teamId}` — deliberately a **sibling** of `rankings/{userId}`, not the same collection. `recalculateRankings` prunes any ranking doc not in its computed set (`matchFunctions.ts:713-722`); mixing team docs in would make that prune wrong, and existing standings queries would pool singles and doubles rows.
+`divisions/{divisionId}/doublesRankings/{rankingId}` — deliberately a **sibling** of `rankings/{userId}`, not the same collection. The opaque ranking id scopes a team to its season and level; explicit fields remain the query/API contract.
 
 ### `firebase/src/matches/matchFunctions.ts`
 
@@ -116,7 +118,7 @@ Export the two new modules.
   - Key stats by `doublesTeamId(sidePlayerIds(match, side))`; both partners' totals accrue to the one team row.
   - Team display name from the roster display names already loaded at `:528-563`, via `formatDoublesTeamName`.
   - Skip a team if any member is outside the division roster (mirrors the existing `player1Included`/`player2Included` gate at `:624-629`).
-  - `computeDoublesRankings` → write `divisions/{id}/doublesRankings/{teamId}` on the same `bulkWriter`, prune stale team docs the same way.
+  - `computeDoublesRankings` → write `divisions/{id}/doublesRankings/{rankingId}` on the same `bulkWriter`, prune stale team docs the same way.
   - Doubles head-to-head into the existing `headToHead` collection under `doublesHeadToHeadId(...)` with `matchType: 'doubles'`, accumulated in the **same** `h2hAccum` map so the existing prune at `:760-770` stays correct.
   - Do **not** touch `users/{uid}.rankingSummary` — it is a single object and its only role is a fallback for legacy singles data.
 
@@ -244,7 +246,7 @@ Show the two individual partner names as a subtitle under each side's team name,
    - Propose a doubles match; verify all three other players see it in Pending Invitations and that any opponent can accept.
    - Play it live; confirm the scoreboard, set breakdown, and `formatScoreDisplay` output are identical in shape to singles.
    - Submit the report as one winner; verify the **partner cannot confirm** and an opponent can.
-   - Check `divisions/{id}/doublesRankings` in the emulator UI: one doc per team, correct rank/sets/games, and a `headToHead/doubles_...` doc.
+   - Check `divisions/{id}/doublesRankings` in the emulator UI: one doc per team/season/level bucket, correct rank/sets/games, and an opaque doubles `headToHead` document.
    - Dashboard → Doubles segment shows team rows; the Singles segment is unchanged.
    - Play a second doubles match with the same partnership and confirm totals accrue to the *same* `teamId`.
 5. Regression pass: create and complete a **singles** match and confirm `divisions/{id}/rankings` and the existing standings are byte-identical in behavior to before.

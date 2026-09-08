@@ -311,6 +311,8 @@ pnpm --filter @tennis/mobile build:android
 
 Doubles play is available in any division: pick Doubles when proposing a match (web reads it from the selected division level; mobile offers a Singles/Doubles toggle in the proposal modal), then choose a partner and both opponents. Team standings are kept per fixed partnership — a team is the sorted pair of its members' user ids, so no team registration step is needed — and appear under the Doubles toggle on the standings screens. Round-robin scheduling remains singles-only.
 
+Doubles ranking and head-to-head document IDs are opaque implementation details. Read `playerIds`, `seasonId`, and `divisionLevelId` from document fields rather than splitting an ID. After deploying a release that changes the ID encoding or ranking bucket scheme, run the existing admin ranking recalculation once for each affected division; recalculation writes the canonical documents and prunes superseded IDs.
+
 Division leaders can use the Admin screen in both the web and mobile apps to document season-specific division levels. Seasons use canonical IDs such as `spring-2026` and `fall-2026`, and levels record the season, skill level, singles/doubles match type, optional description, ranking flag, and active flag under `divisions/{divisionId}/levels`.
 
 The same Admin screen exposes CSV export actions for match results and ranking rows. CSV generation runs through the protected `exportDivisionCsv` Cloud Function so exports consistently enforce division-leader/admin permissions and can be shared from mobile or downloaded from web.

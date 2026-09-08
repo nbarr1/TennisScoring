@@ -43,7 +43,7 @@ function normalizeIds(playerIds: readonly string[]): string[] {
 /**
  * Stable, order-independent id for a partnership.
  *
- * Ids are sorted before joining, so [a, b] and [b, a] produce the same team.
+ * Ids are sorted before encoding, so [a, b] and [b, a] produce the same team.
  * Returns an empty string when no usable ids are supplied.
  */
 export function doublesTeamId(playerIds: readonly string[]): string {
@@ -76,8 +76,8 @@ export function formatDoublesTeamName(displayNames: readonly string[]): string {
 /**
  * Head-to-head document id for a doubles pairing.
  *
- * Prefixed so it can share the `headToHead` collection with singles records
- * (whose ids are `${userId}_${userId}`) without any chance of collision.
+ * Encoded with a doubles marker so it can share the `headToHead` collection
+ * with singles records without collisions.
  *
  * Pass `seasonId` to scope the record to one season, matching how doubles
  * standings are bucketed — otherwise a season's tiebreak would be decided by
