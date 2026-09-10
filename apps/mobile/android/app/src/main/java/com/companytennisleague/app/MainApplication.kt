@@ -11,6 +11,8 @@ import com.facebook.react.ReactHost
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.companytennisleague.app.wear.WearOsPackage
+import com.companytennisleague.app.crash.CrashAnalyticsPackage
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
@@ -25,12 +27,16 @@ class MainApplication : Application(), ReactApplication {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
           add(WearOsPackage())
+          add(CrashAnalyticsPackage())
         }
     )
   }
 
   override fun onCreate() {
     super.onCreate()
+    // Keep local development noise out of the production dashboard while
+    // collecting native crashes as early as possible in release startup.
+    FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
