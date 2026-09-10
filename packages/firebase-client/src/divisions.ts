@@ -141,6 +141,26 @@ export async function upsertDivisionMembership(input: {
 }
 
 
+/**
+ * Archives a player's active memberships for a season (all levels, or one level when
+ * `divisionLevelId` is supplied). Used by the roster's remove action and by moving a
+ * player back to "Unassigned"; the membership document is kept with `status: 'removed'`.
+ */
+export async function removeDivisionMembership(input: {
+  divisionId: string;
+  seasonId: string;
+  userId: string;
+  divisionLevelId?: string;
+}): Promise<{ removed: number }> {
+  const callable = httpsCallable<typeof input, { removed: number }>(
+    functions,
+    'removeDivisionMembership',
+  );
+  const result = await callable(input);
+  return result.data;
+}
+
+
 export async function backfillDivisionSeasonLevel(input: {
   divisionId: string;
   seasonId: string;

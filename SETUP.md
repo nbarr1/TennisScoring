@@ -315,4 +315,8 @@ Doubles ranking and head-to-head document IDs are opaque implementation details.
 
 Division leaders can use the Admin screen in both the web and mobile apps to document season-specific division levels. Seasons use canonical IDs such as `spring-2026` and `fall-2026`, and levels record the season, skill level, singles/doubles match type, optional description, ranking flag, and active flag under `divisions/{divisionId}/levels`.
 
-The same Admin screen exposes CSV export actions for match results and ranking rows. CSV generation runs through the protected `exportDivisionCsv` Cloud Function so exports consistently enforce division-leader/admin permissions and can be shared from mobile or downloaded from web.
+On the web, `/admin` picks the season once in the page header and scopes the whole page to it. Division levels live on the **Divisions** tab; the roster, player creation, and division assignment live on the **Roster** tab; the round-robin scheduler, reported-message queue, ranking repair, and CSV exports live on the **Tools** tab.
+
+Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's active membership documents `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`.
+
+The Admin screen's Tools tab exposes CSV export actions for match results and ranking rows. CSV generation runs through the protected `exportDivisionCsv` Cloud Function so exports consistently enforce division-leader/admin permissions and can be shared from mobile or downloaded from web.

@@ -33,6 +33,12 @@ type AddPlaceholderInput = {
   seasonId?: string;
   divisionLevelId?: string;
 };
+type RemoveDivisionMembershipInput = {
+  divisionId?: string;
+  seasonId?: string;
+  userId?: string;
+  divisionLevelId?: string;
+};
 type UpsertDivisionMembershipInput = {
   divisionId?: string;
   seasonId?: string;
@@ -1283,6 +1289,65 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
   ]);
 
   return { membershipId, userId: targetUserId, createdPlaceholder };
+});
+
+
+/**
+ * Archives a player's active season memberships instead of deleting them, mirroring the
+ * archive pass `upsertDivisionMembership` already runs when a player moves between levels.
+ * Keeping the document (with `status: 'removed'`) preserves the audit trail and leaves any
+ * historical match/ranking record that references the membership resolvable.
+ */
+export const removeDivisionMembership = onCall(callableOptions, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to manage division memberships.');
+  }
+
+  const { divisionId, seasonId, userId, divisionLevelId } =
+    (request.data ?? {}) as RemoveDivisionMembershipInput;
+  const safeDivisionId = divisionId?.trim();
+  const safeSeasonId = seasonId?.trim();
+  const safeUserId = userId?.trim();
+  const safeLevelId = divisionLevelId?.trim();
+  if (!safeDivisionId || !safeSeasonId || !safeUserId) {
+    throw new HttpsError('invalid-argument', 'Division, season, and player are required.');
+  }
+
+  const db = getFirestore();
+  await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
+
+  const activeMemberships = await db
+    .collection('divisions')
+    .doc(safeDivisionId)
+    .collection('memberships')
+    .where('userId', '==', safeUserId)
+    .where('seasonId', '==', safeSeasonId)
+    .where('status', '==', 'active')
+    .get();
+
+  const targets = safeLevelId
+    ? activeMemberships.docs.filter((docSnap) => docSnap.data()?.divisionLevelId === safeLevelId)
+    : activeMemberships.docs;
+
+  if (targets.length === 0) {
+    return { removed: 0 };
+  }
+
+  const batch = db.batch();
+  targets.forEach((docSnap) => {
+    batch.set(
+      docSnap.ref,
+      {
+        status: 'removed',
+        assignedBy: request.auth!.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  await batch.commit();
+
+  return { removed: targets.length };
 });
 
 
