@@ -137,6 +137,28 @@ service cloud.firestore {
 
     // ---------- Users (Private) ----------
     match /users/{userId} {
+      // A client-side create is only a recovery path for environments where the
+      // blocking Auth trigger has not created the profile yet. Keep this list
+      // deliberately narrow: isDivisionAffiliated() trusts server-managed
+      // divisionIds/membershipDivisionIds, so accepting either field here would
+      // let a new account grant itself access to any division.
+      function initialUserFields() {
+        return [
+          'id',
+          'displayName',
+          'email',
+          'phone',
+          'avatarUrl',
+          'contactPreferences',
+          'role',
+          'divisionId',
+          'fcmTokens',
+          'tipsEnabled',
+          'createdAt',
+          'updatedAt'
+        ];
+      }
+
       function editableUserFields() {
         return [
           'displayName',
@@ -157,9 +179,19 @@ service cloud.firestore {
         isLeader(resource.data.divisionId)
       );
       allow create: if isUser(userId) &&
+        request.resource.data.keys().hasOnly(initialUserFields()) &&
         request.resource.data.id == request.auth.uid &&
         request.resource.data.role == 'player' &&
-        request.resource.data.divisionId == null;
+        request.resource.data.divisionId == null &&
+        request.resource.data.displayName is string &&
+        request.resource.data.displayName.size() > 0 &&
+        request.resource.data.displayName.size() <= 100 &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.fcmTokens is list &&
+        request.resource.data.fcmTokens.size() == 0 &&
+        request.resource.data.tipsEnabled is bool &&
+        request.resource.data.createdAt is number &&
+        request.resource.data.updatedAt is number;
       allow update: if isAdmin() || (
         isUser(userId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(editableUserFields()) &&
@@ -326,7 +358,19 @@ service cloud.firestore {
 
     function isLinkGuestUpdate(existing, incoming, changed) {
       return existing.get('player2IsGuest', false) == true &&
+        request.auth.uid == existing.player1Id &&
         incoming.player2IsGuest == false &&
+        incoming.player2Id is string &&
+        incoming.player2Id.size() > 0 &&
+        incoming.player2Id != existing.player1Id &&
+        incoming.player2Name is string &&
+        incoming.player2Name.size() > 0 &&
+        incoming.player2Name.size() <= 100 &&
+        incoming.playerIds == [existing.player1Id, incoming.player2Id] &&
+        (
+          getUserDataById(incoming.player2Id).divisionId == existing.divisionId ||
+          isUserInDivisionRoster(existing.divisionId, incoming.player2Id)
+        ) &&
         changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
     }
 

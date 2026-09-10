@@ -116,8 +116,16 @@ function buildHistoricScore(sets: { p1: number; p2: number }[]): {
     throw new Error('At least one set is required.');
   }
   for (const set of sets) {
-    if (set.p1 === set.p2) {
-      throw new Error('Each set must have a clear winner.');
+    if (
+      !Number.isInteger(set.p1) ||
+      !Number.isInteger(set.p2) ||
+      set.p1 < 0 ||
+      set.p2 < 0 ||
+      set.p1 === set.p2
+    ) {
+      throw new Error(
+        'Each set must have non-negative whole-number game counts and a clear winner.',
+      );
     }
   }
 
@@ -134,6 +142,9 @@ function buildHistoricScore(sets: { p1: number; p2: number }[]): {
       winner: setWinner,
     };
   });
+  if (p1Sets === p2Sets) {
+    throw new Error('The match must have a clear winner.');
+  }
   const winner: Player = p1Sets > p2Sets ? 'player1' : 'player2';
   const score: LiveScore = {
     sets: builtSets,
