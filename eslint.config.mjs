@@ -32,7 +32,7 @@ export default [
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
-      '**/lib/**',
+      'firebase/lib/**',
       '**/.next/**',
       '**/coverage/**',
       '**/android/**',
@@ -40,7 +40,7 @@ export default [
     ],
   },
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{js,jsx,ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
