@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Removed
+- Removed Firebase Crashlytics and the mobile crash-reporting bridge so the app does not collect crash analytics, consistent with the privacy policy.
+
 ## [1.1.0] — 2026-09-05
 
 ### Added
