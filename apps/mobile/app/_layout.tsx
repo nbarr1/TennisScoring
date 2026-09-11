@@ -8,14 +8,6 @@ import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
 import { signOut } from 'firebase/auth';
-import {
-  initializeCrashAnalytics,
-  recordError,
-  setCrashAnalyticsUser,
-} from '../lib/crashAnalytics';
-
-initializeCrashAnalytics();
-
 function LoadingScreen() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f0' }}>
@@ -36,7 +28,6 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('RootErrorBoundary caught an error', error, info.componentStack);
-    recordError(error, `React component error (${info.componentStack ?? 'component stack unavailable'})`);
   }
 
   render() {
@@ -149,10 +140,6 @@ function AuthGate() {
   const [gateTimedOut, setGateTimedOut] = useState(false);
 
   useNotifications(firebaseUser?.uid);
-
-  useEffect(() => {
-    setCrashAnalyticsUser(firebaseUser?.uid ?? null);
-  }, [firebaseUser?.uid]);
 
   const dataLoading = authLoading || (!!firebaseUser && profileLoading);
   const inAuth = segments[0] === '(auth)';
