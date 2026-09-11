@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
 import {
@@ -23,6 +23,7 @@ import {
   useDivisionLevels,
   useDivisionMemberships,
   upsertDivisionMembership,
+  removeDivisionMembership,
   useRankings,
   previewRoundRobinSchedule,
   publishRoundRobinSchedule,
@@ -52,6 +53,45 @@ const DIVISION_ACCESS_HINTS = [
   "Your users/{uid}.role is admin or app_developer, OR your users/{uid}.divisionId matches this division.",
   "Your uid is listed in this division's leaderIds or playerIds roster.",
 ];
+
+/** How long the transient "Saved" affordance stays visible next to a row control. */
+const SAVED_FLASH_MS = 1800;
+
+type AdminTab = "roster" | "divisions" | "tools";
+type ToolPanel = "scheduler" | "reports" | null;
+
+/** A roster row: the player, plus the season membership that places them in a level (if any). */
+type RosterRow = { player: User; membership: DivisionMembership | null };
+
+const TABS: Array<{ id: AdminTab; label: string }> = [
+  { id: "roster", label: "Roster" },
+  { id: "divisions", label: "Divisions" },
+  { id: "tools", label: "Tools" },
+];
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+/** Parses pasted "Name, email" lines. Splits on the first comma only, so names may not contain one. */
+function parseRosterPaste(text: string): Array<{ name: string; email: string }> {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const comma = line.indexOf(",");
+      if (comma === -1) return { name: line, email: "" };
+      return {
+        name: line.slice(0, comma).trim(),
+        email: line.slice(comma + 1).trim(),
+      };
+    })
+    .filter((entry) => entry.name.length > 0);
+}
 
 function PermissionHints({
   hints,
@@ -120,22 +160,24 @@ export default function AdminPage(): React.JSX.Element {
     loading: loadingDivisionLevels,
     error: divisionLevelsError,
   } = useDivisionLevels(division?.id);
-  const [levelSeasonId, setLevelSeasonId] = useState(currentSeason.id);
   const [levelName, setLevelName] = useState(formatDivisionLevelName("beginner", "singles"));
   const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>("beginner");
   const [levelMatchType, setLevelMatchType] = useState<DivisionMatchType>("singles");
   const [levelDescription, setLevelDescription] = useState("");
+  const [levelFormOpen, setLevelFormOpen] = useState(false);
   const [savingLevel, setSavingLevel] = useState(false);
   const [levelMessage, setLevelMessage] = useState("");
+  // The season is page-level context: every panel (roster, levels, scheduler, exports) reads it.
   const [adminSeasonId, setAdminSeasonId] = useState(currentSeason.id);
   const [viewAsUser, setViewAsUser] = useState(false);
+  const [activeTab, setActiveTab] = useState<AdminTab>("roster");
   const { memberships: seasonMemberships } = useDivisionMemberships(
     division?.id,
     adminSeasonId,
   );
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
-  const [rrSeasonId, setRrSeasonId] = useState(currentSeason.id);
+  const [openToolPanel, setOpenToolPanel] = useState<ToolPanel>(null);
   const [rrDivisionLevelId, setRrDivisionLevelId] = useState("");
   const [rrSelectedPlayerIds, setRrSelectedPlayerIds] = useState<string[]>([]);
   const [rrDoubleRoundRobin, setRrDoubleRoundRobin] = useState(false);
@@ -146,22 +188,31 @@ export default function AdminPage(): React.JSX.Element {
   const [rrPreview, setRrPreview] = useState<RoundRobinMatchup[] | null>(null);
   const [rrPublishing, setRrPublishing] = useState(false);
   const [rrMessage, setRrMessage] = useState("");
-  const rrLevelsForSeason = useMemo(
-    () => divisionLevels.filter((level) => level.seasonId === rrSeasonId),
-    [divisionLevels, rrSeasonId],
+
+  // `seasonOptions`/`currentSeason` are rebuilt every render, so this stays a plain lookup
+  // rather than a memo whose dependencies could never be stable.
+  const adminSeason =
+    seasonOptions.find((season) => season.id === adminSeasonId) ?? currentSeason;
+  const levelNameById = useMemo(
+    () => new Map(divisionLevels.map((level) => [level.id, level.name] as const)),
+    [divisionLevels],
+  );
+  const adminSeasonLevels = useMemo(
+    () => divisionLevels.filter((level) => level.seasonId === adminSeasonId),
+    [adminSeasonId, divisionLevels],
   );
   // The generator pairs individuals, so it cannot fill a doubles level yet.
   // publishRoundRobinSchedule rejects doubles server-side; this disables the UI
   // so a leader learns that before building a preview.
   const rrSelectedLevelIsDoubles =
-    rrLevelsForSeason.find((level) => level.id === rrDivisionLevelId)?.matchType === "doubles";
+    adminSeasonLevels.find((level) => level.id === rrDivisionLevelId)?.matchType === "doubles";
   const { memberships: rrMemberships } = useDivisionMemberships(
     division?.id,
-    rrSeasonId,
+    adminSeasonId,
     rrDivisionLevelId || null,
   );
   const { rankings: rrRankings } = useRankings(division?.id ?? null, {
-    seasonId: rrSeasonId,
+    seasonId: adminSeasonId,
     divisionLevelId: rrDivisionLevelId,
   });
   const rrNameById = useMemo(
@@ -191,14 +242,33 @@ export default function AdminPage(): React.JSX.Element {
     previousEmail: string;
     previousPhone?: string;
   } | null>(null);
-  const [newPlayerRowOpen, setNewPlayerRowOpen] = useState(false);
-  const [newPlayerName, setNewPlayerName] = useState("Example Player");
-  const [newPlayerEmail, setNewPlayerEmail] = useState("player@example.com");
-  const [newPlayerPhone, setNewPlayerPhone] = useState("555-0100");
-  const [newPlayerRole, setNewPlayerRole] = useState<"player" | "division_leader">("player");
-  const [newPlayerStatus, setNewPlayerStatus] = useState<"active" | "waitlisted">("active");
-  const [newPlayerDivisionLevelId, setNewPlayerDivisionLevelId] = useState("");
+
+  // ---- Roster tab state -------------------------------------------------
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterFilter, setRosterFilter] = useState<string>("all");
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
+  const [bulkLevelId, setBulkLevelId] = useState("");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  // Level assignments already sent to the server but not yet reflected by the memberships
+  // snapshot. `null` means "pending unassign"; a string is a pending level id.
+  const [pendingLevels, setPendingLevels] = useState<Record<string, string | null>>({});
+  const [savedFlashIds, setSavedFlashIds] = useState<string[]>([]);
+  const savedFlashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [hoveredRemoveId, setHoveredRemoveId] = useState<string | null>(null);
+  // Players created here are prepended locally until the memberships snapshot catches up.
+  const [pendingNewPlayers, setPendingNewPlayers] = useState<
+    Array<{ userId: string; name: string; email: string; levelId: string }>
+  >([]);
+  const [addPlayerOpen, setAddPlayerOpen] = useState(false);
+  const [addPlayerName, setAddPlayerName] = useState("");
+  const [addPlayerEmail, setAddPlayerEmail] = useState("");
+  const [addPlayerLevelId, setAddPlayerLevelId] = useState("");
   const [savingNewPlayer, setSavingNewPlayer] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importLevelId, setImportLevelId] = useState("");
+  const [importing, setImporting] = useState(false);
+
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<'player' | 'division_leader'>('player');
@@ -210,34 +280,90 @@ export default function AdminPage(): React.JSX.Element {
     roleClaim?: unknown;
   } | null>(null);
 
-  const levelNameById = useMemo(
-    () => new Map(divisionLevels.map((level) => [level.id, level.name] as const)),
-    [divisionLevels],
-  );
-  const adminSeasonLevels = useMemo(
-    () => divisionLevels.filter((level) => level.seasonId === adminSeasonId),
-    [adminSeasonId, divisionLevels],
-  );
   const divisionLevelsPermissionHint = useMemo(() => {
     if (divisionLevelsError?.code !== "permission-denied") return null;
     return DIVISION_ACCESS_HINTS;
   }, [divisionLevelsError?.code]);
 
+  const flashSaved = useCallback((userId: string) => {
+    setSavedFlashIds((current) =>
+      current.includes(userId) ? current : [...current, userId],
+    );
+    clearTimeout(savedFlashTimers.current[userId]);
+    savedFlashTimers.current[userId] = setTimeout(() => {
+      delete savedFlashTimers.current[userId];
+      setSavedFlashIds((current) => current.filter((id) => id !== userId));
+    }, SAVED_FLASH_MS);
+  }, []);
 
   useEffect(() => {
-    if (newPlayerDivisionLevelId && adminSeasonLevels.some((level) => level.id === newPlayerDivisionLevelId)) return;
-    setNewPlayerDivisionLevelId(adminSeasonLevels[0]?.id ?? "");
-  }, [adminSeasonLevels, newPlayerDivisionLevelId]);
+    const timers = savedFlashTimers.current;
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
+
+  // Changing the season resets the roster's filter, search, and selection.
+  useEffect(() => {
+    setRosterFilter("all");
+    setRosterSearch("");
+    setSelectedPlayerIds([]);
+    setPendingLevels({});
+    setPendingNewPlayers([]);
+    setExpandedPlayerId(null);
+    setAddPlayerOpen(false);
+  }, [adminSeasonId]);
+
+  // Drop an optimistic override as soon as the memberships snapshot reports the same value,
+  // so a stale pending entry can never mask a change made from another device.
+  useEffect(() => {
+    setPendingLevels((current) => {
+      const entries = Object.entries(current);
+      if (entries.length === 0) return current;
+      const settled = entries.filter(([userId, pending]) => {
+        const snapshotLevel = seasonMemberships.find((m) => m.userId === userId)?.divisionLevelId ?? null;
+        return (pending ?? null) === snapshotLevel;
+      });
+      if (settled.length === 0) return current;
+      const next = { ...current };
+      settled.forEach(([userId]) => delete next[userId]);
+      return next;
+    });
+  }, [seasonMemberships]);
 
   useEffect(() => {
-    if (rrLevelsForSeason.length === 0) {
+    if (addPlayerLevelId && adminSeasonLevels.some((level) => level.id === addPlayerLevelId)) return;
+    setAddPlayerLevelId(adminSeasonLevels[0]?.id ?? "");
+  }, [adminSeasonLevels, addPlayerLevelId]);
+
+  useEffect(() => {
+    if (!importOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setImportOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [importOpen]);
+
+  useEffect(() => {
+    if (importLevelId && adminSeasonLevels.some((level) => level.id === importLevelId)) return;
+    setImportLevelId(adminSeasonLevels[0]?.id ?? "");
+  }, [adminSeasonLevels, importLevelId]);
+
+  useEffect(() => {
+    if (bulkLevelId && adminSeasonLevels.some((level) => level.id === bulkLevelId)) return;
+    setBulkLevelId(adminSeasonLevels[0]?.id ?? "");
+  }, [adminSeasonLevels, bulkLevelId]);
+
+  useEffect(() => {
+    if (adminSeasonLevels.length === 0) {
       setRrDivisionLevelId("");
       return;
     }
-    if (!rrLevelsForSeason.some((level) => level.id === rrDivisionLevelId)) {
-      setRrDivisionLevelId(rrLevelsForSeason[0].id);
+    if (!adminSeasonLevels.some((level) => level.id === rrDivisionLevelId)) {
+      setRrDivisionLevelId(adminSeasonLevels[0].id);
     }
-  }, [rrLevelsForSeason, rrDivisionLevelId]);
+  }, [adminSeasonLevels, rrDivisionLevelId]);
 
   useEffect(() => {
     setRrSelectedPlayerIds(rrMemberships.map((m) => m.userId));
@@ -616,16 +742,15 @@ export default function AdminPage(): React.JSX.Element {
 
   async function handleCreateLevel() {
     if (!division || !levelName.trim()) return;
-    const selectedSeason = seasonOptions.find((season) => season.id === levelSeasonId) ?? currentSeason;
     setSavingLevel(true);
     setPageError("");
     setLevelMessage("");
     try {
       await upsertDivisionLevel({
         divisionId: division.id,
-        seasonId: selectedSeason.id,
-        year: selectedSeason.year,
-        seasonHalf: selectedSeason.half,
+        seasonId: adminSeason.id,
+        year: adminSeason.year,
+        seasonHalf: adminSeason.half,
         name: levelName,
         skillLevel: levelSkill,
         matchType: levelMatchType,
@@ -635,6 +760,7 @@ export default function AdminPage(): React.JSX.Element {
         sortOrder: divisionLevels.length + 1,
       });
       setLevelDescription("");
+      setLevelFormOpen(false);
       setLevelMessage("Division level saved. Rankings and CSV exports can now use this season/division option.");
     } catch (e) {
       setPageError((e as { message?: string }).message || "Failed to save division level.");
@@ -652,7 +778,7 @@ export default function AdminPage(): React.JSX.Element {
       const result = await exportDivisionCsv({
         divisionId: division.id,
         exportType,
-        seasonId: levelSeasonId,
+        seasonId: adminSeasonId,
       });
       const blob = new Blob([result.csv], { type: result.contentType });
       const href = URL.createObjectURL(blob);
@@ -670,11 +796,6 @@ export default function AdminPage(): React.JSX.Element {
       setExportingCsv(false);
     }
   }
-
-
-
-
-
 
   function toggleRrPlayer(userId: string) {
     setRrPreview(null);
@@ -707,7 +828,7 @@ export default function AdminPage(): React.JSX.Element {
   }
 
   async function handleRrPublish() {
-    if (!division || !rrSeasonId || !rrDivisionLevelId || !rrPreview) return;
+    if (!division || !adminSeasonId || !rrDivisionLevelId || !rrPreview) return;
     if (rrSelectedLevelIsDoubles) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rrStartDate)) {
       setPageError("Please enter the start date as YYYY-MM-DD.");
@@ -728,10 +849,10 @@ export default function AdminPage(): React.JSX.Element {
     setPageError("");
     setRrMessage("");
     try {
-      const level = rrLevelsForSeason.find((l) => l.id === rrDivisionLevelId);
+      const level = adminSeasonLevels.find((l) => l.id === rrDivisionLevelId);
       const result = await publishRoundRobinSchedule({
         divisionId: division.id,
-        seasonId: rrSeasonId,
+        seasonId: adminSeasonId,
         divisionLevelId: rrDivisionLevelId,
         matchType: level?.matchType,
         playerIds: rrSelectedPlayerIds,
@@ -826,6 +947,7 @@ export default function AdminPage(): React.JSX.Element {
       });
       setExpandedPlayerId(null);
       setEditingPlayerId(null);
+      flashSaved(editingPlayerId);
     } catch (e) {
       setPageError((e as { message?: string }).message || 'Failed to save player updates.');
     } finally {
@@ -833,68 +955,312 @@ export default function AdminPage(): React.JSX.Element {
     }
   }
 
-  async function handleCreatePlayerRow() {
-    if (!division || !newPlayerName.trim() || !newPlayerDivisionLevelId) return;
+  // ---- Roster derivation ------------------------------------------------
+  const playerById = useMemo(
+    () => new Map(players.map((player) => [player.id, player] as const)),
+    [players],
+  );
+  const membershipByUserId = useMemo(
+    () => new Map(seasonMemberships.map((membership) => [membership.userId, membership] as const)),
+    [seasonMemberships],
+  );
+
+  const rosterRows: RosterRow[] = useMemo(() => {
+    const membershipRows: RosterRow[] = seasonMemberships.map((membership) => ({
+      membership,
+      player: playerById.get(membership.userId) ?? ({
+        id: membership.userId,
+        displayName: membership.displayNameSnapshot,
+        email: membership.emailSnapshot ?? "",
+        phone: membership.phoneSnapshot,
+        contactPreferences: { allowEmail: true, allowSMS: true, allowInApp: true },
+        divisionId: membership.divisionId,
+        role: membership.role === "division_leader" ? "division_leader" : "player",
+        fcmTokens: [],
+        tipsEnabled: true,
+        createdAt: membership.createdAt,
+        updatedAt: membership.updatedAt,
+      } satisfies User),
+    }));
+    const legacyRows: RosterRow[] = players
+      .filter((player) => !membershipByUserId.has(player.id))
+      .map((player) => ({ player, membership: null }));
+    const known = new Set([
+      ...membershipRows.map((row) => row.player.id),
+      ...legacyRows.map((row) => row.player.id),
+    ]);
+    // Players added in this session sit at the top until the snapshot includes them.
+    const optimisticRows: RosterRow[] = pendingNewPlayers
+      .filter((entry) => !known.has(entry.userId))
+      .map((entry) => ({
+        membership: null,
+        player: {
+          id: entry.userId,
+          displayName: entry.name,
+          email: entry.email,
+          contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+          divisionId: division?.id ?? "",
+          role: "player",
+          fcmTokens: [],
+          tipsEnabled: true,
+          isRegistered: false,
+          inviteStatus: "none",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        } satisfies User,
+      }));
+    return [...optimisticRows, ...membershipRows, ...legacyRows];
+  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players, seasonMemberships]);
+
+  /** The level a row should display: a pending write wins over the snapshot; "" means unassigned. */
+  const effectiveLevelId = useCallback(
+    (row: RosterRow): string => {
+      const pending = pendingLevels[row.player.id];
+      if (pending !== undefined) return pending ?? "";
+      const optimisticNew = pendingNewPlayers.find((entry) => entry.userId === row.player.id);
+      if (!row.membership && optimisticNew) return optimisticNew.levelId;
+      return row.membership?.divisionLevelId ?? "";
+    },
+    [pendingLevels, pendingNewPlayers],
+  );
+
+  const unassignedCount = useMemo(
+    () => rosterRows.filter((row) => !effectiveLevelId(row)).length,
+    [effectiveLevelId, rosterRows],
+  );
+
+  const countByLevelId = useMemo(() => {
+    const counts = new Map<string, number>();
+    rosterRows.forEach((row) => {
+      const levelId = effectiveLevelId(row);
+      if (!levelId) return;
+      counts.set(levelId, (counts.get(levelId) ?? 0) + 1);
+    });
+    return counts;
+  }, [effectiveLevelId, rosterRows]);
+
+  const visibleRows = useMemo(() => {
+    const term = rosterSearch.trim().toLowerCase();
+    return rosterRows.filter((row) => {
+      const levelId = effectiveLevelId(row);
+      if (rosterFilter === "unassigned" && levelId) return false;
+      if (rosterFilter !== "all" && rosterFilter !== "unassigned" && levelId !== rosterFilter) {
+        return false;
+      }
+      if (!term) return true;
+      return (
+        row.player.displayName.toLowerCase().includes(term) ||
+        (row.player.email ?? "").toLowerCase().includes(term)
+      );
+    });
+  }, [effectiveLevelId, rosterFilter, rosterRows, rosterSearch]);
+
+  const visibleIds = useMemo(() => visibleRows.map((row) => row.player.id), [visibleRows]);
+  const selectedVisibleIds = useMemo(
+    () => selectedPlayerIds.filter((id) => visibleIds.includes(id)),
+    [selectedPlayerIds, visibleIds],
+  );
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const someVisibleSelected =
+    selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
+  const isFiltered = rosterFilter !== "all" || rosterSearch.trim().length > 0;
+
+  // ---- Roster actions ---------------------------------------------------
+  async function assignLevel(row: RosterRow, nextLevelId: string) {
+    if (!division) return;
+    const userId = row.player.id;
+    const previous = effectiveLevelId(row);
+    if (nextLevelId === previous) return;
+    setPendingLevels((current) => ({ ...current, [userId]: nextLevelId || null }));
+    setPageError("");
+    try {
+      if (nextLevelId) {
+        await upsertDivisionMembership({
+          divisionId: division.id,
+          seasonId: adminSeasonId,
+          divisionLevelId: nextLevelId,
+          userId,
+          name: row.player.displayName,
+          email: row.player.email || undefined,
+          phone: row.player.phone || undefined,
+          role: row.membership?.role,
+          status: row.membership?.status === "waitlisted" ? "waitlisted" : "active",
+        });
+      } else {
+        await removeDivisionMembership({
+          divisionId: division.id,
+          seasonId: adminSeasonId,
+          userId,
+        });
+      }
+      flashSaved(userId);
+    } catch (e) {
+      // Roll the optimistic value back so the select never lies about what was saved.
+      setPendingLevels((current) => {
+        const next = { ...current };
+        delete next[userId];
+        return next;
+      });
+      setPageError(
+        (e as { message?: string }).message ||
+          `Could not update the division for ${row.player.displayName}.`,
+      );
+    }
+  }
+
+  async function removeFromRoster(row: RosterRow) {
+    if (!division) return;
+    const confirmed = window.confirm(
+      `Remove ${row.player.displayName} from ${adminSeason.name}? Their match history is kept.`,
+    );
+    if (!confirmed) return;
+    const userId = row.player.id;
+    setPageError("");
+    setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
+    setSelectedPlayerIds((current) => current.filter((id) => id !== userId));
+    try {
+      await removeDivisionMembership({
+        divisionId: division.id,
+        seasonId: adminSeasonId,
+        userId,
+      });
+      setPendingLevels((current) => ({ ...current, [userId]: null }));
+    } catch (e) {
+      setPageError(
+        (e as { message?: string }).message ||
+          `Could not remove ${row.player.displayName} from this season.`,
+      );
+    }
+  }
+
+  async function applyBulkAssign() {
+    if (!division || !bulkLevelId || selectedVisibleIds.length === 0) return;
+    setBulkApplying(true);
+    setPageError("");
+    const targets = visibleRows.filter((row) => selectedVisibleIds.includes(row.player.id));
+    try {
+      for (const row of targets) {
+        if (effectiveLevelId(row) === bulkLevelId) continue;
+        setPendingLevels((current) => ({ ...current, [row.player.id]: bulkLevelId }));
+        await upsertDivisionMembership({
+          divisionId: division.id,
+          seasonId: adminSeasonId,
+          divisionLevelId: bulkLevelId,
+          userId: row.player.id,
+          name: row.player.displayName,
+          email: row.player.email || undefined,
+          phone: row.player.phone || undefined,
+          role: row.membership?.role,
+          status: row.membership?.status === "waitlisted" ? "waitlisted" : "active",
+        });
+        flashSaved(row.player.id);
+      }
+      setSelectedPlayerIds([]);
+    } catch (e) {
+      setPageError(
+        (e as { message?: string }).message || "Could not assign every selected player.",
+      );
+    } finally {
+      setBulkApplying(false);
+    }
+  }
+
+  async function handleAddPlayer() {
+    if (!division || !addPlayerName.trim() || !addPlayerLevelId) return;
     setSavingNewPlayer(true);
     setPageError("");
     try {
-      await upsertDivisionMembership({
+      const result = await upsertDivisionMembership({
         divisionId: division.id,
         seasonId: adminSeasonId,
-        divisionLevelId: newPlayerDivisionLevelId,
-        name: newPlayerName.trim(),
-        email: newPlayerEmail.trim() || undefined,
-        phone: newPlayerPhone.trim() || undefined,
+        divisionLevelId: addPlayerLevelId,
+        name: addPlayerName.trim(),
+        email: addPlayerEmail.trim() || undefined,
       });
-      setNewPlayerRowOpen(false);
-      setNewPlayerName("Example Player");
-      setNewPlayerEmail("player@example.com");
-      setNewPlayerPhone("555-0100");
+      setPendingNewPlayers((current) => [
+        {
+          userId: result.userId,
+          name: addPlayerName.trim(),
+          email: addPlayerEmail.trim(),
+          levelId: addPlayerLevelId,
+        },
+        ...current.filter((entry) => entry.userId !== result.userId),
+      ]);
+      flashSaved(result.userId);
+      setAddPlayerOpen(false);
+      setAddPlayerName("");
+      setAddPlayerEmail("");
     } catch (e) {
-      setPageError((e as { message?: string }).message || "Failed to save player row.");
+      setPageError((e as { message?: string }).message || "Failed to add the player.");
     } finally {
       setSavingNewPlayer(false);
     }
   }
 
-  const playerById = new Map(players.map((player) => [player.id, player] as const));
-  const membershipByUserId = new Map(seasonMemberships.map((membership) => [membership.userId, membership] as const));
-  const membershipRows = seasonMemberships.map((membership) => ({
-    membership,
-    player: playerById.get(membership.userId) ?? ({
-      id: membership.userId,
-      displayName: membership.displayNameSnapshot,
-      email: membership.emailSnapshot ?? "",
-      phone: membership.phoneSnapshot,
-      contactPreferences: { allowEmail: true, allowSMS: true, allowInApp: true },
-      divisionId: membership.divisionId,
-      role: membership.role === "division_leader" ? "division_leader" : "player",
-      fcmTokens: [],
-      tipsEnabled: true,
-      createdAt: membership.createdAt,
-      updatedAt: membership.updatedAt,
-    } satisfies User),
-  }));
-  const legacyRows = players
-    .filter((player) => !membershipByUserId.has(player.id))
-    .map((player) => ({ player, membership: null }));
-  const rosterRows = [...membershipRows, ...legacyRows];
-  const rowsByLevel = rosterRows.reduce<
-    Array<{ levelId: string; levelName: string; rows: Array<{ player: User; membership: DivisionMembership | null }> }>
-  >((groups, row) => {
-    const levelId = row.membership?.divisionLevelId ?? "unassigned";
-    const levelName =
-      levelId === "unassigned"
-        ? "Unassigned / legacy roster"
-        : levelNameById.get(levelId) ?? "Division level";
-    let group = groups.find((item) => item.levelId === levelId);
-    if (!group) {
-      group = { levelId, levelName, rows: [] };
-      groups.push(group);
+  const importEntries = useMemo(() => parseRosterPaste(importText), [importText]);
+
+  async function handleImportRoster() {
+    if (!division || !importLevelId || importEntries.length === 0) return;
+    setImporting(true);
+    setPageError("");
+    const created: Array<{ userId: string; name: string; email: string; levelId: string }> = [];
+    try {
+      for (const entry of importEntries) {
+        const result = await upsertDivisionMembership({
+          divisionId: division.id,
+          seasonId: adminSeasonId,
+          divisionLevelId: importLevelId,
+          name: entry.name,
+          email: entry.email || undefined,
+        });
+        created.push({
+          userId: result.userId,
+          name: entry.name,
+          email: entry.email,
+          levelId: importLevelId,
+        });
+      }
+      setPendingNewPlayers((current) => [
+        ...created,
+        ...current.filter((existing) => !created.some((row) => row.userId === existing.userId)),
+      ]);
+      setImportOpen(false);
+      setImportText("");
+    } catch (e) {
+      // Keep whatever landed before the failure so the roster reflects reality.
+      if (created.length > 0) {
+        setPendingNewPlayers((current) => [
+          ...created,
+          ...current.filter((existing) => !created.some((row) => row.userId === existing.userId)),
+        ]);
+      }
+      setPageError(
+        (e as { message?: string }).message ||
+          `Imported ${created.length} of ${importEntries.length} players before failing.`,
+      );
+    } finally {
+      setImporting(false);
     }
-    group.rows.push(row);
-    return groups;
-  }, []);
+  }
+
+  function openPlayerDetail(row: RosterRow) {
+    const p = row.player;
+    setNeedsMergeForUserId(p.id);
+    setMergeSourceUserId("");
+    setSelectedMatchIds([]);
+    setEditName(p.displayName ?? "");
+    setEditEmail(p.email ?? "");
+    setEditPhone(p.phone ?? "");
+    setEditRole(row.membership?.role === "division_leader" ? "division_leader" : "player");
+    setEditStatus(row.membership?.status === "waitlisted" ? "waitlisted" : "active");
+    setEditDivisionLevelId(effectiveLevelId(row) || adminSeasonLevels[0]?.id || "");
+    setEditingPlayerId(p.id);
+    setLinkActionMessage(null);
+    setExpandedPlayerId((current) => (current === p.id ? null : p.id));
+  }
+
+  const noLevelsYet = adminSeasonLevels.length === 0;
 
   return (
     <div style={styles.page}>
@@ -902,7 +1268,26 @@ export default function AdminPage(): React.JSX.Element {
 
       <main style={styles.main}>
         <div style={styles.adminHeader}>
-          <h1 style={styles.pageTitle}>Division Admin</h1>
+          <div style={styles.headerTitleGroup}>
+            <h1 style={styles.pageTitle}>Division admin</h1>
+            {division && !loading ? (
+              <label style={styles.headerSeason}>
+                <span style={styles.srOnly}>Season</span>
+                <select
+                  style={styles.headerSelect}
+                  value={adminSeasonId}
+                  onChange={(e) => setAdminSeasonId(e.target.value)}
+                  aria-label="Season"
+                >
+                  {seasonOptions.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
           <button
             type="button"
             style={styles.btnSecondary}
@@ -911,6 +1296,14 @@ export default function AdminPage(): React.JSX.Element {
             {viewAsUser ? "Exit user view" : "View as user"}
           </button>
         </div>
+
+        {division && !loading && !viewAsUser ? (
+          <p style={styles.headerSummary}>
+            {rosterRows.length} player{rosterRows.length === 1 ? "" : "s"} ·{" "}
+            {adminSeasonLevels.length} division level{adminSeasonLevels.length === 1 ? "" : "s"} ·{" "}
+            {unassignedCount} unassigned
+          </p>
+        ) : null}
 
         {error ? (
           <div role="alert" style={styles.error}>
@@ -926,7 +1319,7 @@ export default function AdminPage(): React.JSX.Element {
           <div style={styles.placeholder}>Loading…</div>
         ) : !division ? (
           <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Create Your Division</h2>
+            <h2 style={styles.sectionTitle}>Create your division</h2>
             <p style={styles.hint}>
               You are not currently managing a division. Create one to get
               started.
@@ -943,7 +1336,7 @@ export default function AdminPage(): React.JSX.Element {
                 onClick={createDivision}
                 disabled={!newDivisionName.trim()}
               >
-                Create Division
+                Create division
               </button>
             </div>
           </div>
@@ -951,340 +1344,407 @@ export default function AdminPage(): React.JSX.Element {
           <div style={styles.card}>
             <h2 style={styles.sectionTitle}>{division.name}</h2>
             <p style={styles.hint}>User preview: admin-only setup, repair, export, and edit controls are hidden.</p>
-            <div style={styles.filterBar}>
-              <label style={styles.filterLabel}>
-                Season
-                <select
-                  style={styles.input}
-                  value={adminSeasonId}
-                  onChange={(e) => setAdminSeasonId(e.target.value)}
-                >
-                  {seasonOptions.map((season) => (
-                    <option key={season.id} value={season.id}>
-                      {season.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p style={styles.hint}>{players.length} player{players.length !== 1 ? "s" : ""} visible to users.</p>
+            <p style={styles.hint}>
+              {rosterRows.length} player{rosterRows.length !== 1 ? "s" : ""} visible to users in {adminSeason.name}.
+            </p>
           </div>
         ) : (
           <>
-
-
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Seasons & Division Levels</h2>
-              <p style={styles.hint}>
-                Document league levels by Spring/Fall season and mark whether each level is singles or doubles.
-              </p>
-              <div style={styles.row}>
-                <select
-                  style={styles.input}
-                  value={levelSeasonId}
-                  onChange={(e) => setLevelSeasonId(e.target.value)}
-                  aria-label="Season"
-                >
-                  {seasonOptions.map((season) => (
-                    <option key={season.id} value={season.id}>
-                      {season.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  style={styles.input}
-                  value={levelSkill}
-                  onChange={(e) => {
-                    const skill = e.target.value as DivisionSkillLevel;
-                    setLevelSkill(skill);
-                    setLevelName(formatDivisionLevelName(skill, levelMatchType));
-                  }}
-                  aria-label="Skill level"
-                >
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
-                  <option value="open">Open</option>
-                </select>
-                <select
-                  style={styles.input}
-                  value={levelMatchType}
-                  onChange={(e) => {
-                    const matchType = e.target.value as DivisionMatchType;
-                    setLevelMatchType(matchType);
-                    setLevelName(formatDivisionLevelName(levelSkill, matchType));
-                  }}
-                  aria-label="Match type"
-                >
-                  <option value="singles">Singles</option>
-                  <option value="doubles">Doubles</option>
-                </select>
-              </div>
-              <div style={styles.row}>
-                <input
-                  style={styles.input}
-                  value={levelName}
-                  onChange={(e) => setLevelName(e.target.value)}
-                  placeholder="Level name"
-                />
-                <input
-                  style={styles.input}
-                  value={levelDescription}
-                  onChange={(e) => setLevelDescription(e.target.value)}
-                  placeholder="Description or eligibility notes (optional)"
-                />
-                <button
-                  style={styles.btn}
-                  onClick={handleCreateLevel}
-                  disabled={savingLevel || !levelName.trim()}
-                >
-                  {savingLevel ? "Saving…" : "Save Level"}
-                </button>
-              </div>
-              {levelMessage && <p role="status" aria-live="polite" style={styles.success}>{levelMessage}</p>}
-              {loadingDivisionLevels ? (
-                <p style={styles.hint}>Loading division levels…</p>
-              ) : divisionLevelsError ? (
-                <div role="alert" style={styles.error}>
-                  <p style={{ margin: 0 }}>
-                    Unable to load division levels for {division?.name ?? "this division"}.
-                    {" "}{divisionLevelsError.message}
-                  </p>
-                  <PermissionHints hints={divisionLevelsPermissionHint} authDebug={authDebug} />
-                </div>
-              ) : divisionLevels.length > 0 ? (
-                <div style={styles.levelGrid}>
-                  {divisionLevels.map((level) => (
-                    <div key={level.id} style={styles.levelPill}>
-                      <strong>{level.name}</strong>
-                      <span>{level.seasonHalf === "spring" ? "Spring" : "Fall"} {level.year} · {level.matchType}</span>
-                      {level.description ? <span>{level.description}</span> : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={styles.hint}>
-                  No division levels documented for {division?.name ?? "this division"} yet.
-                </p>
-              )}
-              <div style={styles.editorActions}>
-                <button style={styles.btnSecondary} onClick={() => handleExportCsv("matches")} disabled={exportingCsv}>
-                  Export matches CSV
-                </button>
-                <button style={styles.btnSecondary} onClick={() => handleExportCsv("rankings")} disabled={exportingCsv}>
-                  Export rankings CSV
-                </button>
-                {csvMessage && <p role="status" style={styles.inlineSuccess}>{csvMessage}</p>}
-              </div>
+            <div style={styles.tabBar} role="tablist" aria-label="Admin sections">
+              {TABS.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    id={`admin-tab-${tab.id}`}
+                    aria-selected={active}
+                    aria-controls={`admin-panel-${tab.id}`}
+                    style={{ ...styles.tab, ...(active ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
+            {activeTab === "roster" ? (
+              <div
+                role="tabpanel"
+                id="admin-panel-roster"
+                aria-labelledby="admin-tab-roster"
+              >
+                {unassignedCount > 0 && rosterFilter !== "unassigned" ? (
+                  <div style={styles.warnBanner}>
+                    <span style={styles.warnBannerText}>
+                      {unassignedCount} player{unassignedCount === 1 ? " has" : "s have"} no
+                      division for {adminSeason.name}. They won&rsquo;t appear in any schedule.
+                    </span>
+                    <button
+                      type="button"
+                      style={styles.warnBannerBtn}
+                      onClick={() => setRosterFilter("unassigned")}
+                    >
+                      Review them
+                    </button>
+                  </div>
+                ) : null}
 
+                <div style={styles.card}>
+                  <div style={styles.toolbar}>
+                    <input
+                      style={styles.searchInput}
+                      type="search"
+                      value={rosterSearch}
+                      onChange={(e) => setRosterSearch(e.target.value)}
+                      placeholder="Search name or email"
+                      aria-label="Search players by name or email"
+                    />
+                    <div style={styles.chipRow}>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.chip,
+                          ...(rosterFilter === "all" ? styles.chipActive : {}),
+                        }}
+                        aria-pressed={rosterFilter === "all"}
+                        onClick={() => setRosterFilter("all")}
+                      >
+                        All {rosterRows.length}
+                      </button>
+                      <button
+                        type="button"
+                        style={{
+                          ...styles.chip,
+                          ...(rosterFilter === "unassigned" ? styles.chipActive : {}),
+                        }}
+                        aria-pressed={rosterFilter === "unassigned"}
+                        onClick={() => setRosterFilter("unassigned")}
+                      >
+                        Unassigned {unassignedCount}
+                      </button>
+                      {adminSeasonLevels.map((level) => (
+                        <button
+                          key={level.id}
+                          type="button"
+                          style={{
+                            ...styles.chip,
+                            ...(rosterFilter === level.id ? styles.chipActive : {}),
+                          }}
+                          aria-pressed={rosterFilter === level.id}
+                          onClick={() => setRosterFilter(level.id)}
+                        >
+                          {level.name} {countByLevelId.get(level.id) ?? 0}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={styles.toolbarActions}>
+                      <button
+                        type="button"
+                        style={styles.btnSecondary}
+                        onClick={() => setImportOpen(true)}
+                        disabled={noLevelsYet}
+                      >
+                        Import roster
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.btn}
+                        onClick={() => setAddPlayerOpen((open) => !open)}
+                        disabled={noLevelsYet}
+                        aria-expanded={addPlayerOpen}
+                      >
+                        {addPlayerOpen ? "Close" : "Add player"}
+                      </button>
+                    </div>
+                  </div>
 
+                  {noLevelsYet ? (
+                    <p style={styles.hint}>
+                      {adminSeason.name} has no division levels yet. Create one on the Divisions
+                      tab before adding players.
+                    </p>
+                  ) : null}
 
+                  {addPlayerOpen ? (
+                    <div style={styles.addPanel}>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="add-player-name">
+                          Name
+                        </label>
+                        <input
+                          id="add-player-name"
+                          style={styles.input}
+                          value={addPlayerName}
+                          onChange={(e) => setAddPlayerName(e.target.value)}
+                          placeholder="Full name"
+                        />
+                      </div>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="add-player-email">
+                          Email
+                        </label>
+                        <input
+                          id="add-player-email"
+                          style={styles.input}
+                          type="email"
+                          value={addPlayerEmail}
+                          onChange={(e) => setAddPlayerEmail(e.target.value)}
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="add-player-level">
+                          Division
+                        </label>
+                        <select
+                          id="add-player-level"
+                          style={styles.input}
+                          value={addPlayerLevelId}
+                          onChange={(e) => setAddPlayerLevelId(e.target.value)}
+                        >
+                          {adminSeasonLevels.map((level) => (
+                            <option key={level.id} value={level.id}>
+                              {level.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={styles.addActions}>
+                        <button
+                          type="button"
+                          style={styles.btn}
+                          onClick={handleAddPlayer}
+                          disabled={savingNewPlayer || !addPlayerName.trim() || !addPlayerLevelId}
+                        >
+                          {savingNewPlayer ? "Saving…" : "Save player"}
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.btnSecondary}
+                          onClick={() => setAddPlayerOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
+                  <div style={styles.gridWrap}>
+                    <div style={{ ...styles.gridRow, ...styles.gridHead }}>
+                      <div style={styles.cellCheck}>
+                        <input
+                          type="checkbox"
+                          ref={(node) => {
+                            if (node) node.indeterminate = someVisibleSelected;
+                          }}
+                          checked={allVisibleSelected}
+                          aria-label="Select all listed players"
+                          disabled={visibleIds.length === 0}
+                          onChange={(e) =>
+                            setSelectedPlayerIds(e.target.checked ? [...visibleIds] : [])
+                          }
+                        />
+                      </div>
+                      <div style={styles.headCell}>Player</div>
+                      <div style={styles.headCell}>Email</div>
+                      <div style={styles.headCell}>Status</div>
+                      <div style={styles.headCell}>Division</div>
+                      <div style={styles.headCell} aria-hidden="true" />
+                    </div>
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Players</h2>
-              <button type="button" style={styles.btnSecondary} onClick={() => setNewPlayerRowOpen((v) => !v)}>{newPlayerRowOpen ? "Cancel add row" : "Add row"}</button>
-              <div style={styles.filterBar}>
-                <label style={styles.filterLabel}>
-                  Season
-                  <select
-                    style={styles.input}
-                    value={adminSeasonId}
-                    onChange={(e) => setAdminSeasonId(e.target.value)}
-                  >
-                    {seasonOptions.map((season) => (
-                      <option key={season.id} value={season.id}>
-                        {season.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {rosterRows.length === 0 ? (
-                <p style={styles.hint}>No players yet. Add players above.</p>
-              ) : (
-                <div style={styles.tableScroller}>
-                  <table style={styles.table}>
-                    <thead>
-                      <tr>
-                        <th style={styles.th}>Name</th>
-                        <th style={styles.th}>Email</th>
-                        <th style={styles.th}>Phone</th>
-                        <th style={styles.th}>Role</th>
-                        <th style={styles.th}>Status</th>
-                        <th style={styles.th}>Division Level</th>
-                        <th style={styles.th}>Options</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                    {newPlayerRowOpen ? (
-                      <tr style={styles.tr}>
-                        <td style={styles.td}><input style={styles.input} value={newPlayerName} onChange={(e)=>setNewPlayerName(e.target.value)} /></td>
-                        <td style={styles.td}><input style={styles.input} value={newPlayerEmail} onChange={(e)=>setNewPlayerEmail(e.target.value)} /></td>
-                        <td style={styles.td}><input style={styles.input} value={newPlayerPhone} onChange={(e)=>setNewPlayerPhone(e.target.value)} /></td>
-                        <td style={styles.td}><select style={styles.input} value={newPlayerRole} onChange={(e)=>setNewPlayerRole(e.target.value as "player"|"division_leader")}><option value="player">Player</option><option value="division_leader">Leader</option></select></td>
-                        <td style={styles.td}><select style={styles.input} value={newPlayerStatus} onChange={(e)=>setNewPlayerStatus(e.target.value as "active"|"waitlisted")}><option value="active">Active</option><option value="waitlisted">Waitlisted</option></select></td>
-                        <td style={styles.td}><select style={styles.input} value={newPlayerDivisionLevelId} onChange={(e)=>setNewPlayerDivisionLevelId(e.target.value)}>{adminSeasonLevels.map((level)=><option key={level.id} value={level.id}>{level.name}</option>)}</select></td>
-                        <td style={styles.td}><button style={styles.btn} onClick={handleCreatePlayerRow} disabled={savingNewPlayer}>{savingNewPlayer?"Saving…":"Save"}</button></td>
-                      </tr>
-                    ) : null}
-
-                      {rowsByLevel.flatMap((group) => [
-                        <tr key={`${group.levelId}-group`} style={styles.groupHeaderRow}>
-                          <td style={styles.groupHeaderCell} colSpan={7}>
-                            {group.levelName} · {group.rows.length} player{group.rows.length === 1 ? "" : "s"}
-                          </td>
-                        </tr>,
-                        ...group.rows.flatMap((row) => {
+                    {visibleRows.length === 0 ? (
+                      <p style={styles.emptyState}>No players match this filter.</p>
+                    ) : (
+                      visibleRows.map((row) => {
                         const p = row.player;
-                        const rows: React.JSX.Element[] = [
-                          <tr key={`${p.id}-row`} style={styles.tr}>
-                            <td style={styles.td}>{p.displayName}</td>
-                            <td style={styles.td}>
-                              {p.contactPreferences?.allowEmail !== false ? (
-                                <a
-                                  href={`mailto:${p.email}`}
-                                  style={styles.contactLink}
+                        const levelId = effectiveLevelId(row);
+                        const selected = selectedPlayerIds.includes(p.id);
+                        const registered = p.isRegistered !== false;
+                        const removeHovered = hoveredRemoveId === p.id;
+                        return (
+                          <div key={p.id}>
+                            <div
+                              style={{
+                                ...styles.gridRow,
+                                ...(selected ? styles.gridRowSelected : {}),
+                              }}
+                            >
+                              <div style={styles.cellCheck}>
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  aria-label={`Select ${p.displayName}`}
+                                  onChange={(e) =>
+                                    setSelectedPlayerIds((current) =>
+                                      e.target.checked
+                                        ? [...current, p.id]
+                                        : current.filter((id) => id !== p.id),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div style={styles.cell}>
+                                <button
+                                  type="button"
+                                  style={styles.playerButton}
+                                  onClick={() => openPlayerDetail(row)}
+                                  aria-expanded={expandedPlayerId === p.id}
+                                  title={`Open details for ${p.displayName}`}
                                 >
-                                  {p.email}
-                                </a>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td style={styles.td}>
-                              {p.phone && p.contactPreferences?.allowSMS ? (
-                                <a
-                                  href={`tel:${p.phone}`}
-                                  style={styles.contactLink}
+                                  <span style={styles.avatar} aria-hidden="true">
+                                    {initialsOf(p.displayName)}
+                                  </span>
+                                  <span style={styles.playerName}>{p.displayName}</span>
+                                </button>
+                              </div>
+                              <div style={{ ...styles.cell, ...styles.cellTruncate }}>
+                                {p.email && p.contactPreferences?.allowEmail !== false ? (
+                                  <a href={`mailto:${p.email}`} style={styles.contactLink}>
+                                    {p.email}
+                                  </a>
+                                ) : (
+                                  "—"
+                                )}
+                              </div>
+                              <div style={styles.cell}>
+                                <span
+                                  style={
+                                    registered
+                                      ? styles.registeredBadge
+                                      : styles.unregisteredBadge
+                                  }
                                 >
-                                  {p.phone}
-                                </a>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td style={styles.td}>
-                              <span
-                                style={
-                                  division.leaderIds.includes(p.id)
-                                    ? styles.leaderBadge
-                                    : styles.playerBadge
-                                }
-                              >
-                                {division.leaderIds.includes(p.id)
-                                  ? "Leader"
-                                  : "Player"}
-                              </span>
-                            </td>
-                            <td style={styles.td}>
-                              {p.isRegistered === false
-                                ? p.inviteStatus === "invite_sent"
-                                  ? "Invite Sent"
-                                  : "Unregistered"
-                                : "Registered"}
-                            </td>
-                            <td style={styles.td}>
-                              {row.membership?.divisionLevelId
-                                ? (levelNameById.get(row.membership.divisionLevelId) ?? (loadingDivisionLevels ? "Loading..." : "Unknown Level"))
-                                : "Unassigned"}
-                            </td>
-                            <td style={styles.td}>
-                              <button
-                                style={styles.btnSecondary}
-                                onClick={() => {
-                                  setNeedsMergeForUserId(p.id);
-                                  setMergeSourceUserId("");
-                                  setSelectedMatchIds([]);
-                                  setEditName(p.displayName ?? "");
-                                  setEditEmail(p.email ?? "");
-                                  setEditPhone(p.phone ?? "");
-                                  setEditRole(row.membership?.role === "division_leader" ? "division_leader" : "player");
-                                  setEditStatus(row.membership?.status === "waitlisted" ? "waitlisted" : "active");
-                                  setEditDivisionLevelId(row.membership?.divisionLevelId ?? adminSeasonLevels[0]?.id ?? "");
-                                  setEditingPlayerId(p.id);
-                                  setLinkActionMessage(null);
-                                  setExpandedPlayerId((current) =>
-                                    current === p.id ? null : p.id,
-                                  );
-                                }}
-                              >
-                                ⋯
-                              </button>
-                            </td>
-                          </tr>,
-                        ];
-                        if (expandedPlayerId === p.id) {
-                          rows.push(
-                            <tr key={`${p.id}-editor`}>
-                              <td
-                                style={{ ...styles.td, ...styles.editorCell }}
-                                colSpan={7}
-                              >
+                                  {registered
+                                    ? "Registered"
+                                    : p.inviteStatus === "invite_sent"
+                                      ? "Invite sent"
+                                      : "Unregistered"}
+                                </span>
+                              </div>
+                              <div style={styles.cellDivision}>
+                                <select
+                                  style={{
+                                    ...styles.rowSelect,
+                                    ...(levelId ? {} : styles.rowSelectUnassigned),
+                                  }}
+                                  value={levelId}
+                                  aria-label={`Division for ${p.displayName}`}
+                                  onChange={(e) => assignLevel(row, e.target.value)}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {adminSeasonLevels.map((level) => (
+                                    <option key={level.id} value={level.id}>
+                                      {level.name}
+                                    </option>
+                                  ))}
+                                  {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
+                                    <option value={levelId}>
+                                      {levelNameById.get(levelId) ?? "Other level"}
+                                    </option>
+                                  ) : null}
+                                </select>
+                                <span role="status" aria-live="polite" style={styles.savedFlag}>
+                                  {savedFlashIds.includes(p.id) ? "Saved" : ""}
+                                </span>
+                              </div>
+                              <div style={styles.cellRemove}>
+                                <button
+                                  type="button"
+                                  style={{
+                                    ...styles.removeBtn,
+                                    ...(removeHovered ? styles.removeBtnHover : {}),
+                                  }}
+                                  title={`Remove ${p.displayName} from ${adminSeason.name}`}
+                                  aria-label={`Remove ${p.displayName} from ${adminSeason.name}`}
+                                  onMouseEnter={() => setHoveredRemoveId(p.id)}
+                                  onMouseLeave={() => setHoveredRemoveId(null)}
+                                  onFocus={() => setHoveredRemoveId(p.id)}
+                                  onBlur={() => setHoveredRemoveId(null)}
+                                  onClick={() => removeFromRoster(row)}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+
+                            {expandedPlayerId === p.id ? (
+                              <div style={styles.detailPanel}>
                                 <div style={styles.inlineEditor}>
                                   <input
-                                    style={{
-                                      ...styles.input,
-                                      ...styles.editorInput,
-                                    }}
+                                    style={{ ...styles.input, ...styles.editorInput }}
                                     value={editName}
-                                    onChange={(e) =>
-                                      setEditName(e.target.value)
-                                    }
+                                    onChange={(e) => setEditName(e.target.value)}
                                     placeholder="Name"
                                     type="text"
                                     aria-label="Update player name"
                                   />
                                   <input
-                                    style={{
-                                      ...styles.input,
-                                      ...styles.editorInput,
-                                    }}
+                                    style={{ ...styles.input, ...styles.editorInput }}
                                     value={editPhone}
-                                    onChange={(e) =>
-                                      setEditPhone(e.target.value)
-                                    }
+                                    onChange={(e) => setEditPhone(e.target.value)}
                                     placeholder="Update player phone (optional)"
                                     type="tel"
                                     aria-label="Update player phone"
                                   />
-                                                                    <select style={{ ...styles.input, ...styles.editorInput }} value={editRole} onChange={(e) => setEditRole(e.target.value as "player" | "division_leader")}>
+                                  <select
+                                    style={{ ...styles.input, ...styles.editorInput }}
+                                    value={editRole}
+                                    aria-label="Update player role"
+                                    onChange={(e) =>
+                                      setEditRole(e.target.value as "player" | "division_leader")
+                                    }
+                                  >
                                     <option value="player">Player</option>
                                     <option value="division_leader">Leader</option>
                                   </select>
-                                  <select style={{ ...styles.input, ...styles.editorInput }} value={editStatus} onChange={(e) => setEditStatus(e.target.value as "active" | "waitlisted")}>
+                                  <select
+                                    style={{ ...styles.input, ...styles.editorInput }}
+                                    value={editStatus}
+                                    aria-label="Update player status"
+                                    onChange={(e) =>
+                                      setEditStatus(e.target.value as "active" | "waitlisted")
+                                    }
+                                  >
                                     <option value="active">Active</option>
                                     <option value="waitlisted">Waitlisted</option>
                                   </select>
-                                  <select style={{ ...styles.input, ...styles.editorInput }} value={editDivisionLevelId} onChange={(e) => setEditDivisionLevelId(e.target.value)}>
+                                  <select
+                                    style={{ ...styles.input, ...styles.editorInput }}
+                                    value={editDivisionLevelId}
+                                    aria-label="Update player division level"
+                                    onChange={(e) => setEditDivisionLevelId(e.target.value)}
+                                  >
                                     {adminSeasonLevels.map((level) => (
-                                      <option key={level.id} value={level.id}>{level.name}</option>
+                                      <option key={level.id} value={level.id}>
+                                        {level.name}
+                                      </option>
                                     ))}
                                   </select>
                                   <input
-                                    style={{
-                                      ...styles.input,
-                                      ...styles.editorInput,
-                                    }}
+                                    style={{ ...styles.input, ...styles.editorInput }}
                                     value={editEmail}
-                                    onChange={(e) =>
-                                      setEditEmail(e.target.value)
-                                    }
+                                    onChange={(e) => setEditEmail(e.target.value)}
                                     placeholder="Update player email (optional)"
+                                    aria-label="Update player email"
                                   />
                                   <p style={styles.linkPrompt}>
-                                    Which of the recorded matches did{" "}
-                                    {p.displayName} play in?
+                                    Which of the recorded matches did {p.displayName} play in?
                                   </p>
                                   <div style={styles.editorActions}>
                                     <button
                                       style={styles.btn}
                                       onClick={handleSavePlayerRow}
-                                      disabled={merging || needsMergeForUserId !== p.id || !editName.trim() || !editDivisionLevelId}
+                                      disabled={
+                                        merging ||
+                                        needsMergeForUserId !== p.id ||
+                                        !editName.trim() ||
+                                        !editDivisionLevelId
+                                      }
                                     >
-                                      {merging ? "Saving…" : "Save Row"}
+                                      {merging ? "Saving…" : "Save player"}
                                     </button>
                                     <button
                                       style={styles.btn}
@@ -1295,9 +1755,7 @@ export default function AdminPage(): React.JSX.Element {
                                         needsMergeForUserId !== p.id
                                       }
                                     >
-                                      {merging
-                                        ? "Linking…"
-                                        : "Link Selected Matches"}
+                                      {merging ? "Linking…" : "Link selected matches"}
                                     </button>
                                     <button
                                       style={styles.btnSecondary}
@@ -1308,30 +1766,40 @@ export default function AdminPage(): React.JSX.Element {
                                         needsMergeForUserId !== p.id
                                       }
                                     >
-                                      Update Contact
+                                      Update contact
                                     </button>
                                     <button
                                       style={styles.btnSecondary}
                                       onClick={undoLastLink}
-                                      disabled={
-                                        !lastLinkAction?.sourceUserId || merging
-                                      }
+                                      disabled={!lastLinkAction?.sourceUserId || merging}
                                     >
-                                      Undo Last Link
+                                      Undo last link
                                     </button>
                                     {linkActionMessage?.targetUserId === p.id && (
                                       <div style={styles.confirmPrompt}>
                                         <p style={styles.inlineSuccess}>
                                           {linkActionMessage.message}
                                         </p>
-                                        <button type="button" style={styles.btn} onClick={() => setLinkActionMessage(null)}>
+                                        <button
+                                          type="button"
+                                          style={styles.btn}
+                                          onClick={() => setLinkActionMessage(null)}
+                                        >
                                           Confirm
                                         </button>
                                         <button
                                           type="button"
                                           style={styles.btnSecondary}
-                                          onClick={linkActionMessage.kind === "contact" ? undoLastContact : undoLastLink}
-                                          disabled={merging || (linkActionMessage.kind === "link" && !lastLinkAction?.sourceUserId)}
+                                          onClick={
+                                            linkActionMessage.kind === "contact"
+                                              ? undoLastContact
+                                              : undoLastLink
+                                          }
+                                          disabled={
+                                            merging ||
+                                            (linkActionMessage.kind === "link" &&
+                                              !lastLinkAction?.sourceUserId)
+                                          }
                                         >
                                           Undo action
                                         </button>
@@ -1343,269 +1811,661 @@ export default function AdminPage(): React.JSX.Element {
                                       candidateMatches.map((m) => (
                                         <label
                                           key={m.id}
-                                          style={{
-                                            display: "block",
-                                            marginBottom: 6,
-                                          }}
+                                          style={{ display: "block", marginBottom: 6 }}
                                         >
                                           <input
                                             type="checkbox"
-                                            checked={selectedMatchIds.includes(
-                                              m.id,
-                                            )}
+                                            checked={selectedMatchIds.includes(m.id)}
                                             onChange={(e) =>
                                               setSelectedMatchIds((prev) =>
                                                 e.target.checked
                                                   ? [...prev, m.id]
-                                                  : prev.filter(
-                                                      (id) => id !== m.id,
-                                                    ),
+                                                  : prev.filter((id) => id !== m.id),
                                               )
                                             }
                                           />{" "}
-                                          {m.player1Name || "P1"} vs{" "}
-                                          {m.player2Name || "P2"}
+                                          {m.player1Name || "P1"} vs {m.player2Name || "P2"}
                                         </label>
                                       ))
                                     ) : (
                                       <p style={styles.hint}>
-                                        No recorded matches are available.
-                                        Matches already linked to two player
-                                        profiles are hidden.
+                                        No recorded matches are available. Matches already linked
+                                        to two player profiles are hidden.
                                       </p>
                                     )}
                                   </div>
                                 </div>
-                              </td>
-                            </tr>,
-                          );
-                        }
-                        return rows;
-                      }),
-                      ])}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-<div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Round-Robin Scheduler</h2>
-              <p style={styles.hint}>
-                Auto-generate a round-robin fixture list for a season and division level.
-              </p>
-              <div style={styles.row}>
-                <label style={styles.filterLabel}>
-                  Season
-                  <select
-                    style={styles.input}
-                    value={rrSeasonId}
-                    onChange={(e) => setRrSeasonId(e.target.value)}
-                  >
-                    {seasonOptions.map((season) => (
-                      <option key={season.id} value={season.id}>{season.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label style={styles.filterLabel}>
-                  Division Level
-                  <select
-                    style={styles.input}
-                    value={rrDivisionLevelId}
-                    onChange={(e) => { setRrDivisionLevelId(e.target.value); setRrPreview(null); }}
-                    disabled={rrLevelsForSeason.length === 0}
-                  >
-                    {rrLevelsForSeason.length === 0 ? (
-                      <option value="">No levels for this season</option>
-                    ) : (
-                      rrLevelsForSeason.map((level) => (
-                        <option key={level.id} value={level.id}>{level.name}</option>
-                      ))
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })
                     )}
-                  </select>
-                </label>
-              </div>
+                  </div>
 
-              <p style={styles.subTitle}>Players ({rrSelectedPlayerIds.length} selected)</p>
-              {rrMemberships.length === 0 ? (
-                <p style={styles.hint}>No active players in this season/level yet.</p>
-              ) : (
-                <div style={styles.levelGrid}>
-                  {rrMemberships.map((m) => {
-                    const selected = rrSelectedPlayerIds.includes(m.userId);
-                    return (
+                  <p style={styles.tableFooter}>
+                    {isFiltered
+                      ? `Showing ${visibleRows.length} of ${rosterRows.length} players`
+                      : `${rosterRows.length} player${rosterRows.length === 1 ? "" : "s"} in ${adminSeason.name}`}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "divisions" ? (
+              <div
+                role="tabpanel"
+                id="admin-panel-divisions"
+                aria-labelledby="admin-tab-divisions"
+              >
+                <div style={styles.card}>
+                  <h2 style={styles.sectionTitle}>Division levels · {adminSeason.name}</h2>
+                  <p style={styles.hint}>
+                    Each level groups players for standings and scheduling within this season.
+                  </p>
+                  {divisionLevelsError ? (
+                    <div role="alert" style={styles.error}>
+                      <p style={{ margin: 0 }}>
+                        Unable to load division levels for {division.name}.{" "}
+                        {divisionLevelsError.message}
+                      </p>
+                      <PermissionHints hints={divisionLevelsPermissionHint} authDebug={authDebug} />
+                    </div>
+                  ) : null}
+                  {loadingDivisionLevels ? (
+                    <p style={styles.hint}>Loading division levels…</p>
+                  ) : (
+                    <div style={styles.levelGrid}>
+                      {adminSeasonLevels.map((level) => (
+                        <div key={level.id} style={styles.levelCard}>
+                          <strong style={styles.levelCardName}>{level.name}</strong>
+                          <span style={styles.levelCardMeta}>
+                            {level.matchType === "doubles" ? "Doubles" : "Singles"}
+                          </span>
+                          <span style={styles.levelCardCount}>
+                            {countByLevelId.get(level.id) ?? 0} player
+                            {(countByLevelId.get(level.id) ?? 0) === 1 ? "" : "s"}
+                          </span>
+                          {level.description ? (
+                            <span style={styles.levelCardMeta}>{level.description}</span>
+                          ) : null}
+                        </div>
+                      ))}
                       <button
                         type="button"
-                        key={m.userId}
-                        style={{
-                          ...styles.playerToggle,
-                          ...(selected ? styles.playerToggleActive : {}),
-                        }}
-                        onClick={() => toggleRrPlayer(m.userId)}
+                        style={styles.levelCardNew}
+                        onClick={() => setLevelFormOpen((open) => !open)}
+                        aria-expanded={levelFormOpen}
                       >
-                        {selected ? "✓ " : ""}{m.displayNameSnapshot}
+                        + New division level
                       </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <p style={styles.subTitle}>Format</p>
-              <div style={styles.row}>
-                <select
-                  style={styles.input}
-                  value={rrDoubleRoundRobin ? "double" : "single"}
-                  onChange={(e) => { setRrDoubleRoundRobin(e.target.value === "double"); setRrPreview(null); }}
-                  aria-label="Round-robin format"
-                >
-                  <option value="single">Single round robin</option>
-                  <option value="double">Double round robin</option>
-                </select>
-                <select
-                  style={styles.input}
-                  value={rrIntervalDays}
-                  onChange={(e) => setRrIntervalDays(Number(e.target.value))}
-                  aria-label="Round interval"
-                >
-                  {[3, 7, 14].map((days) => (
-                    <option key={days} value={days}>Every {days} days</option>
-                  ))}
-                </select>
-                <input
-                  style={styles.input}
-                  type="text"
-                  value={rrStartDate}
-                  onChange={(e) => setRrStartDate(e.target.value)}
-                  placeholder="Round 1 start date (YYYY-MM-DD)"
-                  aria-label="Round 1 start date"
-                />
-              </div>
-              <label style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={rrSeedByRankings}
-                  onChange={(e) => { setRrSeedByRankings(e.target.checked); setRrPreview(null); }}
-                />
-                Seed pairings by current ranking
-              </label>
-              <label style={styles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={rrClearExisting}
-                  onChange={(e) => setRrClearExisting(e.target.checked)}
-                />
-                Clear previously generated schedule for this level
-              </label>
-
-              {rrSelectedLevelIsDoubles && (
-                <p style={styles.hint}>
-                  Round-robin scheduling is not yet available for doubles levels. Create
-                  doubles matches from the Matches page instead.
-                </p>
-              )}
-
-              <div style={styles.editorActions}>
-                <button
-                  style={styles.btnSecondary}
-                  onClick={handleRrGeneratePreview}
-                  disabled={rrSelectedLevelIsDoubles}
-                >
-                  Generate Preview
-                </button>
-              </div>
-
-              {rrPreview && (
-                <div style={styles.mergeBox}>
-                  <p style={styles.subTitle}>
-                    Preview — {rrPreview.length} match{rrPreview.length === 1 ? "" : "es"}
-                  </p>
-                  {Array.from(new Set(rrPreview.map((m) => m.round))).map((round) => (
-                    <div key={round} style={{ marginBottom: 10 }}>
-                      <p style={{ ...styles.hint, fontWeight: 700, color: "var(--green-dark)", marginBottom: 4 }}>
-                        Round {round}
-                      </p>
-                      {rrPreview.filter((m) => m.round === round).map((m, idx) => (
-                        <p key={idx} style={{ ...styles.hint, marginBottom: 2 }}>
-                          {rrNameById.get(m.player1Id) ?? m.player1Id} vs {rrNameById.get(m.player2Id) ?? m.player2Id}
-                        </p>
-                      ))}
                     </div>
-                  ))}
-                  <button style={styles.btn} onClick={handleRrPublish} disabled={rrPublishing}>
-                    {rrPublishing ? "Publishing…" : "Publish Schedule"}
-                  </button>
-                </div>
-              )}
-              {rrMessage && <p role="status" aria-live="polite" style={styles.success}>{rrMessage}</p>}
-            </div>
+                  )}
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Reported Messages</h2>
-              <p style={styles.hint}>Review messages flagged by players in your division.</p>
-              {messageReports.length === 0 ? (
-                <p style={styles.hint}>No pending reports.</p>
-              ) : (
-                messageReports.map((report) => (
-                  <div key={report.id} style={styles.mergeBox}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <strong>{report.messageSenderName}</strong>
-                      <span style={styles.playerBadge}>
-                        {REPORT_REASON_LABELS[report.reason] ?? report.reason}
-                      </span>
+                  {levelFormOpen ? (
+                    <div style={styles.addPanel}>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="level-skill">
+                          Skill level
+                        </label>
+                        <select
+                          id="level-skill"
+                          style={styles.input}
+                          value={levelSkill}
+                          onChange={(e) => {
+                            const skill = e.target.value as DivisionSkillLevel;
+                            setLevelSkill(skill);
+                            setLevelName(formatDivisionLevelName(skill, levelMatchType));
+                          }}
+                        >
+                          <option value="beginner">Beginner</option>
+                          <option value="intermediate">Intermediate</option>
+                          <option value="advanced">Advanced</option>
+                          <option value="open">Open</option>
+                        </select>
+                      </div>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="level-match-type">
+                          Format
+                        </label>
+                        <select
+                          id="level-match-type"
+                          style={styles.input}
+                          value={levelMatchType}
+                          onChange={(e) => {
+                            const matchType = e.target.value as DivisionMatchType;
+                            setLevelMatchType(matchType);
+                            setLevelName(formatDivisionLevelName(levelSkill, matchType));
+                          }}
+                        >
+                          <option value="singles">Singles</option>
+                          <option value="doubles">Doubles</option>
+                        </select>
+                      </div>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="level-name">
+                          Level name
+                        </label>
+                        <input
+                          id="level-name"
+                          style={styles.input}
+                          value={levelName}
+                          onChange={(e) => setLevelName(e.target.value)}
+                        />
+                      </div>
+                      <div style={styles.addField}>
+                        <label style={styles.addLabel} htmlFor="level-description">
+                          Description
+                        </label>
+                        <input
+                          id="level-description"
+                          style={styles.input}
+                          value={levelDescription}
+                          onChange={(e) => setLevelDescription(e.target.value)}
+                          placeholder="Eligibility notes (optional)"
+                        />
+                      </div>
+                      <div style={styles.addActions}>
+                        <button
+                          type="button"
+                          style={styles.btn}
+                          onClick={handleCreateLevel}
+                          disabled={savingLevel || !levelName.trim()}
+                        >
+                          {savingLevel ? "Saving…" : "Save level"}
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.btnSecondary}
+                          onClick={() => setLevelFormOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
-                    <p style={styles.hint}>&ldquo;{report.messageContent}&rdquo;</p>
-                    {report.note && <p style={styles.hint}>Reporter note: {report.note}</p>}
-                    <div style={styles.editorActions}>
+                  ) : null}
+                  {levelMessage && (
+                    <p role="status" aria-live="polite" style={styles.success}>
+                      {levelMessage}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "tools" ? (
+              <div role="tabpanel" id="admin-panel-tools" aria-labelledby="admin-tab-tools">
+                <div style={styles.toolGrid}>
+                  <div style={styles.toolCard}>
+                    <h2 style={styles.toolTitle}>Round-robin scheduler</h2>
+                    <p style={styles.toolDesc}>
+                      Generate and publish a full fixture list for one division level.
+                    </p>
+                    <button
+                      type="button"
+                      style={styles.btn}
+                      onClick={() =>
+                        setOpenToolPanel((current) =>
+                          current === "scheduler" ? null : "scheduler",
+                        )
+                      }
+                      aria-expanded={openToolPanel === "scheduler"}
+                    >
+                      {openToolPanel === "scheduler" ? "Close scheduler" : "Open scheduler"}
+                    </button>
+                  </div>
+
+                  <div style={styles.toolCard}>
+                    <h2 style={styles.toolTitle}>Reported messages</h2>
+                    <p style={styles.toolDesc}>
+                      Review messages players flagged in your division.
+                    </p>
+                    <button
+                      type="button"
+                      style={styles.btn}
+                      onClick={() =>
+                        setOpenToolPanel((current) => (current === "reports" ? null : "reports"))
+                      }
+                      aria-expanded={openToolPanel === "reports"}
+                    >
+                      {openToolPanel === "reports" ? "Close queue" : `Review (${messageReports.length})`}
+                    </button>
+                  </div>
+
+                  <div style={styles.toolCard}>
+                    <h2 style={styles.toolTitle}>Ranking repair</h2>
+                    <p style={styles.toolDesc}>
+                      Rebuild standings and head-to-heads from completed matches.
+                    </p>
+                    <button
+                      type="button"
+                      style={styles.btn}
+                      onClick={repairRankings}
+                      disabled={repairingRankings}
+                    >
+                      {repairingRankings ? "Repairing…" : "Repair rankings"}
+                    </button>
+                  </div>
+
+                  <div style={styles.toolCard}>
+                    <h2 style={styles.toolTitle}>CSV exports</h2>
+                    <p style={styles.toolDesc}>
+                      Download {adminSeason.name} matches or standings as a spreadsheet.
+                    </p>
+                    <div style={styles.toolActions}>
                       <button
-                        style={styles.dangerBtn}
-                        onClick={() => handleResolveReport(report, "remove")}
-                        disabled={resolvingReportId === report.id}
+                        type="button"
+                        style={styles.btn}
+                        onClick={() => handleExportCsv("matches")}
+                        disabled={exportingCsv}
                       >
-                        Remove message
+                        Matches
                       </button>
                       <button
+                        type="button"
                         style={styles.btnSecondary}
-                        onClick={() => handleResolveReport(report, "dismiss")}
-                        disabled={resolvingReportId === report.id}
+                        onClick={() => handleExportCsv("rankings")}
+                        disabled={exportingCsv}
                       >
-                        Dismiss
+                        Rankings
                       </button>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                </div>
 
-            <div style={styles.card}>
-              <h2 style={styles.sectionTitle}>Ranking Repair</h2>
-              <p style={styles.hint}>
-                Rebuild rankings and head-to-head records from completed matches
-                without deleting match history.
-              </p>
-              <button
-                style={styles.btn}
-                onClick={repairRankings}
-                disabled={repairingRankings}
-              >
-                {repairingRankings ? "Repairing..." : "Repair Rankings"}
-              </button>
-              {repairMessage && <p role="status" aria-live="polite" style={styles.success}>{repairMessage}</p>}
-            </div>
+                {repairMessage && (
+                  <p role="status" aria-live="polite" style={styles.success}>
+                    {repairMessage}
+                  </p>
+                )}
+                {csvMessage && (
+                  <p role="status" aria-live="polite" style={styles.success}>
+                    {csvMessage}
+                  </p>
+                )}
+
+                {openToolPanel === "scheduler" ? (
+                  <div style={styles.card}>
+                    <h2 style={styles.sectionTitle}>Round-robin scheduler</h2>
+                    <p style={styles.hint}>
+                      Building a fixture list for {adminSeason.name}. Change the season in the
+                      page header to schedule a different one.
+                    </p>
+                    <div style={styles.row}>
+                      <label style={styles.filterLabel}>
+                        Division level
+                        <select
+                          style={styles.input}
+                          value={rrDivisionLevelId}
+                          onChange={(e) => {
+                            setRrDivisionLevelId(e.target.value);
+                            setRrPreview(null);
+                          }}
+                          disabled={adminSeasonLevels.length === 0}
+                        >
+                          {adminSeasonLevels.length === 0 ? (
+                            <option value="">No levels for this season</option>
+                          ) : (
+                            adminSeasonLevels.map((level) => (
+                              <option key={level.id} value={level.id}>
+                                {level.name}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </label>
+                    </div>
+
+                    <p style={styles.subTitle}>
+                      Players ({rrSelectedPlayerIds.length} selected)
+                    </p>
+                    {rrMemberships.length === 0 ? (
+                      <p style={styles.hint}>No active players in this season/level yet.</p>
+                    ) : (
+                      <div style={styles.levelGrid}>
+                        {rrMemberships.map((m) => {
+                          const selected = rrSelectedPlayerIds.includes(m.userId);
+                          return (
+                            <button
+                              type="button"
+                              key={m.userId}
+                              style={{
+                                ...styles.playerToggle,
+                                ...(selected ? styles.playerToggleActive : {}),
+                              }}
+                              onClick={() => toggleRrPlayer(m.userId)}
+                            >
+                              {selected ? "✓ " : ""}
+                              {m.displayNameSnapshot}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <p style={styles.subTitle}>Format</p>
+                    <div style={styles.row}>
+                      <select
+                        style={styles.input}
+                        value={rrDoubleRoundRobin ? "double" : "single"}
+                        onChange={(e) => {
+                          setRrDoubleRoundRobin(e.target.value === "double");
+                          setRrPreview(null);
+                        }}
+                        aria-label="Round-robin format"
+                      >
+                        <option value="single">Single round robin</option>
+                        <option value="double">Double round robin</option>
+                      </select>
+                      <select
+                        style={styles.input}
+                        value={rrIntervalDays}
+                        onChange={(e) => setRrIntervalDays(Number(e.target.value))}
+                        aria-label="Round interval"
+                      >
+                        {[3, 7, 14].map((days) => (
+                          <option key={days} value={days}>
+                            Every {days} days
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        style={styles.input}
+                        type="text"
+                        value={rrStartDate}
+                        onChange={(e) => setRrStartDate(e.target.value)}
+                        placeholder="Round 1 start date (YYYY-MM-DD)"
+                        aria-label="Round 1 start date"
+                      />
+                    </div>
+                    <label style={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={rrSeedByRankings}
+                        onChange={(e) => {
+                          setRrSeedByRankings(e.target.checked);
+                          setRrPreview(null);
+                        }}
+                      />
+                      Seed pairings by current ranking
+                    </label>
+                    <label style={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        checked={rrClearExisting}
+                        onChange={(e) => setRrClearExisting(e.target.checked)}
+                      />
+                      Clear previously generated schedule for this level
+                    </label>
+
+                    {rrSelectedLevelIsDoubles && (
+                      <p style={styles.hint}>
+                        Round-robin scheduling is not yet available for doubles levels. Create
+                        doubles matches from the Matches page instead.
+                      </p>
+                    )}
+
+                    <div style={styles.editorActions}>
+                      <button
+                        style={styles.btnSecondary}
+                        onClick={handleRrGeneratePreview}
+                        disabled={rrSelectedLevelIsDoubles}
+                      >
+                        Generate preview
+                      </button>
+                    </div>
+
+                    {rrPreview && (
+                      <div style={styles.mergeBox}>
+                        <p style={styles.subTitle}>
+                          Preview — {rrPreview.length} match{rrPreview.length === 1 ? "" : "es"}
+                        </p>
+                        {Array.from(new Set(rrPreview.map((m) => m.round))).map((round) => (
+                          <div key={round} style={{ marginBottom: 10 }}>
+                            <p
+                              style={{
+                                ...styles.hint,
+                                fontWeight: 700,
+                                color: "var(--green-dark)",
+                                marginBottom: 4,
+                              }}
+                            >
+                              Round {round}
+                            </p>
+                            {rrPreview
+                              .filter((m) => m.round === round)
+                              .map((m, idx) => (
+                                <p key={idx} style={{ ...styles.hint, marginBottom: 2 }}>
+                                  {rrNameById.get(m.player1Id) ?? m.player1Id} vs{" "}
+                                  {rrNameById.get(m.player2Id) ?? m.player2Id}
+                                </p>
+                              ))}
+                          </div>
+                        ))}
+                        <button style={styles.btn} onClick={handleRrPublish} disabled={rrPublishing}>
+                          {rrPublishing ? "Publishing…" : "Publish schedule"}
+                        </button>
+                      </div>
+                    )}
+                    {rrMessage && (
+                      <p role="status" aria-live="polite" style={styles.success}>
+                        {rrMessage}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+
+                {openToolPanel === "reports" ? (
+                  <div style={styles.card}>
+                    <h2 style={styles.sectionTitle}>Reported messages</h2>
+                    {messageReports.length === 0 ? (
+                      <p style={styles.hint}>No pending reports.</p>
+                    ) : (
+                      messageReports.map((report) => (
+                        <div key={report.id} style={styles.mergeBox}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <strong>{report.messageSenderName}</strong>
+                            <span style={styles.unregisteredBadge}>
+                              {REPORT_REASON_LABELS[report.reason] ?? report.reason}
+                            </span>
+                          </div>
+                          <p style={styles.hint}>&ldquo;{report.messageContent}&rdquo;</p>
+                          {report.note && <p style={styles.hint}>Reporter note: {report.note}</p>}
+                          <div style={styles.editorActions}>
+                            <button
+                              style={styles.dangerBtn}
+                              onClick={() => handleResolveReport(report, "remove")}
+                              disabled={resolvingReportId === report.id}
+                            >
+                              Remove message
+                            </button>
+                            <button
+                              style={styles.btnSecondary}
+                              onClick={() => handleResolveReport(report, "dismiss")}
+                              disabled={resolvingReportId === report.id}
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </>
         )}
       </main>
+
+      {activeTab === "roster" && !viewAsUser && selectedVisibleIds.length > 0 ? (
+        <div style={styles.bulkBar}>
+          <span style={styles.bulkCount}>
+            {selectedVisibleIds.length} player{selectedVisibleIds.length === 1 ? "" : "s"} selected
+          </span>
+          <span style={styles.bulkDivider} aria-hidden="true" />
+          <label style={styles.bulkAssign}>
+            Assign to
+            <select
+              style={styles.bulkSelect}
+              value={bulkLevelId}
+              onChange={(e) => setBulkLevelId(e.target.value)}
+              aria-label="Assign selected players to division"
+            >
+              {adminSeasonLevels.map((level) => (
+                <option key={level.id} value={level.id}>
+                  {level.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            style={styles.bulkApply}
+            onClick={applyBulkAssign}
+            disabled={bulkApplying || !bulkLevelId}
+          >
+            {bulkApplying ? "Applying…" : "Apply"}
+          </button>
+          <button
+            type="button"
+            style={styles.bulkClear}
+            onClick={() => setSelectedPlayerIds([])}
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+
+      {importOpen ? (
+        <div style={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="import-title">
+          <div style={styles.modal}>
+            <h2 id="import-title" style={styles.sectionTitle}>
+              Import roster
+            </h2>
+            <p style={styles.hint}>
+              Paste one player per line as <code>Name, email</code>. The email is optional.
+            </p>
+            <label style={styles.addLabel} htmlFor="import-textarea">
+              Players
+            </label>
+            <textarea
+              id="import-textarea"
+              style={styles.textarea}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder={"Ann Smith, ann@example.com\nBob Jones, bob@example.com"}
+              rows={9}
+            />
+            <div style={styles.addField}>
+              <label style={styles.addLabel} htmlFor="import-level">
+                Assign to
+              </label>
+              <select
+                id="import-level"
+                style={styles.input}
+                value={importLevelId}
+                onChange={(e) => setImportLevelId(e.target.value)}
+              >
+                {adminSeasonLevels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p style={styles.importCount} role="status" aria-live="polite">
+              {importEntries.length} player{importEntries.length === 1 ? "" : "s"} detected
+            </p>
+            <div style={styles.addActions}>
+              <button
+                type="button"
+                style={styles.btnSecondary}
+                onClick={() => setImportOpen(false)}
+                disabled={importing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={styles.btn}
+                onClick={handleImportRoster}
+                disabled={importing || importEntries.length === 0 || !importLevelId}
+              >
+                {importing ? "Importing…" : "Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+// The amber pair below (#fff3cd / #856404) is the warning tint this app already uses for the
+// leader badge; the unassigned states reuse it rather than introducing a new state color.
+const WARN_BG = "#fff3cd";
+const WARN_FG = "#856404";
+const DANGER = "#c0392b";
+
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: 1200, margin: "0 auto", padding: "40px 24px" },
-  adminHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" as const },
+  main: { maxWidth: 1200, margin: "0 auto", padding: "40px 24px 120px" },
+  adminHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 4, flexWrap: "wrap" as const },
+  headerTitleGroup: { display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" as const },
+  headerSeason: { display: "inline-flex", alignItems: "center" },
+  headerSelect: {
+    border: "1px solid #ddd",
+    borderRadius: 10,
+    padding: "8px 12px",
+    fontSize: 14,
+    fontWeight: 600,
+    color: "var(--green-dark)",
+    background: "#fff",
+  },
+  headerSummary: { fontSize: 14, color: "var(--muted)", marginBottom: 20 },
+  srOnly: {
+    position: "absolute" as const,
+    width: 1,
+    height: 1,
+    overflow: "hidden",
+    clip: "rect(0 0 0 0)",
+    whiteSpace: "nowrap" as const,
+  },
   pageTitle: {
     fontSize: 28,
     fontWeight: 800,
     color: "var(--green-dark)",
     marginBottom: 0,
+  },
+  tabBar: {
+    display: "flex",
+    gap: 4,
+    borderBottom: "1px solid #e7e7e7",
+    marginBottom: 20,
+    flexWrap: "wrap" as const,
+  },
+  tab: {
+    background: "transparent",
+    border: "none",
+    borderBottom: "2px solid transparent",
+    padding: "10px 16px",
+    fontSize: 15,
+    fontWeight: 600,
+    color: "var(--muted)",
+    cursor: "pointer",
+    marginBottom: -1,
+  },
+  tabActive: {
+    color: "var(--green-dark)",
+    borderBottom: "2px solid var(--green-dark)",
   },
   placeholder: {
     color: "var(--muted)",
@@ -1638,14 +2498,175 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hint: { fontSize: 14, color: "var(--muted)", marginBottom: 16 },
   mergeBox: { marginTop: 12, borderTop: "1px solid #eee", paddingTop: 8 },
+
+  warnBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+    background: WARN_BG,
+    color: WARN_FG,
+    borderRadius: 14,
+    padding: "14px 20px",
+    marginBottom: 16,
+  },
+  warnBannerText: { fontSize: 14, fontWeight: 600, flex: 1, minWidth: 220 },
+  warnBannerBtn: {
+    background: "transparent",
+    color: WARN_FG,
+    border: `1px solid ${WARN_FG}`,
+    borderRadius: 10,
+    padding: "8px 16px",
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+  },
+
+  toolbar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+    marginBottom: 16,
+  },
+  searchInput: {
+    border: "1px solid #ddd",
+    borderRadius: 10,
+    padding: "10px 14px",
+    fontSize: 14,
+    minWidth: 200,
+    flex: "0 1 240px",
+  },
+  chipRow: { display: "flex", gap: 8, flexWrap: "wrap" as const, flex: 1, minWidth: 0 },
+  chip: {
+    border: "1px solid #ddd",
+    borderRadius: 999,
+    padding: "7px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#555",
+    background: "#fff",
+    cursor: "pointer",
+    whiteSpace: "nowrap" as const,
+  },
+  chipActive: {
+    background: "var(--green-dark)",
+    borderColor: "var(--green-dark)",
+    color: "#fff",
+  },
+  toolbarActions: { display: "flex", gap: 10, flexWrap: "wrap" as const, marginLeft: "auto" },
+
+  addPanel: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
+    alignItems: "end",
+    border: "1px solid #e7e7e7",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  addField: { display: "grid", gap: 6, minWidth: 0 },
+  addLabel: { fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
+  addActions: { display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center" },
+
+  gridWrap: { width: "100%", minWidth: 0 },
+  gridRow: {
+    display: "grid",
+    gridTemplateColumns:
+      "40px minmax(0, 2fr) minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1.6fr) 44px",
+    alignItems: "center",
+    gap: 12,
+    padding: "10px 8px",
+    borderBottom: "1px solid #f5f5f5",
+  },
+  gridHead: { borderBottom: "2px solid #f0f0f0", padding: "8px" },
+  gridRowSelected: { background: "#f7fbf7" },
+  headCell: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#999",
+    textTransform: "uppercase" as const,
+    minWidth: 0,
+  },
+  cell: { fontSize: 14, color: "#333", minWidth: 0 },
+  cellTruncate: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
+  cellCheck: { display: "flex", alignItems: "center", justifyContent: "center" },
+  cellDivision: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 },
+  cellRemove: { display: "flex", justifyContent: "flex-end" },
+  playerButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    background: "transparent",
+    border: "none",
+    padding: 0,
+    textAlign: "left" as const,
+    cursor: "pointer",
+    minWidth: 0,
+    width: "100%",
+  },
+  avatar: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+    borderRadius: "50%",
+    background: "#e8f5e9",
+    color: "var(--green-dark)",
+    fontSize: 12,
+    fontWeight: 700,
+  },
+  playerName: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#333",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+  },
+  rowSelect: {
+    border: "1px solid #ddd",
+    borderRadius: 10,
+    padding: "7px 10px",
+    fontSize: 13,
+    background: "#fff",
+    color: "#333",
+    minWidth: 0,
+    flex: 1,
+  },
+  rowSelectUnassigned: {
+    border: `1px solid ${WARN_FG}`,
+    background: WARN_BG,
+    color: WARN_FG,
+    fontWeight: 700,
+  },
+  savedFlag: { fontSize: 12, fontWeight: 700, color: "#1a7f37", whiteSpace: "nowrap" as const, minWidth: 38 },
+  removeBtn: {
+    background: "transparent",
+    border: "none",
+    color: "#bbb",
+    fontSize: 20,
+    lineHeight: 1,
+    padding: "2px 8px",
+    borderRadius: 8,
+    cursor: "pointer",
+  },
+  removeBtnHover: { color: DANGER },
+  emptyState: { fontSize: 14, color: "var(--muted)", padding: "28px 8px", textAlign: "center" as const },
+  tableFooter: { fontSize: 13, color: "var(--muted)", marginTop: 14 },
+  detailPanel: { background: "#fcfcfc", borderBottom: "1px solid #f5f5f5", padding: 16 },
+
   inlineEditor: {
     display: "grid",
-    gridTemplateColumns: "minmax(180px, 1fr) minmax(240px, 2fr)",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: 12,
     alignItems: "center",
     maxWidth: "100%",
   },
-  editorCell: { background: "#fcfcfc" },
   editorInput: { boxSizing: "border-box" as const, minWidth: 0, width: "100%" },
   editorActions: {
     gridColumn: "1 / -1",
@@ -1653,14 +2674,13 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
     gap: 10,
   },
-  linkPrompt: { margin: 0, fontSize: 14, color: "#444", alignSelf: "center" },
+  linkPrompt: { gridColumn: "1 / -1", margin: 0, fontSize: 14, color: "#444", alignSelf: "center" },
   matchChecklist: {
     gridColumn: "1 / -1",
     borderTop: "1px solid #eee",
     paddingTop: 8,
   },
   row: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 },
-  filterBar: { display: "flex", gap: 12, flexWrap: "wrap", margin: "10px 0 16px" },
   filterLabel: { display: "grid", gap: 6, fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
   input: {
     flex: 1,
@@ -1668,7 +2688,19 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     padding: "10px 14px",
     fontSize: 14,
+    minWidth: 0,
   },
+  textarea: {
+    width: "100%",
+    border: "1px solid #ddd",
+    borderRadius: 10,
+    padding: "10px 14px",
+    fontSize: 14,
+    fontFamily: "inherit",
+    marginBottom: 12,
+    resize: "vertical" as const,
+  },
+  importCount: { fontSize: 13, fontWeight: 600, color: "var(--muted)", margin: "10px 0 16px" },
   btn: {
     background: "var(--green-dark)",
     color: "#fff",
@@ -1691,7 +2723,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     whiteSpace: "nowrap" as const,
   },
-  error: { marginTop: 10, color: "#c0392b", fontSize: 13 },
+  error: { marginTop: 10, marginBottom: 10, color: DANGER, fontSize: 13 },
   errorList: { margin: "6px 0 0 18px", padding: 0, display: "grid", gap: 4 },
   errorMeta: { margin: "8px 0 0", fontSize: 12, color: "#8b0000" },
   success: { marginTop: 10, color: "#1a7f37", fontSize: 13 },
@@ -1703,43 +2735,132 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontWeight: 600,
   },
-  levelGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, margin: "14px 0" },
-  levelPill: { border: "1px solid #e7e7e7", borderRadius: 12, padding: 12, display: "grid", gap: 4, fontSize: 13, color: "#555" },
-  tableScroller: { overflowX: "auto" as const, width: "100%" },
-  table: {
-    width: "100%",
-    minWidth: 760,
-    borderCollapse: "collapse" as const,
-    marginTop: 8,
+
+  levelGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, margin: "14px 0" },
+  levelCard: { border: "1px solid #e7e7e7", borderRadius: 12, padding: 16, display: "grid", gap: 6, fontSize: 13, color: "#555", alignContent: "start" },
+  levelCardName: { fontSize: 15, color: "var(--green-dark)" },
+  levelCardMeta: { fontSize: 13, color: "var(--muted)" },
+  levelCardCount: { fontSize: 13, fontWeight: 700, color: "#444" },
+  levelCardNew: {
+    border: "1px dashed #bbb",
+    borderRadius: 12,
+    padding: 16,
+    background: "transparent",
+    color: "var(--green-dark)",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    minHeight: 96,
   },
-  th: {
-    textAlign: "left" as const,
-    fontSize: 12,
+
+  toolGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: 20,
+    marginBottom: 20,
+  },
+  toolCard: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 24,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+    display: "grid",
+    gap: 10,
+    alignContent: "start",
+  },
+  toolTitle: { fontSize: 17, fontWeight: 700, color: "var(--green-dark)", margin: 0 },
+  toolDesc: { fontSize: 14, color: "var(--muted)", margin: 0, minHeight: 42 },
+  toolActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
+
+  bulkBar: {
+    position: "fixed" as const,
+    left: "50%",
+    bottom: 24,
+    transform: "translateX(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    flexWrap: "wrap" as const,
+    maxWidth: "calc(100vw - 32px)",
+    background: "var(--green-dark)",
+    color: "#fff",
+    borderRadius: 14,
+    padding: "12px 20px",
+    boxShadow: "0 6px 24px rgba(0,0,0,0.2)",
+    zIndex: 40,
+  },
+  bulkCount: { fontSize: 14, fontWeight: 700, whiteSpace: "nowrap" as const },
+  bulkDivider: { width: 1, height: 22, background: "rgba(255,255,255,0.3)" },
+  bulkAssign: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, whiteSpace: "nowrap" as const },
+  bulkSelect: {
+    border: "none",
+    borderRadius: 10,
+    padding: "8px 12px",
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--green-dark)",
+    background: "#fff",
+    maxWidth: 200,
+  },
+  bulkApply: {
+    background: "#fff",
+    color: "var(--green-dark)",
+    border: "none",
+    borderRadius: 10,
+    padding: "9px 18px",
     fontWeight: 700,
-    color: "#999",
-    padding: "10px 14px",
-    borderBottom: "2px solid #f0f0f0",
-    textTransform: "uppercase" as const,
+    fontSize: 13,
+    cursor: "pointer",
   },
-  tr: { borderBottom: "1px solid #f5f5f5" },
-  groupHeaderRow: { background: "#f7fbf7" },
-  groupHeaderCell: { padding: "10px 14px", fontSize: 13, fontWeight: 800, color: "var(--green-dark)", borderTop: "1px solid #e6f2e6", borderBottom: "1px solid #e6f2e6" },
-  td: { padding: "12px 14px", fontSize: 14, color: "#333" },
+  bulkClear: {
+    background: "transparent",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.5)",
+    borderRadius: 10,
+    padding: "9px 16px",
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: "pointer",
+  },
+
+  modalOverlay: {
+    position: "fixed" as const,
+    inset: 0,
+    background: "rgba(0,0,0,0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 50,
+  },
+  modal: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 28,
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "calc(100vh - 48px)",
+    overflowY: "auto" as const,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+  },
+
   contactLink: { color: "var(--green-dark)", fontWeight: 500 },
-  leaderBadge: {
-    background: "#fff3cd",
-    color: "#856404",
+  registeredBadge: {
+    background: "#e8f5e9",
+    color: "var(--green-dark)",
     padding: "2px 10px",
     borderRadius: 20,
     fontSize: 12,
     fontWeight: 700,
+    whiteSpace: "nowrap" as const,
   },
-  playerBadge: {
+  unregisteredBadge: {
     background: "#f0f0f0",
     color: "#555",
     padding: "2px 10px",
     borderRadius: 20,
     fontSize: 12,
+    whiteSpace: "nowrap" as const,
   },
   playerToggle: {
     border: "1px solid #ddd",
@@ -1766,7 +2887,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "1px solid #f0f0f0",
   },
   dangerBtn: {
-    background: "#c0392b",
+    background: DANGER,
     color: "#fff",
     border: "none",
     borderRadius: 10,

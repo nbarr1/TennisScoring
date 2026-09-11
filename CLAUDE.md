@@ -147,7 +147,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
 
-**`packages/firebase-client/src/divisions.ts`** — division-related Firestore helpers.
+**`packages/firebase-client/src/divisions.ts`** — division-related Firestore helpers, including `useDivisionLevels`, `useDivisionMemberships`, `upsertDivisionLevel`, `upsertDivisionMembership`, and `removeDivisionMembership`.
 
 **`packages/firebase-client/src/moderation.ts`** — UGC moderation helpers: `reportMessage()`, `useDivisionMessageReports()` (pending reports for a division leader/admin's review queue), `resolveMessageReport()` (dismiss, or remove the offending message and mark resolved), `blockUser()`/`unblockUser()` (writes to the caller's own `users/{uid}.blockedUserIds`).
 
@@ -195,7 +195,9 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 **`firebase/src/auth/onUserCreated.ts`** — `identity.beforeUserCreated` trigger that creates a default user document in Firestore when a new user authenticates.
 
-**`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
+**`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `removeDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
+
+`upsertDivisionMembership` requires a `divisionLevelId` — there is no "assign to no level" write. `removeDivisionMembership` is the counterpart: it sets a season's active memberships (all levels, or one when `divisionLevelId` is supplied) to `status: 'removed'` instead of deleting them, mirroring the archive pass `upsertDivisionMembership` already runs when a player moves between levels. Keeping the document preserves the audit trail and leaves historical records that reference it resolvable. A player with no active membership for a season reads as **Unassigned** on the admin roster.
 
 **`firebase/src/users/sendInvite.ts`** — invite callables: `sendInvite`, `getInvitePreview`, `acceptInvite`.
 
@@ -221,7 +223,7 @@ dashboard/             # Main dashboard
 matches/               # Matches list + [id]/ match detail (includes Pending/Awaiting/Upcoming scheduling sections)
 messages/              # Messaging (includes per-message report/block actions)
 profile/               # User profile (includes availability editor, blocked users list, account deletion)
-admin/                 # Admin panel (includes round-robin scheduler and reported-message review queue)
+admin/                 # Admin panel (Roster / Divisions / Tools tabs; season is page-level context)
 feedback/              # Feedback submission form
 invite/accept/         # Invite code acceptance
 onboarding/tutorial/   # Onboarding tutorial
@@ -293,9 +295,19 @@ Consequences worth knowing before changing this code:
 - **`matchType` is a label, never the discriminator.** It is stamped from the division level onto every match created in it, so an ordinary two-player match inside a "Beginner Doubles" level carries `matchType: 'doubles'`, and it is client-writable. Every singles/doubles fork tests `isDoublesMatch()`, which checks the *shape* — two sides of two players each. Treating the label as the discriminator silently drops those two-player matches out of the singles standings.
 - **`side1`/`side2` are not in the `matchFields()` allow-list**, so clients cannot write them. They decide standings credit and report authorization, and no rule can tie them to `playerIds`; a client could otherwise name four uninvolved players and have their teams credited. Doubles matches are created by `createDoublesMatch`, which uses the Admin SDK. The creator must be on side 1, mirroring the singles `player1Id == request.auth.uid` rule.
 
+### Web admin page structure
+
+`/admin` scopes everything to one **page-level season** chosen in the header; changing it resets the roster's filter, search, and selection. Three tabs render one panel at a time:
+
+- **Roster** (default) — the players grid (checkbox · Player · Email · Status · Division · remove) plus everything needed to add and assign players: search, filter chips per division level, inline per-row division `<select>` that writes immediately, bulk assign, the inline Add player panel, and the Import roster modal. Clicking a player's name opens the detail panel that carries the historic-match linking, contact update, and undo tooling.
+- **Divisions** — the season's division levels as cards, plus the level editor.
+- **Tools** — round-robin scheduler, reported-message queue, ranking repair, and CSV exports.
+
+Row-level division changes are optimistic: the pending level is held in local state, shown with a transient "Saved" label, rolled back if the write fails, and dropped once the memberships snapshot reports the same value. Unassigned rows reuse the app's existing amber pair (`#fff3cd` / `#856404`, the leader-badge tint) — do not introduce a new state color.
+
 ### Round-robin match scheduling
 
-Division leaders/admins generate a full season's fixtures from the Admin tab's "Round-Robin Scheduler" (mobile: `apps/mobile/app/round-robin-scheduler.tsx`; web: the "Round-Robin Scheduler" card on `/admin`): pick a season + division level, select players (defaults to that season/level's active `DivisionMembership` roster), configure single/double round robin, round interval, start date, and optional ranking-based seeding, then "Generate Preview" (client-side, via `previewRoundRobinSchedule()`) before "Publish Schedule" (server-side, via `publishRoundRobinSchedule()`) actually creates the matches. Preview and publish share the same `generateRoundRobinSchedule()` algorithm from `@tennis/shared`, so the preview is guaranteed to match what gets created.
+Division leaders/admins generate a full season's fixtures from the Admin tab's "Round-Robin Scheduler" (mobile: `apps/mobile/app/round-robin-scheduler.tsx`; web: the "Round-Robin Scheduler" card on the `/admin` Tools tab): pick a season + division level, select players (defaults to that season/level's active `DivisionMembership` roster), configure single/double round robin, round interval, start date, and optional ranking-based seeding, then "Generate preview" (client-side, via `previewRoundRobinSchedule()`) before "Publish schedule" (server-side, via `publishRoundRobinSchedule()`) actually creates the matches. Preview and publish share the same `generateRoundRobinSchedule()` algorithm from `@tennis/shared`, so the preview is guaranteed to match what gets created.
 
 ### Account deletion
 
@@ -303,7 +315,7 @@ Users delete their own account from Profile (web `/profile`, mobile Profile tab)
 
 ### Message reporting & blocking
 
-Any channel participant can report a message (reason: `harassment | spam | inappropriate | other`, optional note) via `reportMessage()`, which writes a `messageReports/{reportId}` doc scoped to the reporter's `divisionId`. Division leaders/admins see pending reports for their division via `useDivisionMessageReports()` (mobile: Admin tab; web: the "Reported Messages" card on `/admin`) and resolve them with `resolveMessageReport()`, either dismissing the report or removing the offending message (Firestore rules let leaders/admins delete any message in their division's channel; DM participants can already delete their own conversation's messages). Independently, any user can block another user's messages via `blockUser()`/`unblockUser()`, which write to the caller's own `users/{uid}.blockedUserIds` — this is a client-side filter (blocked senders' messages are hidden from the message list and excluded from DM search results on both web and mobile) rather than a server-enforced send restriction. Both apps' Profile screens list currently-blocked users with an unblock action.
+Any channel participant can report a message (reason: `harassment | spam | inappropriate | other`, optional note) via `reportMessage()`, which writes a `messageReports/{reportId}` doc scoped to the reporter's `divisionId`. Division leaders/admins see pending reports for their division via `useDivisionMessageReports()` (mobile: Admin tab; web: the "Reported messages" card on the `/admin` Tools tab) and resolve them with `resolveMessageReport()`, either dismissing the report or removing the offending message (Firestore rules let leaders/admins delete any message in their division's channel; DM participants can already delete their own conversation's messages). Independently, any user can block another user's messages via `blockUser()`/`unblockUser()`, which write to the caller's own `users/{uid}.blockedUserIds` — this is a client-side filter (blocked senders' messages are hidden from the message list and excluded from DM search results on both web and mobile) rather than a server-enforced send restriction. Both apps' Profile screens list currently-blocked users with an unblock action.
 
 ### Wearable support
 

@@ -2,8 +2,21 @@
 
 ## [Unreleased]
 
-### Removed
-- Removed Firebase Crashlytics and the mobile crash-reporting bridge so the app does not collect crash analytics, consistent with the privacy policy.
+### Added
+- Reworked the web `/admin` page around the two jobs leaders actually do — adding players and assigning them to a division for a season. The season is now a single page-level selector in the header (with a `N players · N division levels · N unassigned` summary), and the page is split into **Roster**, **Divisions**, and **Tools** tabs so only one panel renders at a time.
+- Added a roster toolbar with live name/email search, filter chips (`All`, `Unassigned`, one per division level with counts), and **Import roster** / **Add player** actions.
+- Added an unassigned callout above the roster that names how many players have no division for the selected season and jumps to the Unassigned filter.
+- Added inline division assignment to every roster row: a `<select>` that saves immediately and flashes a transient "Saved" label. Unassigned rows carry the app's warning tint so they are scannable at a glance.
+- Added bulk assignment: selecting rows raises a fixed bar that assigns every selected player to one division level in a single action.
+- Added an inline **Add player** panel (name, email, division) and an **Import roster** modal that parses pasted `Name, email` lines with a live detected-player count.
+- Added the `removeDivisionMembership` Cloud Function and its `@tennis/firebase-client` wrapper. The roster's remove action and moving a player back to "Unassigned" both archive the season membership with the existing `status: 'removed'` value rather than deleting the document, so historical records that reference it keep resolving.
+
+### Changed
+- The admin players table is now a six-column grid (checkbox · Player · Email · Status · Division · remove) with an initials avatar per player. The Role and Phone columns moved off the roster grid into the player detail panel, which opens from the player's name.
+- The `⋯` overflow menu is replaced by a single `×` remove button that turns destructive on hover.
+- The "Seasons & Division Levels" block moved to the Divisions tab and renders each level as a card (name, format, player count) alongside a dashed "+ New division level" card.
+- The round-robin scheduler, reported-message queue, ranking repair, and CSV exports moved off the main page into four equal cards on the Tools tab.
+- The round-robin scheduler, level editor, and CSV exports read the page-level season instead of carrying their own season dropdowns.
 
 ## [1.1.0] — 2026-09-05
 
