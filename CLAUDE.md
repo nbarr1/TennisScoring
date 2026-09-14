@@ -120,6 +120,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **`packages/shared/src/profile/profileUtils.ts`** — availability-editor logic shared by both apps' profile screens: `createDefaultAvailabilitySlot()`, `addAvailabilitySlot()`, `updateAvailabilitySlot()`, `removeAvailabilitySlot()`, `cycleAvailabilitySlotDay()`, `validateAvailabilitySlots()`, `buildAvailability()`, and `buildUserProfileUpdates()`.
 
+**`packages/shared/src/roster/rosterImport.ts`** — roster-import parsing and the bulk-write concurrency helper used by the admin roster: `parseRosterPaste()`, `looksLikeEmail()`, `mapWithConcurrency()`, and `isFailure()`. `parseRosterPaste()` reads a comma-less line as an email when it looks like one (a pasted column of addresses is the common case; reading those as names creates un-inviteable placeholder accounts), tolerates `email, Name` as well as `Name, email`, and de-duplicates entries so two rows for one person cannot race two placeholders into existence. `mapWithConcurrency()` resolves per-item outcomes instead of rejecting, so one failed write never discards the ones that landed.
+
 **`packages/shared/src/legal/privacyPolicy.ts`** — `PRIVACY_POLICY_SECTIONS`, `PRIVACY_POLICY_INTRO`, `PRIVACY_POLICY_LAST_UPDATED`: the single source of truth for the privacy policy copy, rendered identically by the mobile screen (`apps/mobile/app/privacy-policy.tsx`) and the public web page (`apps/web/app/privacy/page.tsx`) so the two never drift apart.
 
 **`packages/shared/src/scheduling/roundRobin.ts`**:
@@ -148,6 +150,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 **`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
 
 **`packages/firebase-client/src/divisions.ts`** — division-related Firestore helpers, including `useDivisionLevels`, `useDivisionMemberships`, `upsertDivisionLevel`, `upsertDivisionMembership`, and `removeDivisionMembership`.
+
+`useDivisionMemberships(divisionId, seasonId, divisionLevelId?, statuses?)` defaults `statuses` to `['active']`, which is what the round-robin schedulers want. **A roster view must pass `['active', 'waitlisted']`.** A waitlisted player left out of the snapshot has no `membership` on their row, so they render as Unassigned, are counted in the "no division" warning, show Status `Active` in the detail panel, and — because the waitlist-preserving branch in the assignment handlers reads `row.membership?.status` — get silently flipped back to `active` by their next assignment.
 
 **`packages/firebase-client/src/moderation.ts`** — UGC moderation helpers: `reportMessage()`, `useDivisionMessageReports()` (pending reports for a division leader/admin's review queue), `resolveMessageReport()` (dismiss, or remove the offending message and mark resolved), `blockUser()`/`unblockUser()` (writes to the caller's own `users/{uid}.blockedUserIds`).
 
@@ -197,7 +201,13 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 **`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `removeDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
 
-`upsertDivisionMembership` requires a `divisionLevelId` — there is no "assign to no level" write. `removeDivisionMembership` is the counterpart: it sets a season's active memberships (all levels, or one when `divisionLevelId` is supplied) to `status: 'removed'` instead of deleting them, mirroring the archive pass `upsertDivisionMembership` already runs when a player moves between levels. Keeping the document preserves the audit trail and leaves historical records that reference it resolvable. A player with no active membership for a season reads as **Unassigned** on the admin roster.
+`upsertDivisionMembership` requires a `divisionLevelId` — there is no "assign to no level" write. `removeDivisionMembership` is the counterpart: it sets a season's **rostered** memberships (`active` *and* `waitlisted`; all levels, or one when `divisionLevelId` is supplied) to `status: 'removed'` instead of deleting them. Keeping the document preserves the audit trail and leaves historical records that reference it resolvable. A player with no rostered membership for a season reads as **Unassigned** on the admin roster.
+
+Three details are load-bearing:
+
+- **Archiving lives in `upsertMembershipDocument`, not in one callable.** Every write path (`upsertDivisionMembership`, `addDivisionMemberPlaceholder`, `backfillDivisionSeasonLevel`) retires a player's other rostered memberships for the season before writing the new one. When that pass lived only in `upsertDivisionMembership`, the other two could leave a player holding two live memberships for one season, which rendered them twice on the admin roster under the same React key.
+- **`ROSTERED_MEMBERSHIP_STATUSES` is the filter, never `status == 'active'`.** Querying only `active` made waitlisted memberships invisible to both the archive pass and the remove pass, so a waitlisted player could be neither moved nor taken off the roster.
+- **Removal detaches the player from the division when nothing is left.** After archiving, if the player holds no rostered membership in *any* season of the division, they are removed from `divisions.playerIds` and their `users/{uid}.divisionId` is cleared (only when it still names this division). Without that, the admin roster — which builds rows from `playerIds` and from `users` where `divisionId` matches — re-renders them immediately as an unassigned row, so "Remove" appeared to do nothing but raise the unassigned warning. The callable returns `{ removed, detachedFromDivision }`; a `removed` of `0` means the player was already off the roster and callers should say so rather than silently succeeding. Players with historical rankings still surface on the roster through the rankings fallback, by design — their match history is kept.
 
 **`firebase/src/users/sendInvite.ts`** — invite callables: `sendInvite`, `getInvitePreview`, `acceptInvite`.
 

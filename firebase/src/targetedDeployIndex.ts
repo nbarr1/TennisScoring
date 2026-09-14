@@ -13,6 +13,7 @@ export {
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
   upsertDivisionMembership,
+  removeDivisionMembership,
   backfillDivisionSeasonLevel,
   backfillMissingProfiles,
   exportDivisionCsv,

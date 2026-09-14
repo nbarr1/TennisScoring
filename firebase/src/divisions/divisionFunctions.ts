@@ -266,6 +266,47 @@ async function assertDivisionLevel(
   return level;
 }
 
+/**
+ * The membership statuses that still place a player on a season's roster. `removed` is the
+ * archive tombstone; everything else here must be found by the archive/remove passes, or a
+ * waitlisted player becomes impossible to move or take off the roster.
+ */
+const ROSTERED_MEMBERSHIP_STATUSES = ['active', 'waitlisted'] as const;
+
+/**
+ * Archives every rostered membership a player holds for a season except `keepMembershipId`.
+ * Called by `upsertMembershipDocument` so that *every* write path leaves a player with at
+ * most one live membership per season; skipping it is what let a player hold two active
+ * rows at once and render twice on the admin roster.
+ */
+async function archivePriorMemberships(
+  db: FirebaseFirestore.Firestore,
+  input: { divisionId: string; seasonId: string; userId: string; keepMembershipId?: string },
+): Promise<number> {
+  const priorMemberships = await db
+    .collection('divisions')
+    .doc(input.divisionId)
+    .collection('memberships')
+    .where('userId', '==', input.userId)
+    .where('seasonId', '==', input.seasonId)
+    .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
+    .get();
+
+  const targets = priorMemberships.docs.filter((docSnap) => docSnap.id !== input.keepMembershipId);
+  if (targets.length === 0) return 0;
+
+  const batch = db.batch();
+  targets.forEach((docSnap) => {
+    batch.set(
+      docSnap.ref,
+      { status: 'removed', updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  });
+  await batch.commit();
+  return targets.length;
+}
+
 async function upsertMembershipDocument(
   db: FirebaseFirestore.Firestore,
   input: {
@@ -284,6 +325,14 @@ async function upsertMembershipDocument(
 ): Promise<string> {
   await assertDivisionLevel(db, input.divisionId, input.seasonId, input.divisionLevelId);
   const membershipId = divisionMembershipId(input.seasonId, input.divisionLevelId, input.userId);
+  // Retire any other live membership this player holds for the season before writing the new
+  // one, so moving between levels can never leave two rostered rows behind.
+  await archivePriorMemberships(db, {
+    divisionId: input.divisionId,
+    seasonId: input.seasonId,
+    userId: input.userId,
+    keepMembershipId: membershipId,
+  });
   const ref = db
     .collection('divisions')
     .doc(input.divisionId)
@@ -1230,33 +1279,8 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     });
   }
 
-  const membershipCol = db
-    .collection('divisions')
-    .doc(safeDivisionId)
-    .collection('memberships');
-  const previousMemberships = await membershipCol
-    .where('userId', '==', targetUserId)
-    .where('seasonId', '==', safeSeasonId)
-    .where('status', '==', 'active')
-    .get();
-
-  const nextMembershipId = divisionMembershipId(safeSeasonId, safeLevelId, targetUserId);
-  const archiveBatch = db.batch();
-  previousMemberships.docs.forEach((docSnap) => {
-    if (docSnap.id === nextMembershipId) return;
-    archiveBatch.set(
-      docSnap.ref,
-      {
-        status: 'removed',
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-  });
-  if (!previousMemberships.empty) {
-    await archiveBatch.commit();
-  }
-
+  // `upsertMembershipDocument` archives any other live membership for this season itself, so
+  // every write path (placeholder add, backfill, this callable) gets the same guarantee.
   const membershipId = await upsertMembershipDocument(db, {
     divisionId: safeDivisionId,
     seasonId: safeSeasonId,
@@ -1316,21 +1340,21 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
   const db = getFirestore();
   await requireDivisionLeaderOrAdmin(db, request.auth.uid, safeDivisionId);
 
-  const activeMemberships = await db
-    .collection('divisions')
-    .doc(safeDivisionId)
-    .collection('memberships')
+  const membershipCol = db.collection('divisions').doc(safeDivisionId).collection('memberships');
+  // Waitlisted memberships are on the roster too: filtering to `active` alone left them
+  // stranded, holding a division level that no remove action could ever clear.
+  const rosteredMemberships = await membershipCol
     .where('userId', '==', safeUserId)
     .where('seasonId', '==', safeSeasonId)
-    .where('status', '==', 'active')
+    .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
     .get();
 
   const targets = safeLevelId
-    ? activeMemberships.docs.filter((docSnap) => docSnap.data()?.divisionLevelId === safeLevelId)
-    : activeMemberships.docs;
+    ? rosteredMemberships.docs.filter((docSnap) => docSnap.data()?.divisionLevelId === safeLevelId)
+    : rosteredMemberships.docs;
 
   if (targets.length === 0) {
-    return { removed: 0 };
+    return { removed: 0, detachedFromDivision: false };
   }
 
   const batch = db.batch();
@@ -1339,7 +1363,11 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
       docSnap.ref,
       {
         status: 'removed',
-        assignedBy: request.auth!.uid,
+        // `assignedBy` records who put the player on this level; overwriting it with the
+        // remover destroyed the audit trail this archive is kept for. Track the removal
+        // separately instead.
+        removedBy: request.auth!.uid,
+        removedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
@@ -1347,7 +1375,40 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
   });
   await batch.commit();
 
-  return { removed: targets.length };
+  // A player with no live membership left in any season of this division is no longer in it.
+  // Without detaching them, `divisions.playerIds` and `users/{uid}.divisionId` both keep
+  // pointing here and the admin roster re-renders them immediately as an unassigned row.
+  const remaining = await membershipCol
+    .where('userId', '==', safeUserId)
+    .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
+    .limit(1)
+    .get();
+
+  let detachedFromDivision = false;
+  if (remaining.empty) {
+    const userRef = db.collection('users').doc(safeUserId);
+    const userSnap = await userRef.get();
+    await Promise.all([
+      db.collection('divisions').doc(safeDivisionId).set(
+        {
+          playerIds: FieldValue.arrayRemove(safeUserId),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      ),
+      // Only clear the pointer if it still names this division; a player already moved
+      // elsewhere must keep theirs.
+      userSnap.exists && userSnap.data()?.divisionId === safeDivisionId
+        ? userRef.set(
+            { divisionId: null, updatedAt: FieldValue.serverTimestamp() },
+            { merge: true },
+          )
+        : Promise.resolve(),
+    ]);
+    detachedFromDivision = true;
+  }
+
+  return { removed: targets.length, detachedFromDivision };
 });
 
 

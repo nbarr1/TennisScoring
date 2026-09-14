@@ -17,6 +17,24 @@
 - The "Seasons & Division Levels" block moved to the Divisions tab and renders each level as a card (name, format, player count) alongside a dashed "+ New division level" card.
 - The round-robin scheduler, reported-message queue, ranking repair, and CSV exports moved off the main page into four equal cards on the Tools tab.
 - The round-robin scheduler, level editor, and CSV exports read the page-level season instead of carrying their own season dropdowns.
+- `useDivisionMemberships` takes a `statuses` argument (default `['active']`). The admin roster passes `['active', 'waitlisted']` so waitlisted players are no longer rendered as unassigned, counted in the "no division" warning, or silently flipped back to active by their next assignment. The round-robin schedulers keep the active-only default.
+- `removeDivisionMembership` archives waitlisted memberships as well as active ones, and detaches a player from `divisions.playerIds` and `users/{uid}.divisionId` once they hold no membership in any season of the division, so a removed player no longer reappears on the roster as unassigned.
+- `removeDivisionMembership` records the remover in new `removedBy`/`removedAt` fields instead of overwriting `assignedBy`, which preserves the audit trail the archive exists for.
+- Archiving a player's prior memberships for a season moved into `upsertMembershipDocument`, so the placeholder-add and season-level backfill paths get it too and a player can no longer hold two live memberships for one season.
+- Roster imports and bulk assignment issue their writes with bounded concurrency instead of one serial round-trip per player, and report partial success with the failed rows left selected rather than aborting on the first error.
+- Moved roster-import parsing and the bulk-write concurrency helper into `@tennis/shared` (`roster/rosterImport.ts`) so both are covered by tests.
+
+### Fixed
+- Pasting a bare column of email addresses into **Import roster** now creates placeholder players with the address in the email field, instead of naming the player after the address and leaving the email empty (which produced un-inviteable duplicates of real accounts). Repeated rows for one person are de-duplicated before import.
+- A failed bulk assignment no longer leaves the roster showing a division that was never saved; the optimistic value is rolled back for exactly the rows that failed.
+- Setting a just-added player to **Unassigned** no longer snaps their row back to the division they were added to.
+- The roster's remove action reports when there was nothing to remove, instead of appearing to do nothing.
+- Removing a player no longer strands a stale optimistic override that could mask later changes made from another device.
+- The roster renders one row per player rather than one per membership document, so legacy duplicate memberships can no longer produce duplicate React keys or leave the select-all checkbox stuck indeterminate.
+- `removeDivisionMembership` is exported from the targeted-deploy bundle and listed in the targeted Functions deploy workflow, so the roster's remove and unassign actions no longer fail with `functions/not-found` on a targeted release. `backfillMissingProfiles` was missing from the same workflow list and has been added.
+
+### Removed
+- Removed Firebase Crashlytics and the mobile crash-reporting bridge so the app does not collect crash analytics, consistent with the privacy policy.
 
 ## [1.1.0] — 2026-09-05
 
