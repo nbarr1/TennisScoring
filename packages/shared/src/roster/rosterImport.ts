@@ -10,10 +10,29 @@ export type RosterImportEntry = {
   email: string;
 };
 
-/** A single unquoted address with no whitespace — enough to tell an email column from names. */
+/** A single character class with no quantifier, so this cannot backtrack. */
+const WHITESPACE = /\s/;
+
+/**
+ * A single unquoted address with no whitespace — enough to tell an email column from names.
+ *
+ * Deliberately written with index scans rather than a pattern like
+ * `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`. A dot is itself matched by `[^\s@]`, so the quantifiers
+ * either side of `\.` are ambiguous and a non-matching line backtracks quadratically —
+ * roughly two seconds for a 40,000-character line, on text pasted straight from the roster
+ * import box. Every check below is a single linear pass.
+ */
 export function looksLikeEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  if (WHITESPACE.test(value)) return false;
+  const at = value.indexOf("@");
+  // A local part is required, and exactly one "@".
+  if (at <= 0 || value.indexOf("@", at + 1) !== -1) return false;
+  const domain = value.slice(at + 1);
+  const dot = domain.lastIndexOf(".");
+  // The domain needs a dot with something on both sides of it.
+  return dot > 0 && dot < domain.length - 1;
 }
+
 
 /**
  * Parses pasted roster lines. Splits on the first comma only, so names may not contain one.
