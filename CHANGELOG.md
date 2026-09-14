@@ -32,6 +32,8 @@
 - Removing a player no longer strands a stale optimistic override that could mask later changes made from another device.
 - The roster renders one row per player rather than one per membership document, so legacy duplicate memberships can no longer produce duplicate React keys or leave the select-all checkbox stuck indeterminate.
 - `removeDivisionMembership` is exported from the targeted-deploy bundle and listed in the targeted Functions deploy workflow, so the roster's remove and unassign actions no longer fail with `functions/not-found` on a targeted release. `backfillMissingProfiles` was missing from the same workflow list and has been added.
+- The targeted Functions deploy workflow triggered on pushes to `main`, a branch that does not exist in this repository, so the push trigger could never fire. It now names the default branch, keeping `main` alongside it in case the default is renamed.
+- Removed the `deploy_production` job from the targeted Functions deploy workflow. Its only step echoed a message, so a run that appeared to promote to production deployed nothing. The workflow is now explicitly staging-only.
 
 ### Removed
 - Removed Firebase Crashlytics and the mobile crash-reporting bridge so the app does not collect crash analytics, consistent with the privacy policy.

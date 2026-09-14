@@ -255,7 +255,9 @@ Two more workflows run independently: `.github/workflows/codeql.yml` (weekly + p
 
 ### Targeted Firebase Functions deploy
 
-`.github/workflows/deploy-firebase-function.yml` runs on pushes to `main` that touch Firebase/shared/function workflow paths and on manual dispatch. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+`.github/workflows/deploy-firebase-function.yml` runs on manual dispatch, and on pushes to the default branch (or `main`, kept listed in case the default is renamed) that touch Firebase/shared/function workflow paths. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+
+It deploys to the Firebase project configured for the GitHub `staging` environment, and only that one — there is no production job. To promote, point the staging environment's `FIREBASE_PROJECT_ID` at the target project, or add a second job with its own environment once production credentials exist. Note also that the workflow's `GITHUB_TOKEN` feedback check runs before the deploy and fails the whole run if the token is missing or expired, regardless of which functions you are deploying.
 
 Required GitHub Actions secrets:
 

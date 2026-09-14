@@ -411,6 +411,12 @@ Other workflows run independently of `ci.yml`: `.github/workflows/codeql.yml` (C
 
 `.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
 
+Three things to know before relying on it:
+
+- **It deploys to the `staging` GitHub environment only.** There is no production job. It previously carried a `deploy_production` job whose only step echoed a message, so a run that "succeeded" had deployed nothing to production.
+- **A function must be named in three places or it is silently not deployed**: exported from `firebase/src/targetedDeployIndex.ts` (which `build:targeted-deploy` bundles to `lib/index.js`), and listed in *both* the `FILTERS` and `DEPLOY_FUNCTIONS` strings in this workflow. The "Verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from those lists passes CI and then fails at the call site with `functions/not-found`.
+- **The feedback-token check gates every deploy.** The workflow reads `GITHUB_TOKEN` from Secret Manager and requires exactly HTTP 422 from the GitHub issues endpoint. A missing or expired token fails the whole run, including deploys of functions unrelated to feedback.
+
 `.github/workflows/andorid-ai-agent.yml` — a Python-based review/apply agent (the filename is misspelled as committed; match it exactly when referencing the workflow) that runs on push to any branch and via `workflow_dispatch` with a `review`/`apply` mode input. It holds `contents: write`; its helper scripts live in `.github/scripts/`.
 
 ### Dependency constraints
