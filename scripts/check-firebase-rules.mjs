@@ -46,6 +46,14 @@ const requiredFirestoreGuards = [
     description: 'guest linking verifies the replacement opponent belongs to the division',
     pattern: /getUserDataById\(incoming\.player2Id\)\.divisionId == existing\.divisionId/,
   },
+  {
+    description: 'message reports are tied to the stored message',
+    pattern: /request\.resource\.data\.messageContent == message\.content/,
+  },
+  {
+    description: 'message writes enforce a content size limit',
+    pattern: /request\.resource\.data\.content\.size\(\) <= 2000/,
+  },
 ];
 
 for (const guard of requiredFirestoreGuards) {
@@ -53,6 +61,20 @@ for (const guard of requiredFirestoreGuards) {
     console.error(`❌ firebase/firestore.rules: missing guard: ${guard.description}`);
     failed = true;
   }
+}
+
+const messageReportCreateRule = firestoreRules.match(
+  /match \/messageReports\/\{reportId\} \{[\s\S]*?allow update:/,
+)?.[0];
+if (!messageReportCreateRule || /messageContent\.size\(\)/.test(messageReportCreateRule)) {
+  console.error('❌ firebase/firestore.rules: legacy oversized messages cannot be reported');
+  failed = true;
+}
+
+const storageRules = readFileSync('firebase/storage.rules', 'utf8');
+if (!/allow delete: if request\.auth != null && request\.auth\.uid == userId;/.test(storageRules)) {
+  console.error('❌ firebase/storage.rules: avatar owners cannot explicitly delete their files');
+  failed = true;
 }
 
 if (failed) {

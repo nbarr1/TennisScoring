@@ -40,7 +40,7 @@ service firebase.storage {
     // Avatar images — readable by all authenticated users, writable by owner
     match /avatars/{userId}/{filename} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId
+      allow create, update: if request.auth != null && request.auth.uid == userId
         && request.resource.size < 5 * 1024 * 1024  // 5MB max
         && request.resource.contentType in [
           'image/jpeg',
@@ -48,6 +48,9 @@ service firebase.storage {
           'image/gif',
           'image/webp'
         ];
+      // Deletes have no request.resource, so sharing the upload predicate made
+      // it impossible for owners to remove an old avatar.
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     // Match reports generated at reports/{matchId}.pdf are accessed through

@@ -235,6 +235,7 @@ function ChannelView({ channel }: { channel: Channel }) {
           style={styles.textInput}
           value={text}
           onChangeText={setText}
+          maxLength={2000}
           placeholder="Message…"
           multiline
         />
@@ -314,6 +315,7 @@ function ChannelView({ channel }: { channel: Channel }) {
             <TextInput
               style={[styles.input, { minHeight: 56 }]}
               value={reportNote}
+              maxLength={1000}
               onChangeText={setReportNote}
               placeholder="Add details (optional)"
               multiline
