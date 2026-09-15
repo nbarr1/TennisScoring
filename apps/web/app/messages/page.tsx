@@ -423,6 +423,7 @@ function ChatPane({
           style={styles.input}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          maxLength={2000}
           placeholder="Type a message…"
         />
         <button
@@ -487,6 +488,7 @@ function ChatPane({
               id="report-note"
               style={{ ...styles.modalInput, minHeight: 64, resize: "vertical" as const }}
               value={reportNote}
+              maxLength={1000}
               onChange={(e) => setReportNote(e.target.value)}
               placeholder="Add details (optional)"
             />
