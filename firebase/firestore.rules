@@ -672,7 +672,8 @@ service cloud.firestore {
         request.resource.data.divisionId is string &&
         request.resource.data.divisionId.size() > 0 &&
         request.resource.data.messageContent is string &&
-        request.resource.data.messageContent.size() <= 2000 &&
+        // Do not impose the current composer limit here: reports must preserve
+        // the exact content of messages created before that limit existed.
         request.resource.data.get('note', '') is string &&
         request.resource.data.get('note', '').size() <= 1000 &&
         request.resource.data.createdAt is number &&
