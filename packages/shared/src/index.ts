@@ -27,5 +27,8 @@ export * from "./tips/tips";
 // Profile utilities
 export * from "./profile/profileUtils";
 
+// Roster import parsing
+export * from "./roster/rosterImport";
+
 // Legal content
 export * from "./legal/privacyPolicy";

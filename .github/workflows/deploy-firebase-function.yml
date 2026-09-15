@@ -1,9 +1,19 @@
 name: Deploy Firebase Functions (targeted)
 
+# Deploys the targeted Functions bundle to the Firebase project configured for the GitHub
+# `staging` environment. There is no production job: promote by pointing the staging
+# environment's FIREBASE_PROJECT_ID at the target project, or add a second job with its own
+# environment once production credentials exist.
+
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    # The repository's default branch, plus `main` so this keeps working if the default is
+    # ever renamed. Naming only `main` meant the push trigger could never fire, because no
+    # branch by that name exists here.
+    branches:
+      - claude/setup-tennis-scoring-app-H7r7V
+      - main
     paths:
       - "firebase/**"
       - "packages/shared/**"
@@ -148,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
+          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
 
           FILTERS="$FILTERS" node <<'NODE'
           const path = require('path');
@@ -166,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,backfillDivisionSeasonLevel,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
+          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
 
           npx firebase-tools deploy \
             --only "functions:${DEPLOY_FUNCTIONS//,/\,functions:}" \
@@ -178,12 +188,3 @@ jobs:
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}
-
-  deploy_production:
-    if: github.event_name == 'workflow_dispatch'
-    needs: deploy_staging
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Manual promotion gate
-        run: echo 'Approve this environment to promote deployment to production.'

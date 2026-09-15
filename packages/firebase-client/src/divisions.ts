@@ -10,7 +10,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, profilesCol } from './collections';
 import { functions } from './config';
-import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMatchType, DivisionSkillLevel, SeasonHalf, PublicProfile } from '@tennis/shared';
+import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMembershipStatus, DivisionMatchType, DivisionSkillLevel, SeasonHalf, PublicProfile } from '@tennis/shared';
 
 export function useDivisionLevels(
   divisionId: string | null | undefined,
@@ -51,13 +51,27 @@ export function useDivisionLevels(
 }
 
 
+/**
+ * Subscribes to a season's memberships.
+ *
+ * `statuses` defaults to active-only, which is what schedulers want. A roster view must pass
+ * `['active', 'waitlisted']`: a waitlisted player left out of the snapshot renders as
+ * unassigned, is counted in the "no division" warning, and gets silently flipped back to
+ * active by the next assignment, because the caller can no longer see their real status.
+ */
 export function useDivisionMemberships(
   divisionId: string | null | undefined,
   seasonId: string | null | undefined,
   divisionLevelId?: string | null,
+  statuses: readonly DivisionMembershipStatus[] = ['active'],
 ): { memberships: DivisionMembership[]; loading: boolean } {
   const [memberships, setMemberships] = useState<DivisionMembership[]>([]);
   const [loading, setLoading] = useState(true);
+  // Callers pass an array literal, so depend on its contents rather than its identity or the
+  // subscription tears down and rebuilds on every render. An empty list falls back to the
+  // default: Firestore rejects an empty `in`, and a caller asking for no statuses at all is
+  // a mistake, not a request for an empty roster.
+  const statusKey = (statuses.length > 0 ? [...statuses] : ['active']).sort().join(',');
 
   useEffect(() => {
     if (!divisionId || !seasonId) {
@@ -65,12 +79,13 @@ export function useDivisionMemberships(
       setLoading(false);
       return;
     }
+    const statusFilter = statusKey.split(',') as DivisionMembershipStatus[];
     setLoading(true);
     return onSnapshot(
       divisionMembershipsQuery(
         divisionId,
         seasonId,
-        where('status', '==', 'active'),
+        where('status', 'in', statusFilter),
         ...(divisionLevelId ? [where('divisionLevelId', '==', divisionLevelId)] : []),
       ),
       (snap) => {
@@ -86,7 +101,7 @@ export function useDivisionMemberships(
         setLoading(false);
       },
     );
-  }, [divisionId, divisionLevelId, seasonId]);
+  }, [divisionId, divisionLevelId, seasonId, statusKey]);
 
   return { memberships, loading };
 }
@@ -151,13 +166,16 @@ export async function removeDivisionMembership(input: {
   seasonId: string;
   userId: string;
   divisionLevelId?: string;
-}): Promise<{ removed: number }> {
-  const callable = httpsCallable<typeof input, { removed: number }>(
-    functions,
-    'removeDivisionMembership',
-  );
+}): Promise<{ removed: number; detachedFromDivision: boolean }> {
+  const callable = httpsCallable<
+    typeof input,
+    { removed: number; detachedFromDivision?: boolean }
+  >(functions, 'removeDivisionMembership');
   const result = await callable(input);
-  return result.data;
+  return {
+    removed: result.data.removed,
+    detachedFromDivision: result.data.detachedFromDivision ?? false,
+  };
 }
 
 

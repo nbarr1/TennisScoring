@@ -255,7 +255,9 @@ Two more workflows run independently: `.github/workflows/codeql.yml` (weekly + p
 
 ### Targeted Firebase Functions deploy
 
-`.github/workflows/deploy-firebase-function.yml` runs on pushes to `main` that touch Firebase/shared/function workflow paths and on manual dispatch. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+`.github/workflows/deploy-firebase-function.yml` runs on manual dispatch, and on pushes to the default branch (or `main`, kept listed in case the default is renamed) that touch Firebase/shared/function workflow paths. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+
+It deploys to the Firebase project configured for the GitHub `staging` environment, and only that one — there is no production job. To promote, point the staging environment's `FIREBASE_PROJECT_ID` at the target project, or add a second job with its own environment once production credentials exist. Note also that the workflow's `GITHUB_TOKEN` feedback check runs before the deploy and fails the whole run if the token is missing or expired, regardless of which functions you are deploying.
 
 Required GitHub Actions secrets:
 
@@ -317,6 +319,8 @@ Division leaders can use the Admin screen in both the web and mobile apps to doc
 
 On the web, `/admin` picks the season once in the page header and scopes the whole page to it. Division levels live on the **Divisions** tab; the roster, player creation, and division assignment live on the **Roster** tab; the round-robin scheduler, reported-message queue, ranking repair, and CSV exports live on the **Tools** tab.
 
-Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's active membership documents `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`.
+Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's rostered membership documents (`active` and `waitlisted`) `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`; it is exported from `firebase/src/targetedDeployIndex.ts` and listed in `.github/workflows/deploy-firebase-function.yml`, so the targeted deploy workflow ships it. Adding a callable means adding it in **both** places — the workflow's "verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from the list passes CI and then 404s in production.
+
+Removing a player who holds no membership in any other season of the division also takes them out of `divisions.playerIds` and clears their `users/{uid}.divisionId`. Without that the roster, which is built from both, would re-render them immediately as an unassigned row.
 
 The Admin screen's Tools tab exposes CSV export actions for match results and ranking rows. CSV generation runs through the protected `exportDivisionCsv` Cloud Function so exports consistently enforce division-leader/admin permissions and can be shared from mobile or downloaded from web.

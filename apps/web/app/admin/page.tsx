@@ -45,6 +45,9 @@ import {
   type MessageReport,
   type MessageReportReason,
   isPrivilegedRole,
+  isFailure,
+  mapWithConcurrency,
+  parseRosterPaste,
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 
@@ -76,21 +79,26 @@ function initialsOf(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-/** Parses pasted "Name, email" lines. Splits on the first comma only, so names may not contain one. */
-function parseRosterPaste(text: string): Array<{ name: string; email: string }> {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const comma = line.indexOf(",");
-      if (comma === -1) return { name: line, email: "" };
-      return {
-        name: line.slice(0, comma).trim(),
-        email: line.slice(comma + 1).trim(),
-      };
-    })
-    .filter((entry) => entry.name.length > 0);
+/** Statuses that put a player on the admin roster. Module-level so the array identity is stable. */
+const ROSTER_MEMBERSHIP_STATUSES = ["active", "waitlisted"] as const;
+
+/** Max callables in flight at once — enough to stop a 40-player import crawling, gentle on quota. */
+const ROSTER_WRITE_CONCURRENCY = 5;
+
+/**
+ * Milliseconds from a Firestore timestamp field. `DivisionMembership.updatedAt` is typed
+ * `number`, but the server writes `serverTimestamp()`, so a live snapshot hands back a
+ * `Timestamp` object — comparing two of those with `>` is always false. Returns 0 for a
+ * pending server timestamp, which reads as null until the write resolves.
+ */
+function timestampMillis(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    const candidate = value as { toMillis?: () => number; seconds?: number };
+    if (typeof candidate.toMillis === "function") return candidate.toMillis();
+    if (typeof candidate.seconds === "number") return candidate.seconds * 1000;
+  }
+  return 0;
 }
 
 function PermissionHints({
@@ -171,9 +179,14 @@ export default function AdminPage(): React.JSX.Element {
   const [adminSeasonId, setAdminSeasonId] = useState(currentSeason.id);
   const [viewAsUser, setViewAsUser] = useState(false);
   const [activeTab, setActiveTab] = useState<AdminTab>("roster");
+  // The roster shows every player on the season, waitlisted included — leaving them out
+  // rendered them as unassigned and let the next assignment quietly flip them to active.
+  // The round-robin scheduler below keeps the active-only default on purpose.
   const { memberships: seasonMemberships } = useDivisionMemberships(
     division?.id,
     adminSeasonId,
+    null,
+    ROSTER_MEMBERSHIP_STATUSES,
   );
   const [exportingCsv, setExportingCsv] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
@@ -960,13 +973,23 @@ export default function AdminPage(): React.JSX.Element {
     () => new Map(players.map((player) => [player.id, player] as const)),
     [players],
   );
-  const membershipByUserId = useMemo(
-    () => new Map(seasonMemberships.map((membership) => [membership.userId, membership] as const)),
-    [seasonMemberships],
-  );
+  // One membership per player, never one row per document. A player holding two live
+  // memberships for a season would otherwise render twice under the same React key and leave
+  // the select-all checkbox permanently indeterminate. The server now archives prior
+  // memberships on every write path, so this keeps legacy data rendering sanely.
+  const membershipByUserId = useMemo(() => {
+    const byUser = new Map<string, DivisionMembership>();
+    seasonMemberships.forEach((membership) => {
+      const existing = byUser.get(membership.userId);
+      if (!existing || timestampMillis(membership.updatedAt) > timestampMillis(existing.updatedAt)) {
+        byUser.set(membership.userId, membership);
+      }
+    });
+    return byUser;
+  }, [seasonMemberships]);
 
   const rosterRows: RosterRow[] = useMemo(() => {
-    const membershipRows: RosterRow[] = seasonMemberships.map((membership) => ({
+    const membershipRows: RosterRow[] = [...membershipByUserId.values()].map((membership) => ({
       membership,
       player: playerById.get(membership.userId) ?? ({
         id: membership.userId,
@@ -1010,7 +1033,7 @@ export default function AdminPage(): React.JSX.Element {
         } satisfies User,
       }));
     return [...optimisticRows, ...membershipRows, ...legacyRows];
-  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players, seasonMemberships]);
+  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players]);
 
   /** The level a row should display: a pending write wins over the snapshot; "" means unassigned. */
   const effectiveLevelId = useCallback(
@@ -1093,6 +1116,10 @@ export default function AdminPage(): React.JSX.Element {
           seasonId: adminSeasonId,
           userId,
         });
+        // A just-added player still carries an optimistic entry naming the level they were
+        // added to. Once the pending override settles, `effectiveLevelId` would fall back to
+        // that entry and snap the select back to a division the server no longer has.
+        setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
       }
       flashSaved(userId);
     } catch (e) {
@@ -1119,14 +1146,36 @@ export default function AdminPage(): React.JSX.Element {
     setPageError("");
     setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
     setSelectedPlayerIds((current) => current.filter((id) => id !== userId));
+    // Set the override *before* the await. Writing it afterwards raced the memberships
+    // snapshot: if the snapshot landed during the call, the settle effect ran with no entry
+    // to clear and the one written next was stranded, masking later remote changes forever.
+    setPendingLevels((current) => ({ ...current, [userId]: null }));
     try {
-      await removeDivisionMembership({
+      const { removed } = await removeDivisionMembership({
         divisionId: division.id,
         seasonId: adminSeasonId,
         userId,
       });
-      setPendingLevels((current) => ({ ...current, [userId]: null }));
+      if (removed === 0) {
+        // Nothing to archive — the player was already off this season's roster. Say so
+        // instead of leaving the button looking broken.
+        setPendingLevels((current) => {
+          const next = { ...current };
+          delete next[userId];
+          return next;
+        });
+        setPageError(
+          `${row.player.displayName} was already off the ${adminSeason.name} roster.`,
+        );
+        return;
+      }
+      flashSaved(userId);
     } catch (e) {
+      setPendingLevels((current) => {
+        const next = { ...current };
+        delete next[userId];
+        return next;
+      });
       setPageError(
         (e as { message?: string }).message ||
           `Could not remove ${row.player.displayName} from this season.`,
@@ -1138,12 +1187,26 @@ export default function AdminPage(): React.JSX.Element {
     if (!division || !bulkLevelId || selectedVisibleIds.length === 0) return;
     setBulkApplying(true);
     setPageError("");
-    const targets = visibleRows.filter((row) => selectedVisibleIds.includes(row.player.id));
+    const targets = visibleRows
+      .filter((row) => selectedVisibleIds.includes(row.player.id))
+      .filter((row) => effectiveLevelId(row) !== bulkLevelId);
+    if (targets.length === 0) {
+      // Every selected player is already on that level. Treat it as done, matching what the
+      // old loop did when it skipped every row.
+      setSelectedPlayerIds([]);
+      setBulkApplying(false);
+      return;
+    }
+    setPendingLevels((current) => {
+      const next = { ...current };
+      targets.forEach((row) => {
+        next[row.player.id] = bulkLevelId;
+      });
+      return next;
+    });
     try {
-      for (const row of targets) {
-        if (effectiveLevelId(row) === bulkLevelId) continue;
-        setPendingLevels((current) => ({ ...current, [row.player.id]: bulkLevelId }));
-        await upsertDivisionMembership({
+      const results = await mapWithConcurrency(targets, ROSTER_WRITE_CONCURRENCY, (row) =>
+        upsertDivisionMembership({
           divisionId: division.id,
           seasonId: adminSeasonId,
           divisionLevelId: bulkLevelId,
@@ -1153,11 +1216,37 @@ export default function AdminPage(): React.JSX.Element {
           phone: row.player.phone || undefined,
           role: row.membership?.role,
           status: row.membership?.status === "waitlisted" ? "waitlisted" : "active",
+        }),
+      );
+      const failures = results.filter(isFailure);
+      results.forEach((result) => {
+        if (!isFailure(result)) flashSaved(result.item.player.id);
+      });
+      if (failures.length > 0) {
+        // Roll back only the rows that did not land, so no select keeps showing a division
+        // that was never saved. Without this the stale override never settles, because the
+        // snapshot it is compared against still holds the player's old level.
+        setPendingLevels((current) => {
+          const next = { ...current };
+          failures.forEach(({ item }) => delete next[item.player.id]);
+          return next;
         });
-        flashSaved(row.player.id);
+        setSelectedPlayerIds(failures.map(({ item }) => item.player.id));
+        const [first] = failures;
+        setPageError(
+          `Assigned ${results.length - failures.length} of ${results.length} players. ` +
+            ((first.error as { message?: string } | undefined)?.message ??
+              "The rest are still selected — try again."),
+        );
+        return;
       }
       setSelectedPlayerIds([]);
     } catch (e) {
+      setPendingLevels((current) => {
+        const next = { ...current };
+        targets.forEach((row) => delete next[row.player.id]);
+        return next;
+      });
       setPageError(
         (e as { message?: string }).message || "Could not assign every selected player.",
       );
@@ -1204,40 +1293,56 @@ export default function AdminPage(): React.JSX.Element {
     if (!division || !importLevelId || importEntries.length === 0) return;
     setImporting(true);
     setPageError("");
-    const created: Array<{ userId: string; name: string; email: string; levelId: string }> = [];
     try {
-      for (const entry of importEntries) {
-        const result = await upsertDivisionMembership({
-          divisionId: division.id,
-          seasonId: adminSeasonId,
-          divisionLevelId: importLevelId,
-          name: entry.name,
-          email: entry.email || undefined,
-        });
-        created.push({
-          userId: result.userId,
-          name: entry.name,
-          email: entry.email,
-          levelId: importLevelId,
-        });
-      }
-      setPendingNewPlayers((current) => [
-        ...created,
-        ...current.filter((existing) => !created.some((row) => row.userId === existing.userId)),
-      ]);
-      setImportOpen(false);
-      setImportText("");
-    } catch (e) {
-      // Keep whatever landed before the failure so the roster reflects reality.
+      const results = await mapWithConcurrency(
+        importEntries,
+        ROSTER_WRITE_CONCURRENCY,
+        (entry) =>
+          upsertDivisionMembership({
+            divisionId: division.id,
+            seasonId: adminSeasonId,
+            divisionLevelId: importLevelId,
+            name: entry.name || undefined,
+            email: entry.email || undefined,
+          }),
+      );
+      // Keep whatever landed, whether or not the rest failed, so the roster reflects reality.
+      const created = results.flatMap((result) =>
+        isFailure(result)
+          ? []
+          : [
+              {
+                userId: result.value.userId,
+                // An email-only line has no name; the server names the placeholder after the
+                // address, so mirror that rather than showing a blank row.
+                name: result.item.name || result.item.email,
+                email: result.item.email,
+                levelId: importLevelId,
+              },
+            ],
+      );
       if (created.length > 0) {
         setPendingNewPlayers((current) => [
           ...created,
           ...current.filter((existing) => !created.some((row) => row.userId === existing.userId)),
         ]);
       }
+      const failures = results.filter(isFailure);
+      if (failures.length > 0) {
+        const [first] = failures;
+        setPageError(
+          `Imported ${created.length} of ${results.length} players. ` +
+            ((first.error as { message?: string } | undefined)?.message ??
+              "The rest could not be added."),
+        );
+        // Leave the modal open with the text intact so the admin can see what failed.
+        return;
+      }
+      setImportOpen(false);
+      setImportText("");
+    } catch (e) {
       setPageError(
-        (e as { message?: string }).message ||
-          `Imported ${created.length} of ${importEntries.length} players before failing.`,
+        (e as { message?: string }).message || "Could not import this roster.",
       );
     } finally {
       setImporting(false);
