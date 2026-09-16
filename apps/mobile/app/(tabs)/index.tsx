@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -18,7 +19,6 @@ import { useAppStore } from "../../store/appStore";
 import type { DivisionMatchType } from "@tennis/shared";
 import {
   Button,
-  Card,
   Chip,
   EmptyState,
   Screen,
@@ -42,28 +42,62 @@ type StandingsRow = {
   gameDifferential: number;
 };
 
-function RankingRow({ item, index }: { item: StandingsRow; index: number }) {
-  const medalEmoji =
-    index === 0
-      ? "🥇"
-      : index === 1
-        ? "🥈"
-        : index === 2
-          ? "🥉"
-          : `${index + 1}.`;
+function RankingRow({
+  item,
+  index,
+  isCurrentUser,
+}: {
+  item: StandingsRow;
+  index: number;
+  isCurrentUser: boolean;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const podiumStyle = [styles.rowTop1, styles.rowTop2, styles.rowTop3][index];
+  const differential = `${item.gameDifferential > 0 ? "+" : ""}${item.gameDifferential}`;
   return (
-    <Card style={[styles.row, index === 0 && styles.rowFirst]}>
-      <Text style={styles.rank}>{medalEmoji}</Text>
-      <View style={styles.playerInfo}>
-        <Text style={styles.name}>{item.displayName}</Text>
-        <Text style={styles.stats}>
-          {item.matchesWon}W – {item.matchesLost}L · {item.setsWon}/
-          {item.setsWon + item.setsLost} sets ·{" "}
-          {item.gameDifferential > 0 ? "+" : ""}
-          {item.gameDifferential} games
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.displayName}, rank ${index + 1}, ${item.matchesWon} wins and ${item.matchesLost} losses, game differential ${differential}`}
+      accessibilityHint="Shows set record"
+      accessibilityState={{ expanded: showDetails }}
+      onPress={() => setShowDetails((visible) => !visible)}
+      style={[styles.row, podiumStyle, isCurrentUser && styles.rowCurrentUser]}
+    >
+      <View style={styles.primaryRow}>
+        <View style={[styles.rankMarker, index < 3 && styles.rankMarkerTop]}>
+          <Text style={[styles.rank, index < 3 && styles.rankTop]}>
+            {index + 1}
+          </Text>
+        </View>
+        <View style={styles.playerCell}>
+          <View style={styles.nameLine}>
+            <Text style={styles.name} numberOfLines={1}>
+              {item.displayName}
+            </Text>
+            {isCurrentUser && <Text style={styles.youLabel}>You</Text>}
+          </View>
+        </View>
+        <Text style={styles.recordCell}>
+          {item.matchesWon}–{item.matchesLost}
+        </Text>
+        <Text
+          style={[
+            styles.diffCell,
+            item.gameDifferential > 0 && styles.positiveDiff,
+          ]}
+        >
+          {differential}
         </Text>
       </View>
-    </Card>
+      {showDetails && (
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Set record</Text>
+          <Text style={styles.detailValue}>
+            {item.setsWon}–{item.setsLost}
+          </Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -89,7 +123,11 @@ export default function RankingsScreen() {
   const loading = isDoubles ? doublesLoading : singlesLoading;
   const rankings: StandingsRow[] = isDoubles
     ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
-    : singlesRankings.map((r) => ({ ...r, key: r.userId, playerIds: [r.userId] }));
+    : singlesRankings.map((r) => ({
+        ...r,
+        key: r.userId,
+        playerIds: [r.userId],
+      }));
   const router = useRouter();
   const [recalculating, setRecalculating] = useState(false);
   const [showTiebreakers, setShowTiebreakers] = useState(false);
@@ -183,7 +221,13 @@ export default function RankingsScreen() {
           data={rankings}
           keyExtractor={(item) => item.key}
           renderItem={({ item, index }) => (
-            <RankingRow item={item} index={index} />
+            <RankingRow
+              item={item}
+              index={index}
+              isCurrentUser={Boolean(
+                user?.id && item.playerIds.includes(user.id),
+              )}
+            />
           )}
           ListHeaderComponent={
             <View style={styles.tableHeader}>
@@ -191,8 +235,20 @@ export default function RankingsScreen() {
                 title={
                   isDoubles ? "Doubles Team Standings" : "Division Standings"
                 }
-                subtitle="Sorted: W · Sets · Games · Diff · H2H"
               />
+              <Button
+                label="How standings work"
+                variant="text"
+                accessibilityState={{ expanded: showTiebreakers }}
+                style={styles.infoButton}
+                onPress={() => setShowTiebreakers((visible) => !visible)}
+              />
+              {showTiebreakers && (
+                <Text style={styles.tiebreakerText}>
+                  Ties are decided by sets won, games won, game differential,
+                  then head-to-head results.
+                </Text>
+              )}
               {canRecalculate && (
                 <Button
                   label="↺  Recalculate Rankings"
@@ -204,7 +260,9 @@ export default function RankingsScreen() {
               )}
               <View style={styles.columnHeader} accessibilityRole="header">
                 <Text style={styles.rankHeader}>#</Text>
-                <Text style={styles.playerHeader}>{isDoubles ? 'Team' : 'Player'}</Text>
+                <Text style={styles.playerHeader}>
+                  {isDoubles ? "Team" : "Player"}
+                </Text>
                 <Text style={styles.recordHeader}>W–L</Text>
                 <Text style={styles.diffHeader}>Diff</Text>
               </View>
@@ -236,22 +294,118 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   list: { padding: spacing.lg },
   tableHeader: { marginBottom: 12 },
-  row: {
+  columnHeader: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
-    borderRadius: radii.md,
-    marginBottom: spacing.sm,
-    ...elevations.low,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 7,
   },
-  rowFirst: { borderWidth: 2, borderColor: "#f0c040" },
-  rank: { fontSize: 22, marginRight: 14, minWidth: 36 },
-  playerInfo: { flex: 1 },
+  rankHeader: {
+    width: 38,
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  playerHeader: {
+    flex: 1,
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  recordHeader: {
+    width: 58,
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  diffHeader: {
+    width: 48,
+    color: colors.textSubtle,
+    fontSize: 11,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  row: {
+    padding: 0,
+    borderRadius: 0,
+    marginBottom: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.transparent,
+    ...elevations.none,
+  },
+  rowTop1: { backgroundColor: "#fff9e8", borderLeftColor: "#c99616" },
+  rowTop2: { backgroundColor: "#f5f7f7", borderLeftColor: "#899391" },
+  rowTop3: { backgroundColor: "#fff4ec", borderLeftColor: "#af7047" },
+  rowCurrentUser: {
+    backgroundColor: colors.primarySoft,
+    borderLeftColor: colors.primary,
+  },
+  primaryRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  rankMarker: {
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    marginRight: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rankMarkerTop: { backgroundColor: colors.primary },
+  rank: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  rankTop: { color: colors.onPrimary },
+  playerCell: { flex: 1, minWidth: 0 },
+  nameLine: { flexDirection: "row", alignItems: "center", gap: 6 },
   name: { ...typography.subheading, color: colors.text },
-  stats: {
+  youLabel: {
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
+    fontSize: 10,
+    fontWeight: "800",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  recordCell: {
+    width: 58,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  diffCell: {
+    width: 48,
+    color: colors.textMuted,
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  positiveDiff: { color: colors.success },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 50,
+    paddingBottom: 10,
+  },
+  detailLabel: { ...typography.caption, color: colors.textMuted },
+  detailValue: { ...typography.caption, color: colors.text, fontWeight: "700" },
+  infoButton: { alignSelf: "flex-start", paddingHorizontal: 0 },
+  tiebreakerText: {
     ...typography.caption,
     color: colors.textMuted,
-    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    padding: 10,
+    borderRadius: radii.sm,
+    marginBottom: 8,
   },
   recalcBtn: { marginTop: spacing.sm, alignSelf: "flex-start" },
   emptyActions: { gap: spacing.md, alignItems: "stretch" },

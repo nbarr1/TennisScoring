@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import {
   signInWithEmailAndPassword,
@@ -17,6 +18,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
+import { FormErrorSummary, FormField } from "../../components/FormField";
 
 type Mode = "signin" | "signup";
 

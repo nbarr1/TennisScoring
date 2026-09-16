@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { colors } from "../../theme";
 import {
   View,
@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  ScrollView,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -40,7 +41,13 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, PublicProfile } from "@tennis/shared";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
-import { IconLabel, ICON_COLOR } from "../../components/AppIcon";
+import {
+  AppIcon,
+  IconLabel,
+  ICON_COLOR,
+  ICON_SIZE,
+} from "../../components/AppIcon";
+import { FormErrorSummary, FormField } from "../../components/FormField";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -214,9 +221,7 @@ function MatchCard({
 }
 
 export default function MatchesScreen() {
-  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const compact = width < 380;
   const { user, divisionId } = useAppStore();
   // A match is tagged to the season current when it's logged, matching web's
   // matches/dashboard pages — otherwise it falls outside every season-scoped
@@ -233,6 +238,7 @@ export default function MatchesScreen() {
   const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
+  const [showNewMatchActions, setShowNewMatchActions] = useState(false);
   const [createMode, setCreateMode] = useState<"live" | "historic">("live");
   const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">(
     "self",
@@ -582,14 +588,14 @@ export default function MatchesScreen() {
     .map((m) => toItem(m));
   // Side membership rather than player2Id/player1Id, so a doubles partner sees
   // the proposal too instead of only the side's first player.
-  const pendingInvites = matches
+  const pendingInvites = visibleMatches
     .filter(
       (m) =>
         m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2",
     )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "pending"));
-  const awaitingOpponent = matches
+  const awaitingOpponent = visibleMatches
     .filter(
       (m) =>
         m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1",
@@ -651,6 +657,41 @@ export default function MatchesScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <MatchCard
+            match={item.match}
+            onPress={() => router.push(`/match/${item.id}`)}
+            actionKind={item.actionKind}
+            onAccept={() =>
+              acceptMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not accept."),
+              )
+            }
+            onDecline={() =>
+              declineMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not decline."),
+              )
+            }
+            onWithdraw={() =>
+              declineMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not cancel."),
+              )
+            }
+          />
+        )}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            {section.title === "Now Live" && <View style={styles.liveDot} />}
+            <Text
+              style={[
+                styles.sectionTitle,
+                section.title === "Now Live" && styles.sectionTitleLive,
+              ]}
+            >
+              {section.title}
+            </Text>
+          </View>
+        )}
         stickySectionHeadersEnabled
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
@@ -692,7 +733,11 @@ export default function MatchesScreen() {
             </ScrollView>
 
             <View style={styles.matchSearchRow}>
-              <Text style={styles.searchGlyph}>⌕</Text>
+              <AppIcon
+                name="magnifyingglass"
+                size={ICON_SIZE.action}
+                color={ICON_COLOR.inactive}
+              />
               <TextInput
                 accessibilityLabel="Search matches by player name"
                 value={playerSearch}
@@ -706,8 +751,13 @@ export default function MatchesScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Clear player search"
                   onPress={() => setPlayerSearch("")}
+                  style={styles.clearSearch}
                 >
-                  <Text style={styles.clearSearch}>✕</Text>
+                  <AppIcon
+                    name="xmark.circle.fill"
+                    size={ICON_SIZE.action}
+                    color={ICON_COLOR.inactive}
+                  />
                 </TouchableOpacity>
               )}
             </View>
@@ -782,57 +832,107 @@ export default function MatchesScreen() {
                   ? "Show less history"
                   : `View match history (${completedMatches.length - COLLAPSED_HISTORY_LIMIT} older)`}
               </Text>
-            </View>
-          )}
-          contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
-        />
-      )}
+            </TouchableOpacity>
+          ) : null
+        }
+        contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
+      />
 
       <View
         style={[
           styles.fabGroup,
-          compact && styles.fabGroupCompact,
           { paddingBottom: Math.max(insets.bottom, 12) },
         ]}
       >
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel="Record a past match"
-          style={[styles.fab, styles.fabSecondary]}
-          onPress={() => {
-            setCreateMode("historic");
-            setShowCreate(true);
-          }}
-        >
-          <IconLabel name="doc.text" textStyle={styles.fabSecondaryText}>
-            Past
-          </IconLabel>
-        </TouchableOpacity>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Propose a match"
-          style={[styles.fab, styles.fabSecondary]}
-          onPress={() => setShowPropose(true)}
+          accessibilityLabel="New match"
+          accessibilityHint="Opens match creation choices"
+          style={styles.fab}
+          onPress={() => setShowNewMatchActions(true)}
         >
           <IconLabel
-            name="calendar.badge.plus"
-            textStyle={styles.fabSecondaryText}
+            name="plus"
+            color={ICON_COLOR.inverse}
+            textStyle={styles.fabText}
           >
-            Propose
+            New match
           </IconLabel>
         </TouchableOpacity>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Start a live match"
-          style={styles.fab}
-          onPress={() => {
-            setCreateMode("live");
-            setShowCreate(true);
-          }}
-        >
-          <Text style={styles.fabText}>+ Live</Text>
-        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showNewMatchActions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewMatchActions(false)}
+      >
+        <View style={styles.newMatchOverlay}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Close new match choices"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowNewMatchActions(false)}
+          />
+          <View accessibilityRole="menu" style={styles.newMatchSheet}>
+            <Text style={styles.newMatchTitle}>New match</Text>
+            {(
+              [
+                [
+                  "figure.tennis",
+                  "Start live scoring",
+                  "Score every point as you play.",
+                  "live",
+                ],
+                [
+                  "calendar.badge.plus",
+                  "Propose a future match",
+                  "Invite players and choose a time.",
+                  "propose",
+                ],
+                [
+                  "doc.text",
+                  "Record a completed match",
+                  "Enter the final score from a past match.",
+                  "historic",
+                ],
+              ] as const
+            ).map(([icon, title, description, action]) => (
+              <TouchableOpacity
+                key={action}
+                accessibilityRole="menuitem"
+                accessibilityLabel={title}
+                accessibilityHint={description}
+                style={styles.newMatchChoice}
+                onPress={() => {
+                  setShowNewMatchActions(false);
+                  if (action === "propose") setShowPropose(true);
+                  else {
+                    setCreateMode(action);
+                    setShowCreate(true);
+                  }
+                }}
+              >
+                <View style={styles.newMatchChoiceCopy}>
+                  <IconLabel name={icon} textStyle={styles.newMatchChoiceTitle}>
+                    {title}
+                  </IconLabel>
+                  <Text style={styles.newMatchChoiceDescription}>
+                    {description}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.newMatchCancel}
+              onPress={() => setShowNewMatchActions(false)}
+            >
+              <Text style={styles.newMatchCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {showPropose && user && divisionId && (
         <ProposeMatchModal
@@ -1446,6 +1546,7 @@ function ProposeMatchModal({
                 <>
                   <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                   <TextInput
+                    ref={dateRef}
                     accessibilityLabel="Match date"
                     style={styles.input}
                     value={date}
@@ -1457,6 +1558,7 @@ function ProposeMatchModal({
                   />
                   <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
                   <TextInput
+                    ref={timeRef}
                     accessibilityLabel="Match time"
                     style={styles.input}
                     value={time}
@@ -1495,6 +1597,7 @@ function ProposeMatchModal({
 
               <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
               <TextInput
+                ref={dateRef}
                 accessibilityLabel="Match date"
                 style={styles.input}
                 value={date}
@@ -1506,6 +1609,7 @@ function ProposeMatchModal({
               />
               <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
               <TextInput
+                ref={timeRef}
                 accessibilityLabel="Match time"
                 style={styles.input}
                 value={time}
@@ -1566,6 +1670,8 @@ function ProposeMatchModal({
             </>
           )}
 
+          <FormErrorSummary errors={Object.values(errors)} />
+
           <View style={styles.modalActions}>
             <TouchableOpacity
               accessibilityRole="button"
@@ -1612,6 +1718,93 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   list: { padding: 16 },
+  listControls: { marginBottom: 12, gap: 10 },
+  controlLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+  },
+  controlRow: { flexDirection: "row", gap: 8 },
+  controlChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  controlChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  controlChipText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
+  controlChipTextActive: { color: colors.primary },
+  matchSearchRow: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  matchSearchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    paddingVertical: 9,
+  },
+  clearSearch: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterChip: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterChipText: { color: colors.textMuted, fontSize: 13, fontWeight: "700" },
+  filterChipTextActive: { color: colors.onPrimary },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.warning,
+  },
+  countBadgeText: { color: colors.onPrimary, fontWeight: "800", fontSize: 11 },
+  filteredEmpty: {
+    alignItems: "center",
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  historyButton: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 2,
+    marginBottom: 16,
+    backgroundColor: colors.surface,
+  },
+  historyButtonText: { color: colors.primary, fontSize: 14, fontWeight: "700" },
   wrapRow: { flexWrap: "wrap", alignItems: "flex-start" },
 
   sectionHeader: {
@@ -1682,6 +1875,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  playersCompact: { flexWrap: "wrap", gap: 8 },
   playerName: { fontSize: 15, fontWeight: "600", color: colors.text, flex: 1 },
   playerRight: {
     flexDirection: "row",
@@ -1726,6 +1920,55 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   fabText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
+  newMatchOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: colors.overlay,
+  },
+  newMatchSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+    gap: 8,
+  },
+  newMatchTitle: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  newMatchChoice: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 14,
+    justifyContent: "center",
+  },
+  newMatchChoiceCopy: { gap: 4 },
+  newMatchChoiceTitle: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  newMatchChoiceDescription: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginLeft: 22,
+  },
+  newMatchCancel: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  newMatchCancelText: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: "600",
+  },
   fabSecondary: {
     backgroundColor: colors.surface,
     borderWidth: 1.5,

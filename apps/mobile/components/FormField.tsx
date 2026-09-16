@@ -8,6 +8,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import { colors, radii, spacing, typography } from "../theme";
 
 export type FormFieldProps = TextInputProps & {
   label: string;
@@ -113,34 +114,54 @@ export function FormErrorSummary({ errors }: { errors: string[] }) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 6 },
-  label: { color: "#444", fontSize: 14, fontWeight: "600" },
-  required: { color: "#b42318" },
+  container: { gap: spacing.xs },
+  label: { color: colors.text, ...typography.label },
+  required: { color: colors.destructive },
   input: {
-    backgroundColor: "#fff",
-    borderColor: "#b8b8b8",
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.md,
     borderWidth: 1,
-    color: "#111",
-    fontSize: 15,
-    padding: 12,
+    color: colors.text,
+    minHeight: 48,
+    padding: spacing.md,
+    ...typography.body,
   },
-  focused: { borderColor: "#1a472a", borderWidth: 2, padding: 11 },
-  errorInput: { borderColor: "#b42318", borderWidth: 2, padding: 11 },
-  disabledInput: { backgroundColor: "#eee", color: "#777" },
-  disabledText: { color: "#777" },
-  metaRow: { flexDirection: "row", gap: 8, justifyContent: "space-between" },
-  helper: { color: "#666", flex: 1, fontSize: 12, lineHeight: 17 },
-  errorText: { color: "#b42318", fontWeight: "600" },
-  count: { color: "#666", fontSize: 12 },
+  focused: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    padding: spacing.md - 1,
+  },
+  errorInput: {
+    borderColor: colors.destructive,
+    borderWidth: 2,
+    padding: spacing.md - 1,
+  },
+  disabledInput: {
+    backgroundColor: colors.surfaceMuted,
+    color: colors.disabledText,
+  },
+  disabledText: { color: colors.disabledText },
+  metaRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  helper: { color: colors.textMuted, flex: 1, ...typography.caption },
+  errorText: { color: colors.destructive, fontWeight: "600" },
+  count: { color: colors.textMuted, ...typography.caption },
   summary: {
-    backgroundColor: "#fff1f0",
-    borderColor: "#b42318",
-    borderRadius: 10,
+    backgroundColor: colors.destructiveSoft,
+    borderColor: colors.destructive,
+    borderRadius: radii.md,
     borderWidth: 1,
     gap: 3,
-    padding: 12,
+    padding: spacing.md,
   },
-  summaryTitle: { color: "#8a1c13", fontSize: 14, fontWeight: "700" },
-  summaryText: { color: "#8a1c13", fontSize: 13 },
+  summaryTitle: {
+    color: colors.destructive,
+    ...typography.label,
+    fontWeight: "700",
+  },
+  summaryText: { color: colors.destructive, ...typography.bodySmall },
 });

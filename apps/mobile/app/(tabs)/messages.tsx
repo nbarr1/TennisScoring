@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   useChannels,
   useMessages,
@@ -811,6 +812,21 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
+  messageActionsBtn: {
+    alignSelf: "flex-end",
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: -8,
+    marginBottom: -8,
+  },
+  messageActionsText: {
+    color: colors.textMuted,
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
   bubbleText: { fontSize: 15, color: colors.text },
   bubbleTextMe: { color: colors.surface },
   senderName: {
@@ -859,6 +875,33 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendText: { color: colors.surface, fontWeight: "700" },
+  sendError: {
+    backgroundColor: colors.destructiveSoft,
+    borderTopWidth: 1,
+    borderTopColor: colors.destructive,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  sendErrorText: { color: colors.destructive, fontSize: 13, fontWeight: "700" },
+  sendErrorHint: { color: colors.destructive, fontSize: 12, marginTop: 2 },
+  stateContainer: { padding: 32, alignItems: "center" },
+  stateTitle: { color: colors.textMuted, fontSize: 16, fontWeight: "700" },
+  stateText: {
+    color: colors.textSubtle,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  retryBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    marginTop: 12,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  retryText: { color: colors.onPrimary, fontWeight: "700" },
   fab: {
     position: "absolute",
     bottom: 24,
@@ -872,6 +915,13 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     minHeight: 44,
+    justifyContent: "center",
+  },
+  fabCompact: { position: "relative", bottom: 0, right: 0 },
+  backButtonTarget: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
     justifyContent: "center",
   },
   newMessageBar: {
