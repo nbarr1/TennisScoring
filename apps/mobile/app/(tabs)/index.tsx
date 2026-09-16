@@ -33,6 +33,7 @@ import {
 /** One standings row, normalized so singles and doubles render identically. */
 type StandingsRow = {
   key: string;
+  playerIds: string[];
   displayName: string;
   matchesWon: number;
   matchesLost: number;
@@ -88,9 +89,10 @@ export default function RankingsScreen() {
   const loading = isDoubles ? doublesLoading : singlesLoading;
   const rankings: StandingsRow[] = isDoubles
     ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
-    : singlesRankings.map((r) => ({ ...r, key: r.userId }));
+    : singlesRankings.map((r) => ({ ...r, key: r.userId, playerIds: [r.userId] }));
   const router = useRouter();
   const [recalculating, setRecalculating] = useState(false);
+  const [showTiebreakers, setShowTiebreakers] = useState(false);
 
   const canRecalculate =
     user?.role === "division_leader" || user?.role === "admin";
@@ -200,6 +202,12 @@ export default function RankingsScreen() {
                   onPress={handleRecalculate}
                 />
               )}
+              <View style={styles.columnHeader} accessibilityRole="header">
+                <Text style={styles.rankHeader}>#</Text>
+                <Text style={styles.playerHeader}>{isDoubles ? 'Team' : 'Player'}</Text>
+                <Text style={styles.recordHeader}>W–L</Text>
+                <Text style={styles.diffHeader}>Diff</Text>
+              </View>
             </View>
           }
           contentContainerStyle={styles.list}
