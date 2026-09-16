@@ -1,17 +1,19 @@
 import React, { useRef, useState } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
-  ScrollView,
   TouchableOpacity,
+  Dimensions,
   Animated,
-  useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { auth, updateUserProfile } from "@tennis/firebase-client";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const SLIDES = [
   {
@@ -19,7 +21,7 @@ const SLIDES = [
     icon: "🎾",
     title: "Welcome to Tennis League",
     body: "Track every match, climb the rankings, and stay connected with your division — all in one place.",
-    bg: "#1a472a",
+    bg: colors.primary,
   },
   {
     key: "live",
@@ -54,7 +56,7 @@ const SLIDES = [
     icon: "🏆",
     title: "You're All Set!",
     body: "Win matches, earn ranking points, and claim the top spot. Good luck on the court!",
-    bg: "#1a472a",
+    bg: colors.primary,
     isLast: true,
   },
 ] as const;
@@ -106,26 +108,19 @@ export default function TutorialScreen() {
           { useNativeDriver: false },
         )}
         onMomentumScrollEnd={(e) => {
-          setCurrentIndex(Math.round(e.nativeEvent.contentOffset.x / width));
+          setCurrentIndex(
+            Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH),
+          );
         }}
         renderItem={({ item }) => (
-          <ScrollView
-            style={[styles.slide, { backgroundColor: item.bg, width }]}
-            contentContainerStyle={[
-              styles.slideContent,
-              compact && styles.slideCompact,
+          <View
+            style={[
+              styles.slide,
+              { backgroundColor: item.bg, width: SCREEN_WIDTH },
             ]}
-            showsVerticalScrollIndicator={false}
           >
-            <Text
-              style={[styles.icon, compact && styles.iconCompact]}
-              maxFontSizeMultiplier={1.4}
-            >
-              {item.icon}
-            </Text>
-            <Text style={styles.title} maxFontSizeMultiplier={2}>
-              {item.title}
-            </Text>
+            <Text style={styles.icon}>{item.icon}</Text>
+            <Text style={styles.title}>{item.title}</Text>
             <Text style={styles.body}>{item.body}</Text>
           </ScrollView>
         )}
@@ -146,10 +141,7 @@ export default function TutorialScreen() {
             extrapolate: "clamp",
           });
           return (
-            <Animated.View
-              key={i}
-              style={[styles.dot, { width: dotWidth, opacity }]}
-            />
+            <Animated.View key={i} style={[styles.dot, { width, opacity }]} />
           );
         })}
       </View>
@@ -177,17 +169,29 @@ export default function TutorialScreen() {
               {isLast ? "Get Started" : "Next"}
             </Text>
           </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    </SafeAreaView>
+        )}
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={isLast ? "Get started" : "Next tutorial slide"}
+          style={[styles.nextBtn, isLast && styles.nextBtnLast]}
+          onPress={next}
+        >
+          <Text style={styles.nextText}>{isLast ? "Get Started" : "Next"}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#1a472a" },
+  root: { flex: 1, backgroundColor: colors.primary },
 
   slide: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    paddingBottom: 140,
   },
   slideContent: {
     flexGrow: 1,
@@ -202,7 +206,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#fff",
+    color: colors.surface,
     textAlign: "center",
     marginBottom: 20,
     lineHeight: 36,
@@ -215,7 +219,10 @@ const styles = StyleSheet.create({
   },
 
   dots: {
-    minHeight: 44,
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 110 : 100,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
@@ -228,11 +235,16 @@ const styles = StyleSheet.create({
   },
 
   actions: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 32,
-    paddingVertical: 12,
+    paddingBottom: Platform.OS === "ios" ? 48 : 32,
+    paddingTop: 16,
     backgroundColor: "rgba(0,0,0,0.15)",
   },
   footer: { backgroundColor: "rgba(0,0,0,0.15)" },
@@ -249,16 +261,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 28,
     marginLeft: "auto",
-    minHeight: 44,
-    minWidth: 88,
-    alignItems: "center",
-    justifyContent: "center",
   },
   nextBtnLast: {
     paddingHorizontal: 40,
   },
   nextText: {
-    color: "#1a472a",
+    color: colors.primary,
     fontWeight: "800",
     fontSize: 16,
   },
