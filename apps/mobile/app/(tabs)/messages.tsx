@@ -10,7 +10,9 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useChannels,
   useMessages,
@@ -89,6 +91,7 @@ function MessageBubble({
 }
 
 function ChannelView({ channel }: { channel: Channel }) {
+  const { width } = useWindowDimensions();
   const { user } = useAppStore();
   const { messages: allMessages } = useMessages(channel.id);
   const [text, setText] = useState("");
@@ -224,7 +227,7 @@ function ChannelView({ channel }: { channel: Channel }) {
           listRef.current?.scrollToEnd({ animated: false })
         }
       />
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, width < 360 && styles.inputRowCompact]}>
         <TouchableOpacity
           onPress={handleShareContact}
           style={styles.shareContactBtn}
@@ -288,7 +291,7 @@ function ChannelView({ channel }: { channel: Channel }) {
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Report Message</Text>
-            <Text style={styles.reportPreview} numberOfLines={2}>
+            <Text style={styles.reportPreview}>
               "{reportMessageTarget?.content}"
             </Text>
             <View style={styles.chipRow}>
@@ -345,6 +348,8 @@ function ChannelView({ channel }: { channel: Channel }) {
 }
 
 export default function MessagesScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { user, divisionId } = useAppStore();
   const { channels } = useChannels(user?.id ?? null);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
@@ -393,11 +398,19 @@ export default function MessagesScreen() {
   if (activeChannel) {
     return (
       <View style={{ flex: 1 }}>
-        <View style={styles.channelHeader}>
-          <TouchableOpacity onPress={() => setActiveChannel(null)}>
+        <View
+          style={[
+            styles.channelHeader,
+            { paddingTop: Math.max(insets.top, 12) },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.backButtonTarget}
+            onPress={() => setActiveChannel(null)}
+          >
             <Text style={styles.backBtn}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.channelTitle}>
+          <Text style={styles.channelTitle} numberOfLines={2}>
             {activeChannel.name ??
               (activeChannel.type === "division"
                 ? "Division Chat"
@@ -426,7 +439,7 @@ export default function MessagesScreen() {
                   : "💬 Direct Message")}
             </Text>
             {item.lastMessage && (
-              <Text style={styles.lastMessage} numberOfLines={1}>
+              <Text style={styles.lastMessage}>
                 {item.lastMessage.senderName}: {item.lastMessage.content}
               </Text>
             )}
@@ -443,9 +456,19 @@ export default function MessagesScreen() {
         contentContainerStyle={styles.channelList}
       />
 
-      <TouchableOpacity style={styles.fab} onPress={() => setShowNewDM(true)}>
-        <Text style={styles.fabText}>+ Message</Text>
-      </TouchableOpacity>
+      <View
+        style={[
+          styles.newMessageBar,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.fab, width < 360 && styles.fabCompact]}
+          onPress={() => setShowNewDM(true)}
+        >
+          <Text style={styles.fabText}>+ Message</Text>
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={showNewDM} transparent animationType="slide">
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
@@ -544,6 +567,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { color: "#fff", fontSize: 16, marginRight: 16 },
   channelTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  backButtonTarget: { minHeight: 44, minWidth: 44, justifyContent: "center" },
   messageList: { padding: 16, paddingBottom: 8 },
   bubble: { maxWidth: "80%", padding: 12, borderRadius: 16, marginBottom: 8 },
   bubbleMe: {
@@ -578,7 +602,13 @@ const styles = StyleSheet.create({
     borderTopColor: "#eee",
     backgroundColor: "#fff",
   },
-  shareContactBtn: { paddingHorizontal: 8, paddingBottom: 10 },
+  inputRowCompact: { flexWrap: "wrap" },
+  shareContactBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   shareContactText: { fontSize: 22 },
   textInput: {
     flex: 1,
@@ -589,6 +619,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 15,
     maxHeight: 100,
+    minHeight: 44,
     marginRight: 8,
   },
   sendBtn: {
@@ -596,13 +627,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
+    minHeight: 44,
+    justifyContent: "center",
   },
   sendBtnDisabled: { opacity: 0.4 },
   sendText: { color: "#fff", fontWeight: "700" },
   fab: {
-    position: "absolute",
-    bottom: 24,
-    right: 20,
     backgroundColor: "#1a472a",
     paddingHorizontal: 20,
     paddingVertical: 14,
@@ -611,7 +641,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
+    minHeight: 44,
+    justifyContent: "center",
   },
+  newMessageBar: {
+    alignItems: "flex-end",
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    backgroundColor: "#f5f5f0",
+  },
+  fabCompact: { alignSelf: "stretch", alignItems: "center" },
   fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   modalOverlay: {
     flex: 1,
@@ -623,7 +662,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "80%",
+    width: "100%",
   },
   modalTitle: {
     fontSize: 20,
@@ -653,7 +692,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 12,
   },
-  cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
+  cancelBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
   cancelText: { color: "#888", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
   actionSheetOverlay: {
@@ -680,6 +725,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
     alignItems: "center",
+    minHeight: 44,
   },
   actionSheetOptionText: { fontSize: 16, color: "#333", fontWeight: "500" },
   actionSheetOptionTextDestructive: {
@@ -700,6 +746,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
   },
   chipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
   chipText: { color: "#555", fontWeight: "600", fontSize: 13 },
@@ -710,6 +758,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
+    minHeight: 44,
   },
   sendReportBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 });

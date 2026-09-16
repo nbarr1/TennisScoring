@@ -111,6 +111,7 @@ export function KeyboardAwareBottomSheet({
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         bounces={false}
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
         {children}
       </ScrollView>
