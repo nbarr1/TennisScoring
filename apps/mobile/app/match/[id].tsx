@@ -14,7 +14,9 @@ import {
   TextInput,
   FlatList,
   Pressable,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as Linking from "expo-linking";
@@ -299,7 +301,7 @@ function DisputeModal({
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
+      <KeyboardAwareBottomSheet style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Dispute Match Report?</Text>
           <Text style={styles.modalBody}>
@@ -313,7 +315,7 @@ function DisputeModal({
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAwareBottomSheet>
     </Modal>
   );
 }
@@ -480,6 +482,10 @@ function EditScoreModal({
 }
 
 export default function MatchScreen() {
+  const { width, height, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 380 || height < 700;
+  const needsScrollableCourt = compact || fontScale > 1.2;
   const { id: rawId } = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
@@ -957,9 +963,10 @@ export default function MatchScreen() {
       contentContainerStyle={[
         styles.content,
         showCourtSurface && styles.liveContent,
+        { paddingBottom: Math.max(insets.bottom, 12) },
       ]}
-      scrollEnabled={!showCourtSurface}
-      bounces={!showCourtSurface}
+      scrollEnabled={!showCourtSurface || needsScrollableCourt}
+      bounces={!showCourtSurface || needsScrollableCourt}
     >
       {showSetupSurface ? (
         <View style={styles.setupSurface}>
@@ -969,7 +976,12 @@ export default function MatchScreen() {
           </View>
           <Text style={styles.setupHero}>{`Score first.\nSave later.`}</Text>
           <Text style={styles.setupSectionLabel}>PLAYERS</Text>
-          <View style={styles.setupPlayersRow}>
+          <View
+            style={[
+              styles.setupPlayersRow,
+              compact && styles.setupPlayersRowCompact,
+            ]}
+          >
             <Pressable
               style={[styles.setupPlayerCard, styles.setupPlayerCardP1]}
               onPress={() =>
@@ -1012,7 +1024,7 @@ export default function MatchScreen() {
           </View>
           <Text style={styles.setupHint}>TAP A NAME TO PICK SERVER</Text>
           <Text style={styles.setupSectionLabel}>FORMAT</Text>
-          <View style={styles.formatRow}>
+          <View style={[styles.formatRow, compact && styles.formatRowCompact]}>
             <View style={[styles.formatCard, styles.formatCardActive]}>
               <Text style={styles.formatTitle}>{formatFormatLabel(match)}</Text>
               <Text style={styles.formatSubtitle}>Standard</Text>
@@ -1098,7 +1110,7 @@ export default function MatchScreen() {
                       ]}
                     />
                     <View style={styles.panelNameCol}>
-                      <Text style={styles.panelNameText} numberOfLines={1}>
+                      <Text style={styles.panelNameText}>
                         {isP1 ? p1Name : p2Name}
                       </Text>
                       {isDoublesMatch(match) && (
@@ -1108,7 +1120,11 @@ export default function MatchScreen() {
                   </View>
                   <View style={styles.panelSetsCell}>
                     {scoreRows.map((set) => (
-                      <Text key={set.setNumber} style={styles.panelSetNumber}>
+                      <Text
+                        key={set.setNumber}
+                        style={styles.panelSetNumber}
+                        maxFontSizeMultiplier={1.25}
+                      >
                         {isP1 ? set.player1Games : set.player2Games}
                       </Text>
                     ))}
@@ -1120,6 +1136,7 @@ export default function MatchScreen() {
                         styles.panelAdNumber,
                     ]}
                     accessibilityLabel={`${isP1 ? p1Name : p2Name} score ${isP1 ? p1Point : p2Point}`}
+                    maxFontSizeMultiplier={1.25}
                   >
                     {isP1 ? p1Point : p2Point}
                   </Text>
@@ -1150,7 +1167,12 @@ export default function MatchScreen() {
                   {statusPlayerName ? ` · ${statusPlayerName}` : ""}
                 </Text>
               </View>
-              <View style={styles.tapZonesRow}>
+              <View
+                style={[
+                  styles.tapZonesRow,
+                  compact && styles.tapZonesRowCompact,
+                ]}
+              >
                 <Pressable
                   style={({ pressed }) => [
                     styles.tapZone,
@@ -1174,7 +1196,15 @@ export default function MatchScreen() {
                     </Text>
                   )}
                   <Text style={styles.tapZoneName}>{p1Name}</Text>
-                  <Text style={styles.tapZoneScore}>{p1Point}</Text>
+                  <Text
+                    style={[
+                      styles.tapZoneScore,
+                      compact && styles.tapZoneScoreCompact,
+                    ]}
+                    maxFontSizeMultiplier={1.15}
+                  >
+                    {p1Point}
+                  </Text>
                   <Text style={styles.tapZoneSub}>{p1ServeState}</Text>
                   <Text style={styles.tapZoneFooter}>Tap · won point</Text>
                 </Pressable>
@@ -1205,7 +1235,15 @@ export default function MatchScreen() {
                     </Text>
                   )}
                   <Text style={styles.tapZoneName}>{p2Name}</Text>
-                  <Text style={styles.tapZoneScore}>{p2Point}</Text>
+                  <Text
+                    style={[
+                      styles.tapZoneScore,
+                      compact && styles.tapZoneScoreCompact,
+                    ]}
+                    maxFontSizeMultiplier={1.15}
+                  >
+                    {p2Point}
+                  </Text>
                   <Text style={styles.tapZoneSub}>{p2ServeState}</Text>
                   <Text style={styles.tapZoneFooter}>Tap · won point</Text>
                 </Pressable>
@@ -1581,11 +1619,7 @@ export default function MatchScreen() {
 
       {/* Manage Match Modal */}
       <Modal visible={showManage} transparent animationType="slide">
-        <TouchableOpacity
-          style={styles.manageOverlay}
-          activeOpacity={1}
-          onPress={() => setShowManage(false)}
-        >
+        <KeyboardAwareBottomSheet style={styles.manageOverlay}>
           <View
             style={styles.manageCard}
             onStartShouldSetResponder={() => true}
@@ -1694,7 +1728,7 @@ export default function MatchScreen() {
               <Text style={styles.manageCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </KeyboardAwareBottomSheet>
       </Modal>
 
       <EditScoreModal
@@ -1825,6 +1859,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   setupPlayersRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  setupPlayersRowCompact: { flexDirection: "column", alignItems: "stretch" },
   setupPlayerCard: {
     flex: 1,
     minHeight: 112,
@@ -1853,6 +1888,7 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   formatRow: { flexDirection: "row", gap: 10 },
+  formatRowCompact: { flexDirection: "column" },
   formatCard: {
     flex: 1,
     borderRadius: 14,
@@ -1893,7 +1929,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B1114",
   },
   startMatchKey: {
-    marginTop: 140,
+    marginTop: 24,
     backgroundColor: COURT.line,
     borderRadius: 18,
     paddingVertical: 24,
@@ -2072,6 +2108,7 @@ const styles = StyleSheet.create({
   },
   statusPillText: { fontSize: 15, fontWeight: "900" },
   tapZonesRow: { flexDirection: "row", flex: 1, minHeight: 0 },
+  tapZonesRowCompact: { minHeight: 360 },
   tapZone: {
     flex: 1,
     borderRadius: 22,
@@ -2116,6 +2153,7 @@ const styles = StyleSheet.create({
     minWidth: 118,
     textAlign: "center",
   },
+  tapZoneScoreCompact: { fontSize: 64, minWidth: 80 },
   tapZoneSub: {
     color: "rgba(255,255,255,0.72)",
     fontSize: 13,
@@ -2533,6 +2571,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 24,
     gap: 4,
+    width: "100%",
   },
   manageTitle: {
     fontSize: 18,
@@ -2544,6 +2583,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    minHeight: 44,
+    justifyContent: "center",
   },
   manageOptionText: { fontSize: 16, color: "#222", fontWeight: "500" },
   manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
@@ -2584,7 +2625,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "75%",
+    width: "100%",
   },
   linkModalTitle: {
     fontSize: 20,
@@ -2642,6 +2683,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+    minHeight: 44,
   },
   disputeBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   cancelBtn: { paddingVertical: 12, alignItems: "center" },

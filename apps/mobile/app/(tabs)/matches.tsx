@@ -11,7 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { onSnapshot } from "firebase/firestore";
 import {
@@ -72,6 +74,8 @@ function MatchCard({
   onDecline?: () => void;
   onWithdraw?: () => void;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
   const isLive = match.status === "in_progress";
   const isUpcoming =
     match.status === "scheduled" || match.status === "proposed";
@@ -89,7 +93,7 @@ function MatchCard({
       style={[styles.card, isLive && styles.cardLive]}
       onPress={onPress}
     >
-      <View style={styles.cardHeader}>
+      <View style={[styles.cardHeader, compact && styles.wrapRow]}>
         <StatusBadge status={match.status} />
         {match.winner && (
           <Text style={styles.winnerBadge}>
@@ -107,19 +111,19 @@ function MatchCard({
       )}
 
       {!isUpcoming && (
-        <View style={styles.scoreRow}>
-          <Text style={styles.setScore}>
+        <View style={[styles.scoreRow, compact && styles.wrapRow]}>
+          <Text style={styles.setScore} maxFontSizeMultiplier={1.35}>
             {formatScoreDisplay(match.liveScore)}
           </Text>
           {isLive && (
-            <Text style={styles.gameScore}>
+            <Text style={styles.gameScore} maxFontSizeMultiplier={1.5}>
               {formatGameScore(match.liveScore)}
             </Text>
           )}
         </View>
       )}
 
-      <View style={styles.players}>
+      <View style={[styles.players, compact && styles.playersCompact]}>
         <Text
           style={[
             styles.playerName,
@@ -150,7 +154,9 @@ function MatchCard({
       )}
 
       {actionKind === "pending" && (
-        <View style={styles.cardActions}>
+        <View
+          style={[styles.cardActions, compact && styles.cardActionsCompact]}
+        >
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={`Accept match proposal from ${player2Name}`}
@@ -198,6 +204,9 @@ function MatchCard({
 }
 
 export default function MatchesScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 380;
   const { user, divisionId } = useAppStore();
   // A match is tagged to the season current when it's logged, matching web's
   // matches/dashboard pages — otherwise it falls outside every season-scoped
@@ -608,11 +617,17 @@ export default function MatchesScreen() {
               </Text>
             </View>
           )}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
         />
       )}
 
-      <View style={styles.fabGroup}>
+      <View
+        style={[
+          styles.fabGroup,
+          compact && styles.fabGroupCompact,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="Record a past match"
@@ -1436,7 +1451,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 32,
   },
-  list: { padding: 16, paddingBottom: 80 },
+  list: { padding: 16 },
+  wrapRow: { flexWrap: "wrap", alignItems: "flex-start" },
 
   sectionHeader: {
     flexDirection: "row",
@@ -1528,17 +1544,21 @@ const styles = StyleSheet.create({
   serverLine: { fontSize: 12, color: colors.textSubtle, marginTop: 6 },
 
   fabGroup: {
-    position: "absolute",
-    bottom: 24,
-    right: 16,
     flexDirection: "row",
     gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    justifyContent: "flex-end",
+    backgroundColor: "#f5f5f0",
   },
+  fabGroupCompact: { flexWrap: "wrap" },
   fab: {
     backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 28,
+    minHeight: 44,
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -1598,7 +1618,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "80%",
+    width: "100%",
   },
   modalTitle: {
     fontSize: 20,
@@ -1705,12 +1725,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 12 },
+  cardActionsCompact: { flexDirection: "column" },
   acceptBtn: {
     flex: 1,
     backgroundColor: colors.primary,
     padding: 10,
     borderRadius: 8,
     alignItems: "center",
+    minHeight: 44,
   },
   acceptBtnText: { color: colors.surface, fontWeight: "700", fontSize: 13 },
   declineBtn: {

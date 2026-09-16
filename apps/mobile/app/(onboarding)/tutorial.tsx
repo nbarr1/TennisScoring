@@ -69,6 +69,8 @@ export async function markTutorialDone() {
 
 export default function TutorialScreen() {
   const router = useRouter();
+  const { width, height } = useWindowDimensions();
+  const compact = width < 380 || height < 700;
   const listRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -92,7 +94,7 @@ export default function TutorialScreen() {
   const isLast = currentIndex === SLIDES.length - 1;
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView edges={["top"]} style={styles.root}>
       <Animated.FlatList
         ref={listRef}
         data={SLIDES}
@@ -120,19 +122,15 @@ export default function TutorialScreen() {
             <Text style={styles.icon}>{item.icon}</Text>
             <Text style={styles.title}>{item.title}</Text>
             <Text style={styles.body}>{item.body}</Text>
-          </View>
+          </ScrollView>
         )}
       />
 
       {/* Progress dots */}
       <View style={styles.dots}>
         {SLIDES.map((_, i) => {
-          const inputRange = [
-            (i - 1) * SCREEN_WIDTH,
-            i * SCREEN_WIDTH,
-            (i + 1) * SCREEN_WIDTH,
-          ];
-          const width = scrollX.interpolate({
+          const inputRange = [(i - 1) * width, i * width, (i + 1) * width];
+          const dotWidth = scrollX.interpolate({
             inputRange,
             outputRange: [8, 24, 8],
             extrapolate: "clamp",
@@ -149,15 +147,27 @@ export default function TutorialScreen() {
       </View>
 
       {/* Actions */}
-      <View style={styles.actions}>
-        {!isLast && (
+      <SafeAreaView edges={["bottom"]} style={styles.footer}>
+        <View style={[styles.actions, compact && styles.actionsCompact]}>
+          {!isLast && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Skip tutorial"
+              onPress={finish}
+              style={styles.skipBtn}
+            >
+              <Text style={styles.skip}>Skip</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="Skip tutorial"
-            onPress={finish}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={isLast ? "Get started" : "Next tutorial slide"}
+            style={[styles.nextBtn, isLast && styles.nextBtnLast]}
+            onPress={next}
           >
-            <Text style={styles.skip}>Skip</Text>
+            <Text style={styles.nextText}>
+              {isLast ? "Get Started" : "Next"}
+            </Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -183,7 +193,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     paddingBottom: 140,
   },
+  slideContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    paddingBottom: 16,
+  },
+  slideCompact: { paddingHorizontal: 20 },
   icon: { fontSize: 80, marginBottom: 32 },
+  iconCompact: { fontSize: 56, marginBottom: 16 },
   title: {
     fontSize: 28,
     fontWeight: "800",
@@ -228,6 +247,9 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     backgroundColor: "rgba(0,0,0,0.15)",
   },
+  footer: { backgroundColor: "rgba(0,0,0,0.15)" },
+  actionsCompact: { paddingHorizontal: 16, paddingVertical: 8 },
+  skipBtn: { minWidth: 44, minHeight: 44, justifyContent: "center" },
   skip: {
     color: "rgba(255,255,255,0.6)",
     fontSize: 16,
