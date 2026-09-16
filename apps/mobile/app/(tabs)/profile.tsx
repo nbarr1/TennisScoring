@@ -42,6 +42,7 @@ import {
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
+import { FormErrorSummary, FormField } from "../../components/FormField";
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
@@ -71,6 +72,9 @@ export default function ProfileScreen() {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [blockedProfiles, setBlockedProfiles] = useState<PublicProfile[]>([]);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const displayNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -137,12 +141,25 @@ export default function ProfileScreen() {
 
   async function handleSave() {
     if (!firebaseUser) return;
+    const contactErrors = {
+      displayName: displayName.trim() ? "" : "Enter a display name.",
+      email: /^\S+@\S+\.\S+$/.test(email.trim())
+        ? ""
+        : "Enter a valid email address.",
+    };
     const validation = validateAvailabilitySlots(availabilitySlots);
-    if (!validation.valid) {
-      Alert.alert(
-        validation.reason === "invalid_time" ? "Invalid time" : "Invalid slot",
-        validation.message,
-      );
+    const nextErrors = {
+      ...contactErrors,
+      availability: validation.valid ? "" : validation.message,
+    };
+    setFormErrors(nextErrors);
+    if (Object.values(nextErrors).some(Boolean)) {
+      (contactErrors.displayName
+        ? displayNameRef
+        : contactErrors.email
+          ? emailRef
+          : null
+      )?.current?.focus();
       return;
     }
     setSaving(true);
@@ -278,28 +295,54 @@ export default function ProfileScreen() {
 
         {editing ? (
           <>
-            <TextInput
-              style={styles.input}
+            <FormField
+              ref={displayNameRef}
+              label="Display name"
+              required
+              error={formErrors.displayName}
               value={displayName}
               onChangeText={setDisplayName}
+              onBlur={() =>
+                setFormErrors((e) => ({
+                  ...e,
+                  displayName: displayName.trim()
+                    ? ""
+                    : "Enter a display name.",
+                }))
+              }
               placeholder="Display name"
               autoCapitalize="words"
             />
-            <TextInput
-              style={styles.input}
+            <FormField
+              ref={emailRef}
+              label="Email"
+              required
+              error={formErrors.email}
               value={email}
               onChangeText={setEmail}
+              onBlur={() =>
+                setFormErrors((e) => ({
+                  ...e,
+                  email: /^\S+@\S+\.\S+$/.test(email.trim())
+                    ? ""
+                    : "Enter a valid email address.",
+                }))
+              }
               placeholder="Email address"
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
             />
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Phone"
+              helperText="Optional"
               value={phone}
               onChangeText={setPhone}
               placeholder="Phone number (optional)"
               keyboardType="phone-pad"
+            />
+            <FormErrorSummary
+              errors={Object.values(formErrors).filter(Boolean)}
             />
           </>
         ) : (
@@ -470,8 +513,13 @@ export default function ProfileScreen() {
         )}
 
         {editing ? (
-          <TextInput
-            style={[styles.input, { marginTop: 12, minHeight: 56 }]}
+          <FormField
+            label="Availability note"
+            helperText="Optional"
+            showCharacterCount
+            maxLength={300}
+            containerStyle={{ marginTop: 12 }}
+            inputStyle={{ minHeight: 56 }}
             value={availabilityNote}
             onChangeText={setAvailabilityNote}
             placeholder="Optional note, e.g. Flexible weekends"
@@ -564,8 +612,9 @@ export default function ProfileScreen() {
               Enter your password to permanently delete your account. This
               cannot be undone.
             </Text>
-            <TextInput
-              style={styles.input}
+            <FormField
+              label="Password"
+              required
               value={deletePassword}
               onChangeText={setDeletePassword}
               placeholder="Password"

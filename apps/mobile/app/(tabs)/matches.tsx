@@ -257,6 +257,8 @@ export default function MatchesScreen() {
   const [creating, setCreating] = useState(false);
   // Historic match set scores: array of { p1, p2 } per set
   const [historicSets, setHistoricSets] = useState([{ p1: "", p2: "" }]);
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const guestNameRef = useRef<TextInput>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -364,12 +366,22 @@ export default function MatchesScreen() {
     setSearchResults([]);
     setSelectedOpponent(null);
     setHistoricSets([{ p1: "", p2: "" }]);
+    setCreateErrors({});
   }
 
   async function handleCreateMatch() {
     if (!user || !divisionId) return;
-    if (opponentMode === "search" && !selectedOpponent) return;
-    if (opponentMode === "guest" && !guestName.trim()) return;
+    const opponentError =
+      opponentMode === "search" && !selectedOpponent
+        ? "Select an opponent from the search results."
+        : opponentMode === "guest" && !guestName.trim()
+          ? "Enter the guest opponent's name."
+          : "";
+    if (opponentError) {
+      setCreateErrors({ opponent: opponentError });
+      if (opponentMode === "guest") guestNameRef.current?.focus();
+      return;
+    }
     setCreating(true);
     try {
       const matchId = await createMatch(
@@ -406,9 +418,22 @@ export default function MatchesScreen() {
 
   async function handleRecordHistoric() {
     if (!user || !divisionId) return;
-    if (recordingMode === "onBehalf" && !selectedPlayer1) return;
-    if (opponentMode === "search" && !selectedOpponent) return;
-    if (opponentMode === "guest" && !guestName.trim()) return;
+    const selectionErrors = [
+      recordingMode === "onBehalf" && !selectedPlayer1
+        ? "Select the first player."
+        : "",
+      opponentMode === "search" && !selectedOpponent
+        ? "Select the second player or opponent."
+        : "",
+      opponentMode === "guest" && !guestName.trim()
+        ? "Enter the guest opponent's name."
+        : "",
+    ].filter(Boolean);
+    if (selectionErrors.length) {
+      setCreateErrors({ selection: selectionErrors.join(" ") });
+      if (opponentMode === "guest") guestNameRef.current?.focus();
+      return;
+    }
 
     const parsed = historicSets.map((s) => ({
       p1: parseInt(s.p1, 10),
@@ -418,26 +443,19 @@ export default function MatchesScreen() {
       (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
     );
     if (invalid || parsed.length === 0) {
-      Alert.alert(
-        "Invalid Score",
-        "Please enter a valid number of games for each set.",
-      );
+      setCreateErrors({
+        scores: "Enter a valid number of games for every set.",
+      });
       return;
     }
     if (parsed.some((s) => s.p1 === s.p2)) {
-      Alert.alert(
-        "Invalid Score",
-        "Each set must have a clear winner. Check the set scores.",
-      );
+      setCreateErrors({ scores: "Each set must have a clear winner." });
       return;
     }
     const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
     const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
     if (p1Sets === p2Sets) {
-      Alert.alert(
-        "Invalid Score",
-        "The match must have a clear winner. Check the set scores.",
-      );
+      setCreateErrors({ scores: "The match must have a clear winner." });
       return;
     }
     setCreating(true);
@@ -1042,11 +1060,22 @@ export default function MatchesScreen() {
 
             {/* Opponent picker */}
             {opponentMode === "guest" ? (
-              <TextInput
+              <FormField
+                ref={guestNameRef}
+                label="Guest opponent"
+                required
+                error={createErrors.opponent || createErrors.selection}
                 accessibilityLabel="Guest opponent name"
-                style={styles.input}
                 value={guestName}
                 onChangeText={setGuestName}
+                onBlur={() =>
+                  setCreateErrors((e) => ({
+                    ...e,
+                    opponent: guestName.trim()
+                      ? ""
+                      : "Enter the guest opponent's name.",
+                  }))
+                }
                 placeholder="Guest name..."
                 autoCapitalize="words"
                 autoCorrect={false}
@@ -1129,6 +1158,10 @@ export default function MatchesScreen() {
                   )}
               </>
             )}
+
+            <FormErrorSummary
+              errors={Object.values(createErrors).filter(Boolean)}
+            />
 
             {/* Historic set-score entry */}
             {createMode === "historic" &&
@@ -1213,41 +1246,16 @@ export default function MatchesScreen() {
                     : "Create live match"
                 }
                 accessibilityState={{
-                  disabled:
-                    creating ||
-                    (createMode === "historic" &&
-                      recordingMode === "onBehalf" &&
-                      !selectedPlayer1) ||
-                    (opponentMode === "search"
-                      ? !selectedOpponent
-                      : !guestName.trim()),
+                  disabled: creating,
                   busy: creating,
                 }}
-                style={[
-                  styles.createBtn,
-                  (creating ||
-                    (createMode === "historic" &&
-                      recordingMode === "onBehalf" &&
-                      !selectedPlayer1) ||
-                    (opponentMode === "search"
-                      ? !selectedOpponent
-                      : !guestName.trim())) &&
-                    styles.createBtnDisabled,
-                ]}
+                style={[styles.createBtn, creating && styles.createBtnDisabled]}
                 onPress={
                   createMode === "historic"
                     ? handleRecordHistoric
                     : handleCreateMatch
                 }
-                disabled={
-                  creating ||
-                  (createMode === "historic" &&
-                    recordingMode === "onBehalf" &&
-                    !selectedPlayer1) ||
-                  (opponentMode === "search"
-                    ? !selectedOpponent
-                    : !guestName.trim())
-                }
+                disabled={creating}
               >
                 {creating ? (
                   <ActivityIndicator color={colors.surface} />
@@ -1289,6 +1297,9 @@ function ProposeMatchModal({
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const dateRef = useRef<TextInput>(null);
+  const timeRef = useRef<TextInput>(null);
 
   const doublesChosenIds = [
     currentUser.id,
@@ -1320,22 +1331,22 @@ function ProposeMatchModal({
   }, [searchText, divisionId, selectedOpponent, currentUser.id]);
 
   async function handleSubmit() {
-    if (!opponentReady) return;
-    if (!DATE_RE.test(date)) {
-      Alert.alert("Invalid date", "Please enter the date as YYYY-MM-DD.");
-      return;
-    }
-    if (!TIME_RE.test(time)) {
-      Alert.alert("Invalid time", "Please enter the time as HH:MM (24-hour).");
-      return;
-    }
+    const nextErrors: Record<string, string> = {};
+    if (!opponentReady)
+      nextErrors.opponent = isDoubles
+        ? "Select all three other players."
+        : "Select an opponent.";
+    if (!DATE_RE.test(date)) nextErrors.date = "Enter the date as YYYY-MM-DD.";
+    if (!TIME_RE.test(time)) nextErrors.time = "Enter a 24-hour time as HH:MM.";
     const ts = Date.parse(`${date}T${time}`);
-    if (!ts || Number.isNaN(ts)) {
-      Alert.alert("Invalid date/time", "Could not parse that date and time.");
-      return;
-    }
-    if (ts < Date.now()) {
-      Alert.alert("Past time", "Pick a date/time in the future.");
+    if (!nextErrors.date && !nextErrors.time && (!ts || Number.isNaN(ts)))
+      nextErrors.date = "Enter a real date and time.";
+    if (!nextErrors.date && !nextErrors.time && ts < Date.now())
+      nextErrors.date = "Choose a date and time in the future.";
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      if (nextErrors.date) dateRef.current?.focus();
+      else if (nextErrors.time) timeRef.current?.focus();
       return;
     }
     setSubmitting(true);
