@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { onSnapshot } from "firebase/firestore";
@@ -29,6 +30,7 @@ import {
   formatGameScore,
   getMatchStatusMetadata,
   currentSeasonForDate,
+  defaultSeasonOptions,
   sideOfPlayer,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
@@ -39,6 +41,15 @@ import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
+type MatchFilter = "upcoming" | "action" | "completed" | "all";
+
+const FILTERS: { id: MatchFilter; label: string }[] = [
+  { id: "upcoming", label: "Upcoming" },
+  { id: "action", label: "Needs action" },
+  { id: "completed", label: "Completed" },
+  { id: "all", label: "All" },
+];
+const COLLAPSED_HISTORY_LIMIT = 5;
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -189,6 +200,11 @@ export default function MatchesScreen() {
   // matches/dashboard pages — otherwise it falls outside every season-scoped
   // standings view (see useRankings' seasonId filter) and never counts.
   const seasonId = useMemo(() => currentSeasonForDate().id, []);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(seasonId);
+  const [activeFilter, setActiveFilter] = useState<MatchFilter>("upcoming");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -204,12 +220,17 @@ export default function MatchesScreen() {
   );
   const [guestName, setGuestName] = useState("");
   const [player1SearchText, setPlayer1SearchText] = useState("");
-  const [player1SearchResults, setPlayer1SearchResults] = useState<PublicProfile[]>([]);
-  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(null);
+  const [player1SearchResults, setPlayer1SearchResults] = useState<
+    PublicProfile[]
+  >([]);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(
+    null,
+  );
   const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   // Historic match set scores: array of { p1, p2 } per set
@@ -229,7 +250,9 @@ export default function MatchesScreen() {
       },
       (err) => {
         console.error("[MatchesScreen] matches listener error:", err);
-        setLoadError("Could not load matches. Check your connection and try again.");
+        setLoadError(
+          "Could not load matches. Check your connection and try again.",
+        );
         setLoading(false);
       },
     );
@@ -258,7 +281,7 @@ export default function MatchesScreen() {
           results.filter((u) => u.id !== selectedOpponent?.id),
         );
       } catch (err) {
-        console.error('Failed to search player 1:', err);
+        console.error("Failed to search player 1:", err);
         setPlayer1SearchResults([]);
       } finally {
         setSearchingPlayer1(false);
@@ -289,7 +312,7 @@ export default function MatchesScreen() {
             : user?.id;
         setSearchResults(results.filter((u) => u.id !== player1Id));
       } catch (err) {
-        console.error('Failed to search opponent:', err);
+        console.error("Failed to search opponent:", err);
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -489,101 +512,276 @@ export default function MatchesScreen() {
     actionKind,
   });
 
-  const liveMatches = matches
+  const normalizedSearch = playerSearch.trim().toLocaleLowerCase();
+  const seasonMatches = matches.filter(
+    (match) => match.seasonId === selectedSeasonId,
+  );
+  const visibleMatches = seasonMatches.filter((match) => {
+    if (!normalizedSearch) return true;
+    return [
+      match.player1Name,
+      match.player2Name,
+      match.side1?.displayName,
+      match.side2?.displayName,
+    ].some((name) => name?.toLocaleLowerCase().includes(normalizedSearch));
+  });
+  const pendingInviteCount = seasonMatches.filter(
+    (match) =>
+      match.status === "proposed" &&
+      !!uid &&
+      sideOfPlayer(match, uid) === "player2",
+  ).length;
+
+  const includeUpcoming = activeFilter === "upcoming" || activeFilter === "all";
+  const includeAction = activeFilter === "action" || activeFilter === "all";
+  const includeCompleted =
+    activeFilter === "completed" || activeFilter === "all";
+
+  const liveMatches = visibleMatches
     .filter((m) => m.status === "in_progress")
     .map((m) => toItem(m));
   // Side membership rather than player2Id/player1Id, so a doubles partner sees
   // the proposal too instead of only the side's first player.
-  const pendingInvites = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
+  const pendingInvites = visibleMatches
+    .filter(
+      (m) =>
+        m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2",
+    )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "pending"));
-  const awaitingOpponent = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1")
+  const awaitingOpponent = visibleMatches
+    .filter(
+      (m) =>
+        m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1",
+    )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "awaiting"));
-  const upcomingMatches = matches
+  const upcomingMatches = visibleMatches
     .filter((m) => m.status === "scheduled")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m));
-  const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
-  const otherMatches = matches
-    .filter((m) => !otherStatuses.has(m.status))
+  const actionMatches = visibleMatches
+    .filter((m) => m.status === "pending_report" || m.status === "disputed")
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     .map((m) => toItem(m));
+  const completedMatches = visibleMatches
+    .filter((m) => m.status === "completed" || m.status === "cancelled")
+    .sort(
+      (a, b) =>
+        (b.completedAt ?? b.createdAt ?? 0) -
+        (a.completedAt ?? a.createdAt ?? 0),
+    )
+    .map((m) => toItem(m));
+  const shownCompletedMatches = historyExpanded
+    ? completedMatches
+    : completedMatches.slice(0, COLLAPSED_HISTORY_LIMIT);
   const canRecordOnBehalf =
     user?.role === "admin" ||
     user?.role === "division_leader" ||
     user?.role === "app_developer";
 
   const sections: { title: string; data: MatchItem[] }[] = [
-    ...(liveMatches.length > 0
+    ...((includeUpcoming || includeAction) && liveMatches.length > 0
       ? [{ title: "Now Live", data: liveMatches }]
       : []),
-    ...(pendingInvites.length > 0
-      ? [{ title: "Pending Invitations", data: pendingInvites }]
+    ...((includeAction || includeUpcoming) && pendingInvites.length > 0
+      ? [
+          {
+            title: `Needs Your Response (${pendingInvites.length})`,
+            data: pendingInvites,
+          },
+        ]
       : []),
-    ...(awaitingOpponent.length > 0
+    ...(includeUpcoming && awaitingOpponent.length > 0
       ? [{ title: "Awaiting Opponent", data: awaitingOpponent }]
       : []),
-    ...(upcomingMatches.length > 0
+    ...(includeUpcoming && upcomingMatches.length > 0
       ? [{ title: "Upcoming", data: upcomingMatches }]
       : []),
-    ...(otherMatches.length > 0
-      ? [{ title: "All Matches", data: otherMatches }]
+    ...(includeAction && actionMatches.length > 0
+      ? [{ title: "Other Action Needed", data: actionMatches }]
+      : []),
+    ...(includeCompleted && shownCompletedMatches.length > 0
+      ? [{ title: "Match History", data: shownCompletedMatches }]
       : []),
   ];
 
   return (
     <View style={styles.container}>
-      {matches.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>No Matches</Text>
-          <Text style={styles.emptyBody}>
-            Create a new match to get started.
-          </Text>
-        </View>
-      ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MatchCard
-              match={item.match}
-              onPress={() => router.push(`/match/${item.id}`)}
-              actionKind={item.actionKind}
-              onAccept={() =>
-                acceptMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not accept."),
-                )
-              }
-              onDecline={() =>
-                declineMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not decline."),
-                )
-              }
-              onWithdraw={() =>
-                declineMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not cancel."),
-                )
-              }
-            />
-          )}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              {section.title === "Now Live" && <View style={styles.liveDot} />}
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  section.title === "Now Live" && styles.sectionTitleLive,
-                ]}
-              >
-                {section.title}
-              </Text>
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={styles.listControls}>
+            <Text style={styles.controlLabel}>Season</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRow}
+            >
+              {seasonOptions.map((season) => (
+                <TouchableOpacity
+                  key={season.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show matches for ${season.name}`}
+                  accessibilityState={{
+                    selected: selectedSeasonId === season.id,
+                  }}
+                  style={[
+                    styles.controlChip,
+                    selectedSeasonId === season.id && styles.controlChipActive,
+                  ]}
+                  onPress={() => {
+                    setSelectedSeasonId(season.id);
+                    setHistoryExpanded(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.controlChipText,
+                      selectedSeasonId === season.id &&
+                        styles.controlChipTextActive,
+                    ]}
+                  >
+                    {season.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.matchSearchRow}>
+              <Text style={styles.searchGlyph}>⌕</Text>
+              <TextInput
+                accessibilityLabel="Search matches by player name"
+                value={playerSearch}
+                onChangeText={setPlayerSearch}
+                placeholder="Search player name"
+                autoCorrect={false}
+                style={styles.matchSearchInput}
+              />
+              {!!playerSearch && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear player search"
+                  onPress={() => setPlayerSearch("")}
+                >
+                  <Text style={styles.clearSearch}>✕</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          )}
-          contentContainerStyle={styles.list}
-        />
-      )}
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRow}
+            >
+              {FILTERS.map((filter) => {
+                const count = filter.id === "action" ? pendingInviteCount : 0;
+                return (
+                  <TouchableOpacity
+                    key={filter.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Show ${filter.label.toLowerCase()} matches${count ? `, ${count} requiring a response` : ""}`}
+                    accessibilityState={{
+                      selected: activeFilter === filter.id,
+                    }}
+                    style={[
+                      styles.filterChip,
+                      activeFilter === filter.id && styles.filterChipActive,
+                    ]}
+                    onPress={() => {
+                      setActiveFilter(filter.id);
+                      setHistoryExpanded(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        activeFilter === filter.id &&
+                          styles.filterChipTextActive,
+                      ]}
+                    >
+                      {filter.label}
+                    </Text>
+                    {count > 0 && (
+                      <View style={styles.countBadge}>
+                        <Text style={styles.countBadgeText}>{count}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.filteredEmpty}>
+            <Text style={styles.emptyTitle}>No matching matches</Text>
+            <Text style={styles.emptyBody}>
+              Try another filter, player name, or season.
+            </Text>
+          </View>
+        }
+        ListFooterComponent={
+          includeCompleted &&
+          completedMatches.length > COLLAPSED_HISTORY_LIMIT ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={
+                historyExpanded
+                  ? "Collapse match history"
+                  : "View match history"
+              }
+              style={styles.historyButton}
+              onPress={() => setHistoryExpanded((expanded) => !expanded)}
+            >
+              <Text style={styles.historyButtonText}>
+                {historyExpanded
+                  ? "Show less history"
+                  : `View match history (${completedMatches.length - COLLAPSED_HISTORY_LIMIT} older)`}
+              </Text>
+            </TouchableOpacity>
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <MatchCard
+            match={item.match}
+            onPress={() => router.push(`/match/${item.id}`)}
+            actionKind={item.actionKind}
+            onAccept={() =>
+              acceptMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not accept."),
+              )
+            }
+            onDecline={() =>
+              declineMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not decline."),
+              )
+            }
+            onWithdraw={() =>
+              declineMatchProposal(item.id).catch(() =>
+                Alert.alert("Error", "Could not cancel."),
+              )
+            }
+          />
+        )}
+        renderSectionHeader={({ section }) => (
+          <View style={styles.sectionHeader}>
+            {section.title === "Now Live" && <View style={styles.liveDot} />}
+            <Text
+              style={[
+                styles.sectionTitle,
+                section.title === "Now Live" && styles.sectionTitleLive,
+              ]}
+            >
+              {section.title}
+            </Text>
+          </View>
+        )}
+        contentContainerStyle={styles.list}
+      />
 
       <View style={styles.fabGroup}>
         <TouchableOpacity
@@ -708,7 +906,7 @@ export default function MatchesScreen() {
                       Any Two
                     </Text>
                   </TouchableOpacity>
-                  </View>
+                </View>
 
                 {recordingMode === "onBehalf" &&
                   (selectedPlayer1 ? (
@@ -787,8 +985,8 @@ export default function MatchesScreen() {
                         )}
                     </>
                   ))}
-                </>
-              )}
+              </>
+            )}
 
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
@@ -859,9 +1057,7 @@ export default function MatchesScreen() {
                   <Text style={styles.playerChipName}>
                     {selectedOpponent.displayName}
                   </Text>
-                  <Text style={styles.playerChipEmail}>
-                    Public profile
-                  </Text>
+                  <Text style={styles.playerChipEmail}>Public profile</Text>
                 </View>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -1082,7 +1278,8 @@ function ProposeMatchModal({
 }) {
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [isDoubles, setIsDoubles] = useState(false);
   // Doubles slots: the signed-in player always fills side 1's first seat.
   const [partner, setPartner] = useState<PublicProfile | null>(null);
@@ -1182,213 +1379,214 @@ function ProposeMatchModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Propose a Match</Text>
 
-            <Text style={styles.modalLabel}>Format</Text>
-            <View style={styles.formatRow}>
-              {([false, true] as const).map((doubles) => (
-                <TouchableOpacity
-                  key={doubles ? "doubles" : "singles"}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Propose a ${doubles ? "doubles" : "singles"} match`}
-                  accessibilityState={{ selected: isDoubles === doubles }}
-                  style={[styles.formatChip, isDoubles === doubles && styles.formatChipActive]}
-                  onPress={() => setIsDoubles(doubles)}
+          <Text style={styles.modalLabel}>Format</Text>
+          <View style={styles.formatRow}>
+            {([false, true] as const).map((doubles) => (
+              <TouchableOpacity
+                key={doubles ? "doubles" : "singles"}
+                accessibilityRole="button"
+                accessibilityLabel={`Propose a ${doubles ? "doubles" : "singles"} match`}
+                accessibilityState={{ selected: isDoubles === doubles }}
+                style={[
+                  styles.formatChip,
+                  isDoubles === doubles && styles.formatChipActive,
+                ]}
+                onPress={() => setIsDoubles(doubles)}
+              >
+                <Text
+                  style={[
+                    styles.formatChipText,
+                    isDoubles === doubles && styles.formatChipTextActive,
+                  ]}
                 >
-                  <Text
-                    style={[
-                      styles.formatChipText,
-                      isDoubles === doubles && styles.formatChipTextActive,
-                    ]}
-                  >
-                    {doubles ? "Doubles" : "Singles"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  {doubles ? "Doubles" : "Singles"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-            {isDoubles ? (
-              <>
-                <PlayerSlotPicker
-                  label="Your partner"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={partner}
-                  onSelect={setPartner}
-                  onClear={() => setPartner(null)}
-                />
-                <PlayerSlotPicker
-                  label="Opponent 1"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={opponent1}
-                  onSelect={setOpponent1}
-                  onClear={() => setOpponent1(null)}
-                />
-                <PlayerSlotPicker
-                  label="Opponent 2"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={opponent2}
-                  onSelect={setOpponent2}
-                  onClear={() => setOpponent2(null)}
-                />
-                {opponentReady && (
-                  <>
-                    <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
-                    <TextInput
-                      accessibilityLabel="Match date"
-                      style={styles.input}
-                      value={date}
-                      onChangeText={setDate}
-                      placeholder="2026-05-10"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      maxLength={10}
-                    />
-                    <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
-                    <TextInput
-                      accessibilityLabel="Match time"
-                      style={styles.input}
-                      value={time}
-                      onChangeText={setTime}
-                      placeholder="18:30"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      maxLength={5}
-                    />
-                  </>
-                )}
-              </>
-            ) : selectedOpponent ? (
-              <>
-                <View style={styles.selectedPlayer}>
-                  <View style={styles.playerChip}>
-                    <Text style={styles.playerChipName}>
-                      {selectedOpponent.displayName}
-                    </Text>
-                    <Text style={styles.playerChipEmail}>
-                      Public profile
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Change selected opponent"
-                    onPress={() => {
-                      setSelectedOpponent(null);
-                      setSearchText("");
-                    }}
-                  >
-                    <Text style={styles.changeText}>Change</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.availabilityEmpty}>Availability is visible only when teammates share it.</Text>
-
-                <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
-                <TextInput
-                  accessibilityLabel="Match date"
-                  style={styles.input}
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="2026-05-10"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={10}
-                />
-                <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
-                <TextInput
-                  accessibilityLabel="Match time"
-                  style={styles.input}
-                  value={time}
-                  onChangeText={setTime}
-                  placeholder="18:30"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={5}
-                />
-              </>
-            ) : (
-              <>
-                <Text style={styles.modalLabel}>Search for opponent</Text>
-                <View style={styles.searchRow}>
+          {isDoubles ? (
+            <>
+              <PlayerSlotPicker
+                label="Your partner"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={partner}
+                onSelect={setPartner}
+                onClear={() => setPartner(null)}
+              />
+              <PlayerSlotPicker
+                label="Opponent 1"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={opponent1}
+                onSelect={setOpponent1}
+                onClear={() => setOpponent1(null)}
+              />
+              <PlayerSlotPicker
+                label="Opponent 2"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={opponent2}
+                onSelect={setOpponent2}
+                onClear={() => setOpponent2(null)}
+              />
+              {opponentReady && (
+                <>
+                  <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
                   <TextInput
-                    accessibilityLabel="Search for opponent"
-                    style={[styles.input, styles.searchInput]}
-                    value={searchText}
-                    onChangeText={setSearchText}
-                    placeholder="Name or email..."
+                    accessibilityLabel="Match date"
+                    style={styles.input}
+                    value={date}
+                    onChangeText={setDate}
+                    placeholder="2026-05-10"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    maxLength={10}
                   />
-                  {searching && (
-                    <ActivityIndicator
-                      style={styles.searchSpinner}
-                      color="#1a472a"
-                    />
-                  )}
+                  <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
+                  <TextInput
+                    accessibilityLabel="Match time"
+                    style={styles.input}
+                    value={time}
+                    onChangeText={setTime}
+                    placeholder="18:30"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={5}
+                  />
+                </>
+              )}
+            </>
+          ) : selectedOpponent ? (
+            <>
+              <View style={styles.selectedPlayer}>
+                <View style={styles.playerChip}>
+                  <Text style={styles.playerChipName}>
+                    {selectedOpponent.displayName}
+                  </Text>
+                  <Text style={styles.playerChipEmail}>Public profile</Text>
                 </View>
-                {searchResults.length > 0 && (
-                  <FlatList
-                    data={searchResults}
-                    keyExtractor={(u) => u.id}
-                    style={styles.resultsList}
-                    keyboardShouldPersistTaps="handled"
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={`Select ${item.displayName}`}
-                        style={styles.resultRow}
-                        onPress={() => {
-                          setSelectedOpponent(item);
-                          setSearchResults([]);
-                        }}
-                      >
-                        <Text style={styles.resultName}>
-                          {item.displayName}
-                        </Text>
-                        <Text style={styles.resultEmail}>Public profile</Text>
-                      </TouchableOpacity>
-                    )}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                  }}
+                >
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.availabilityEmpty}>
+                Availability is visible only when teammates share it.
+              </Text>
+
+              <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
+              <TextInput
+                accessibilityLabel="Match date"
+                style={styles.input}
+                value={date}
+                onChangeText={setDate}
+                placeholder="2026-05-10"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={10}
+              />
+              <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
+              <TextInput
+                accessibilityLabel="Match time"
+                style={styles.input}
+                value={time}
+                onChangeText={setTime}
+                placeholder="18:30"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={5}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalLabel}>Search for opponent</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  accessibilityLabel="Search for opponent"
+                  style={[styles.input, styles.searchInput]}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholder="Name or email..."
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searching && (
+                  <ActivityIndicator
+                    style={styles.searchSpinner}
+                    color="#1a472a"
                   />
                 )}
-                {searchText.trim().length > 0 &&
-                  !searching &&
-                  searchResults.length === 0 && (
-                    <Text style={styles.noResults}>No players found.</Text>
+              </View>
+              {searchResults.length > 0 && (
+                <FlatList
+                  data={searchResults}
+                  keyExtractor={(u) => u.id}
+                  style={styles.resultsList}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${item.displayName}`}
+                      style={styles.resultRow}
+                      onPress={() => {
+                        setSelectedOpponent(item);
+                        setSearchResults([]);
+                      }}
+                    >
+                      <Text style={styles.resultName}>{item.displayName}</Text>
+                      <Text style={styles.resultEmail}>Public profile</Text>
+                    </TouchableOpacity>
                   )}
-              </>
-            )}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Cancel match proposal"
-                style={styles.cancelBtn}
-                onPress={onClose}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Send match proposal"
-                accessibilityState={{
-                  disabled: submitting || !opponentReady || !date || !time,
-                  busy: submitting,
-                }}
-                style={[
-                  styles.createBtn,
-                  (submitting || !opponentReady || !date || !time) &&
-                    styles.createBtnDisabled,
-                ]}
-                onPress={handleSubmit}
-                disabled={submitting || !opponentReady || !date || !time}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.createText}>Send Proposal</Text>
+                />
+              )}
+              {searchText.trim().length > 0 &&
+                !searching &&
+                searchResults.length === 0 && (
+                  <Text style={styles.noResults}>No players found.</Text>
                 )}
-              </TouchableOpacity>
-            </View>
+            </>
+          )}
+
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Cancel match proposal"
+              style={styles.cancelBtn}
+              onPress={onClose}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Send match proposal"
+              accessibilityState={{
+                disabled: submitting || !opponentReady || !date || !time,
+                busy: submitting,
+              }}
+              style={[
+                styles.createBtn,
+                (submitting || !opponentReady || !date || !time) &&
+                  styles.createBtnDisabled,
+              ]}
+              onPress={handleSubmit}
+              disabled={submitting || !opponentReady || !date || !time}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.createText}>Send Proposal</Text>
+              )}
+            </TouchableOpacity>
           </View>
+        </View>
       </KeyboardAwareBottomSheet>
     </Modal>
   );
@@ -1403,12 +1601,90 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   list: { padding: 16, paddingBottom: 80 },
+  listControls: { marginBottom: 12, gap: 10 },
+  controlLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#555",
+    textTransform: "uppercase",
+  },
+  controlRow: { flexDirection: "row", gap: 8 },
+  controlChip: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+  },
+  controlChipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  controlChipText: { color: "#555", fontWeight: "600", fontSize: 13 },
+  controlChipTextActive: { color: "#1a472a" },
+  matchSearchRow: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+  },
+  searchGlyph: { color: "#666", fontSize: 22, marginRight: 8 },
+  matchSearchInput: {
+    flex: 1,
+    color: "#222",
+    fontSize: 14,
+    paddingVertical: 9,
+  },
+  clearSearch: { color: "#777", padding: 6, fontSize: 12 },
+  filterChip: {
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d5d9d6",
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  filterChipActive: { backgroundColor: "#1a472a", borderColor: "#1a472a" },
+  filterChipText: { color: "#555", fontSize: 13, fontWeight: "700" },
+  filterChipTextActive: { color: "#fff" },
+  countBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#d95d39",
+  },
+  countBadgeText: { color: "#fff", fontWeight: "800", fontSize: 11 },
+  filteredEmpty: {
+    alignItems: "center",
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  historyButton: {
+    borderWidth: 1,
+    borderColor: "#1a472a",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 2,
+    marginBottom: 16,
+    backgroundColor: "#fff",
+  },
+  historyButtonText: { color: "#1a472a", fontSize: 14, fontWeight: "700" },
 
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingVertical: 8,
+    backgroundColor: "#f5f5f0",
   },
   sectionTitle: {
     fontSize: 13,
