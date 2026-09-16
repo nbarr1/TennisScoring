@@ -16,8 +16,7 @@ import { auth, db } from "@tennis/firebase-client";
 import { doc, setDoc } from "firebase/firestore";
 import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
-import { FormErrorSummary, FormField } from "../../components/FormField";
-import type { TextInput } from "react-native";
+import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 
 type Mode = "signin" | "signup";
 
@@ -135,7 +134,15 @@ export default function LoginScreen() {
       contentContainerStyle={styles.inner}
     >
       <View style={styles.header}>
-        <Text style={styles.logo}>🎾</Text>
+        <View style={styles.brandMark} accessible={false}>
+          <View style={styles.brandCourtLine} />
+          <AppIcon
+            name="figure.tennis"
+            size={ICON_SIZE.brand}
+            color={ICON_COLOR.inverse}
+            emphasized
+          />
+        </View>
         <Text style={styles.title}>Tennis League</Text>
         <Text style={styles.subtitle}>Work Tennis Scoring & Rankings</Text>
       </View>
@@ -248,7 +255,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f0" },
   inner: { flexGrow: 1, justifyContent: "center", padding: 32 },
   header: { alignItems: "center", marginBottom: 40 },
-  logo: { fontSize: 56, marginBottom: 12 },
+  brandMark: {
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    marginBottom: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: ICON_COLOR.active,
+    transform: [{ rotate: "-4deg" }],
+  },
+  brandCourtLine: {
+    position: "absolute",
+    width: 100,
+    height: 2,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    transform: [{ rotate: "-35deg" }],
+  },
   title: { fontSize: 28, fontWeight: "700", color: "#1a472a", marginBottom: 6 },
   subtitle: { fontSize: 15, color: "#666", textAlign: "center" },
   form: { gap: 16 },

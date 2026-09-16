@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -179,7 +180,7 @@ export default function DivisionOnboardingScreen() {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.surface} />
             ) : (
               <Text style={styles.buttonText}>Create Division</Text>
             )}
@@ -233,7 +234,7 @@ export default function DivisionOnboardingScreen() {
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.surface} />
             ) : (
               <Text style={styles.buttonText}>Join Division</Text>
             )}
@@ -257,21 +258,26 @@ export default function DivisionOnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   inner: { flexGrow: 1, justifyContent: "center", padding: 32 },
   header: { alignItems: "center", marginBottom: 40 },
   logo: { fontSize: 56, marginBottom: 12 },
-  title: { fontSize: 26, fontWeight: "700", color: "#1a472a", marginBottom: 8 },
+  title: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: colors.primary,
+    marginBottom: 8,
+  },
   subtitle: {
     fontSize: 15,
-    color: "#666",
+    color: colors.textMuted,
     textAlign: "center",
     lineHeight: 22,
   },
 
   choices: { gap: 16 },
   choiceCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
@@ -284,17 +290,17 @@ const styles = StyleSheet.create({
   choiceTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 6,
   },
-  choiceBody: { fontSize: 14, color: "#666", textAlign: "center" },
+  choiceBody: { fontSize: 14, color: colors.textMuted, textAlign: "center" },
 
   form: { gap: 14 },
   label: { fontSize: 14, fontWeight: "600", color: "#444" },
   input: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 14,
     fontSize: 15,
@@ -305,20 +311,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 8,
     textAlign: "center",
-    color: "#1a472a",
+    color: colors.primary,
   },
   button: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
     marginTop: 4,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  buttonText: { color: colors.surface, fontSize: 16, fontWeight: "700" },
   backBtn: { alignItems: "center", paddingVertical: 12 },
-  backText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
+  backText: { color: colors.primary, fontSize: 14, fontWeight: "500" },
 
   signOutLink: { alignItems: "center", marginTop: 32, padding: 8 },
-  signOutLinkText: { color: "#999", fontSize: 13 },
+  signOutLinkText: { color: colors.textSubtle, fontSize: 13 },
 });
