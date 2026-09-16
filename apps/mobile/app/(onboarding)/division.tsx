@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { colors } from "../../theme";
 import {
   View,
@@ -20,6 +20,7 @@ import {
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { FormErrorSummary, FormField } from "../../components/FormField";
+import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import type { TextInput } from "react-native";
 
 type Mode = "choose" | "create" | "join";
@@ -120,7 +121,12 @@ export default function DivisionOnboardingScreen() {
       contentContainerStyle={styles.inner}
     >
       <View style={styles.header}>
-        <Text style={styles.logo}>🎾</Text>
+        <AppIcon
+          name="figure.tennis"
+          size={ICON_SIZE.brand}
+          color={ICON_COLOR.active}
+          emphasized
+        />
         <Text style={styles.title}>Join a Division</Text>
         <Text style={styles.subtitle}>
           Create a new division or join an existing one with an invite code.
@@ -130,20 +136,32 @@ export default function DivisionOnboardingScreen() {
       {mode === "choose" && (
         <View style={styles.choices}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Create a division"
             style={styles.choiceCard}
             onPress={() => setMode("create")}
           >
-            <Text style={styles.choiceIcon}>🏆</Text>
+            <AppIcon
+              name="trophy.fill"
+              size={ICON_SIZE.feature}
+              color={ICON_COLOR.active}
+            />
             <Text style={styles.choiceTitle}>Create Division</Text>
             <Text style={styles.choiceBody}>
               Start a new league division and invite players.
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Join a division"
             style={styles.choiceCard}
             onPress={() => setMode("join")}
           >
-            <Text style={styles.choiceIcon}>🔗</Text>
+            <AppIcon
+              name="link"
+              size={ICON_SIZE.feature}
+              color={ICON_COLOR.active}
+            />
             <Text style={styles.choiceTitle}>Join Division</Text>
             <Text style={styles.choiceBody}>
               Enter an invite code from your division leader.
