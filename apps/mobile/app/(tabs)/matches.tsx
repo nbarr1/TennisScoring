@@ -32,6 +32,7 @@ import {
   formatGameScore,
   getMatchStatusMetadata,
   currentSeasonForDate,
+  defaultSeasonOptions,
   sideOfPlayer,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
@@ -43,6 +44,15 @@ import { IconLabel, ICON_COLOR } from "../../components/AppIcon";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
+type MatchFilter = "upcoming" | "action" | "completed" | "all";
+
+const FILTERS: { id: MatchFilter; label: string }[] = [
+  { id: "upcoming", label: "Upcoming" },
+  { id: "action", label: "Needs action" },
+  { id: "completed", label: "Completed" },
+  { id: "all", label: "All" },
+];
+const COLLAPSED_HISTORY_LIMIT = 5;
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -212,6 +222,11 @@ export default function MatchesScreen() {
   // matches/dashboard pages — otherwise it falls outside every season-scoped
   // standings view (see useRankings' seasonId filter) and never counts.
   const seasonId = useMemo(() => currentSeasonForDate().id, []);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(seasonId);
+  const [activeFilter, setActiveFilter] = useState<MatchFilter>("upcoming");
+  const [playerSearch, setPlayerSearch] = useState("");
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -519,7 +534,32 @@ export default function MatchesScreen() {
     actionKind,
   });
 
-  const liveMatches = matches
+  const normalizedSearch = playerSearch.trim().toLocaleLowerCase();
+  const seasonMatches = matches.filter(
+    (match) => match.seasonId === selectedSeasonId,
+  );
+  const visibleMatches = seasonMatches.filter((match) => {
+    if (!normalizedSearch) return true;
+    return [
+      match.player1Name,
+      match.player2Name,
+      match.side1?.displayName,
+      match.side2?.displayName,
+    ].some((name) => name?.toLocaleLowerCase().includes(normalizedSearch));
+  });
+  const pendingInviteCount = seasonMatches.filter(
+    (match) =>
+      match.status === "proposed" &&
+      !!uid &&
+      sideOfPlayer(match, uid) === "player2",
+  ).length;
+
+  const includeUpcoming = activeFilter === "upcoming" || activeFilter === "all";
+  const includeAction = activeFilter === "action" || activeFilter === "all";
+  const includeCompleted =
+    activeFilter === "completed" || activeFilter === "all";
+
+  const liveMatches = visibleMatches
     .filter((m) => m.status === "in_progress")
     .map((m) => toItem(m));
   // Side membership rather than player2Id/player1Id, so a doubles partner sees
@@ -538,82 +578,191 @@ export default function MatchesScreen() {
     )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "awaiting"));
-  const upcomingMatches = matches
+  const upcomingMatches = visibleMatches
     .filter((m) => m.status === "scheduled")
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m));
-  const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
-  const otherMatches = matches
-    .filter((m) => !otherStatuses.has(m.status))
+  const actionMatches = visibleMatches
+    .filter((m) => m.status === "pending_report" || m.status === "disputed")
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     .map((m) => toItem(m));
+  const completedMatches = visibleMatches
+    .filter((m) => m.status === "completed" || m.status === "cancelled")
+    .sort(
+      (a, b) =>
+        (b.completedAt ?? b.createdAt ?? 0) -
+        (a.completedAt ?? a.createdAt ?? 0),
+    )
+    .map((m) => toItem(m));
+  const shownCompletedMatches = historyExpanded
+    ? completedMatches
+    : completedMatches.slice(0, COLLAPSED_HISTORY_LIMIT);
   const canRecordOnBehalf =
     user?.role === "admin" ||
     user?.role === "division_leader" ||
     user?.role === "app_developer";
 
   const sections: { title: string; data: MatchItem[] }[] = [
-    ...(liveMatches.length > 0
+    ...((includeUpcoming || includeAction) && liveMatches.length > 0
       ? [{ title: "Now Live", data: liveMatches }]
       : []),
-    ...(pendingInvites.length > 0
-      ? [{ title: "Pending Invitations", data: pendingInvites }]
+    ...((includeAction || includeUpcoming) && pendingInvites.length > 0
+      ? [
+          {
+            title: `Needs Your Response (${pendingInvites.length})`,
+            data: pendingInvites,
+          },
+        ]
       : []),
-    ...(awaitingOpponent.length > 0
+    ...(includeUpcoming && awaitingOpponent.length > 0
       ? [{ title: "Awaiting Opponent", data: awaitingOpponent }]
       : []),
-    ...(upcomingMatches.length > 0
+    ...(includeUpcoming && upcomingMatches.length > 0
       ? [{ title: "Upcoming", data: upcomingMatches }]
       : []),
-    ...(otherMatches.length > 0
-      ? [{ title: "All Matches", data: otherMatches }]
+    ...(includeAction && actionMatches.length > 0
+      ? [{ title: "Other Action Needed", data: actionMatches }]
+      : []),
+    ...(includeCompleted && shownCompletedMatches.length > 0
+      ? [{ title: "Match History", data: shownCompletedMatches }]
       : []),
   ];
 
   return (
     <View style={styles.container}>
-      {matches.length === 0 ? (
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>No Matches</Text>
-          <Text style={styles.emptyBody}>
-            Create a new match to get started.
-          </Text>
-        </View>
-      ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <MatchCard
-              match={item.match}
-              onPress={() => router.push(`/match/${item.id}`)}
-              actionKind={item.actionKind}
-              onAccept={() =>
-                acceptMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not accept."),
-                )
+      <SectionList
+        sections={sections}
+        keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={styles.listControls}>
+            <Text style={styles.controlLabel}>Season</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRow}
+            >
+              {seasonOptions.map((season) => (
+                <TouchableOpacity
+                  key={season.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show matches for ${season.name}`}
+                  accessibilityState={{
+                    selected: selectedSeasonId === season.id,
+                  }}
+                  style={[
+                    styles.controlChip,
+                    selectedSeasonId === season.id && styles.controlChipActive,
+                  ]}
+                  onPress={() => {
+                    setSelectedSeasonId(season.id);
+                    setHistoryExpanded(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.controlChipText,
+                      selectedSeasonId === season.id &&
+                        styles.controlChipTextActive,
+                    ]}
+                  >
+                    {season.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.matchSearchRow}>
+              <Text style={styles.searchGlyph}>⌕</Text>
+              <TextInput
+                accessibilityLabel="Search matches by player name"
+                value={playerSearch}
+                onChangeText={setPlayerSearch}
+                placeholder="Search player name"
+                autoCorrect={false}
+                style={styles.matchSearchInput}
+              />
+              {!!playerSearch && (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear player search"
+                  onPress={() => setPlayerSearch("")}
+                >
+                  <Text style={styles.clearSearch}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRow}
+            >
+              {FILTERS.map((filter) => {
+                const count = filter.id === "action" ? pendingInviteCount : 0;
+                return (
+                  <TouchableOpacity
+                    key={filter.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Show ${filter.label.toLowerCase()} matches${count ? `, ${count} requiring a response` : ""}`}
+                    accessibilityState={{
+                      selected: activeFilter === filter.id,
+                    }}
+                    style={[
+                      styles.filterChip,
+                      activeFilter === filter.id && styles.filterChipActive,
+                    ]}
+                    onPress={() => {
+                      setActiveFilter(filter.id);
+                      setHistoryExpanded(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        activeFilter === filter.id &&
+                          styles.filterChipTextActive,
+                      ]}
+                    >
+                      {filter.label}
+                    </Text>
+                    {count > 0 && (
+                      <View style={styles.countBadge}>
+                        <Text style={styles.countBadgeText}>{count}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.filteredEmpty}>
+            <Text style={styles.emptyTitle}>No matching matches</Text>
+            <Text style={styles.emptyBody}>
+              Try another filter, player name, or season.
+            </Text>
+          </View>
+        }
+        ListFooterComponent={
+          includeCompleted &&
+          completedMatches.length > COLLAPSED_HISTORY_LIMIT ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={
+                historyExpanded
+                  ? "Collapse match history"
+                  : "View match history"
               }
-              onDecline={() =>
-                declineMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not decline."),
-                )
-              }
-              onWithdraw={() =>
-                declineMatchProposal(item.id).catch(() =>
-                  Alert.alert("Error", "Could not cancel."),
-                )
-              }
-            />
-          )}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              {section.title === "Now Live" && <View style={styles.liveDot} />}
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  section.title === "Now Live" && styles.sectionTitleLive,
-                ]}
-              >
-                {section.title}
+              style={styles.historyButton}
+              onPress={() => setHistoryExpanded((expanded) => !expanded)}
+            >
+              <Text style={styles.historyButtonText}>
+                {historyExpanded
+                  ? "Show less history"
+                  : `View match history (${completedMatches.length - COLLAPSED_HISTORY_LIMIT} older)`}
               </Text>
             </View>
           )}
@@ -1459,6 +1608,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingVertical: 8,
+    backgroundColor: "#f5f5f0",
   },
   sectionTitle: {
     fontSize: 13,
