@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -13,10 +14,18 @@ import {
   TextInput,
   FlatList,
   Pressable,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as Linking from "expo-linking";
+import {
+  AppIcon,
+  IconLabel,
+  ICON_COLOR,
+  ICON_SIZE,
+} from "../../components/AppIcon";
 import {
   useMatch,
   scorePoint,
@@ -292,7 +301,7 @@ function DisputeModal({
 }) {
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
+      <KeyboardAwareBottomSheet style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Dispute Match Report?</Text>
           <Text style={styles.modalBody}>
@@ -306,7 +315,7 @@ function DisputeModal({
             <Text style={styles.cancelBtnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAwareBottomSheet>
     </Modal>
   );
 }
@@ -396,7 +405,7 @@ function EditScoreModal({
           <Text
             style={[
               styles.linkModalHint,
-              { color: "#e67e22", marginBottom: 12 },
+              { color: colors.warning, marginBottom: 12 },
             ]}
           >
             Editing a confirmed match resets the score for re-confirmation by
@@ -459,7 +468,7 @@ function EditScoreModal({
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.surface} />
           ) : (
             <Text style={styles.confirmBtnText}>Save Score</Text>
           )}
@@ -473,6 +482,10 @@ function EditScoreModal({
 }
 
 export default function MatchScreen() {
+  const { width, height, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 380 || height < 700;
+  const needsScrollableCourt = compact || fontScale > 1.2;
   const { id: rawId } = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
@@ -524,7 +537,7 @@ export default function MatchScreen() {
     try {
       await undoLastPoint(id, match);
     } catch (err) {
-      console.error('Failed to undo last point:', err);
+      console.error("Failed to undo last point:", err);
     } finally {
       setScoring(false);
     }
@@ -567,7 +580,7 @@ export default function MatchScreen() {
         );
       }
     } catch (err) {
-      console.error('Failed to score point:', err);
+      console.error("Failed to score point:", err);
     } finally {
       setScoring(false);
     }
@@ -799,7 +812,7 @@ export default function MatchScreen() {
       const results = await searchDivisionPlayers(divisionId, text);
       setLinkResults(results.filter((u) => u.id !== user?.id));
     } catch (err) {
-      console.error('Failed to search division players:', err);
+      console.error("Failed to search division players:", err);
       setLinkResults([]);
     } finally {
       setLinkSearching(false);
@@ -824,8 +837,8 @@ export default function MatchScreen() {
         `${opponent.displayName ?? "Player"} has been added to this match. Rankings will update after the next match is completed.`,
       );
     } catch (err) {
-      console.error('Failed to link opponent:', err);
-      Alert.alert('Error', 'Could not link opponent. Please try again.');
+      console.error("Failed to link opponent:", err);
+      Alert.alert("Error", "Could not link opponent. Please try again.");
     } finally {
       setLinking(false);
     }
@@ -886,7 +899,7 @@ export default function MatchScreen() {
   if (loading || !match) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a472a" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -950,9 +963,10 @@ export default function MatchScreen() {
       contentContainerStyle={[
         styles.content,
         showCourtSurface && styles.liveContent,
+        { paddingBottom: Math.max(insets.bottom, 12) },
       ]}
-      scrollEnabled={!showCourtSurface}
-      bounces={!showCourtSurface}
+      scrollEnabled={!showCourtSurface || needsScrollableCourt}
+      bounces={!showCourtSurface || needsScrollableCourt}
     >
       {showSetupSurface ? (
         <View style={styles.setupSurface}>
@@ -962,7 +976,12 @@ export default function MatchScreen() {
           </View>
           <Text style={styles.setupHero}>{`Score first.\nSave later.`}</Text>
           <Text style={styles.setupSectionLabel}>PLAYERS</Text>
-          <View style={styles.setupPlayersRow}>
+          <View
+            style={[
+              styles.setupPlayersRow,
+              compact && styles.setupPlayersRowCompact,
+            ]}
+          >
             <Pressable
               style={[styles.setupPlayerCard, styles.setupPlayerCardP1]}
               onPress={() =>
@@ -1005,7 +1024,7 @@ export default function MatchScreen() {
           </View>
           <Text style={styles.setupHint}>TAP A NAME TO PICK SERVER</Text>
           <Text style={styles.setupSectionLabel}>FORMAT</Text>
-          <View style={styles.formatRow}>
+          <View style={[styles.formatRow, compact && styles.formatRowCompact]}>
             <View style={[styles.formatCard, styles.formatCardActive]}>
               <Text style={styles.formatTitle}>{formatFormatLabel(match)}</Text>
               <Text style={styles.formatSubtitle}>Standard</Text>
@@ -1091,7 +1110,7 @@ export default function MatchScreen() {
                       ]}
                     />
                     <View style={styles.panelNameCol}>
-                      <Text style={styles.panelNameText} numberOfLines={1}>
+                      <Text style={styles.panelNameText}>
                         {isP1 ? p1Name : p2Name}
                       </Text>
                       {isDoublesMatch(match) && (
@@ -1101,7 +1120,11 @@ export default function MatchScreen() {
                   </View>
                   <View style={styles.panelSetsCell}>
                     {scoreRows.map((set) => (
-                      <Text key={set.setNumber} style={styles.panelSetNumber}>
+                      <Text
+                        key={set.setNumber}
+                        style={styles.panelSetNumber}
+                        maxFontSizeMultiplier={1.25}
+                      >
                         {isP1 ? set.player1Games : set.player2Games}
                       </Text>
                     ))}
@@ -1113,6 +1136,7 @@ export default function MatchScreen() {
                         styles.panelAdNumber,
                     ]}
                     accessibilityLabel={`${isP1 ? p1Name : p2Name} score ${isP1 ? p1Point : p2Point}`}
+                    maxFontSizeMultiplier={1.25}
                   >
                     {isP1 ? p1Point : p2Point}
                   </Text>
@@ -1143,7 +1167,12 @@ export default function MatchScreen() {
                   {statusPlayerName ? ` · ${statusPlayerName}` : ""}
                 </Text>
               </View>
-              <View style={styles.tapZonesRow}>
+              <View
+                style={[
+                  styles.tapZonesRow,
+                  compact && styles.tapZonesRowCompact,
+                ]}
+              >
                 <Pressable
                   style={({ pressed }) => [
                     styles.tapZone,
@@ -1167,7 +1196,15 @@ export default function MatchScreen() {
                     </Text>
                   )}
                   <Text style={styles.tapZoneName}>{p1Name}</Text>
-                  <Text style={styles.tapZoneScore}>{p1Point}</Text>
+                  <Text
+                    style={[
+                      styles.tapZoneScore,
+                      compact && styles.tapZoneScoreCompact,
+                    ]}
+                    maxFontSizeMultiplier={1.15}
+                  >
+                    {p1Point}
+                  </Text>
                   <Text style={styles.tapZoneSub}>{p1ServeState}</Text>
                   <Text style={styles.tapZoneFooter}>Tap · won point</Text>
                 </Pressable>
@@ -1198,7 +1235,15 @@ export default function MatchScreen() {
                     </Text>
                   )}
                   <Text style={styles.tapZoneName}>{p2Name}</Text>
-                  <Text style={styles.tapZoneScore}>{p2Point}</Text>
+                  <Text
+                    style={[
+                      styles.tapZoneScore,
+                      compact && styles.tapZoneScoreCompact,
+                    ]}
+                    maxFontSizeMultiplier={1.15}
+                  >
+                    {p2Point}
+                  </Text>
                   <Text style={styles.tapZoneSub}>{p2ServeState}</Text>
                   <Text style={styles.tapZoneFooter}>Tap · won point</Text>
                 </Pressable>
@@ -1222,9 +1267,13 @@ export default function MatchScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Hold to undo the last point"
                 >
-                  <Text style={styles.holdUndoTitle}>
-                    ↩ {match.undoSnapshot ? "Hold to undo" : "Nothing to undo"}
-                  </Text>
+                  <IconLabel
+                    name="arrow.uturn.backward"
+                    color="#14100B"
+                    textStyle={styles.holdUndoTitle}
+                  >
+                    {match.undoSnapshot ? "Hold to undo" : "Nothing to undo"}
+                  </IconLabel>
                   <Text style={styles.holdUndoHint}>
                     {match.undoSnapshot
                       ? `Current score · ${gameDisplay}`
@@ -1246,7 +1295,12 @@ export default function MatchScreen() {
 
           {match.status === "pending_report" && winnerName && (
             <View style={styles.matchCompleteCard}>
-              <Text style={styles.matchCompleteIcon}>✓</Text>
+              <AppIcon
+                name="checkmark.circle.fill"
+                size={ICON_SIZE.feature}
+                color={ICON_COLOR.success}
+                emphasized
+              />
               <Text style={styles.matchCompleteLabel}>MATCH COMPLETE</Text>
               <Text style={styles.matchCompleteWinner}>{winnerName}</Text>
               <Text style={styles.matchCompleteScore}>{scoreDisplay}</Text>
@@ -1275,10 +1329,12 @@ export default function MatchScreen() {
       {/* Link opponent section — guest matches only */}
       {match.player2IsGuest && isParticipant && (
         <View style={styles.linkSection}>
-          <Text style={styles.linkHint}>
-            👤 Playing against a guest? Link their account once they join the
-            app.
-          </Text>
+          <IconLabel
+            name="person.crop.circle.badge.plus"
+            textStyle={styles.linkHint}
+          >
+            Playing against a guest? Link their account once they join the app.
+          </IconLabel>
           <TouchableOpacity
             style={styles.linkBtn}
             onPress={() => setShowLinkOpponent(true)}
@@ -1312,9 +1368,14 @@ export default function MatchScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
-                <Text style={styles.submitBtnText}>✓ Finalize Result</Text>
+                <IconLabel
+                  name="checkmark.circle"
+                  textStyle={styles.submitBtnText}
+                >
+                  Finalize Result
+                </IconLabel>
               )}
             </TouchableOpacity>
           </View>
@@ -1340,9 +1401,11 @@ export default function MatchScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
-                <Text style={styles.submitBtnText}>📋 Submit Match Report</Text>
+                <IconLabel name="doc.text" textStyle={styles.submitBtnText}>
+                  Submit Match Report
+                </IconLabel>
               )}
             </TouchableOpacity>
           </View>
@@ -1358,9 +1421,13 @@ export default function MatchScreen() {
             <Text style={styles.reportTitle}>Report Submitted</Text>
             <Text style={styles.reportScore}>{scoreDisplay}</Text>
             <View style={styles.waitingBadge}>
-              <Text style={styles.waitingText}>
-                ⏳ Waiting for the opposing side to confirm
-              </Text>
+              <IconLabel
+                name="hourglass"
+                color="#ffdc60"
+                textStyle={styles.waitingText}
+              >
+                Waiting for the opposing side to confirm
+              </IconLabel>
             </View>
             <Text style={styles.reportHint}>
               {iSubmitted
@@ -1385,9 +1452,15 @@ export default function MatchScreen() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.surface} />
             ) : (
-              <Text style={styles.confirmBtnText}>✓ Confirm Score</Text>
+              <IconLabel
+                name="checkmark.circle"
+                color={ICON_COLOR.inverse}
+                textStyle={styles.confirmBtnText}
+              >
+                Confirm Score
+              </IconLabel>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -1395,7 +1468,13 @@ export default function MatchScreen() {
             onPress={handleDisputeReport}
             disabled={submitting}
           >
-            <Text style={styles.disputeReportBtnText}>⚠ Dispute Score</Text>
+            <IconLabel
+              name="exclamationmark.triangle"
+              color={ICON_COLOR.warning}
+              textStyle={styles.disputeReportBtnText}
+            >
+              Dispute Score
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -1403,7 +1482,13 @@ export default function MatchScreen() {
       {/* Disputed — awaiting leader */}
       {match.status === "disputed" && (
         <View style={styles.disputedSection}>
-          <Text style={styles.disputedTitle}>⚠ Score Disputed</Text>
+          <IconLabel
+            name="exclamationmark.triangle.fill"
+            color={ICON_COLOR.warning}
+            textStyle={styles.disputedTitle}
+          >
+            Score Disputed
+          </IconLabel>
           <Text style={styles.disputedBody}>
             The match score has been escalated to your division leader for
             resolution. You'll be notified once it's resolved.
@@ -1419,12 +1504,21 @@ export default function MatchScreen() {
           </Text>
           <Text style={styles.reportScore}>{scoreDisplay}</Text>
           <View style={styles.confirmedBadge}>
-            <Text style={styles.confirmedText}>
-              ✓ Score confirmed · Rankings updated
-            </Text>
+            <IconLabel
+              name="checkmark.circle.fill"
+              color="#a8d5a2"
+              textStyle={styles.confirmedText}
+            >
+              Score confirmed · Rankings updated
+            </IconLabel>
           </View>
           <TouchableOpacity style={styles.shareBtn} onPress={handleShareReport}>
-            <Text style={styles.shareBtnText}>📊 Share Match Report</Text>
+            <IconLabel
+              name="square.and.arrow.up"
+              textStyle={styles.shareBtnText}
+            >
+              Share Match Report
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -1525,11 +1619,7 @@ export default function MatchScreen() {
 
       {/* Manage Match Modal */}
       <Modal visible={showManage} transparent animationType="slide">
-        <TouchableOpacity
-          style={styles.manageOverlay}
-          activeOpacity={1}
-          onPress={() => setShowManage(false)}
-        >
+        <KeyboardAwareBottomSheet style={styles.manageOverlay}>
           <View
             style={styles.manageCard}
             onStartShouldSetResponder={() => true}
@@ -1540,7 +1630,7 @@ export default function MatchScreen() {
 
             {managing && (
               <ActivityIndicator
-                color="#1a472a"
+                color={colors.primary}
                 style={{ marginVertical: 8 }}
               />
             )}
@@ -1552,7 +1642,12 @@ export default function MatchScreen() {
                     style={styles.manageOption}
                     onPress={handleOpenEditScore}
                   >
-                    <Text style={styles.manageOptionText}>✏ Edit Score</Text>
+                    <IconLabel
+                      name="pencil"
+                      textStyle={styles.manageOptionText}
+                    >
+                      Edit Score
+                    </IconLabel>
                   </TouchableOpacity>
                 )}
                 {isParticipant && match.status === "scheduled" && (
@@ -1560,7 +1655,12 @@ export default function MatchScreen() {
                     style={styles.manageOption}
                     onPress={() => setShowPostponeOptions(true)}
                   >
-                    <Text style={styles.manageOptionText}>📅 Postpone</Text>
+                    <IconLabel
+                      name="calendar"
+                      textStyle={styles.manageOptionText}
+                    >
+                      Postpone
+                    </IconLabel>
                   </TouchableOpacity>
                 )}
                 {isParticipant &&
@@ -1570,23 +1670,28 @@ export default function MatchScreen() {
                       style={styles.manageOption}
                       onPress={handleCancelMatch}
                     >
-                      <Text style={styles.manageOptionText}>
-                        ✕ Cancel Match
-                      </Text>
+                      <IconLabel
+                        name="xmark.circle"
+                        textStyle={styles.manageOptionText}
+                      >
+                        Cancel Match
+                      </IconLabel>
                     </TouchableOpacity>
                   )}
                 <TouchableOpacity
                   style={[styles.manageOption, styles.manageOptionDanger]}
                   onPress={handleDeleteMatch}
                 >
-                  <Text
-                    style={[
+                  <IconLabel
+                    name="trash"
+                    color={ICON_COLOR.destructive}
+                    textStyle={[
                       styles.manageOptionText,
                       styles.manageOptionDangerText,
                     ]}
                   >
-                    🗑 Delete Match
-                  </Text>
+                    Delete Match
+                  </IconLabel>
                 </TouchableOpacity>
               </>
             )}
@@ -1623,7 +1728,7 @@ export default function MatchScreen() {
               <Text style={styles.manageCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </KeyboardAwareBottomSheet>
       </Modal>
 
       <EditScoreModal
@@ -1666,7 +1771,10 @@ export default function MatchScreen() {
                 autoFocus
               />
               {linkSearching && (
-                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
+                <ActivityIndicator
+                  style={{ marginLeft: 8 }}
+                  color={colors.primary}
+                />
               )}
               <FlatList
                 data={linkResults}
@@ -1751,6 +1859,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   setupPlayersRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  setupPlayersRowCompact: { flexDirection: "column", alignItems: "stretch" },
   setupPlayerCard: {
     flex: 1,
     minHeight: 112,
@@ -1779,6 +1888,7 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
   formatRow: { flexDirection: "row", gap: 10 },
+  formatRowCompact: { flexDirection: "column" },
   formatCard: {
     flex: 1,
     borderRadius: 14,
@@ -1819,7 +1929,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B1114",
   },
   startMatchKey: {
-    marginTop: 140,
+    marginTop: 24,
     backgroundColor: COURT.line,
     borderRadius: 18,
     paddingVertical: 24,
@@ -1998,6 +2108,7 @@ const styles = StyleSheet.create({
   },
   statusPillText: { fontSize: 15, fontWeight: "900" },
   tapZonesRow: { flexDirection: "row", flex: 1, minHeight: 0 },
+  tapZonesRowCompact: { minHeight: 360 },
   tapZone: {
     flex: 1,
     borderRadius: 22,
@@ -2032,7 +2143,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   tapZoneScore: {
-    color: "#FFFFFF",
+    color: colors.surface,
     fontSize: 92,
     fontWeight: "900",
     fontFamily: "monospace",
@@ -2042,6 +2153,7 @@ const styles = StyleSheet.create({
     minWidth: 118,
     textAlign: "center",
   },
+  tapZoneScoreCompact: { fontSize: 64, minWidth: 80 },
   tapZoneSub: {
     color: "rgba(255,255,255,0.72)",
     fontSize: 13,
@@ -2081,7 +2193,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    color: "#fff",
+    color: colors.surface,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 3,
@@ -2196,9 +2308,9 @@ const styles = StyleSheet.create({
   scoreBoard: { alignItems: "center", paddingVertical: 32 },
   setRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   setsLabel: { color: "rgba(255,255,255,0.7)", fontSize: 16, marginRight: 12 },
-  setsScore: { color: "#fff", fontSize: 24, fontWeight: "700" },
+  setsScore: { color: colors.surface, fontSize: 24, fontWeight: "700" },
   scoreMain: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 40,
     fontWeight: "800",
     letterSpacing: 2,
@@ -2229,7 +2341,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
-  serverSelectTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  serverSelectTitle: { color: colors.surface, fontSize: 17, fontWeight: "700" },
   serverSelectBtns: { flexDirection: "row", gap: 12, width: "100%" },
   serverSelectBtn: {
     flex: 1,
@@ -2238,7 +2350,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: "center",
   },
-  serverSelectBtnText: { color: "#1a472a", fontWeight: "800", fontSize: 15 },
+  serverSelectBtnText: {
+    color: colors.primary,
+    fontWeight: "800",
+    fontSize: 15,
+  },
   scoreButtons: { flexDirection: "row", gap: 12, marginBottom: 16 },
   pointBtn: {
     flex: 1,
@@ -2251,7 +2367,7 @@ const styles = StyleSheet.create({
   pointBtnP2: { backgroundColor: "#1b4332" },
   pointBtnDisabled: { opacity: 0.5 },
   pointBtnText: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
@@ -2272,7 +2388,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  tipsLabel: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  tipsLabel: { color: colors.surface, fontWeight: "600", fontSize: 14 },
   statToggleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2284,7 +2400,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   statToggleCopy: { flex: 1, gap: 4 },
-  statToggleTitle: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  statToggleTitle: { color: colors.surface, fontWeight: "700", fontSize: 14 },
   statToggleHint: {
     color: "rgba(255,255,255,0.72)",
     fontSize: 12,
@@ -2301,7 +2417,7 @@ const styles = StyleSheet.create({
   },
   reportTitle: { color: "#ffdc60", fontSize: 24, fontWeight: "800" },
   reportScore: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 20,
     fontWeight: "600",
     letterSpacing: 1,
@@ -2321,16 +2437,16 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
-  submitBtnText: { color: "#1a472a", fontWeight: "800", fontSize: 16 },
+  submitBtnText: { color: colors.primary, fontWeight: "800", fontSize: 16 },
   confirmBtn: {
-    backgroundColor: "#27ae60",
+    backgroundColor: colors.success,
     borderRadius: 14,
     paddingHorizontal: 28,
     paddingVertical: 14,
     width: "100%",
     alignItems: "center",
   },
-  confirmBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  confirmBtnText: { color: colors.surface, fontWeight: "800", fontSize: 16 },
   disputeReportBtn: {
     paddingVertical: 12,
     alignItems: "center",
@@ -2352,7 +2468,7 @@ const styles = StyleSheet.create({
   },
   confirmedText: { color: "#a8d5a2", fontWeight: "600", fontSize: 13 },
   shareBtn: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 14,
     paddingHorizontal: 24,
     paddingVertical: 14,
@@ -2360,7 +2476,7 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
-  shareBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
+  shareBtnText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
 
   // Disputed state
@@ -2450,30 +2566,33 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   manageCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
     gap: 4,
+    width: "100%",
   },
   manageTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 8,
   },
   manageOption: {
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    minHeight: 44,
+    justifyContent: "center",
   },
   manageOptionText: { fontSize: 16, color: "#222", fontWeight: "500" },
   manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
-  manageOptionDangerText: { color: "#c0392b" },
+  manageOptionDangerText: { color: colors.destructive },
   manageBack: { paddingVertical: 12 },
-  manageBackText: { fontSize: 14, color: "#888" },
+  manageBackText: { fontSize: 14, color: colors.textSubtle },
   manageCloseBtn: { alignItems: "center", paddingVertical: 14, marginTop: 4 },
-  manageCloseBtnText: { color: "#888", fontSize: 15 },
+  manageCloseBtnText: { color: colors.textSubtle, fontSize: 15 },
 
   // Tip overlay
   tipOverlay: {
@@ -2487,12 +2606,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   tipTitle: {
-    color: "#1a472a",
+    color: colors.primary,
     fontWeight: "800",
     fontSize: 15,
     marginBottom: 4,
   },
-  tipBody: { color: "#1a472a", fontSize: 13 },
+  tipBody: { color: colors.primary, fontSize: 13 },
 
   // Link opponent modal
   linkModalKeyboardView: { flex: 1 },
@@ -2502,19 +2621,19 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   linkModalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "75%",
+    width: "100%",
   },
   linkModalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 8,
   },
-  linkModalHint: { fontSize: 13, color: "#666", marginBottom: 16 },
+  linkModalHint: { fontSize: 13, color: colors.textMuted, marginBottom: 16 },
   linkSearchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2523,7 +2642,7 @@ const styles = StyleSheet.create({
   linkSearchInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
@@ -2534,15 +2653,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   linkResultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  linkResultEmail: { fontSize: 13, color: "#888", marginTop: 2 },
+  linkResultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   linkNoResults: {
     fontSize: 14,
-    color: "#999",
+    color: colors.textSubtle,
     textAlign: "center",
     marginVertical: 12,
   },
   linkCancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
-  linkCancelText: { color: "#888", fontSize: 15 },
+  linkCancelText: { color: colors.textSubtle, fontSize: 15 },
 
   // Dispute confirm modal
   modalOverlay: {
@@ -2552,22 +2671,23 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 24,
     gap: 12,
   },
-  modalTitle: { fontSize: 20, fontWeight: "800", color: "#c0392b" },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: colors.destructive },
   modalBody: { fontSize: 14, color: "#555", lineHeight: 20 },
   disputeBtn: {
-    backgroundColor: "#c0392b",
+    backgroundColor: colors.destructive,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+    minHeight: 44,
   },
-  disputeBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  disputeBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   cancelBtn: { paddingVertical: 12, alignItems: "center" },
-  cancelBtnText: { color: "#888", fontSize: 14 },
+  cancelBtnText: { color: colors.textSubtle, fontSize: 14 },
 });
 
 const statsStyles = StyleSheet.create({
@@ -2577,7 +2697,12 @@ const statsStyles = StyleSheet.create({
     padding: 20,
     marginTop: 16,
   },
-  title: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 12 },
+  title: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
   headerRow: { flexDirection: "row", marginBottom: 6 },
   headerStat: { flex: 2.5, fontSize: 12, color: "rgba(255,255,255,0.5)" },
   headerPlayer: {
@@ -2628,12 +2753,17 @@ const editScoreStyles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 4,
   },
-  headerSet: { flex: 1.5, fontSize: 13, fontWeight: "700", color: "#888" },
+  headerSet: {
+    flex: 1.5,
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSubtle,
+  },
   headerName: {
     flex: 2,
     fontSize: 13,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     textAlign: "center",
   },
   setRow: {
@@ -2642,11 +2772,11 @@ const editScoreStyles = StyleSheet.create({
     marginBottom: 10,
     gap: 8,
   },
-  setLabel: { flex: 1.5, fontSize: 15, fontWeight: "600", color: "#333" },
+  setLabel: { flex: 1.5, fontSize: 15, fontWeight: "600", color: colors.text },
   setInput: {
     flex: 2,
     borderWidth: 1.5,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -2661,6 +2791,6 @@ const editScoreStyles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-  addSetText: { fontSize: 14, color: "#1a472a", fontWeight: "600" },
-  removeSetText: { fontSize: 14, color: "#c0392b", fontWeight: "600" },
+  addSetText: { fontSize: 14, color: colors.primary, fontWeight: "600" },
+  removeSetText: { fontSize: 14, color: colors.destructive, fontWeight: "600" },
 });
