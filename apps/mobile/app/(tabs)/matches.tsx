@@ -37,6 +37,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, PublicProfile } from "@tennis/shared";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
+import { IconLabel, ICON_COLOR } from "../../components/AppIcon";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -100,9 +101,9 @@ function MatchCard({
       </View>
 
       {isUpcoming && (
-        <Text style={styles.scheduledLine}>
-          🗓 {formatScheduledAt(match.scheduledAt)}
-        </Text>
+        <IconLabel name="calendar" textStyle={styles.scheduledLine}>
+          {formatScheduledAt(match.scheduledAt)}
+        </IconLabel>
       )}
 
       {!isUpcoming && (
@@ -156,7 +157,13 @@ function MatchCard({
             style={styles.acceptBtn}
             onPress={onAccept}
           >
-            <Text style={styles.acceptBtnText}>✓ Accept</Text>
+            <IconLabel
+              name="checkmark"
+              color={ICON_COLOR.inverse}
+              textStyle={styles.acceptBtnText}
+            >
+              Accept
+            </IconLabel>
           </TouchableOpacity>
           <TouchableOpacity
             accessibilityRole="button"
@@ -164,7 +171,13 @@ function MatchCard({
             style={styles.declineBtn}
             onPress={onDecline}
           >
-            <Text style={styles.declineBtnText}>✕ Decline</Text>
+            <IconLabel
+              name="xmark"
+              color={ICON_COLOR.destructive}
+              textStyle={styles.declineBtnText}
+            >
+              Decline
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -609,7 +622,9 @@ export default function MatchesScreen() {
             setShowCreate(true);
           }}
         >
-          <Text style={styles.fabSecondaryText}>📋 Past</Text>
+          <IconLabel name="doc.text" textStyle={styles.fabSecondaryText}>
+            Past
+          </IconLabel>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="button"
@@ -617,7 +632,12 @@ export default function MatchesScreen() {
           style={[styles.fab, styles.fabSecondary]}
           onPress={() => setShowPropose(true)}
         >
-          <Text style={styles.fabSecondaryText}>📅 Propose</Text>
+          <IconLabel
+            name="calendar.badge.plus"
+            textStyle={styles.fabSecondaryText}
+          >
+            Propose
+          </IconLabel>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="button"
@@ -1337,7 +1357,7 @@ function ProposeMatchModal({
                 {searching && (
                   <ActivityIndicator
                     style={styles.searchSpinner}
-                    color={colors.primary}
+                    color="#1a472a"
                   />
                 )}
               </View>
@@ -1396,7 +1416,7 @@ function ProposeMatchModal({
               disabled={submitting || !opponentReady || !date || !time}
             >
               {submitting ? (
-                <ActivityIndicator color={colors.surface} />
+                <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.createText}>Send Proposal</Text>
               )}

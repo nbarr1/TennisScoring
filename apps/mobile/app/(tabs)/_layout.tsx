@@ -1,10 +1,25 @@
-import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
-import { isPrivilegedRole } from '@tennis/shared';
-import { useAppStore } from '../../store/appStore';
+import { Tabs } from "expo-router";
+import { isPrivilegedRole } from "@tennis/shared";
+import { useAppStore } from "../../store/appStore";
+import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  return <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{label}</Text>;
+function TabIcon({
+  focused,
+  regular,
+  active,
+}: {
+  focused: boolean;
+  regular: React.ComponentProps<typeof AppIcon>["name"];
+  active: React.ComponentProps<typeof AppIcon>["name"];
+}) {
+  return (
+    <AppIcon
+      name={focused ? active : regular}
+      size={ICON_SIZE.tab}
+      color={focused ? ICON_COLOR.active : ICON_COLOR.inactive}
+      emphasized={focused}
+    />
+  );
 }
 
 export default function TabLayout() {
@@ -16,46 +31,72 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#1a472a',
-        tabBarInactiveTintColor: '#999',
-        headerStyle: { backgroundColor: '#1a472a' },
-        headerTintColor: '#fff',
-        headerTitleStyle: { fontWeight: '700' },
+        tabBarActiveTintColor: ICON_COLOR.active,
+        tabBarInactiveTintColor: ICON_COLOR.inactive,
+        headerStyle: { backgroundColor: "#1a472a" },
+        headerTintColor: "#fff",
+        headerTitleStyle: { fontWeight: "700" },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Rankings',
-          tabBarIcon: ({ focused }) => <TabIcon label="🏆" focused={focused} />,
+          title: "Rankings",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon regular="trophy" active="trophy.fill" focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="matches"
         options={{
-          title: 'Matches',
-          tabBarIcon: ({ focused }) => <TabIcon label="🎾" focused={focused} />,
+          title: "Matches",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              regular="figure.tennis"
+              active="figure.tennis"
+              focused={focused}
+            />
+          ),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'Messages',
-          tabBarIcon: ({ focused }) => <TabIcon label="💬" focused={focused} />,
+          title: "Messages",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              regular="bubble.left"
+              active="bubble.left.fill"
+              focused={focused}
+            />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon label="👤" focused={focused} />,
+          title: "Profile",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              regular="person.crop.circle"
+              active="person.crop.circle.fill"
+              focused={focused}
+            />
+          ),
         }}
       />
       <Tabs.Screen
         name="admin"
         options={{
-          title: 'Admin',
-          tabBarIcon: ({ focused }) => <TabIcon label="⚙️" focused={focused} />,
+          title: "Admin",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              regular="gearshape"
+              active="gearshape.fill"
+              focused={focused}
+            />
+          ),
           tabBarButton: isAdmin ? undefined : () => null,
         }}
       />

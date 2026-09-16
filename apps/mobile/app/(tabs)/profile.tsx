@@ -28,6 +28,7 @@ import {
   unblockUser,
   profileDoc,
 } from "@tennis/firebase-client";
+import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import {
   DAY_LABELS,
   addAvailabilitySlot,
@@ -448,10 +449,16 @@ export default function ProfileScreen() {
             />
             {editing && (
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Remove availability slot ${idx + 1}`}
                 onPress={() => removeSlot(idx)}
                 style={styles.slotRemove}
               >
-                <Text style={styles.slotRemoveText}>✕</Text>
+                <AppIcon
+                  name="xmark.circle.fill"
+                  size={ICON_SIZE.action}
+                  color={ICON_COLOR.destructive}
+                />
               </TouchableOpacity>
             )}
           </View>
@@ -775,11 +782,6 @@ const styles = StyleSheet.create({
   slotDash: { color: colors.textSubtle, fontSize: 14 },
   slotDisabled: { opacity: 0.6 },
   slotRemove: { padding: 6 },
-  slotRemoveText: {
-    color: colors.destructive,
-    fontSize: 16,
-    fontWeight: "700",
-  },
   addSlotBtn: {
     borderWidth: 1,
     borderStyle: "dashed",
