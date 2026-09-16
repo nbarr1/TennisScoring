@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -151,7 +152,10 @@ export default function AdminScreen() {
                     )
                   : Promise.resolve([]),
                 getDocs(
-                  query(usersCol(), where("divisionId", "==", activeDivision.id)),
+                  query(
+                    usersCol(),
+                    where("divisionId", "==", activeDivision.id),
+                  ),
                 ),
                 getDocs(rankingsCol(activeDivision.id)),
               ]);
@@ -514,7 +518,7 @@ export default function AdminScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a472a" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -574,7 +578,7 @@ export default function AdminScreen() {
             disabled={!newDivisionName.trim() || creating}
           >
             {creating ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.surface} />
             ) : (
               <Text style={styles.btnText}>Create Division</Text>
             )}
@@ -635,7 +639,7 @@ export default function AdminScreen() {
               disabled={!newPlayerName.trim() || adding}
             >
               {adding ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.btnText}>Add Player</Text>
               )}
@@ -736,7 +740,7 @@ export default function AdminScreen() {
                   disabled={selectedMatchIds.length === 0 || merging}
                 >
                   {merging ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color={colors.surface} />
                   ) : (
                     <Text style={styles.btnText}>Link Selected Matches</Text>
                   )}
@@ -890,7 +894,7 @@ export default function AdminScreen() {
               disabled={!levelName.trim() || savingLevel}
             >
               {savingLevel ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.btnText}>Save Level</Text>
               )}
@@ -968,7 +972,7 @@ export default function AdminScreen() {
               disabled={repairingRankings}
             >
               {repairingRankings ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.btnText}>Repair Rankings</Text>
               )}
@@ -1107,26 +1111,26 @@ const styles = StyleSheet.create({
   accessDenied: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#c0392b",
+    color: colors.destructive,
     marginBottom: 8,
   },
-  accessHint: { fontSize: 14, color: "#888", textAlign: "center" },
+  accessHint: { fontSize: 14, color: colors.textSubtle, textAlign: "center" },
   retryBtn: {
     marginTop: 16,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
   },
-  retryBtnText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  retryBtnText: { color: colors.surface, fontWeight: "600", fontSize: 15 },
   pageTitle: {
     fontSize: 26,
     fontWeight: "800",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 20,
   },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
@@ -1139,7 +1143,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 6,
   },
   subTitle: {
@@ -1149,7 +1153,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  hint: { fontSize: 13, color: "#888", marginBottom: 12 },
+  hint: { fontSize: 13, color: colors.textSubtle, marginBottom: 12 },
   mergeBox: {
     marginTop: 14,
     borderTopWidth: 1,
@@ -1158,24 +1162,30 @@ const styles = StyleSheet.create({
   },
   mergeCandidate: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
   },
-  mergeCandidateActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  mergeCandidateActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
   chip: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  chipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  chipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   chipText: { color: "#555", fontWeight: "600" },
-  chipTextActive: { color: "#1a472a" },
+  chipTextActive: { color: colors.primary },
   levelList: { gap: 8, marginVertical: 12 },
   levelItem: {
     borderWidth: 1,
@@ -1185,7 +1195,7 @@ const styles = StyleSheet.create({
   },
   matchCandidate: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1193,7 +1203,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -1202,24 +1212,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   btn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
   },
   btnDisabled: { opacity: 0.4 },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  btnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   secondaryBtn: {
     borderWidth: 1,
-    borderColor: "#1a472a",
+    borderColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
   },
-  secondaryBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
-  errorText: { color: "#c0392b", fontSize: 13, marginBottom: 8 },
-  successText: { color: "#1a472a", fontSize: 13, marginTop: 8 },
+  secondaryBtnText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
+  errorText: { color: colors.destructive, fontSize: 13, marginBottom: 8 },
+  successText: { color: colors.primary, fontSize: 13, marginTop: 8 },
   playerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1259,12 +1269,16 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   reportReasonBadge: {
-    backgroundColor: "#fbeaea",
+    backgroundColor: colors.destructiveSoft,
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  reportReasonBadgeText: { color: "#c0392b", fontWeight: "700", fontSize: 11 },
+  reportReasonBadgeText: {
+    color: colors.destructive,
+    fontWeight: "700",
+    fontSize: 11,
+  },
   reportContent: {
     fontSize: 13,
     color: "#555",
@@ -1275,18 +1289,22 @@ const styles = StyleSheet.create({
   reportActionBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#1a472a",
+    borderColor: colors.primary,
     borderRadius: 10,
     paddingVertical: 10,
     alignItems: "center",
   },
-  reportActionBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
+  reportActionBtnText: {
+    color: colors.primary,
+    fontWeight: "700",
+    fontSize: 13,
+  },
   reportActionBtnDestructive: {
-    borderColor: "#c0392b",
-    backgroundColor: "#c0392b",
+    borderColor: colors.destructive,
+    backgroundColor: colors.destructive,
   },
   reportActionBtnDestructiveText: {
-    color: "#fff",
+    color: colors.surface,
     fontWeight: "700",
     fontSize: 13,
   },

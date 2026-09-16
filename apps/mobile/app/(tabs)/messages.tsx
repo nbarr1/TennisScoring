@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -10,7 +11,9 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useChannels,
   useMessages,
@@ -31,6 +34,12 @@ import {
   KeyboardAwareBottomSheet,
   KeyboardSafeView,
 } from "../../components/KeyboardSafeView";
+import {
+  AppIcon,
+  IconLabel,
+  ICON_COLOR,
+  ICON_SIZE,
+} from "../../components/AppIcon";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -39,27 +48,49 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+const CONTACT_SHARE_EXPLAINED_KEY = "messages.contactShareExplained";
+
 function MessageBubble({
   message,
   isMe,
   onLongPress,
+  onOpenActions,
 }: {
   message: Message;
   isMe: boolean;
   onLongPress?: () => void;
+  onOpenActions?: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}
-      activeOpacity={isMe ? 1 : 0.7}
-      disabled={isMe || !onLongPress}
-      onLongPress={onLongPress}
-      delayLongPress={350}
-    >
-      {!isMe && <Text style={styles.senderName}>{message.senderName}</Text>}
-      <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-        {message.content}
-      </Text>
+    <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+      <TouchableOpacity
+        activeOpacity={isMe ? 1 : 0.7}
+        disabled={isMe || !onLongPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        accessibilityRole="text"
+        accessibilityLabel={`${isMe ? "You" : message.senderName}: ${message.content}`}
+        accessibilityHint={
+          !isMe ? "Long press for report and block actions" : undefined
+        }
+      >
+        {!isMe && <Text style={styles.senderName}>{message.senderName}</Text>}
+        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+          {message.content}
+        </Text>
+      </TouchableOpacity>
+
+      {!isMe && onOpenActions && (
+        <TouchableOpacity
+          style={styles.messageActionsBtn}
+          onPress={onOpenActions}
+          accessibilityRole="button"
+          accessibilityLabel={`More actions for message from ${message.senderName}`}
+          accessibilityHint="Opens report and block actions"
+        >
+          <Text style={styles.messageActionsText}>•••</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Shared contact quick-actions */}
       {message.sharedContact && (
@@ -69,8 +100,14 @@ function MessageBubble({
               onPress={() =>
                 Linking.openURL(`tel:${message.sharedContact!.phone}`)
               }
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${message.senderName}`}
+              accessibilityHint="Opens the phone app"
+              accessibilityState={{ disabled: false }}
             >
-              <Text style={styles.contactLink}>📞 Call</Text>
+              <IconLabel name="phone" textStyle={styles.contactLink}>
+                Call
+              </IconLabel>
             </TouchableOpacity>
           )}
           {message.sharedContact.email && (
@@ -78,19 +115,31 @@ function MessageBubble({
               onPress={() =>
                 Linking.openURL(`mailto:${message.sharedContact!.email}`)
               }
+              accessibilityRole="button"
+              accessibilityLabel={`Email ${message.senderName}`}
+              accessibilityHint="Opens the email app"
+              accessibilityState={{ disabled: false }}
             >
-              <Text style={styles.contactLink}>✉️ Email</Text>
+              <IconLabel name="envelope" textStyle={styles.contactLink}>
+                Email
+              </IconLabel>
             </TouchableOpacity>
           )}
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
 function ChannelView({ channel }: { channel: Channel }) {
+  const { width } = useWindowDimensions();
   const { user } = useAppStore();
-  const { messages: allMessages } = useMessages(channel.id);
+  const {
+    messages: allMessages,
+    loading,
+    error,
+    retry,
+  } = useMessages(channel.id);
   const [text, setText] = useState("");
   const listRef = useRef<FlatList>(null);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
@@ -100,6 +149,8 @@ function ChannelView({ channel }: { channel: Channel }) {
     useState<MessageReportReason>("harassment");
   const [reportNote, setReportNote] = useState("");
   const [reporting, setReporting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const blockedIds = new Set(user?.blockedUserIds ?? []);
   const messages = allMessages.filter(
@@ -168,18 +219,26 @@ function ChannelView({ channel }: { channel: Channel }) {
   }
 
   async function handleSend() {
-    if (!text.trim() || !user) return;
+    if (!text.trim() || !user || sending) return;
     const content = text.trim();
-    setText("");
-    await sendMessage({
-      channelId: channel.id,
-      senderId: user.id,
-      senderName: user.displayName ?? "Unknown",
-      content,
-    });
+    setSending(true);
+    setSendError(null);
+    try {
+      await sendMessage({
+        channelId: channel.id,
+        senderId: user.id,
+        senderName: user.displayName ?? "Unknown",
+        content,
+      });
+      setText((draft) => (draft.trim() === content ? "" : draft));
+    } catch {
+      setSendError("Message not sent. Your draft is still here.");
+    } finally {
+      setSending(false);
+    }
   }
 
-  async function handleShareContact() {
+  async function sendContact() {
     if (!user) return;
     const sharedContact = {
       phone: user.contactPreferences?.allowSMS ? user.phone : undefined,
@@ -192,13 +251,59 @@ function ChannelView({ channel }: { channel: Channel }) {
       );
       return;
     }
-    await sendMessage({
-      channelId: channel.id,
-      senderId: user.id,
-      senderName: user.displayName ?? "Unknown",
-      content: "Shared contact information",
-      sharedContact,
-    });
+    setSending(true);
+    setSendError(null);
+    try {
+      await sendMessage({
+        channelId: channel.id,
+        senderId: user.id,
+        senderName: user.displayName ?? "Unknown",
+        content: "Shared contact information",
+        sharedContact,
+      });
+    } catch {
+      setSendError("Contact details not sent. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleShareContact() {
+    if (sending) return;
+    let explained: string | null = null;
+    try {
+      explained = await AsyncStorage.getItem(CONTACT_SHARE_EXPLAINED_KEY);
+    } catch {
+      // The explanation should never prevent contact sharing if storage fails.
+    }
+    if (!explained) {
+      Alert.alert(
+        "Share contact details",
+        "Share the contact details enabled in your profile.",
+        [
+          {
+            text: "Not now",
+            style: "cancel",
+            onPress: () =>
+              AsyncStorage.setItem(CONTACT_SHARE_EXPLAINED_KEY, "true").catch(
+                () => undefined,
+              ),
+          },
+          {
+            text: "Share",
+            onPress: () => {
+              void AsyncStorage.setItem(
+                CONTACT_SHARE_EXPLAINED_KEY,
+                "true",
+              ).catch(() => undefined);
+              void sendContact();
+            },
+          },
+        ],
+      );
+      return;
+    }
+    await sendContact();
   }
 
   return (
@@ -216,20 +321,60 @@ function ChannelView({ channel }: { channel: Channel }) {
               onLongPress={
                 isMe ? undefined : () => handleLongPressMessage(item)
               }
+              onOpenActions={
+                isMe ? undefined : () => handleLongPressMessage(item)
+              }
             />
           );
         }}
         contentContainerStyle={styles.messageList}
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.stateContainer}>
+              <ActivityIndicator color="#1a472a" />
+              <Text style={styles.stateText}>Loading messages…</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.stateContainer}>
+              <Text style={styles.stateTitle}>Couldn’t load messages</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={retry}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading messages"
+                accessibilityHint="Attempts to load this conversation again"
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.stateContainer}>
+              <Text style={styles.stateTitle}>No messages yet</Text>
+              <Text style={styles.stateText}>
+                Send a message to start the conversation.
+              </Text>
+            </View>
+          )
+        }
         onContentSizeChange={() =>
           listRef.current?.scrollToEnd({ animated: false })
         }
       />
-      <View style={styles.inputRow}>
+      <View style={[styles.inputRow, width < 360 && styles.inputRowCompact]}>
         <TouchableOpacity
           onPress={handleShareContact}
           style={styles.shareContactBtn}
+          disabled={sending}
+          accessibilityRole="button"
+          accessibilityLabel="Share contact details"
+          accessibilityHint="Shares the contact details enabled in your profile"
+          accessibilityState={{ disabled: sending }}
         >
-          <Text style={styles.shareContactText}>📇</Text>
+          <AppIcon
+            name="person.crop.rectangle.stack"
+            size={ICON_SIZE.tab}
+            color={ICON_COLOR.active}
+          />
         </TouchableOpacity>
         <TextInput
           style={styles.textInput}
@@ -242,17 +387,43 @@ function ChannelView({ channel }: { channel: Channel }) {
         <TouchableOpacity
           style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
           onPress={handleSend}
-          disabled={!text.trim()}
+          disabled={!text.trim() || sending}
+          accessibilityRole="button"
+          accessibilityLabel={
+            sendError ? "Retry sending message" : "Send message"
+          }
+          accessibilityHint="Sends the current message"
+          accessibilityState={{
+            disabled: !text.trim() || sending,
+            busy: sending,
+          }}
         >
-          <Text style={styles.sendText}>Send</Text>
+          {sending ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.sendText}>{sendError ? "Retry" : "Send"}</Text>
+          )}
         </TouchableOpacity>
       </View>
+      {!!sendError && (
+        <View style={styles.sendError} accessibilityRole="alert">
+          <Text style={styles.sendErrorText}>{sendError}</Text>
+          <Text style={styles.sendErrorHint}>
+            {text.trim()
+              ? "Tap Retry to try again."
+              : "Tap Contact to try again."}
+          </Text>
+        </View>
+      )}
 
       <Modal visible={!!actionMessage} transparent animationType="fade">
         <TouchableOpacity
           style={styles.actionSheetOverlay}
           activeOpacity={1}
           onPress={() => setActionMessage(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Close message actions"
+          accessibilityHint="Closes the report and block menu"
         >
           <View style={styles.actionSheetCard}>
             <Text style={styles.actionSheetTitle}>
@@ -261,22 +432,35 @@ function ChannelView({ channel }: { channel: Channel }) {
             <TouchableOpacity
               style={styles.actionSheetOption}
               onPress={handleOpenReport}
+              accessibilityRole="button"
+              accessibilityLabel="Report message"
+              accessibilityHint="Opens the message report form"
             >
-              <Text style={styles.actionSheetOptionText}>
-                🚩 Report message
-              </Text>
+              <IconLabel name="flag" textStyle={styles.actionSheetOptionText}>
+                Report message
+              </IconLabel>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionSheetOption}
               onPress={handleBlockSender}
+              accessibilityRole="button"
+              accessibilityLabel={`Block ${actionMessage?.senderName ?? "sender"}`}
+              accessibilityHint="Stops messages from this person from appearing"
             >
-              <Text style={styles.actionSheetOptionTextDestructive}>
-                🚫 Block {actionMessage?.senderName}
-              </Text>
+              <IconLabel
+                name="person.crop.circle.badge.xmark"
+                color={ICON_COLOR.destructive}
+                textStyle={styles.actionSheetOptionTextDestructive}
+              >
+                Block {actionMessage?.senderName}
+              </IconLabel>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionSheetOption}
               onPress={() => setActionMessage(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel message actions"
+              accessibilityHint="Closes this menu"
             >
               <Text style={styles.actionSheetOptionText}>Cancel</Text>
             </TouchableOpacity>
@@ -288,7 +472,7 @@ function ChannelView({ channel }: { channel: Channel }) {
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Report Message</Text>
-            <Text style={styles.reportPreview} numberOfLines={2}>
+            <Text style={styles.reportPreview}>
               "{reportMessageTarget?.content}"
             </Text>
             <View style={styles.chipRow}>
@@ -300,6 +484,9 @@ function ChannelView({ channel }: { channel: Channel }) {
                     reportReason === r.value && styles.chipActive,
                   ]}
                   onPress={() => setReportReason(r.value)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${r.label} report reason`}
+                  accessibilityState={{ selected: reportReason === r.value }}
                 >
                   <Text
                     style={[
@@ -324,9 +511,13 @@ function ChannelView({ channel }: { channel: Channel }) {
               style={[styles.sendReportBtn, reporting && styles.btnDisabled]}
               onPress={handleSubmitReport}
               disabled={reporting}
+              accessibilityRole="button"
+              accessibilityLabel="Submit message report"
+              accessibilityHint="Sends this report to a division leader"
+              accessibilityState={{ disabled: reporting, busy: reporting }}
             >
               {reporting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.sendReportBtnText}>Submit Report</Text>
               )}
@@ -334,6 +525,11 @@ function ChannelView({ channel }: { channel: Channel }) {
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => setReportMessageTarget(null)}
+              disabled={reporting}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel report"
+              accessibilityHint="Closes the report form without submitting"
+              accessibilityState={{ disabled: reporting }}
             >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -345,8 +541,10 @@ function ChannelView({ channel }: { channel: Channel }) {
 }
 
 export default function MessagesScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { user, divisionId } = useAppStore();
-  const { channels } = useChannels(user?.id ?? null);
+  const { channels, loading, error, retry } = useChannels(user?.id ?? null);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [showNewDM, setShowNewDM] = useState(false);
   const [dmSearch, setDmSearch] = useState("");
@@ -393,11 +591,19 @@ export default function MessagesScreen() {
   if (activeChannel) {
     return (
       <View style={{ flex: 1 }}>
-        <View style={styles.channelHeader}>
-          <TouchableOpacity onPress={() => setActiveChannel(null)}>
+        <View
+          style={[
+            styles.channelHeader,
+            { paddingTop: Math.max(insets.top, 12) },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.backButtonTarget}
+            onPress={() => setActiveChannel(null)}
+          >
             <Text style={styles.backBtn}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.channelTitle}>
+          <Text style={styles.channelTitle} numberOfLines={2}>
             {activeChannel.name ??
               (activeChannel.type === "division"
                 ? "Division Chat"
@@ -418,34 +624,66 @@ export default function MessagesScreen() {
           <TouchableOpacity
             style={styles.channelCard}
             onPress={() => setActiveChannel(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.name ?? (item.type === "division" ? "Division chat" : "Direct message")}${item.lastMessage ? `. Last message from ${item.lastMessage.senderName}: ${item.lastMessage.content}` : ""}`}
+            accessibilityHint="Opens this conversation"
+            accessibilityState={{ disabled: false }}
           >
             <Text style={styles.channelName}>
               {item.name ??
-                (item.type === "division"
-                  ? "🎾 Division Chat"
-                  : "💬 Direct Message")}
+                (item.type === "division" ? "Division Chat" : "Direct Message")}
             </Text>
             {item.lastMessage && (
-              <Text style={styles.lastMessage} numberOfLines={1}>
+              <Text style={styles.lastMessage}>
                 {item.lastMessage.senderName}: {item.lastMessage.content}
               </Text>
             )}
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>No conversations yet.</Text>
-            <Text style={styles.emptySubText}>
-              Tap + to message a teammate.
-            </Text>
-          </View>
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator color="#1a472a" />
+              <Text style={styles.emptySubText}>Loading conversations…</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>Couldn’t load conversations</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={retry}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading conversations"
+                accessibilityHint="Attempts to load your conversations again"
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>No conversations yet.</Text>
+              <Text style={styles.emptySubText}>
+                Tap Message to message a teammate.
+              </Text>
+            </View>
+          )
         }
         contentContainerStyle={styles.channelList}
       />
 
-      <TouchableOpacity style={styles.fab} onPress={() => setShowNewDM(true)}>
-        <Text style={styles.fabText}>+ Message</Text>
-      </TouchableOpacity>
+      <View
+        style={[
+          styles.newMessageBar,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.fab, width < 360 && styles.fabCompact]}
+          onPress={() => setShowNewDM(true)}
+        >
+          <Text style={styles.fabText}>+ Message</Text>
+        </TouchableOpacity>
+      </View>
 
       <Modal visible={showNewDM} transparent animationType="slide">
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
@@ -462,12 +700,15 @@ export default function MessagesScreen() {
                 autoFocus
               />
               {dmSearching && (
-                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
+                <ActivityIndicator
+                  style={{ marginLeft: 8 }}
+                  color={colors.primary}
+                />
               )}
             </View>
             {dmCreating && (
               <ActivityIndicator
-                color="#1a472a"
+                color={colors.primary}
                 style={{ marginVertical: 12 }}
               />
             )}
@@ -480,6 +721,11 @@ export default function MessagesScreen() {
                 <TouchableOpacity
                   style={styles.resultRow}
                   onPress={() => handleStartDM(item)}
+                  disabled={dmCreating}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Message ${item.displayName}`}
+                  accessibilityHint="Starts a direct conversation"
+                  accessibilityState={{ disabled: dmCreating }}
                 >
                   <Text style={styles.resultName}>{item.displayName}</Text>
                   <Text style={styles.resultEmail}>Public profile</Text>
@@ -498,6 +744,11 @@ export default function MessagesScreen() {
                 setDmSearch("");
                 setDmResults([]);
               }}
+              disabled={dmCreating}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel new message"
+              accessibilityHint="Closes teammate search"
+              accessibilityState={{ disabled: dmCreating }}
             >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -509,10 +760,10 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   channelList: { padding: 16 },
   channelCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 10,
@@ -524,10 +775,10 @@ const styles = StyleSheet.create({
   channelName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: colors.text,
     marginBottom: 4,
   },
-  lastMessage: { fontSize: 13, color: "#888" },
+  lastMessage: { fontSize: 13, color: colors.textSubtle },
   empty: { flex: 1, padding: 40, alignItems: "center" },
   emptyText: {
     fontSize: 16,
@@ -535,24 +786,24 @@ const styles = StyleSheet.create({
     color: "#555",
     marginBottom: 8,
   },
-  emptySubText: { fontSize: 13, color: "#999", textAlign: "center" },
+  emptySubText: { fontSize: 13, color: colors.textSubtle, textAlign: "center" },
   channelHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 16,
   },
-  backBtn: { color: "#fff", fontSize: 16, marginRight: 16 },
-  channelTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  backBtn: { color: colors.surface, fontSize: 16, marginRight: 16 },
+  channelTitle: { color: colors.surface, fontWeight: "700", fontSize: 16 },
   messageList: { padding: 16, paddingBottom: 8 },
   bubble: { maxWidth: "80%", padding: 12, borderRadius: 16, marginBottom: 8 },
   bubbleMe: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     alignSelf: "flex-end",
     borderBottomRightRadius: 4,
   },
   bubbleThem: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     alignSelf: "flex-start",
     borderBottomLeftRadius: 4,
     shadowColor: "#000",
@@ -560,50 +811,59 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
-  bubbleText: { fontSize: 15, color: "#333" },
-  bubbleTextMe: { color: "#fff" },
+  bubbleText: { fontSize: 15, color: colors.text },
+  bubbleTextMe: { color: colors.surface },
   senderName: {
     fontSize: 11,
-    color: "#888",
+    color: colors.textSubtle,
     marginBottom: 4,
     fontWeight: "600",
   },
   contactActions: { flexDirection: "row", gap: 12, marginTop: 8 },
-  contactLink: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
+  contactLink: { color: colors.primary, fontWeight: "700", fontSize: 13 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     padding: 10,
     borderTopWidth: 1,
     borderTopColor: "#eee",
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
-  shareContactBtn: { paddingHorizontal: 8, paddingBottom: 10 },
+  inputRowCompact: { flexWrap: "wrap" },
+  shareContactBtn: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   shareContactText: { fontSize: 22 },
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
     fontSize: 15,
     maxHeight: 100,
+    minHeight: 44,
     marginRight: 8,
   },
   sendBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
+    minHeight: 44,
+    justifyContent: "center",
   },
   sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: "#fff", fontWeight: "700" },
+  sendText: { color: colors.surface, fontWeight: "700" },
   fab: {
     position: "absolute",
     bottom: 24,
     right: 20,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 28,
@@ -611,31 +871,39 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
+    minHeight: 44,
+    justifyContent: "center",
   },
-  fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  newMessageBar: {
+    alignItems: "flex-end",
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    backgroundColor: "#f5f5f0",
+  },
+  fabText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "80%",
+    width: "100%",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 16,
   },
   searchRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   searchInput: { flex: 1, marginBottom: 0 },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
@@ -646,15 +914,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   resultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  resultEmail: { fontSize: 13, color: "#888", marginTop: 2 },
+  resultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   noResults: {
     fontSize: 14,
-    color: "#999",
+    color: colors.textSubtle,
     textAlign: "center",
     marginVertical: 12,
   },
   cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
-  cancelText: { color: "#888", fontSize: 15 },
+  cancelText: { color: colors.textSubtle, fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
   actionSheetOverlay: {
     flex: 1,
@@ -662,7 +930,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   actionSheetCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 12,
@@ -670,7 +938,7 @@ const styles = StyleSheet.create({
   },
   actionSheetTitle: {
     textAlign: "center",
-    color: "#999",
+    color: colors.textSubtle,
     fontSize: 12,
     fontWeight: "600",
     paddingVertical: 8,
@@ -680,36 +948,47 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#f0f0f0",
     alignItems: "center",
+    minHeight: 44,
   },
-  actionSheetOptionText: { fontSize: 16, color: "#333", fontWeight: "500" },
+  actionSheetOptionText: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: "500",
+  },
   actionSheetOptionTextDestructive: {
     fontSize: 16,
-    color: "#c0392b",
+    color: colors.destructive,
     fontWeight: "600",
   },
   reportPreview: {
     fontSize: 13,
-    color: "#888",
+    color: colors.textSubtle,
     fontStyle: "italic",
     marginBottom: 16,
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
   chip: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    minHeight: 44,
+    justifyContent: "center",
   },
-  chipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  chipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   chipText: { color: "#555", fontWeight: "600", fontSize: 13 },
-  chipTextActive: { color: "#1a472a" },
+  chipTextActive: { color: colors.primary },
   sendReportBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
+    minHeight: 44,
   },
-  sendReportBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  sendReportBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
 });

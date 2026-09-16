@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -10,8 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
-  ScrollView,
+  useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { onSnapshot } from "firebase/firestore";
 import {
@@ -38,6 +40,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, PublicProfile } from "@tennis/shared";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
+import { IconLabel, ICON_COLOR } from "../../components/AppIcon";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -81,6 +84,8 @@ function MatchCard({
   onDecline?: () => void;
   onWithdraw?: () => void;
 }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 380;
   const isLive = match.status === "in_progress";
   const isUpcoming =
     match.status === "scheduled" || match.status === "proposed";
@@ -98,7 +103,7 @@ function MatchCard({
       style={[styles.card, isLive && styles.cardLive]}
       onPress={onPress}
     >
-      <View style={styles.cardHeader}>
+      <View style={[styles.cardHeader, compact && styles.wrapRow]}>
         <StatusBadge status={match.status} />
         {match.winner && (
           <Text style={styles.winnerBadge}>
@@ -110,25 +115,25 @@ function MatchCard({
       </View>
 
       {isUpcoming && (
-        <Text style={styles.scheduledLine}>
-          🗓 {formatScheduledAt(match.scheduledAt)}
-        </Text>
+        <IconLabel name="calendar" textStyle={styles.scheduledLine}>
+          {formatScheduledAt(match.scheduledAt)}
+        </IconLabel>
       )}
 
       {!isUpcoming && (
-        <View style={styles.scoreRow}>
-          <Text style={styles.setScore}>
+        <View style={[styles.scoreRow, compact && styles.wrapRow]}>
+          <Text style={styles.setScore} maxFontSizeMultiplier={1.35}>
             {formatScoreDisplay(match.liveScore)}
           </Text>
           {isLive && (
-            <Text style={styles.gameScore}>
+            <Text style={styles.gameScore} maxFontSizeMultiplier={1.5}>
               {formatGameScore(match.liveScore)}
             </Text>
           )}
         </View>
       )}
 
-      <View style={styles.players}>
+      <View style={[styles.players, compact && styles.playersCompact]}>
         <Text
           style={[
             styles.playerName,
@@ -159,14 +164,22 @@ function MatchCard({
       )}
 
       {actionKind === "pending" && (
-        <View style={styles.cardActions}>
+        <View
+          style={[styles.cardActions, compact && styles.cardActionsCompact]}
+        >
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={`Accept match proposal from ${player2Name}`}
             style={styles.acceptBtn}
             onPress={onAccept}
           >
-            <Text style={styles.acceptBtnText}>✓ Accept</Text>
+            <IconLabel
+              name="checkmark"
+              color={ICON_COLOR.inverse}
+              textStyle={styles.acceptBtnText}
+            >
+              Accept
+            </IconLabel>
           </TouchableOpacity>
           <TouchableOpacity
             accessibilityRole="button"
@@ -174,7 +187,13 @@ function MatchCard({
             style={styles.declineBtn}
             onPress={onDecline}
           >
-            <Text style={styles.declineBtnText}>✕ Decline</Text>
+            <IconLabel
+              name="xmark"
+              color={ICON_COLOR.destructive}
+              textStyle={styles.declineBtnText}
+            >
+              Decline
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -195,6 +214,9 @@ function MatchCard({
 }
 
 export default function MatchesScreen() {
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = width < 380;
   const { user, divisionId } = useAppStore();
   // A match is tagged to the season current when it's logged, matching web's
   // matches/dashboard pages — otherwise it falls outside every season-scoped
@@ -483,7 +505,7 @@ export default function MatchesScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a472a" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -542,14 +564,14 @@ export default function MatchesScreen() {
     .map((m) => toItem(m));
   // Side membership rather than player2Id/player1Id, so a doubles partner sees
   // the proposal too instead of only the side's first player.
-  const pendingInvites = visibleMatches
+  const pendingInvites = matches
     .filter(
       (m) =>
         m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2",
     )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "pending"));
-  const awaitingOpponent = visibleMatches
+  const awaitingOpponent = matches
     .filter(
       (m) =>
         m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1",
@@ -742,48 +764,19 @@ export default function MatchesScreen() {
                   ? "Show less history"
                   : `View match history (${completedMatches.length - COLLAPSED_HISTORY_LIMIT} older)`}
               </Text>
-            </TouchableOpacity>
-          ) : null
-        }
-        renderItem={({ item }) => (
-          <MatchCard
-            match={item.match}
-            onPress={() => router.push(`/match/${item.id}`)}
-            actionKind={item.actionKind}
-            onAccept={() =>
-              acceptMatchProposal(item.id).catch(() =>
-                Alert.alert("Error", "Could not accept."),
-              )
-            }
-            onDecline={() =>
-              declineMatchProposal(item.id).catch(() =>
-                Alert.alert("Error", "Could not decline."),
-              )
-            }
-            onWithdraw={() =>
-              declineMatchProposal(item.id).catch(() =>
-                Alert.alert("Error", "Could not cancel."),
-              )
-            }
-          />
-        )}
-        renderSectionHeader={({ section }) => (
-          <View style={styles.sectionHeader}>
-            {section.title === "Now Live" && <View style={styles.liveDot} />}
-            <Text
-              style={[
-                styles.sectionTitle,
-                section.title === "Now Live" && styles.sectionTitleLive,
-              ]}
-            >
-              {section.title}
-            </Text>
-          </View>
-        )}
-        contentContainerStyle={styles.list}
-      />
+            </View>
+          )}
+          contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
+        />
+      )}
 
-      <View style={styles.fabGroup}>
+      <View
+        style={[
+          styles.fabGroup,
+          compact && styles.fabGroupCompact,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
+      >
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="Record a past match"
@@ -793,7 +786,9 @@ export default function MatchesScreen() {
             setShowCreate(true);
           }}
         >
-          <Text style={styles.fabSecondaryText}>📋 Past</Text>
+          <IconLabel name="doc.text" textStyle={styles.fabSecondaryText}>
+            Past
+          </IconLabel>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="button"
@@ -801,7 +796,12 @@ export default function MatchesScreen() {
           style={[styles.fab, styles.fabSecondary]}
           onPress={() => setShowPropose(true)}
         >
-          <Text style={styles.fabSecondaryText}>📅 Propose</Text>
+          <IconLabel
+            name="calendar.badge.plus"
+            textStyle={styles.fabSecondaryText}
+          >
+            Propose
+          </IconLabel>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="button"
@@ -946,7 +946,7 @@ export default function MatchesScreen() {
                         {searchingPlayer1 && (
                           <ActivityIndicator
                             style={styles.searchSpinner}
-                            color="#1a472a"
+                            color={colors.primary}
                           />
                         )}
                       </View>
@@ -1094,7 +1094,7 @@ export default function MatchesScreen() {
                   {searching && (
                     <ActivityIndicator
                       style={styles.searchSpinner}
-                      color="#1a472a"
+                      color={colors.primary}
                     />
                   )}
                 </View>
@@ -1250,7 +1250,7 @@ export default function MatchesScreen() {
                 }
               >
                 {creating ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.surface} />
                 ) : (
                   <Text style={styles.createText}>
                     {createMode === "historic" ? "Record" : "Create"}
@@ -1593,91 +1593,15 @@ function ProposeMatchModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
   },
-  list: { padding: 16, paddingBottom: 80 },
-  listControls: { marginBottom: 12, gap: 10 },
-  controlLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#555",
-    textTransform: "uppercase",
-  },
-  controlRow: { flexDirection: "row", gap: 8 },
-  controlChip: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
-  },
-  controlChipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
-  controlChipText: { color: "#555", fontWeight: "600", fontSize: 13 },
-  controlChipTextActive: { color: "#1a472a" },
-  matchSearchRow: {
-    minHeight: 42,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-  },
-  searchGlyph: { color: "#666", fontSize: 22, marginRight: 8 },
-  matchSearchInput: {
-    flex: 1,
-    color: "#222",
-    fontSize: 14,
-    paddingVertical: 9,
-  },
-  clearSearch: { color: "#777", padding: 6, fontSize: 12 },
-  filterChip: {
-    minHeight: 36,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#d5d9d6",
-    backgroundColor: "#fff",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  filterChipActive: { backgroundColor: "#1a472a", borderColor: "#1a472a" },
-  filterChipText: { color: "#555", fontSize: 13, fontWeight: "700" },
-  filterChipTextActive: { color: "#fff" },
-  countBadge: {
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 5,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#d95d39",
-  },
-  countBadgeText: { color: "#fff", fontWeight: "800", fontSize: 11 },
-  filteredEmpty: {
-    alignItems: "center",
-    paddingVertical: 48,
-    paddingHorizontal: 24,
-  },
-  historyButton: {
-    borderWidth: 1,
-    borderColor: "#1a472a",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 2,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-  },
-  historyButtonText: { color: "#1a472a", fontSize: 14, fontWeight: "700" },
+  list: { padding: 16 },
+  wrapRow: { flexWrap: "wrap", alignItems: "flex-start" },
 
   sectionHeader: {
     flexDirection: "row",
@@ -1689,15 +1613,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#888",
+    color: colors.textSubtle,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  sectionTitleLive: { color: "#27ae60" },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#27ae60" },
+  sectionTitleLive: { color: colors.success },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+  },
 
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 10,
@@ -1706,7 +1635,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
-  cardLive: { borderLeftWidth: 4, borderLeftColor: "#27ae60" },
+  cardLive: { borderLeftWidth: 4, borderLeftColor: colors.success },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1716,8 +1645,8 @@ const styles = StyleSheet.create({
   winnerBadge: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#1a472a",
-    backgroundColor: "#e8f5e9",
+    color: colors.primary,
+    backgroundColor: colors.primarySoft,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
@@ -1735,14 +1664,14 @@ const styles = StyleSheet.create({
     color: "#222",
     letterSpacing: 1,
   },
-  gameScore: { fontSize: 15, fontWeight: "600", color: "#27ae60" },
+  gameScore: { fontSize: 15, fontWeight: "600", color: colors.success },
 
   players: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  playerName: { fontSize: 15, fontWeight: "600", color: "#333", flex: 1 },
+  playerName: { fontSize: 15, fontWeight: "600", color: colors.text, flex: 1 },
   playerRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -1750,62 +1679,66 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
-  winner: { color: "#1a472a" },
-  vs: { fontSize: 13, color: "#999", marginHorizontal: 12 },
+  winner: { color: colors.primary },
+  vs: { fontSize: 13, color: colors.textSubtle, marginHorizontal: 12 },
   guestBadge: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#e67e22",
+    color: colors.warning,
     backgroundColor: "#fff3e0",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
     overflow: "hidden",
   },
-  serverLine: { fontSize: 12, color: "#888", marginTop: 6 },
+  serverLine: { fontSize: 12, color: colors.textSubtle, marginTop: 6 },
 
   fabGroup: {
-    position: "absolute",
-    bottom: 24,
-    right: 16,
     flexDirection: "row",
     gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    justifyContent: "flex-end",
+    backgroundColor: "#f5f5f0",
   },
+  fabGroupCompact: { flexWrap: "wrap" },
   fab: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 28,
+    minHeight: 44,
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
   },
-  fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  fabText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   fabSecondary: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: "#1a472a",
+    borderColor: colors.primary,
   },
-  fabSecondaryText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
+  fabSecondaryText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
   setsContainer: { marginBottom: 4, gap: 8 },
   setRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  setLabel: { fontSize: 13, color: "#666", width: 40 },
+  setLabel: { fontSize: 13, color: colors.textMuted, width: 40 },
   setInput: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 10,
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
     width: 56,
-    color: "#1a472a",
+    color: colors.primary,
   },
-  setDash: { fontSize: 18, color: "#888", fontWeight: "600" },
-  removeSet: { fontSize: 18, color: "#c0392b", paddingHorizontal: 6 },
+  setDash: { fontSize: 18, color: colors.textSubtle, fontWeight: "600" },
+  removeSet: { fontSize: 18, color: colors.destructive, paddingHorizontal: 6 },
   addSet: {
-    color: "#1a472a",
+    color: colors.primary,
     fontWeight: "600",
     fontSize: 14,
     paddingVertical: 4,
@@ -1813,34 +1746,34 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#333",
+    color: colors.text,
     marginBottom: 8,
   },
-  emptyBody: { fontSize: 14, color: "#666", textAlign: "center" },
+  emptyBody: { fontSize: 14, color: colors.textMuted, textAlign: "center" },
   retryBtn: {
     marginTop: 16,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
   },
-  retryBtnText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  retryBtnText: { color: colors.surface, fontWeight: "600", fontSize: 15 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    maxHeight: "80%",
+    width: "100%",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 20,
   },
   modalLabel: {
@@ -1851,7 +1784,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
@@ -1867,10 +1800,10 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   resultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  resultEmail: { fontSize: 13, color: "#888", marginTop: 2 },
+  resultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   noResults: {
     fontSize: 14,
-    color: "#999",
+    color: colors.textSubtle,
     textAlign: "center",
     marginVertical: 12,
   },
@@ -1881,11 +1814,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
-  formatChipActive: { backgroundColor: "#1a472a", borderColor: "#1a472a" },
+  formatChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
   formatChipText: { fontSize: 14, fontWeight: "600", color: "#475569" },
-  formatChipTextActive: { color: "#fff" },
+  formatChipTextActive: { color: colors.surface },
   selectedPlayer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1893,14 +1829,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   playerChip: { flex: 1 },
-  playerChipName: { fontSize: 16, fontWeight: "700", color: "#1a472a" },
-  playerChipEmail: { fontSize: 13, color: "#666", marginTop: 2 },
-  changeText: { fontSize: 14, color: "#1a472a", fontWeight: "600" },
+  playerChipName: { fontSize: 16, fontWeight: "700", color: colors.primary },
+  playerChipEmail: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  changeText: { fontSize: 14, color: colors.primary, fontWeight: "600" },
   modeToggle: {
     flexDirection: "row",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     overflow: "hidden",
     marginBottom: 16,
   },
@@ -1910,53 +1846,59 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#f9f9f9",
   },
-  modeBtnActive: { backgroundColor: "#1a472a" },
-  modeBtnText: { fontSize: 13, fontWeight: "600", color: "#888" },
-  modeBtnTextActive: { color: "#fff" },
+  modeBtnActive: { backgroundColor: colors.primary },
+  modeBtnText: { fontSize: 13, fontWeight: "600", color: colors.textSubtle },
+  modeBtnTextActive: { color: colors.surface },
   modalActions: { flexDirection: "row", gap: 12, marginTop: 8 },
   cancelBtn: {
     flex: 1,
     padding: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     alignItems: "center",
   },
-  cancelText: { color: "#333", fontWeight: "600" },
+  cancelText: { color: colors.text, fontWeight: "600" },
   createBtn: {
     flex: 1,
     padding: 14,
     borderRadius: 10,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     alignItems: "center",
   },
   createBtnDisabled: { opacity: 0.6 },
-  createText: { color: "#fff", fontWeight: "600" },
+  createText: { color: colors.surface, fontWeight: "600" },
   scheduledLine: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 8,
   },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 12 },
+  cardActionsCompact: { flexDirection: "column" },
   acceptBtn: {
     flex: 1,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 10,
     borderRadius: 8,
     alignItems: "center",
+    minHeight: 44,
   },
-  acceptBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  acceptBtnText: { color: colors.surface, fontWeight: "700", fontSize: 13 },
   declineBtn: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     padding: 10,
     borderRadius: 8,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#c0392b",
+    borderColor: colors.destructive,
   },
-  declineBtnText: { color: "#c0392b", fontWeight: "600", fontSize: 13 },
+  declineBtnText: {
+    color: colors.destructive,
+    fontWeight: "600",
+    fontSize: 13,
+  },
   availabilityBox: {
     backgroundColor: "#f5f5ec",
     borderRadius: 10,
@@ -1966,7 +1908,7 @@ const styles = StyleSheet.create({
   availabilityTitle: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 6,
@@ -1980,13 +1922,13 @@ const styles = StyleSheet.create({
   availabilityDay: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     width: 32,
   },
   availabilityTime: { fontSize: 13, color: "#444" },
   availabilityNote: {
     fontSize: 12,
-    color: "#666",
+    color: colors.textMuted,
     fontStyle: "italic",
     marginTop: 6,
     paddingTop: 6,
@@ -1994,7 +1936,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#e7e7d8",
   },
   availabilityEmpty: {
-    color: "#999",
+    color: colors.textSubtle,
     fontSize: 13,
     fontStyle: "italic",
     marginBottom: 12,

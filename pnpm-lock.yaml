@@ -118,6 +118,9 @@ importers:
       expo-status-bar:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7)(@react-native-community/cli@13.6.9(encoding@0.1.13))(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
+      expo-symbols:
+        specifier: ~57.0.2
+        version: 57.0.2(expo-font@57.0.1)(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7)(@react-native-community/cli@13.6.9(encoding@0.1.13))(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8)
       firebase:
         specifier: ^12.18.0
         version: 12.18.0(@react-native-async-storage/async-storage@3.1.1(react-native@0.86.2(@babel/core@7.29.7)(@react-native-community/cli@13.6.9(encoding@0.1.13))(@react-native/metro-config@0.85.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.8))(react@19.2.8))
