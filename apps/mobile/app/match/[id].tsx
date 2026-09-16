@@ -18,6 +18,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import * as Linking from "expo-linking";
 import {
+  AppIcon,
+  IconLabel,
+  ICON_COLOR,
+  ICON_SIZE,
+} from "../../components/AppIcon";
+import {
   useMatch,
   scorePoint,
   startMatch,
@@ -524,7 +530,7 @@ export default function MatchScreen() {
     try {
       await undoLastPoint(id, match);
     } catch (err) {
-      console.error('Failed to undo last point:', err);
+      console.error("Failed to undo last point:", err);
     } finally {
       setScoring(false);
     }
@@ -567,7 +573,7 @@ export default function MatchScreen() {
         );
       }
     } catch (err) {
-      console.error('Failed to score point:', err);
+      console.error("Failed to score point:", err);
     } finally {
       setScoring(false);
     }
@@ -799,7 +805,7 @@ export default function MatchScreen() {
       const results = await searchDivisionPlayers(divisionId, text);
       setLinkResults(results.filter((u) => u.id !== user?.id));
     } catch (err) {
-      console.error('Failed to search division players:', err);
+      console.error("Failed to search division players:", err);
       setLinkResults([]);
     } finally {
       setLinkSearching(false);
@@ -824,8 +830,8 @@ export default function MatchScreen() {
         `${opponent.displayName ?? "Player"} has been added to this match. Rankings will update after the next match is completed.`,
       );
     } catch (err) {
-      console.error('Failed to link opponent:', err);
-      Alert.alert('Error', 'Could not link opponent. Please try again.');
+      console.error("Failed to link opponent:", err);
+      Alert.alert("Error", "Could not link opponent. Please try again.");
     } finally {
       setLinking(false);
     }
@@ -1222,9 +1228,13 @@ export default function MatchScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Hold to undo the last point"
                 >
-                  <Text style={styles.holdUndoTitle}>
-                    ↩ {match.undoSnapshot ? "Hold to undo" : "Nothing to undo"}
-                  </Text>
+                  <IconLabel
+                    name="arrow.uturn.backward"
+                    color="#14100B"
+                    textStyle={styles.holdUndoTitle}
+                  >
+                    {match.undoSnapshot ? "Hold to undo" : "Nothing to undo"}
+                  </IconLabel>
                   <Text style={styles.holdUndoHint}>
                     {match.undoSnapshot
                       ? `Current score · ${gameDisplay}`
@@ -1246,7 +1256,12 @@ export default function MatchScreen() {
 
           {match.status === "pending_report" && winnerName && (
             <View style={styles.matchCompleteCard}>
-              <Text style={styles.matchCompleteIcon}>✓</Text>
+              <AppIcon
+                name="checkmark.circle.fill"
+                size={ICON_SIZE.feature}
+                color={ICON_COLOR.success}
+                emphasized
+              />
               <Text style={styles.matchCompleteLabel}>MATCH COMPLETE</Text>
               <Text style={styles.matchCompleteWinner}>{winnerName}</Text>
               <Text style={styles.matchCompleteScore}>{scoreDisplay}</Text>
@@ -1275,10 +1290,12 @@ export default function MatchScreen() {
       {/* Link opponent section — guest matches only */}
       {match.player2IsGuest && isParticipant && (
         <View style={styles.linkSection}>
-          <Text style={styles.linkHint}>
-            👤 Playing against a guest? Link their account once they join the
-            app.
-          </Text>
+          <IconLabel
+            name="person.crop.circle.badge.plus"
+            textStyle={styles.linkHint}
+          >
+            Playing against a guest? Link their account once they join the app.
+          </IconLabel>
           <TouchableOpacity
             style={styles.linkBtn}
             onPress={() => setShowLinkOpponent(true)}
@@ -1314,7 +1331,12 @@ export default function MatchScreen() {
               {submitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.submitBtnText}>✓ Finalize Result</Text>
+                <IconLabel
+                  name="checkmark.circle"
+                  textStyle={styles.submitBtnText}
+                >
+                  Finalize Result
+                </IconLabel>
               )}
             </TouchableOpacity>
           </View>
@@ -1342,7 +1364,9 @@ export default function MatchScreen() {
               {submitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.submitBtnText}>📋 Submit Match Report</Text>
+                <IconLabel name="doc.text" textStyle={styles.submitBtnText}>
+                  Submit Match Report
+                </IconLabel>
               )}
             </TouchableOpacity>
           </View>
@@ -1358,9 +1382,13 @@ export default function MatchScreen() {
             <Text style={styles.reportTitle}>Report Submitted</Text>
             <Text style={styles.reportScore}>{scoreDisplay}</Text>
             <View style={styles.waitingBadge}>
-              <Text style={styles.waitingText}>
-                ⏳ Waiting for the opposing side to confirm
-              </Text>
+              <IconLabel
+                name="hourglass"
+                color="#ffdc60"
+                textStyle={styles.waitingText}
+              >
+                Waiting for the opposing side to confirm
+              </IconLabel>
             </View>
             <Text style={styles.reportHint}>
               {iSubmitted
@@ -1387,7 +1415,13 @@ export default function MatchScreen() {
             {submitting ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.confirmBtnText}>✓ Confirm Score</Text>
+              <IconLabel
+                name="checkmark.circle"
+                color={ICON_COLOR.inverse}
+                textStyle={styles.confirmBtnText}
+              >
+                Confirm Score
+              </IconLabel>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -1395,7 +1429,13 @@ export default function MatchScreen() {
             onPress={handleDisputeReport}
             disabled={submitting}
           >
-            <Text style={styles.disputeReportBtnText}>⚠ Dispute Score</Text>
+            <IconLabel
+              name="exclamationmark.triangle"
+              color={ICON_COLOR.warning}
+              textStyle={styles.disputeReportBtnText}
+            >
+              Dispute Score
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -1403,7 +1443,13 @@ export default function MatchScreen() {
       {/* Disputed — awaiting leader */}
       {match.status === "disputed" && (
         <View style={styles.disputedSection}>
-          <Text style={styles.disputedTitle}>⚠ Score Disputed</Text>
+          <IconLabel
+            name="exclamationmark.triangle.fill"
+            color={ICON_COLOR.warning}
+            textStyle={styles.disputedTitle}
+          >
+            Score Disputed
+          </IconLabel>
           <Text style={styles.disputedBody}>
             The match score has been escalated to your division leader for
             resolution. You'll be notified once it's resolved.
@@ -1419,12 +1465,21 @@ export default function MatchScreen() {
           </Text>
           <Text style={styles.reportScore}>{scoreDisplay}</Text>
           <View style={styles.confirmedBadge}>
-            <Text style={styles.confirmedText}>
-              ✓ Score confirmed · Rankings updated
-            </Text>
+            <IconLabel
+              name="checkmark.circle.fill"
+              color="#a8d5a2"
+              textStyle={styles.confirmedText}
+            >
+              Score confirmed · Rankings updated
+            </IconLabel>
           </View>
           <TouchableOpacity style={styles.shareBtn} onPress={handleShareReport}>
-            <Text style={styles.shareBtnText}>📊 Share Match Report</Text>
+            <IconLabel
+              name="square.and.arrow.up"
+              textStyle={styles.shareBtnText}
+            >
+              Share Match Report
+            </IconLabel>
           </TouchableOpacity>
         </View>
       )}
@@ -1552,7 +1607,12 @@ export default function MatchScreen() {
                     style={styles.manageOption}
                     onPress={handleOpenEditScore}
                   >
-                    <Text style={styles.manageOptionText}>✏ Edit Score</Text>
+                    <IconLabel
+                      name="pencil"
+                      textStyle={styles.manageOptionText}
+                    >
+                      Edit Score
+                    </IconLabel>
                   </TouchableOpacity>
                 )}
                 {isParticipant && match.status === "scheduled" && (
@@ -1560,7 +1620,12 @@ export default function MatchScreen() {
                     style={styles.manageOption}
                     onPress={() => setShowPostponeOptions(true)}
                   >
-                    <Text style={styles.manageOptionText}>📅 Postpone</Text>
+                    <IconLabel
+                      name="calendar"
+                      textStyle={styles.manageOptionText}
+                    >
+                      Postpone
+                    </IconLabel>
                   </TouchableOpacity>
                 )}
                 {isParticipant &&
@@ -1570,23 +1635,28 @@ export default function MatchScreen() {
                       style={styles.manageOption}
                       onPress={handleCancelMatch}
                     >
-                      <Text style={styles.manageOptionText}>
-                        ✕ Cancel Match
-                      </Text>
+                      <IconLabel
+                        name="xmark.circle"
+                        textStyle={styles.manageOptionText}
+                      >
+                        Cancel Match
+                      </IconLabel>
                     </TouchableOpacity>
                   )}
                 <TouchableOpacity
                   style={[styles.manageOption, styles.manageOptionDanger]}
                   onPress={handleDeleteMatch}
                 >
-                  <Text
-                    style={[
+                  <IconLabel
+                    name="trash"
+                    color={ICON_COLOR.destructive}
+                    textStyle={[
                       styles.manageOptionText,
                       styles.manageOptionDangerText,
                     ]}
                   >
-                    🗑 Delete Match
-                  </Text>
+                    Delete Match
+                  </IconLabel>
                 </TouchableOpacity>
               </>
             )}

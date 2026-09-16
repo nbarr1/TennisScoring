@@ -31,6 +31,12 @@ import {
   KeyboardAwareBottomSheet,
   KeyboardSafeView,
 } from "../../components/KeyboardSafeView";
+import {
+  AppIcon,
+  IconLabel,
+  ICON_COLOR,
+  ICON_SIZE,
+} from "../../components/AppIcon";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -70,7 +76,9 @@ function MessageBubble({
                 Linking.openURL(`tel:${message.sharedContact!.phone}`)
               }
             >
-              <Text style={styles.contactLink}>📞 Call</Text>
+              <IconLabel name="phone" textStyle={styles.contactLink}>
+                Call
+              </IconLabel>
             </TouchableOpacity>
           )}
           {message.sharedContact.email && (
@@ -79,7 +87,9 @@ function MessageBubble({
                 Linking.openURL(`mailto:${message.sharedContact!.email}`)
               }
             >
-              <Text style={styles.contactLink}>✉️ Email</Text>
+              <IconLabel name="envelope" textStyle={styles.contactLink}>
+                Email
+              </IconLabel>
             </TouchableOpacity>
           )}
         </View>
@@ -229,7 +239,11 @@ function ChannelView({ channel }: { channel: Channel }) {
           onPress={handleShareContact}
           style={styles.shareContactBtn}
         >
-          <Text style={styles.shareContactText}>📇</Text>
+          <AppIcon
+            name="person.crop.rectangle.stack"
+            size={ICON_SIZE.tab}
+            color={ICON_COLOR.active}
+          />
         </TouchableOpacity>
         <TextInput
           style={styles.textInput}
@@ -262,17 +276,21 @@ function ChannelView({ channel }: { channel: Channel }) {
               style={styles.actionSheetOption}
               onPress={handleOpenReport}
             >
-              <Text style={styles.actionSheetOptionText}>
-                🚩 Report message
-              </Text>
+              <IconLabel name="flag" textStyle={styles.actionSheetOptionText}>
+                Report message
+              </IconLabel>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionSheetOption}
               onPress={handleBlockSender}
             >
-              <Text style={styles.actionSheetOptionTextDestructive}>
-                🚫 Block {actionMessage?.senderName}
-              </Text>
+              <IconLabel
+                name="person.crop.circle.badge.xmark"
+                color={ICON_COLOR.destructive}
+                textStyle={styles.actionSheetOptionTextDestructive}
+              >
+                Block {actionMessage?.senderName}
+              </IconLabel>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionSheetOption}
@@ -421,9 +439,7 @@ export default function MessagesScreen() {
           >
             <Text style={styles.channelName}>
               {item.name ??
-                (item.type === "division"
-                  ? "🎾 Division Chat"
-                  : "💬 Direct Message")}
+                (item.type === "division" ? "Division Chat" : "Direct Message")}
             </Text>
             {item.lastMessage && (
               <Text style={styles.lastMessage} numberOfLines={1}>
