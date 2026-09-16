@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -396,7 +397,7 @@ function EditScoreModal({
           <Text
             style={[
               styles.linkModalHint,
-              { color: "#e67e22", marginBottom: 12 },
+              { color: colors.warning, marginBottom: 12 },
             ]}
           >
             Editing a confirmed match resets the score for re-confirmation by
@@ -459,7 +460,7 @@ function EditScoreModal({
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.surface} />
           ) : (
             <Text style={styles.confirmBtnText}>Save Score</Text>
           )}
@@ -524,7 +525,7 @@ export default function MatchScreen() {
     try {
       await undoLastPoint(id, match);
     } catch (err) {
-      console.error('Failed to undo last point:', err);
+      console.error("Failed to undo last point:", err);
     } finally {
       setScoring(false);
     }
@@ -567,7 +568,7 @@ export default function MatchScreen() {
         );
       }
     } catch (err) {
-      console.error('Failed to score point:', err);
+      console.error("Failed to score point:", err);
     } finally {
       setScoring(false);
     }
@@ -799,7 +800,7 @@ export default function MatchScreen() {
       const results = await searchDivisionPlayers(divisionId, text);
       setLinkResults(results.filter((u) => u.id !== user?.id));
     } catch (err) {
-      console.error('Failed to search division players:', err);
+      console.error("Failed to search division players:", err);
       setLinkResults([]);
     } finally {
       setLinkSearching(false);
@@ -824,8 +825,8 @@ export default function MatchScreen() {
         `${opponent.displayName ?? "Player"} has been added to this match. Rankings will update after the next match is completed.`,
       );
     } catch (err) {
-      console.error('Failed to link opponent:', err);
-      Alert.alert('Error', 'Could not link opponent. Please try again.');
+      console.error("Failed to link opponent:", err);
+      Alert.alert("Error", "Could not link opponent. Please try again.");
     } finally {
       setLinking(false);
     }
@@ -886,7 +887,7 @@ export default function MatchScreen() {
   if (loading || !match) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1a472a" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -1312,7 +1313,7 @@ export default function MatchScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.submitBtnText}>✓ Finalize Result</Text>
               )}
@@ -1340,7 +1341,7 @@ export default function MatchScreen() {
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.submitBtnText}>📋 Submit Match Report</Text>
               )}
@@ -1385,7 +1386,7 @@ export default function MatchScreen() {
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.surface} />
             ) : (
               <Text style={styles.confirmBtnText}>✓ Confirm Score</Text>
             )}
@@ -1540,7 +1541,7 @@ export default function MatchScreen() {
 
             {managing && (
               <ActivityIndicator
-                color="#1a472a"
+                color={colors.primary}
                 style={{ marginVertical: 8 }}
               />
             )}
@@ -1666,7 +1667,10 @@ export default function MatchScreen() {
                 autoFocus
               />
               {linkSearching && (
-                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
+                <ActivityIndicator
+                  style={{ marginLeft: 8 }}
+                  color={colors.primary}
+                />
               )}
               <FlatList
                 data={linkResults}
@@ -2032,7 +2036,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   tapZoneScore: {
-    color: "#FFFFFF",
+    color: colors.surface,
     fontSize: 92,
     fontWeight: "900",
     fontFamily: "monospace",
@@ -2081,7 +2085,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    color: "#fff",
+    color: colors.surface,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 3,
@@ -2196,9 +2200,9 @@ const styles = StyleSheet.create({
   scoreBoard: { alignItems: "center", paddingVertical: 32 },
   setRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   setsLabel: { color: "rgba(255,255,255,0.7)", fontSize: 16, marginRight: 12 },
-  setsScore: { color: "#fff", fontSize: 24, fontWeight: "700" },
+  setsScore: { color: colors.surface, fontSize: 24, fontWeight: "700" },
   scoreMain: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 40,
     fontWeight: "800",
     letterSpacing: 2,
@@ -2229,7 +2233,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 14,
   },
-  serverSelectTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  serverSelectTitle: { color: colors.surface, fontSize: 17, fontWeight: "700" },
   serverSelectBtns: { flexDirection: "row", gap: 12, width: "100%" },
   serverSelectBtn: {
     flex: 1,
@@ -2238,7 +2242,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: "center",
   },
-  serverSelectBtnText: { color: "#1a472a", fontWeight: "800", fontSize: 15 },
+  serverSelectBtnText: {
+    color: colors.primary,
+    fontWeight: "800",
+    fontSize: 15,
+  },
   scoreButtons: { flexDirection: "row", gap: 12, marginBottom: 16 },
   pointBtn: {
     flex: 1,
@@ -2251,7 +2259,7 @@ const styles = StyleSheet.create({
   pointBtnP2: { backgroundColor: "#1b4332" },
   pointBtnDisabled: { opacity: 0.5 },
   pointBtnText: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
@@ -2272,7 +2280,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  tipsLabel: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  tipsLabel: { color: colors.surface, fontWeight: "600", fontSize: 14 },
   statToggleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2284,7 +2292,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   statToggleCopy: { flex: 1, gap: 4 },
-  statToggleTitle: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  statToggleTitle: { color: colors.surface, fontWeight: "700", fontSize: 14 },
   statToggleHint: {
     color: "rgba(255,255,255,0.72)",
     fontSize: 12,
@@ -2301,7 +2309,7 @@ const styles = StyleSheet.create({
   },
   reportTitle: { color: "#ffdc60", fontSize: 24, fontWeight: "800" },
   reportScore: {
-    color: "#fff",
+    color: colors.surface,
     fontSize: 20,
     fontWeight: "600",
     letterSpacing: 1,
@@ -2321,16 +2329,16 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
-  submitBtnText: { color: "#1a472a", fontWeight: "800", fontSize: 16 },
+  submitBtnText: { color: colors.primary, fontWeight: "800", fontSize: 16 },
   confirmBtn: {
-    backgroundColor: "#27ae60",
+    backgroundColor: colors.success,
     borderRadius: 14,
     paddingHorizontal: 28,
     paddingVertical: 14,
     width: "100%",
     alignItems: "center",
   },
-  confirmBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  confirmBtnText: { color: colors.surface, fontWeight: "800", fontSize: 16 },
   disputeReportBtn: {
     paddingVertical: 12,
     alignItems: "center",
@@ -2352,7 +2360,7 @@ const styles = StyleSheet.create({
   },
   confirmedText: { color: "#a8d5a2", fontWeight: "600", fontSize: 13 },
   shareBtn: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 14,
     paddingHorizontal: 24,
     paddingVertical: 14,
@@ -2360,7 +2368,7 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
-  shareBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
+  shareBtnText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
 
   // Disputed state
@@ -2450,7 +2458,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   manageCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
@@ -2459,7 +2467,7 @@ const styles = StyleSheet.create({
   manageTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 8,
   },
   manageOption: {
@@ -2469,11 +2477,11 @@ const styles = StyleSheet.create({
   },
   manageOptionText: { fontSize: 16, color: "#222", fontWeight: "500" },
   manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
-  manageOptionDangerText: { color: "#c0392b" },
+  manageOptionDangerText: { color: colors.destructive },
   manageBack: { paddingVertical: 12 },
-  manageBackText: { fontSize: 14, color: "#888" },
+  manageBackText: { fontSize: 14, color: colors.textSubtle },
   manageCloseBtn: { alignItems: "center", paddingVertical: 14, marginTop: 4 },
-  manageCloseBtnText: { color: "#888", fontSize: 15 },
+  manageCloseBtnText: { color: colors.textSubtle, fontSize: 15 },
 
   // Tip overlay
   tipOverlay: {
@@ -2487,12 +2495,12 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   tipTitle: {
-    color: "#1a472a",
+    color: colors.primary,
     fontWeight: "800",
     fontSize: 15,
     marginBottom: 4,
   },
-  tipBody: { color: "#1a472a", fontSize: 13 },
+  tipBody: { color: colors.primary, fontSize: 13 },
 
   // Link opponent modal
   linkModalKeyboardView: { flex: 1 },
@@ -2502,7 +2510,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   linkModalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
@@ -2511,10 +2519,10 @@ const styles = StyleSheet.create({
   linkModalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 8,
   },
-  linkModalHint: { fontSize: 13, color: "#666", marginBottom: 16 },
+  linkModalHint: { fontSize: 13, color: colors.textMuted, marginBottom: 16 },
   linkSearchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2523,7 +2531,7 @@ const styles = StyleSheet.create({
   linkSearchInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
@@ -2534,15 +2542,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   linkResultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  linkResultEmail: { fontSize: 13, color: "#888", marginTop: 2 },
+  linkResultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   linkNoResults: {
     fontSize: 14,
-    color: "#999",
+    color: colors.textSubtle,
     textAlign: "center",
     marginVertical: 12,
   },
   linkCancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
-  linkCancelText: { color: "#888", fontSize: 15 },
+  linkCancelText: { color: colors.textSubtle, fontSize: 15 },
 
   // Dispute confirm modal
   modalOverlay: {
@@ -2552,22 +2560,22 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 24,
     gap: 12,
   },
-  modalTitle: { fontSize: 20, fontWeight: "800", color: "#c0392b" },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: colors.destructive },
   modalBody: { fontSize: 14, color: "#555", lineHeight: 20 },
   disputeBtn: {
-    backgroundColor: "#c0392b",
+    backgroundColor: colors.destructive,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
   },
-  disputeBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  disputeBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   cancelBtn: { paddingVertical: 12, alignItems: "center" },
-  cancelBtnText: { color: "#888", fontSize: 14 },
+  cancelBtnText: { color: colors.textSubtle, fontSize: 14 },
 });
 
 const statsStyles = StyleSheet.create({
@@ -2577,7 +2585,12 @@ const statsStyles = StyleSheet.create({
     padding: 20,
     marginTop: 16,
   },
-  title: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 12 },
+  title: {
+    color: colors.surface,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
   headerRow: { flexDirection: "row", marginBottom: 6 },
   headerStat: { flex: 2.5, fontSize: 12, color: "rgba(255,255,255,0.5)" },
   headerPlayer: {
@@ -2628,12 +2641,17 @@ const editScoreStyles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 4,
   },
-  headerSet: { flex: 1.5, fontSize: 13, fontWeight: "700", color: "#888" },
+  headerSet: {
+    flex: 1.5,
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSubtle,
+  },
   headerName: {
     flex: 2,
     fontSize: 13,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     textAlign: "center",
   },
   setRow: {
@@ -2642,11 +2660,11 @@ const editScoreStyles = StyleSheet.create({
     marginBottom: 10,
     gap: 8,
   },
-  setLabel: { flex: 1.5, fontSize: 15, fontWeight: "600", color: "#333" },
+  setLabel: { flex: 1.5, fontSize: 15, fontWeight: "600", color: colors.text },
   setInput: {
     flex: 2,
     borderWidth: 1.5,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -2661,6 +2679,6 @@ const editScoreStyles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 8,
   },
-  addSetText: { fontSize: 14, color: "#1a472a", fontWeight: "600" },
-  removeSetText: { fontSize: 14, color: "#c0392b", fontWeight: "600" },
+  addSetText: { fontSize: 14, color: colors.primary, fontWeight: "600" },
+  removeSetText: { fontSize: 14, color: colors.destructive, fontWeight: "600" },
 });

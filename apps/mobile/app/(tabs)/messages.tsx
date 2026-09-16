@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -326,7 +327,7 @@ function ChannelView({ channel }: { channel: Channel }) {
               disabled={reporting}
             >
               {reporting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.sendReportBtnText}>Submit Report</Text>
               )}
@@ -462,12 +463,15 @@ export default function MessagesScreen() {
                 autoFocus
               />
               {dmSearching && (
-                <ActivityIndicator style={{ marginLeft: 8 }} color="#1a472a" />
+                <ActivityIndicator
+                  style={{ marginLeft: 8 }}
+                  color={colors.primary}
+                />
               )}
             </View>
             {dmCreating && (
               <ActivityIndicator
-                color="#1a472a"
+                color={colors.primary}
                 style={{ marginVertical: 12 }}
               />
             )}
@@ -509,10 +513,10 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   channelList: { padding: 16 },
   channelCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 10,
@@ -524,10 +528,10 @@ const styles = StyleSheet.create({
   channelName: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: colors.text,
     marginBottom: 4,
   },
-  lastMessage: { fontSize: 13, color: "#888" },
+  lastMessage: { fontSize: 13, color: colors.textSubtle },
   empty: { flex: 1, padding: 40, alignItems: "center" },
   emptyText: {
     fontSize: 16,
@@ -535,24 +539,24 @@ const styles = StyleSheet.create({
     color: "#555",
     marginBottom: 8,
   },
-  emptySubText: { fontSize: 13, color: "#999", textAlign: "center" },
+  emptySubText: { fontSize: 13, color: colors.textSubtle, textAlign: "center" },
   channelHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 16,
   },
-  backBtn: { color: "#fff", fontSize: 16, marginRight: 16 },
-  channelTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  backBtn: { color: colors.surface, fontSize: 16, marginRight: 16 },
+  channelTitle: { color: colors.surface, fontWeight: "700", fontSize: 16 },
   messageList: { padding: 16, paddingBottom: 8 },
   bubble: { maxWidth: "80%", padding: 12, borderRadius: 16, marginBottom: 8 },
   bubbleMe: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     alignSelf: "flex-end",
     borderBottomRightRadius: 4,
   },
   bubbleThem: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     alignSelf: "flex-start",
     borderBottomLeftRadius: 4,
     shadowColor: "#000",
@@ -560,30 +564,30 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
-  bubbleText: { fontSize: 15, color: "#333" },
-  bubbleTextMe: { color: "#fff" },
+  bubbleText: { fontSize: 15, color: colors.text },
+  bubbleTextMe: { color: colors.surface },
   senderName: {
     fontSize: 11,
-    color: "#888",
+    color: colors.textSubtle,
     marginBottom: 4,
     fontWeight: "600",
   },
   contactActions: { flexDirection: "row", gap: 12, marginTop: 8 },
-  contactLink: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
+  contactLink: { color: colors.primary, fontWeight: "700", fontSize: 13 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     padding: 10,
     borderTopWidth: 1,
     borderTopColor: "#eee",
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
   shareContactBtn: { paddingHorizontal: 8, paddingBottom: 10 },
   shareContactText: { fontSize: 22 },
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -592,18 +596,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   sendBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
   },
   sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: "#fff", fontWeight: "700" },
+  sendText: { color: colors.surface, fontWeight: "700" },
   fab: {
     position: "absolute",
     bottom: 24,
     right: 20,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 28,
@@ -612,14 +616,14 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  fabText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
@@ -628,14 +632,14 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 16,
   },
   searchRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
   searchInput: { flex: 1, marginBottom: 0 },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
@@ -646,15 +650,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "#f0f0f0",
   },
   resultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  resultEmail: { fontSize: 13, color: "#888", marginTop: 2 },
+  resultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
   noResults: {
     fontSize: 14,
-    color: "#999",
+    color: colors.textSubtle,
     textAlign: "center",
     marginVertical: 12,
   },
   cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
-  cancelText: { color: "#888", fontSize: 15 },
+  cancelText: { color: colors.textSubtle, fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
   actionSheetOverlay: {
     flex: 1,
@@ -662,7 +666,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   actionSheetCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 12,
@@ -670,7 +674,7 @@ const styles = StyleSheet.create({
   },
   actionSheetTitle: {
     textAlign: "center",
-    color: "#999",
+    color: colors.textSubtle,
     fontSize: 12,
     fontWeight: "600",
     paddingVertical: 8,
@@ -681,35 +685,42 @@ const styles = StyleSheet.create({
     borderTopColor: "#f0f0f0",
     alignItems: "center",
   },
-  actionSheetOptionText: { fontSize: 16, color: "#333", fontWeight: "500" },
+  actionSheetOptionText: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: "500",
+  },
   actionSheetOptionTextDestructive: {
     fontSize: 16,
-    color: "#c0392b",
+    color: colors.destructive,
     fontWeight: "600",
   },
   reportPreview: {
     fontSize: 13,
-    color: "#888",
+    color: colors.textSubtle,
     fontStyle: "italic",
     marginBottom: 16,
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
   chip: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  chipActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  chipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   chipText: { color: "#555", fontWeight: "600", fontSize: 13 },
-  chipTextActive: { color: "#1a472a" },
+  chipTextActive: { color: colors.primary },
   sendReportBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 8,
   },
-  sendReportBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  sendReportBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
 });

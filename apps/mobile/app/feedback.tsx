@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { colors } from "../theme";
 import {
   ActivityIndicator,
   Alert,
@@ -153,7 +154,7 @@ export default function FeedbackScreen() {
         disabled={submitting}
       >
         {submitting ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={colors.surface} />
         ) : (
           <Text style={styles.submitBtnText}>Send Feedback</Text>
         )}
@@ -163,47 +164,47 @@ export default function FeedbackScreen() {
 }
 
 const styles = StyleSheet.create({
-  keyboardView: { flex: 1, backgroundColor: "#f5f5f0" },
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  keyboardView: { flex: 1, backgroundColor: colors.canvas },
+  container: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 24, gap: 16 },
   header: { gap: 8 },
-  title: { color: "#1a1a1a", fontSize: 28, fontWeight: "700" },
-  subtitle: { color: "#666", fontSize: 15, lineHeight: 22 },
+  title: { color: colors.text, fontSize: 28, fontWeight: "700" },
+  subtitle: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
   section: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
     gap: 10,
   },
-  label: { color: "#1a472a", fontSize: 14, fontWeight: "700" },
+  label: { color: colors.primary, fontSize: 14, fontWeight: "700" },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
   },
   messageInput: { minHeight: 160 },
   contextCard: {
-    backgroundColor: "#e8f5e9",
+    backgroundColor: colors.primarySoft,
     borderRadius: 14,
     padding: 16,
     gap: 4,
   },
   contextTitle: {
-    color: "#1a472a",
+    color: colors.primary,
     fontSize: 14,
     fontWeight: "700",
     marginBottom: 4,
   },
   contextText: { color: "#436b4b", fontSize: 13 },
   submitBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
   },
-  submitBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  submitBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   btnDisabled: { opacity: 0.5 },
 });

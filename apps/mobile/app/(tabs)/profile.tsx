@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { colors } from "../../theme";
 import {
   View,
   Text,
@@ -96,7 +97,9 @@ export default function ProfileScreen() {
         if (cancelled) return;
         setBlockedProfiles(
           snaps
-            .filter((snap): snap is NonNullable<typeof snap> => !!snap?.exists())
+            .filter(
+              (snap): snap is NonNullable<typeof snap> => !!snap?.exists(),
+            )
             .map((snap) => ({
               ...(snap.data() as Omit<PublicProfile, "id">),
               id: snap.id,
@@ -365,9 +368,8 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <Text style={styles.rowValue}>
-            {divisionOptions.find(
-              (division) => division.id === user.divisionId,
-            )?.name ??
+            {divisionOptions.find((division) => division.id === user.divisionId)
+              ?.name ??
               user.divisionId ??
               "No division"}
           </Text>
@@ -386,7 +388,7 @@ export default function ProfileScreen() {
             value={allowEmail}
             onValueChange={setAllowEmail}
             disabled={!editing}
-            trackColor={{ true: "#1a472a", false: "#ccc" }}
+            trackColor={{ true: colors.primary, false: "#ccc" }}
           />
         </View>
         <View style={styles.toggleRow}>
@@ -395,7 +397,7 @@ export default function ProfileScreen() {
             value={allowSMS}
             onValueChange={setAllowSMS}
             disabled={!editing}
-            trackColor={{ true: "#1a472a", false: "#ccc" }}
+            trackColor={{ true: colors.primary, false: "#ccc" }}
           />
         </View>
         <View style={styles.toggleRow}>
@@ -404,7 +406,7 @@ export default function ProfileScreen() {
             value={allowInApp}
             onValueChange={setAllowInApp}
             disabled={!editing}
-            trackColor={{ true: "#1a472a", false: "#ccc" }}
+            trackColor={{ true: colors.primary, false: "#ccc" }}
           />
         </View>
       </View>
@@ -481,7 +483,7 @@ export default function ProfileScreen() {
             value={tipsEnabled}
             onValueChange={setTipsEnabled}
             disabled={!editing}
-            trackColor={{ true: "#1a472a", false: "#ccc" }}
+            trackColor={{ true: colors.primary, false: "#ccc" }}
           />
         </View>
       </View>
@@ -573,7 +575,7 @@ export default function ProfileScreen() {
               disabled={!deletePassword || deleting}
             >
               {deleting ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.surface} />
               ) : (
                 <Text style={styles.deleteAccountBtnSolidText}>
                   Permanently Delete Account
@@ -597,29 +599,34 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
+  container: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: 24 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
     alignSelf: "center",
     marginBottom: 12,
   },
-  avatarText: { color: "#fff", fontSize: 32, fontWeight: "700" },
+  avatarText: { color: colors.surface, fontSize: 32, fontWeight: "700" },
   name: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: colors.text,
     textAlign: "center",
   },
-  email: { fontSize: 14, color: "#888", textAlign: "center", marginBottom: 32 },
+  email: {
+    fontSize: 14,
+    color: colors.textSubtle,
+    textAlign: "center",
+    marginBottom: 32,
+  },
   section: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
     marginBottom: 16,
@@ -627,21 +634,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#1a472a",
+    color: colors.primary,
     marginBottom: 4,
   },
-  sectionSubtitle: { fontSize: 12, color: "#999", marginBottom: 12 },
+  sectionSubtitle: { fontSize: 12, color: colors.textSubtle, marginBottom: 12 },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 8,
   },
-  rowLabel: { color: "#666", fontSize: 14 },
-  rowValue: { color: "#333", fontSize: 14, fontWeight: "500" },
-  unblockText: { color: "#1a472a", fontSize: 13, fontWeight: "700" },
+  rowLabel: { color: colors.textMuted, fontSize: 14 },
+  rowValue: { color: colors.text, fontSize: 14, fontWeight: "500" },
+  unblockText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
@@ -657,25 +664,25 @@ const styles = StyleSheet.create({
   toggleLabel: { color: "#444", fontSize: 14, flex: 1, marginRight: 16 },
   actions: { gap: 12 },
   editBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
   },
-  editBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  editBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   saveBtn: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
   },
-  saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  saveBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   cancelBtn: {
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
   },
   cancelBtnText: { color: "#555", fontWeight: "600", fontSize: 15 },
   feedbackBtn: {
@@ -683,48 +690,63 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#1a472a",
-    backgroundColor: "#fff",
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
   },
-  feedbackBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
+  feedbackBtnText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
   signOutBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
-  signOutBtnText: { color: "#c0392b", fontWeight: "600", fontSize: 15 },
+  signOutBtnText: {
+    color: colors.destructive,
+    fontWeight: "600",
+    fontSize: 15,
+  },
   deleteAccountBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
-  deleteAccountBtnText: { color: "#999", fontWeight: "500", fontSize: 13 },
+  deleteAccountBtnText: {
+    color: colors.textSubtle,
+    fontWeight: "500",
+    fontSize: 13,
+  },
   deleteAccountBtnSolid: {
-    backgroundColor: "#c0392b",
+    backgroundColor: colors.destructive,
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
     marginTop: 12,
   },
-  deleteAccountBtnSolidText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  deleteAccountBtnSolidText: {
+    color: colors.surface,
+    fontWeight: "700",
+    fontSize: 15,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     padding: 24,
   },
-  modalCard: { backgroundColor: "#fff", borderRadius: 16, padding: 20 },
+  modalCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 20 },
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#c0392b",
+    color: colors.destructive,
     marginBottom: 8,
   },
-  modalSubtitle: { fontSize: 13, color: "#666", marginBottom: 16 },
+  modalSubtitle: { fontSize: 13, color: colors.textMuted, marginBottom: 16 },
   btnDisabled: { opacity: 0.5 },
   divisionList: { gap: 8 },
   divisionOption: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  divisionOptionActive: { borderColor: "#1a472a", backgroundColor: "#e8f5e9" },
+  divisionOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
   divisionOptionText: { color: "#444", fontSize: 14, fontWeight: "600" },
-  divisionOptionTextActive: { color: "#1a472a" },
+  divisionOptionTextActive: { color: colors.primary },
   slotRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -732,17 +754,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   slotDay: {
-    backgroundColor: "#1a472a",
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     minWidth: 56,
     alignItems: "center",
   },
-  slotDayText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  slotDayText: { color: colors.surface, fontWeight: "700", fontSize: 13 },
   slotTime: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -750,20 +772,24 @@ const styles = StyleSheet.create({
     width: 70,
     textAlign: "center",
   },
-  slotDash: { color: "#888", fontSize: 14 },
+  slotDash: { color: colors.textSubtle, fontSize: 14 },
   slotDisabled: { opacity: 0.6 },
   slotRemove: { padding: 6 },
-  slotRemoveText: { color: "#c0392b", fontSize: 16, fontWeight: "700" },
+  slotRemoveText: {
+    color: colors.destructive,
+    fontSize: 16,
+    fontWeight: "700",
+  },
   addSlotBtn: {
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#1a472a",
+    borderColor: colors.primary,
     borderRadius: 8,
     padding: 10,
     alignItems: "center",
     marginTop: 4,
   },
-  addSlotBtnText: { color: "#1a472a", fontWeight: "700", fontSize: 13 },
-  emptyHint: { color: "#999", fontSize: 13, paddingVertical: 4 },
+  addSlotBtnText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  emptyHint: { color: colors.textSubtle, fontSize: 13, paddingVertical: 4 },
   noteText: { color: "#444", fontSize: 13, marginTop: 8, fontStyle: "italic" },
 });
