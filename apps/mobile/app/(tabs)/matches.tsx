@@ -12,7 +12,6 @@ import {
   FlatList,
 } from "react-native";
 import { useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { onSnapshot } from "firebase/firestore";
 import {
   divisionMatchesQuery,
@@ -41,10 +40,6 @@ import { IconLabel, ICON_COLOR } from "../../components/AppIcon";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
-type NewMatchAction = "live" | "propose" | "completed";
-
-const NEW_MATCH_ACTION_METRICS_KEY = "matches.newMatchActionSelections.v1";
-const NEW_MATCH_ACTION_AREA_HEIGHT = 96;
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -213,7 +208,6 @@ export default function MatchesScreen() {
   const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
-  const [showNewMatchActions, setShowNewMatchActions] = useState(false);
   const [createMode, setCreateMode] = useState<"live" | "historic">("live");
   const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">(
     "self",
@@ -345,35 +339,6 @@ export default function MatchesScreen() {
     setSearchResults([]);
     setSelectedOpponent(null);
     setHistoricSets([{ p1: "", p2: "" }]);
-  }
-
-  async function trackNewMatchAction(action: NewMatchAction) {
-    try {
-      const stored = await AsyncStorage.getItem(NEW_MATCH_ACTION_METRICS_KEY);
-      const counts: Record<NewMatchAction, number> = stored
-        ? JSON.parse(stored)
-        : { live: 0, propose: 0, completed: 0 };
-      counts[action] = (counts[action] ?? 0) + 1;
-      await AsyncStorage.setItem(
-        NEW_MATCH_ACTION_METRICS_KEY,
-        JSON.stringify(counts),
-      );
-    } catch (error) {
-      console.warn("[MatchesScreen] Could not track new-match action", error);
-    }
-  }
-
-  function selectNewMatchAction(action: NewMatchAction) {
-    setShowNewMatchActions(false);
-    void trackNewMatchAction(action);
-
-    if (action === "propose") {
-      setShowPropose(true);
-      return;
-    }
-
-    setCreateMode(action === "live" ? "live" : "historic");
-    setShowCreate(true);
   }
 
   async function handleCreateMatch() {
@@ -642,87 +607,49 @@ export default function MatchesScreen() {
               </Text>
             </View>
           )}
-          contentContainerStyle={[
-            styles.list,
-            { paddingBottom: NEW_MATCH_ACTION_AREA_HEIGHT },
-          ]}
+          contentContainerStyle={styles.list}
         />
       )}
 
-      <View style={styles.fabContainer}>
+      <View style={styles.fabGroup}>
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel="New match"
-          accessibilityHint="Opens match creation choices"
-          style={styles.fab}
-          onPress={() => setShowNewMatchActions(true)}
+          accessibilityLabel="Record a past match"
+          style={[styles.fab, styles.fabSecondary]}
+          onPress={() => {
+            setCreateMode("historic");
+            setShowCreate(true);
+          }}
         >
-          <Text style={styles.fabText}>＋ New match</Text>
+          <IconLabel name="doc.text" textStyle={styles.fabSecondaryText}>
+            Past
+          </IconLabel>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Propose a match"
+          style={[styles.fab, styles.fabSecondary]}
+          onPress={() => setShowPropose(true)}
+        >
+          <IconLabel
+            name="calendar.badge.plus"
+            textStyle={styles.fabSecondaryText}
+          >
+            Propose
+          </IconLabel>
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Start a live match"
+          style={styles.fab}
+          onPress={() => {
+            setCreateMode("live");
+            setShowCreate(true);
+          }}
+        >
+          <Text style={styles.fabText}>+ Live</Text>
         </TouchableOpacity>
       </View>
-
-      <Modal
-        visible={showNewMatchActions}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowNewMatchActions(false)}
-      >
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="Close new match choices"
-          activeOpacity={1}
-          style={styles.actionSheetOverlay}
-          onPress={() => setShowNewMatchActions(false)}
-        >
-          <View
-            accessibilityRole="menu"
-            style={styles.actionSheet}
-            onStartShouldSetResponder={() => true}
-          >
-            <Text style={styles.actionSheetTitle}>New match</Text>
-            {([
-              {
-                action: "live",
-                icon: "🎾",
-                title: "Start live scoring",
-                explanation: "Score every point as you play.",
-              },
-              {
-                action: "propose",
-                icon: "📅",
-                title: "Propose a future match",
-                explanation: "Invite players and choose a time.",
-              },
-              {
-                action: "completed",
-                icon: "📋",
-                title: "Record a completed match",
-                explanation: "Enter the final score from a past match.",
-              },
-            ] as const).map((choice) => (
-              <TouchableOpacity
-                key={choice.action}
-                accessibilityRole="menuitem"
-                accessibilityLabel={choice.title}
-                accessibilityHint={choice.explanation}
-                style={styles.actionChoice}
-                onPress={() => selectNewMatchAction(choice.action)}
-              >
-                <View style={styles.actionChoiceIcon}>
-                  <Text style={styles.actionChoiceIconText}>{choice.icon}</Text>
-                </View>
-                <View style={styles.actionChoiceCopy}>
-                  <Text style={styles.actionChoiceTitle}>{choice.title}</Text>
-                  <Text style={styles.actionChoiceExplanation} numberOfLines={1}>
-                    {choice.explanation}
-                  </Text>
-                </View>
-                <Text style={styles.actionChoiceChevron}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {showPropose && user && divisionId && (
         <ProposeMatchModal
@@ -1508,7 +1435,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 32,
   },
-  list: { padding: 16 },
+  list: { padding: 16, paddingBottom: 80 },
 
   sectionHeader: {
     flexDirection: "row",
@@ -1594,10 +1521,12 @@ const styles = StyleSheet.create({
   },
   serverLine: { fontSize: 12, color: "#888", marginTop: 6 },
 
-  fabContainer: {
+  fabGroup: {
     position: "absolute",
     bottom: 24,
     right: 16,
+    flexDirection: "row",
+    gap: 10,
   },
   fab: {
     backgroundColor: "#1a472a",
@@ -1610,50 +1539,12 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   fabText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  actionSheetOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-  actionSheet: {
-    margin: 12,
-    padding: 8,
-    paddingTop: 16,
-    borderRadius: 20,
+  fabSecondary: {
     backgroundColor: "#fff",
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 8,
+    borderWidth: 1.5,
+    borderColor: "#1a472a",
   },
-  actionSheetTitle: {
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    color: "#1a472a",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  actionChoice: {
-    minHeight: 64,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#e5e7eb",
-  },
-  actionChoiceIcon: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 20,
-    backgroundColor: "#f0f7f2",
-  },
-  actionChoiceIconText: { fontSize: 19 },
-  actionChoiceCopy: { flex: 1, marginLeft: 12 },
-  actionChoiceTitle: { color: "#222", fontSize: 15, fontWeight: "700" },
-  actionChoiceExplanation: { color: "#667085", fontSize: 13, marginTop: 2 },
-  actionChoiceChevron: { color: "#98a2b3", fontSize: 28, marginLeft: 8 },
+  fabSecondaryText: { color: "#1a472a", fontWeight: "700", fontSize: 15 },
   setsContainer: { marginBottom: 4, gap: 8 },
   setRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   setLabel: { fontSize: 13, color: "#666", width: 40 },
