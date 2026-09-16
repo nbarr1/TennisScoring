@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -36,6 +36,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import type { Match, PublicProfile } from "@tennis/shared";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
+import { FormErrorSummary, FormField } from "../../components/FormField";
 
 type ActionKind = "pending" | "awaiting" | null;
 type MatchItem = { id: string; match: Match; actionKind: ActionKind };
@@ -204,16 +205,23 @@ export default function MatchesScreen() {
   );
   const [guestName, setGuestName] = useState("");
   const [player1SearchText, setPlayer1SearchText] = useState("");
-  const [player1SearchResults, setPlayer1SearchResults] = useState<PublicProfile[]>([]);
-  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(null);
+  const [player1SearchResults, setPlayer1SearchResults] = useState<
+    PublicProfile[]
+  >([]);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(
+    null,
+  );
   const [searchingPlayer1, setSearchingPlayer1] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   // Historic match set scores: array of { p1, p2 } per set
   const [historicSets, setHistoricSets] = useState([{ p1: "", p2: "" }]);
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const guestNameRef = useRef<TextInput>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -229,7 +237,9 @@ export default function MatchesScreen() {
       },
       (err) => {
         console.error("[MatchesScreen] matches listener error:", err);
-        setLoadError("Could not load matches. Check your connection and try again.");
+        setLoadError(
+          "Could not load matches. Check your connection and try again.",
+        );
         setLoading(false);
       },
     );
@@ -258,7 +268,7 @@ export default function MatchesScreen() {
           results.filter((u) => u.id !== selectedOpponent?.id),
         );
       } catch (err) {
-        console.error('Failed to search player 1:', err);
+        console.error("Failed to search player 1:", err);
         setPlayer1SearchResults([]);
       } finally {
         setSearchingPlayer1(false);
@@ -289,7 +299,7 @@ export default function MatchesScreen() {
             : user?.id;
         setSearchResults(results.filter((u) => u.id !== player1Id));
       } catch (err) {
-        console.error('Failed to search opponent:', err);
+        console.error("Failed to search opponent:", err);
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -319,12 +329,22 @@ export default function MatchesScreen() {
     setSearchResults([]);
     setSelectedOpponent(null);
     setHistoricSets([{ p1: "", p2: "" }]);
+    setCreateErrors({});
   }
 
   async function handleCreateMatch() {
     if (!user || !divisionId) return;
-    if (opponentMode === "search" && !selectedOpponent) return;
-    if (opponentMode === "guest" && !guestName.trim()) return;
+    const opponentError =
+      opponentMode === "search" && !selectedOpponent
+        ? "Select an opponent from the search results."
+        : opponentMode === "guest" && !guestName.trim()
+          ? "Enter the guest opponent's name."
+          : "";
+    if (opponentError) {
+      setCreateErrors({ opponent: opponentError });
+      if (opponentMode === "guest") guestNameRef.current?.focus();
+      return;
+    }
     setCreating(true);
     try {
       const matchId = await createMatch(
@@ -361,9 +381,22 @@ export default function MatchesScreen() {
 
   async function handleRecordHistoric() {
     if (!user || !divisionId) return;
-    if (recordingMode === "onBehalf" && !selectedPlayer1) return;
-    if (opponentMode === "search" && !selectedOpponent) return;
-    if (opponentMode === "guest" && !guestName.trim()) return;
+    const selectionErrors = [
+      recordingMode === "onBehalf" && !selectedPlayer1
+        ? "Select the first player."
+        : "",
+      opponentMode === "search" && !selectedOpponent
+        ? "Select the second player or opponent."
+        : "",
+      opponentMode === "guest" && !guestName.trim()
+        ? "Enter the guest opponent's name."
+        : "",
+    ].filter(Boolean);
+    if (selectionErrors.length) {
+      setCreateErrors({ selection: selectionErrors.join(" ") });
+      if (opponentMode === "guest") guestNameRef.current?.focus();
+      return;
+    }
 
     const parsed = historicSets.map((s) => ({
       p1: parseInt(s.p1, 10),
@@ -373,26 +406,19 @@ export default function MatchesScreen() {
       (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
     );
     if (invalid || parsed.length === 0) {
-      Alert.alert(
-        "Invalid Score",
-        "Please enter a valid number of games for each set.",
-      );
+      setCreateErrors({
+        scores: "Enter a valid number of games for every set.",
+      });
       return;
     }
     if (parsed.some((s) => s.p1 === s.p2)) {
-      Alert.alert(
-        "Invalid Score",
-        "Each set must have a clear winner. Check the set scores.",
-      );
+      setCreateErrors({ scores: "Each set must have a clear winner." });
       return;
     }
     const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
     const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
     if (p1Sets === p2Sets) {
-      Alert.alert(
-        "Invalid Score",
-        "The match must have a clear winner. Check the set scores.",
-      );
+      setCreateErrors({ scores: "The match must have a clear winner." });
       return;
     }
     setCreating(true);
@@ -495,11 +521,17 @@ export default function MatchesScreen() {
   // Side membership rather than player2Id/player1Id, so a doubles partner sees
   // the proposal too instead of only the side's first player.
   const pendingInvites = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
+    .filter(
+      (m) =>
+        m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2",
+    )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "pending"));
   const awaitingOpponent = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1")
+    .filter(
+      (m) =>
+        m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1",
+    )
     .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0))
     .map((m) => toItem(m, "awaiting"));
   const upcomingMatches = matches
@@ -708,7 +740,7 @@ export default function MatchesScreen() {
                       Any Two
                     </Text>
                   </TouchableOpacity>
-                  </View>
+                </View>
 
                 {recordingMode === "onBehalf" &&
                   (selectedPlayer1 ? (
@@ -787,8 +819,8 @@ export default function MatchesScreen() {
                         )}
                     </>
                   ))}
-                </>
-              )}
+              </>
+            )}
 
             {/* Opponent mode toggle */}
             <View style={styles.modeToggle}>
@@ -844,11 +876,22 @@ export default function MatchesScreen() {
 
             {/* Opponent picker */}
             {opponentMode === "guest" ? (
-              <TextInput
+              <FormField
+                ref={guestNameRef}
+                label="Guest opponent"
+                required
+                error={createErrors.opponent || createErrors.selection}
                 accessibilityLabel="Guest opponent name"
-                style={styles.input}
                 value={guestName}
                 onChangeText={setGuestName}
+                onBlur={() =>
+                  setCreateErrors((e) => ({
+                    ...e,
+                    opponent: guestName.trim()
+                      ? ""
+                      : "Enter the guest opponent's name.",
+                  }))
+                }
                 placeholder="Guest name..."
                 autoCapitalize="words"
                 autoCorrect={false}
@@ -859,9 +902,7 @@ export default function MatchesScreen() {
                   <Text style={styles.playerChipName}>
                     {selectedOpponent.displayName}
                   </Text>
-                  <Text style={styles.playerChipEmail}>
-                    Public profile
-                  </Text>
+                  <Text style={styles.playerChipEmail}>Public profile</Text>
                 </View>
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -933,6 +974,10 @@ export default function MatchesScreen() {
                   )}
               </>
             )}
+
+            <FormErrorSummary
+              errors={Object.values(createErrors).filter(Boolean)}
+            />
 
             {/* Historic set-score entry */}
             {createMode === "historic" &&
@@ -1017,41 +1062,16 @@ export default function MatchesScreen() {
                     : "Create live match"
                 }
                 accessibilityState={{
-                  disabled:
-                    creating ||
-                    (createMode === "historic" &&
-                      recordingMode === "onBehalf" &&
-                      !selectedPlayer1) ||
-                    (opponentMode === "search"
-                      ? !selectedOpponent
-                      : !guestName.trim()),
+                  disabled: creating,
                   busy: creating,
                 }}
-                style={[
-                  styles.createBtn,
-                  (creating ||
-                    (createMode === "historic" &&
-                      recordingMode === "onBehalf" &&
-                      !selectedPlayer1) ||
-                    (opponentMode === "search"
-                      ? !selectedOpponent
-                      : !guestName.trim())) &&
-                    styles.createBtnDisabled,
-                ]}
+                style={[styles.createBtn, creating && styles.createBtnDisabled]}
                 onPress={
                   createMode === "historic"
                     ? handleRecordHistoric
                     : handleCreateMatch
                 }
-                disabled={
-                  creating ||
-                  (createMode === "historic" &&
-                    recordingMode === "onBehalf" &&
-                    !selectedPlayer1) ||
-                  (opponentMode === "search"
-                    ? !selectedOpponent
-                    : !guestName.trim())
-                }
+                disabled={creating}
               >
                 {creating ? (
                   <ActivityIndicator color="#fff" />
@@ -1082,7 +1102,8 @@ function ProposeMatchModal({
 }) {
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
+  const [selectedOpponent, setSelectedOpponent] =
+    useState<PublicProfile | null>(null);
   const [isDoubles, setIsDoubles] = useState(false);
   // Doubles slots: the signed-in player always fills side 1's first seat.
   const [partner, setPartner] = useState<PublicProfile | null>(null);
@@ -1092,6 +1113,9 @@ function ProposeMatchModal({
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const dateRef = useRef<TextInput>(null);
+  const timeRef = useRef<TextInput>(null);
 
   const doublesChosenIds = [
     currentUser.id,
@@ -1123,22 +1147,22 @@ function ProposeMatchModal({
   }, [searchText, divisionId, selectedOpponent, currentUser.id]);
 
   async function handleSubmit() {
-    if (!opponentReady) return;
-    if (!DATE_RE.test(date)) {
-      Alert.alert("Invalid date", "Please enter the date as YYYY-MM-DD.");
-      return;
-    }
-    if (!TIME_RE.test(time)) {
-      Alert.alert("Invalid time", "Please enter the time as HH:MM (24-hour).");
-      return;
-    }
+    const nextErrors: Record<string, string> = {};
+    if (!opponentReady)
+      nextErrors.opponent = isDoubles
+        ? "Select all three other players."
+        : "Select an opponent.";
+    if (!DATE_RE.test(date)) nextErrors.date = "Enter the date as YYYY-MM-DD.";
+    if (!TIME_RE.test(time)) nextErrors.time = "Enter a 24-hour time as HH:MM.";
     const ts = Date.parse(`${date}T${time}`);
-    if (!ts || Number.isNaN(ts)) {
-      Alert.alert("Invalid date/time", "Could not parse that date and time.");
-      return;
-    }
-    if (ts < Date.now()) {
-      Alert.alert("Past time", "Pick a date/time in the future.");
+    if (!nextErrors.date && !nextErrors.time && (!ts || Number.isNaN(ts)))
+      nextErrors.date = "Enter a real date and time.";
+    if (!nextErrors.date && !nextErrors.time && ts < Date.now())
+      nextErrors.date = "Choose a date and time in the future.";
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      if (nextErrors.date) dateRef.current?.focus();
+      else if (nextErrors.time) timeRef.current?.focus();
       return;
     }
     setSubmitting(true);
@@ -1182,213 +1206,251 @@ function ProposeMatchModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Propose a Match</Text>
 
-            <Text style={styles.modalLabel}>Format</Text>
-            <View style={styles.formatRow}>
-              {([false, true] as const).map((doubles) => (
-                <TouchableOpacity
-                  key={doubles ? "doubles" : "singles"}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Propose a ${doubles ? "doubles" : "singles"} match`}
-                  accessibilityState={{ selected: isDoubles === doubles }}
-                  style={[styles.formatChip, isDoubles === doubles && styles.formatChipActive]}
-                  onPress={() => setIsDoubles(doubles)}
+          <Text style={styles.modalLabel}>Format</Text>
+          <View style={styles.formatRow}>
+            {([false, true] as const).map((doubles) => (
+              <TouchableOpacity
+                key={doubles ? "doubles" : "singles"}
+                accessibilityRole="button"
+                accessibilityLabel={`Propose a ${doubles ? "doubles" : "singles"} match`}
+                accessibilityState={{ selected: isDoubles === doubles }}
+                style={[
+                  styles.formatChip,
+                  isDoubles === doubles && styles.formatChipActive,
+                ]}
+                onPress={() => setIsDoubles(doubles)}
+              >
+                <Text
+                  style={[
+                    styles.formatChipText,
+                    isDoubles === doubles && styles.formatChipTextActive,
+                  ]}
                 >
-                  <Text
-                    style={[
-                      styles.formatChipText,
-                      isDoubles === doubles && styles.formatChipTextActive,
-                    ]}
-                  >
-                    {doubles ? "Doubles" : "Singles"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                  {doubles ? "Doubles" : "Singles"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-            {isDoubles ? (
-              <>
-                <PlayerSlotPicker
-                  label="Your partner"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={partner}
-                  onSelect={setPartner}
-                  onClear={() => setPartner(null)}
-                />
-                <PlayerSlotPicker
-                  label="Opponent 1"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={opponent1}
-                  onSelect={setOpponent1}
-                  onClear={() => setOpponent1(null)}
-                />
-                <PlayerSlotPicker
-                  label="Opponent 2"
-                  divisionId={divisionId}
-                  excludeIds={doublesChosenIds}
-                  selected={opponent2}
-                  onSelect={setOpponent2}
-                  onClear={() => setOpponent2(null)}
-                />
-                {opponentReady && (
-                  <>
-                    <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
-                    <TextInput
-                      accessibilityLabel="Match date"
-                      style={styles.input}
-                      value={date}
-                      onChangeText={setDate}
-                      placeholder="2026-05-10"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      maxLength={10}
-                    />
-                    <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
-                    <TextInput
-                      accessibilityLabel="Match time"
-                      style={styles.input}
-                      value={time}
-                      onChangeText={setTime}
-                      placeholder="18:30"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      maxLength={5}
-                    />
-                  </>
-                )}
-              </>
-            ) : selectedOpponent ? (
-              <>
-                <View style={styles.selectedPlayer}>
-                  <View style={styles.playerChip}>
-                    <Text style={styles.playerChipName}>
-                      {selectedOpponent.displayName}
-                    </Text>
-                    <Text style={styles.playerChipEmail}>
-                      Public profile
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Change selected opponent"
-                    onPress={() => {
-                      setSelectedOpponent(null);
-                      setSearchText("");
-                    }}
-                  >
-                    <Text style={styles.changeText}>Change</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.availabilityEmpty}>Availability is visible only when teammates share it.</Text>
-
-                <Text style={styles.modalLabel}>Date (YYYY-MM-DD)</Text>
-                <TextInput
-                  accessibilityLabel="Match date"
-                  style={styles.input}
-                  value={date}
-                  onChangeText={setDate}
-                  placeholder="2026-05-10"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={10}
-                />
-                <Text style={styles.modalLabel}>Time (HH:MM, 24-hour)</Text>
-                <TextInput
-                  accessibilityLabel="Match time"
-                  style={styles.input}
-                  value={time}
-                  onChangeText={setTime}
-                  placeholder="18:30"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  maxLength={5}
-                />
-              </>
-            ) : (
-              <>
-                <Text style={styles.modalLabel}>Search for opponent</Text>
-                <View style={styles.searchRow}>
-                  <TextInput
-                    accessibilityLabel="Search for opponent"
-                    style={[styles.input, styles.searchInput]}
-                    value={searchText}
-                    onChangeText={setSearchText}
-                    placeholder="Name or email..."
+          {isDoubles ? (
+            <>
+              <PlayerSlotPicker
+                label="Your partner"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={partner}
+                onSelect={setPartner}
+                onClear={() => setPartner(null)}
+              />
+              <PlayerSlotPicker
+                label="Opponent 1"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={opponent1}
+                onSelect={setOpponent1}
+                onClear={() => setOpponent1(null)}
+              />
+              <PlayerSlotPicker
+                label="Opponent 2"
+                divisionId={divisionId}
+                excludeIds={doublesChosenIds}
+                selected={opponent2}
+                onSelect={setOpponent2}
+                onClear={() => setOpponent2(null)}
+              />
+              {opponentReady && (
+                <>
+                  <FormField
+                    ref={dateRef}
+                    label="Date (YYYY-MM-DD)"
+                    required
+                    error={errors.date}
+                    accessibilityLabel="Match date"
+                    value={date}
+                    onChangeText={setDate}
+                    placeholder="2026-05-10"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    maxLength={10}
+                    onBlur={() =>
+                      setErrors((e) => ({
+                        ...e,
+                        date: DATE_RE.test(date)
+                          ? ""
+                          : "Enter the date as YYYY-MM-DD.",
+                      }))
+                    }
                   />
-                  {searching && (
-                    <ActivityIndicator
-                      style={styles.searchSpinner}
-                      color="#1a472a"
-                    />
-                  )}
+                  <FormField
+                    ref={timeRef}
+                    label="Time (HH:MM, 24-hour)"
+                    required
+                    error={errors.time}
+                    accessibilityLabel="Match time"
+                    value={time}
+                    onChangeText={setTime}
+                    placeholder="18:30"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={5}
+                    onBlur={() =>
+                      setErrors((e) => ({
+                        ...e,
+                        time: TIME_RE.test(time)
+                          ? ""
+                          : "Enter a 24-hour time as HH:MM.",
+                      }))
+                    }
+                  />
+                </>
+              )}
+            </>
+          ) : selectedOpponent ? (
+            <>
+              <View style={styles.selectedPlayer}>
+                <View style={styles.playerChip}>
+                  <Text style={styles.playerChipName}>
+                    {selectedOpponent.displayName}
+                  </Text>
+                  <Text style={styles.playerChipEmail}>Public profile</Text>
                 </View>
-                {searchResults.length > 0 && (
-                  <FlatList
-                    data={searchResults}
-                    keyExtractor={(u) => u.id}
-                    style={styles.resultsList}
-                    keyboardShouldPersistTaps="handled"
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={`Select ${item.displayName}`}
-                        style={styles.resultRow}
-                        onPress={() => {
-                          setSelectedOpponent(item);
-                          setSearchResults([]);
-                        }}
-                      >
-                        <Text style={styles.resultName}>
-                          {item.displayName}
-                        </Text>
-                        <Text style={styles.resultEmail}>Public profile</Text>
-                      </TouchableOpacity>
-                    )}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Change selected opponent"
+                  onPress={() => {
+                    setSelectedOpponent(null);
+                    setSearchText("");
+                  }}
+                >
+                  <Text style={styles.changeText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.availabilityEmpty}>
+                Availability is visible only when teammates share it.
+              </Text>
+
+              <FormField
+                ref={dateRef}
+                label="Date (YYYY-MM-DD)"
+                required
+                error={errors.date}
+                accessibilityLabel="Match date"
+                value={date}
+                onChangeText={setDate}
+                placeholder="2026-05-10"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={10}
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    date: DATE_RE.test(date)
+                      ? ""
+                      : "Enter the date as YYYY-MM-DD.",
+                  }))
+                }
+              />
+              <FormField
+                ref={timeRef}
+                label="Time (HH:MM, 24-hour)"
+                required
+                error={errors.time}
+                accessibilityLabel="Match time"
+                value={time}
+                onChangeText={setTime}
+                placeholder="18:30"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={5}
+                onBlur={() =>
+                  setErrors((e) => ({
+                    ...e,
+                    time: TIME_RE.test(time)
+                      ? ""
+                      : "Enter a 24-hour time as HH:MM.",
+                  }))
+                }
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalLabel}>Search for opponent</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  accessibilityLabel="Search for opponent"
+                  style={[styles.input, styles.searchInput]}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholder="Name or email..."
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searching && (
+                  <ActivityIndicator
+                    style={styles.searchSpinner}
+                    color="#1a472a"
                   />
                 )}
-                {searchText.trim().length > 0 &&
-                  !searching &&
-                  searchResults.length === 0 && (
-                    <Text style={styles.noResults}>No players found.</Text>
+              </View>
+              {searchResults.length > 0 && (
+                <FlatList
+                  data={searchResults}
+                  keyExtractor={(u) => u.id}
+                  style={styles.resultsList}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Select ${item.displayName}`}
+                      style={styles.resultRow}
+                      onPress={() => {
+                        setSelectedOpponent(item);
+                        setSearchResults([]);
+                      }}
+                    >
+                      <Text style={styles.resultName}>{item.displayName}</Text>
+                      <Text style={styles.resultEmail}>Public profile</Text>
+                    </TouchableOpacity>
                   )}
-              </>
-            )}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Cancel match proposal"
-                style={styles.cancelBtn}
-                onPress={onClose}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Send match proposal"
-                accessibilityState={{
-                  disabled: submitting || !opponentReady || !date || !time,
-                  busy: submitting,
-                }}
-                style={[
-                  styles.createBtn,
-                  (submitting || !opponentReady || !date || !time) &&
-                    styles.createBtnDisabled,
-                ]}
-                onPress={handleSubmit}
-                disabled={submitting || !opponentReady || !date || !time}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.createText}>Send Proposal</Text>
+                />
+              )}
+              {searchText.trim().length > 0 &&
+                !searching &&
+                searchResults.length === 0 && (
+                  <Text style={styles.noResults}>No players found.</Text>
                 )}
-              </TouchableOpacity>
-            </View>
+            </>
+          )}
+
+          <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
+          <View style={styles.modalActions}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Cancel match proposal"
+              style={styles.cancelBtn}
+              onPress={onClose}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Send match proposal"
+              accessibilityState={{
+                disabled: submitting,
+                busy: submitting,
+              }}
+              style={[styles.createBtn, submitting && styles.createBtnDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.createText}>Send Proposal</Text>
+              )}
+            </TouchableOpacity>
           </View>
+        </View>
       </KeyboardAwareBottomSheet>
     </Modal>
   );

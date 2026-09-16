@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -19,6 +18,8 @@ import {
   getDivision,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
+import { FormErrorSummary, FormField } from "../../components/FormField";
+import type { TextInput } from "react-native";
 
 type Mode = "choose" | "create" | "join";
 
@@ -27,28 +28,36 @@ export default function DivisionOnboardingScreen() {
   const [divisionName, setDivisionName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const divisionNameRef = useRef<TextInput>(null);
+  const inviteCodeRef = useRef<TextInput>(null);
   const router = useRouter();
   const { firebaseUser } = useAuthUser();
   const setUser = useAppStore((s) => s.setUser);
   const setDivisionId = useAppStore((s) => s.setDivisionId);
 
   function handleSignOut() {
-    Alert.alert("Sign Out", `Sign out of ${firebaseUser?.email ?? "this account"}?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await signOut(auth);
-          setUser(null);
+    Alert.alert(
+      "Sign Out",
+      `Sign out of ${firebaseUser?.email ?? "this account"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await signOut(auth);
+            setUser(null);
+          },
         },
-      },
-    ]);
+      ],
+    );
   }
 
   async function handleCreate() {
     if (!divisionName.trim()) {
-      Alert.alert("Required", "Please enter a division name.");
+      setErrors({ divisionName: "Enter a division name." });
+      divisionNameRef.current?.focus();
       return;
     }
     if (!firebaseUser) return;
@@ -77,8 +86,9 @@ export default function DivisionOnboardingScreen() {
   }
 
   async function handleJoin() {
-    if (!inviteCode.trim()) {
-      Alert.alert("Required", "Please enter an invite code.");
+    if (inviteCode.length !== 6) {
+      setErrors({ inviteCode: "Enter the 6-character invite code." });
+      inviteCodeRef.current?.focus();
       return;
     }
     if (!firebaseUser) return;
@@ -143,16 +153,26 @@ export default function DivisionOnboardingScreen() {
 
       {mode === "create" && (
         <View style={styles.form}>
-          <Text style={styles.label}>Division Name</Text>
-          <TextInput
-            style={styles.input}
+          <FormField
+            ref={divisionNameRef}
+            label="Division Name"
+            required
+            error={errors.divisionName}
             value={divisionName}
             onChangeText={setDivisionName}
+            onBlur={() =>
+              setErrors({
+                divisionName: divisionName.trim()
+                  ? ""
+                  : "Enter a division name.",
+              })
+            }
             placeholder="e.g. Company Tennis League"
             autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={handleCreate}
           />
+          <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleCreate}
@@ -175,11 +195,30 @@ export default function DivisionOnboardingScreen() {
 
       {mode === "join" && (
         <View style={styles.form}>
-          <Text style={styles.label}>Invite Code</Text>
-          <TextInput
-            style={[styles.input, styles.codeInput]}
+          <FormField
+            ref={inviteCodeRef}
+            label="Invite Code"
+            required
+            error={errors.inviteCode}
+            helperText="Codes contain 6 letters or numbers; spaces and dashes are removed."
+            inputStyle={styles.codeInput}
             value={inviteCode}
-            onChangeText={(t) => setInviteCode(t.toUpperCase())}
+            onChangeText={(t) =>
+              setInviteCode(
+                t
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]/g, "")
+                  .slice(0, 6),
+              )
+            }
+            onBlur={() =>
+              setErrors({
+                inviteCode:
+                  inviteCode.length === 6
+                    ? ""
+                    : "Enter the 6-character invite code.",
+              })
+            }
             placeholder="ABC123"
             autoCapitalize="characters"
             autoCorrect={false}
@@ -187,6 +226,7 @@ export default function DivisionOnboardingScreen() {
             returnKeyType="done"
             onSubmitEditing={handleJoin}
           />
+          <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleJoin}

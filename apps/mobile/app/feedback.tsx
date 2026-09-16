@@ -1,11 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -22,6 +21,10 @@ import {
   useUserProfile,
 } from "@tennis/firebase-client";
 import { KeyboardAwareScrollView } from "../components/KeyboardSafeView";
+import { FormErrorSummary, FormField } from "../components/FormField";
+import type { TextInput } from "react-native";
+
+const MESSAGE_LIMIT = 2000;
 
 export default function FeedbackScreen() {
   const router = useRouter();
@@ -34,6 +37,17 @@ export default function FeedbackScreen() {
   const [category, setCategory] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const categoryRef = useRef<TextInput>(null);
+  const messageRef = useRef<TextInput>(null);
+  const validate = (field: "category" | "message") =>
+    field === "category"
+      ? category.trim()
+        ? ""
+        : "Enter a feedback category."
+      : message.trim()
+        ? ""
+        : "Tell us what happened or what you would like to see.";
 
   const appVersion = useMemo(
     () => Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? null,
@@ -44,11 +58,13 @@ export default function FeedbackScreen() {
     const trimmedCategory = category.trim();
     const trimmedMessage = message.trim();
 
-    if (!trimmedCategory || !trimmedMessage) {
-      Alert.alert(
-        "Missing details",
-        "Please enter both a category and a message.",
-      );
+    const nextErrors = {
+      category: validate("category"),
+      message: validate("message"),
+    };
+    setErrors(nextErrors);
+    if (nextErrors.category || nextErrors.message) {
+      (nextErrors.category ? categoryRef : messageRef).current?.focus();
       return;
     }
 
@@ -81,6 +97,7 @@ export default function FeedbackScreen() {
 
       setCategory("");
       setMessage("");
+      setErrors({});
       Alert.alert("Feedback sent", "Thanks for helping us improve!", [
         { text: "OK", onPress: () => router.back() },
       ]);
@@ -109,28 +126,44 @@ export default function FeedbackScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.label}>Category</Text>
-        <TextInput
+        <FormField
+          ref={categoryRef}
+          label="Category"
+          required
+          error={errors.category}
           accessibilityLabel="Feedback category"
-          style={styles.input}
           value={category}
           onChangeText={setCategory}
+          onBlur={() =>
+            setErrors((e) => ({ ...e, category: validate("category") }))
+          }
           placeholder="Bug, feature request, scoring, profile…"
           autoCapitalize="sentences"
           returnKeyType="next"
+          onSubmitEditing={() => messageRef.current?.focus()}
         />
 
-        <Text style={styles.label}>Message</Text>
-        <TextInput
+        <FormField
+          ref={messageRef}
+          label="Message"
+          required
+          error={errors.message}
           accessibilityLabel="Feedback message"
-          style={[styles.input, styles.messageInput]}
+          inputStyle={styles.messageInput}
           value={message}
           onChangeText={setMessage}
+          onBlur={() =>
+            setErrors((e) => ({ ...e, message: validate("message") }))
+          }
           placeholder="Share as much detail as you can."
           multiline
           textAlignVertical="top"
+          maxLength={MESSAGE_LIMIT}
+          showCharacterCount
         />
       </View>
+
+      <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
 
       <View style={styles.contextCard}>
         <Text style={styles.contextTitle}>Included automatically</Text>

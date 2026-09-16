@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -17,6 +16,8 @@ import { auth, db } from "@tennis/firebase-client";
 import { doc, setDoc } from "firebase/firestore";
 import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
+import { FormErrorSummary, FormField } from "../../components/FormField";
+import type { TextInput } from "react-native";
 
 type Mode = "signin" | "signup";
 
@@ -26,14 +27,43 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const nameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  const validate = (field: string) => {
+    if (field === "displayName" && mode === "signup" && !displayName.trim())
+      return "Enter your display name.";
+    if (field === "email") {
+      if (!email.trim()) return "Enter your email address.";
+      if (!/^\S+@\S+\.\S+$/.test(email.trim()))
+        return "Enter a valid email address.";
+    }
+    if (field === "password") {
+      if (!password) return "Enter your password.";
+      if (mode === "signup" && password.length < 8)
+        return "Use at least 8 characters.";
+    }
+    return "";
+  };
+  const validateOnBlur = (field: string) =>
+    setErrors((current) => ({ ...current, [field]: validate(field) }));
 
   async function handleSubmit() {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert("Missing fields", "Please enter your email and password.");
-      return;
-    }
-    if (mode === "signup" && !displayName.trim()) {
-      Alert.alert("Missing name", "Please enter your display name.");
+    const fields =
+      mode === "signup"
+        ? ["displayName", "email", "password"]
+        : ["email", "password"];
+    const nextErrors = Object.fromEntries(
+      fields.map((field) => [field, validate(field)]),
+    );
+    setErrors(nextErrors);
+    const firstInvalid = fields.find((field) => nextErrors[field]);
+    if (firstInvalid) {
+      ({ displayName: nameRef, email: emailRef, password: passwordRef })[
+        firstInvalid
+      ]?.current?.focus();
       return;
     }
     setLoading(true);
@@ -112,48 +142,59 @@ export default function LoginScreen() {
 
       <View style={styles.form}>
         {mode === "signup" && (
-          <View style={styles.field}>
-            <Text style={styles.label}>Display Name</Text>
-            <TextInput
-              accessibilityLabel="Display name"
-              style={styles.input}
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Your name"
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-          </View>
+          <FormField
+            ref={nameRef}
+            label="Display Name"
+            required
+            error={errors.displayName}
+            value={displayName}
+            onChangeText={(value) => {
+              setDisplayName(value);
+              if (errors.displayName)
+                setErrors((e) => ({ ...e, displayName: "" }));
+            }}
+            onBlur={() => validateOnBlur("displayName")}
+            placeholder="Your name"
+            autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => emailRef.current?.focus()}
+          />
         )}
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            accessibilityLabel="Email"
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="next"
-          />
-        </View>
+        <FormField
+          ref={emailRef}
+          label="Email"
+          required
+          error={errors.email}
+          value={email}
+          onChangeText={setEmail}
+          onBlur={() => validateOnBlur("email")}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+        />
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            accessibilityLabel="Password"
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            secureTextEntry
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-          />
-        </View>
+        <FormField
+          ref={passwordRef}
+          label="Password"
+          required
+          error={errors.password}
+          helperText={
+            mode === "signup" ? "Use at least 8 characters." : undefined
+          }
+          value={password}
+          onChangeText={setPassword}
+          onBlur={() => validateOnBlur("password")}
+          placeholder="••••••••"
+          secureTextEntry
+          returnKeyType="done"
+          onSubmitEditing={handleSubmit}
+        />
+
+        <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
 
         <TouchableOpacity
           accessibilityRole="button"
@@ -180,6 +221,7 @@ export default function LoginScreen() {
           style={styles.toggleBtn}
           onPress={() => {
             setMode(mode === "signin" ? "signup" : "signin");
+            setErrors({});
           }}
         >
           <Text style={styles.toggleText}>
