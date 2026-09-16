@@ -73,6 +73,8 @@ export default function TutorialScreen() {
   const compact = width < 380 || height < 700;
   const listRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const scrollX = useRef(new Animated.Value(0)).current;
 
   async function finish() {
@@ -145,6 +147,22 @@ export default function TutorialScreen() {
           );
         })}
       </View>
+
+      <Text accessibilityLiveRegion="polite" style={styles.progressText}>
+        Step {currentIndex + 1} of {SLIDES.length}
+      </Text>
+
+      {saveError && (
+        <View accessibilityLiveRegion="polite" style={styles.saveStatus}>
+          <Text style={styles.saveStatusText}>We couldn't save your progress.</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={() => finish()}>
+            <Text style={styles.statusAction}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={() => finish(true)}>
+            <Text style={styles.statusAction}>Continue anyway</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Actions */}
       <SafeAreaView edges={["bottom"]} style={styles.footer}>
@@ -233,6 +251,29 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: "#ffdc60",
   },
+  progressText: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 86 : 76,
+    alignSelf: 'center',
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  saveStatus: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 166 : 150,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+  },
+  saveStatusText: { width: '100%', color: '#fff', textAlign: 'center' },
+  statusAction: { color: '#ffdc60', fontWeight: '700' },
 
   actions: {
     position: "absolute",
