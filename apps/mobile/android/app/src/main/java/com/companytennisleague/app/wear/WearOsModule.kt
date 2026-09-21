@@ -1,6 +1,7 @@
 package com.companytennisleague.app.wear
 
 import android.util.Log
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -113,9 +114,14 @@ class WearOsModule(
     when (event.path) {
       POINT_PATH -> {
         val command = String(event.data)
-        val payload =
-          if (command == "undo") mapOf("action" to "undo")
-          else mapOf("action" to "point", "player" to command)
+        val payload = Arguments.createMap().apply {
+          if (command == "undo") {
+            putString("action", "undo")
+          } else {
+            putString("action", "point")
+            putString("player", command)
+          }
+        }
         emit("onWearScoreInput", payload)
       }
 
