@@ -1,7 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
   <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
     <item name="android:textColor">@android:color/black</item>
-    <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="android:colorPrimary">@color/colorPrimary</item>
     <item name="android:statusBarColor">#1a472a</item>
   </style>
   <style name="ResetEditText" parent="@android:style/Widget.EditText">
