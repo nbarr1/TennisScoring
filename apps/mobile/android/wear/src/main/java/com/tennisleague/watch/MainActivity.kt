@@ -365,9 +365,9 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   companion object {
     private const val TAG = "TennisWatch"
-    private const val SCORE_PATH = "/tennis/score"
-    private const val POINT_PATH = "/tennis/point"
-    private const val SYNC_REQUEST_PATH = "/tennis/sync-request"
+    private const val SCORE_PATH = "/tennis/v1/snapshot"
+    private const val POINT_PATH = "/tennis/v1/command"
+    private const val SYNC_REQUEST_PATH = "/tennis/v1/sync"
     private const val DOUBLE_PRESS_MS = 300L
     private val BACKGROUND = Color.rgb(8, 16, 20)
     private val SCOREBOARD = Color.rgb(14, 20, 24)

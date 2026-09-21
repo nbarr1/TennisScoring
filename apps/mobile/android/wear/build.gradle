@@ -20,8 +20,8 @@ android {
         // NOTE: :app and :wear deliberately share an applicationId (above), so if
         // this APK/AAB is ever published to the same Play listing as the phone app
         // it will need a versionCode distinct from :app's.
-        versionCode 6
-        versionName '1.1.0'
+        versionCode rootProject.ext.appVersionCode
+        versionName rootProject.ext.appVersionName
     }
 
 

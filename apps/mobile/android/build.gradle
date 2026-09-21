@@ -1,6 +1,44 @@
-plugins {
-  id 'com.android.application' version '8.10.1' apply false
-  id 'org.jetbrains.kotlin.android' version '2.1.21' apply false
-  id 'org.jetbrains.kotlin.plugin.compose' version '2.1.21' apply false
-  id 'com.google.gms.google-services' version '4.4.2' apply false
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath 'com.google.gms:google-services:4.4.1'
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
 }
+
+// Single source of truth for the app version, shared by :app and :wear.
+// This native project is committed, so `expo prebuild` never regenerates the
+// module build.gradle files from app.json. Hardcoding versions there is what
+// silently shipped builds stamped 1.0.1/versionCode 1 (and 1.0.0/1 on :wear)
+// long after app.json had moved to 1.0.5/5. Bump app.json alone.
+def expoAppConfig = new groovy.json.JsonSlurper()
+    .parseText(file("${rootDir}/../app.json").text).expo
+if (!expoAppConfig?.version || expoAppConfig?.android?.versionCode == null) {
+  throw new GradleException(
+      "Could not read expo.version / expo.android.versionCode from ${rootDir}/../app.json")
+}
+ext.appVersionName = expoAppConfig.version
+ext.appVersionCode = expoAppConfig.android.versionCode
+
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+
+    // AsyncStorage v3 bundles org.asyncstorage.shared_storage:storage-android here.
+    maven {
+      url "$rootDir/../../../node_modules/@react-native-async-storage/async-storage/android/local_repo"
+    }
+  }
+}
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"

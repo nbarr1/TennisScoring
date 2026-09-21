@@ -1,6 +1,6 @@
 package com.companytennisleague.app.wear
 
-/** Versioned phone-authoritative Data Layer contract. Event ids make retries idempotent. */
+/** Versioned phone-authoritative Data Layer paths shared by the active phone bridge. */
 data class WearCommand(val protocolVersion: Int = CURRENT_VERSION, val eventId: String, val matchId: String, val sequence: Long, val action: String)
 data class WearSnapshot(val protocolVersion: Int = CURRENT_VERSION, val matchId: String, val sequence: Long, val acknowledgedEventIds: Set<String>, val scoreJson: String)
 const val CURRENT_VERSION = 1
