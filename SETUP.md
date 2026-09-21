@@ -2,6 +2,12 @@
 
 This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
 
+## Native client migration
+
+Android requires JDK 17 and Android SDK 35. Restore the environment-specific `google-services.json` into `apps/mobile/android/app/` through the credential workflow, then run `apps/mobile/android/gradlew -p apps/mobile/android :app:assembleDebug`.
+
+iOS requires macOS, current Xcode, the production signing team/profiles, APNs capability, associated domains, and an untracked `GoogleService-Info.plist`. Create/open `TennisScoring.xcodeproj`, retain bundle identifier `com.companytennisleague.app`, link Firebase Auth, Firestore, Functions, Messaging, and Storage through Swift Package Manager, and include `TennisScoringWatch` as a watchOS target. Apple project generation, signing, archive, and target integration cannot be validated on Linux.
+
 ---
 
 ## Prerequisites

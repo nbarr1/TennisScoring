@@ -14,7 +14,12 @@
     "backfill:season-level": "node scripts/backfill-division-season-level.mjs --",
     "backfill:profiles": "node scripts/backfill-profiles.mjs --",
     "check:firebase-rules": "node scripts/check-firebase-rules.mjs",
-    "check:mobile-codegen": "node scripts/check-mobile-codegen.mjs"
+    "check:mobile-codegen": "node scripts/check-mobile-codegen.mjs",
+    "android:build": "cd apps/mobile/android && ./gradlew :app:assembleDebug",
+    "android:test": "cd apps/mobile/android && ./gradlew :app:testDebugUnitTest",
+    "android:release": "cd apps/mobile/android && ./gradlew :app:bundleRelease",
+    "ios:build": "xcodebuild -project apps/mobile/ios/TennisScoring.xcodeproj -scheme TennisScoring build",
+    "ios:test": "xcodebuild test -project apps/mobile/ios/TennisScoring.xcodeproj -scheme TennisScoring -destination 'platform=iOS Simulator,name=iPhone 16'"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

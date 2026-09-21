@@ -2,6 +2,10 @@
 
 **GE Vernova Tennis League — Version 1.1.0**
 
+> **Native mobile migration:** Kotlin/Compose Android sources now live under `apps/mobile/android`, while SwiftUI and watch sources live under `apps/mobile/ios`. The Expo implementation remains temporarily as the behavioral oracle and may be removed only after the acceptance gates in [`docs/native-mobile-parity-inventory.md`](docs/native-mobile-parity-inventory.md) pass. Native clients do not host Metro or a JavaScript runtime.
+
+Native build entry points are `pnpm android:test`, `pnpm android:build`, `pnpm android:release`, `pnpm ios:test`, and `pnpm ios:build`. Platform Firebase files are restored by the existing environment credential workflow rather than added in migration commits.
+
 TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marked the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features; `1.0.2` added mobile account deletion and message reporting/blocking; `1.0.3` added the round-robin match scheduler; `1.0.4` adds a privacy policy (in-app screen and a public web page); `1.0.5` fixes the mobile privacy policy screen so it's reachable before signing in, and links it from the login/signup screen; `1.1.0` adds doubles match tracking and fixed-partnership team standings.
 
 **Status:** the web application is live and functional. The mobile application is usable today via a sideloaded Android APK build, but is still being refined — the Google Play Store listing is being finalized ahead of a public release.

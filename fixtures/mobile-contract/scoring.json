@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "format": { "setsToWin": 2, "gamesPerSet": 6, "tiebreakAt": 6, "finalSetTiebreak": true },
+  "representative": {
+    "users": [{ "id": "u1", "displayName": "Ada", "email": "ada@example.test", "role": "player", "fcmTokens": [], "tipsEnabled": true, "createdAt": 1700000000000, "updatedAt": 1700000000000 }],
+    "divisions": [{ "id": "d1", "name": "Open" }],
+    "matches": [{ "id": "m1", "divisionId": "d1", "matchType": "singles", "player1Id": "u1", "player2Id": "u2", "status": "scheduled", "createdAt": 1700000000000 }],
+    "doublesMatches": [{ "id": "m2", "matchType": "doubles", "side1": { "playerIds": ["u1", "u2"] }, "side2": { "playerIds": ["u3", "u4"] } }],
+    "channels": [{ "id": "c1", "memberIds": ["u1", "u2"] }],
+    "errors": [{ "code": "permission-denied", "message": "Not authorized" }]
+  },
+  "rankingOrder": ["matchesWon", "setsWon", "gamesWon", "gameDifferential", "headToHead", "displayName"]
+}

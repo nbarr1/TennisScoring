@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace 'com.tennisleague.watch'
-    compileSdk rootProject.ext.compileSdkVersion
+    compileSdk 35
 
     defaultConfig {
         // Wear OS Data Layer delivers messages between apps that share the same package name.
         // Keep this aligned with :app so the Galaxy Watch can talk to the phone app.
         applicationId 'com.companytennisleague.app'
         minSdk 26
-        targetSdk rootProject.ext.targetSdkVersion
+        targetSdk 35
         // Versioned in lockstep with :app from app.json, via rootProject.ext
         // (see android/build.gradle). These were pinned at 1.0.0/1 by hand and
         // had drifted four releases behind the phone app.
@@ -20,8 +20,8 @@ android {
         // NOTE: :app and :wear deliberately share an applicationId (above), so if
         // this APK/AAB is ever published to the same Play listing as the phone app
         // it will need a versionCode distinct from :app's.
-        versionCode rootProject.ext.appVersionCode
-        versionName rootProject.ext.appVersionName
+        versionCode 6
+        versionName '1.1.0'
     }
 
 
