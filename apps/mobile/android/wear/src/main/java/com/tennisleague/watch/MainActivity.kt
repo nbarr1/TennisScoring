@@ -40,6 +40,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   private var matchFinished = false
   private var activeMatchId: String? = null
   private var commandSequence = 0L
+  private var latestRenderedSequence = -1L
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -196,8 +197,11 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       if (envelope.optInt("protocolVersion", -1) != PROTOCOL_VERSION) return
       val matchId = envelope.optString("matchId")
       if (matchId.isBlank()) return
-      activeMatchId = matchId
-      commandSequence = maxOf(commandSequence, envelope.optLong("sequence", 0L))
+      val sequence = envelope.optLong("sequence", -1L)
+      if (sequence <= latestRenderedSequence) {
+        Log.d(TAG, "Ignoring stale Wear snapshot sequence $sequence; latest is $latestRenderedSequence")
+        return
+      }
       val root = JSONObject(envelope.getString("scoreJson"))
       val score = root.optJSONObject("score") ?: root
       val p1Name = root.optString("player1Name", "Player 1")
@@ -218,6 +222,9 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       val server = score.optString("server", "player1")
       val serviceSide = score.optString("serviceSide", "deuce")
 
+      latestRenderedSequence = sequence
+      activeMatchId = matchId
+      commandSequence = maxOf(commandSequence, sequence)
       player1Name.text = p1Name.take(10)
       player2Name.text = p2Name.take(10)
       player1Button.text = pointButtonLabel(p1Name, if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0")))
