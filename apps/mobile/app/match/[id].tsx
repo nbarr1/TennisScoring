@@ -554,6 +554,7 @@ export default function MatchScreen() {
       const p1 = match.player1Name ?? "Player 1";
       const p2 = match.player2Name ?? "Player 2";
       await sendScoreToWear(result.nextScore, {
+        matchId: id,
         status: result.matchWinner ? "pending_report" : match.status,
         player1Name: p1,
         player2Name: p2,
@@ -877,6 +878,7 @@ export default function MatchScreen() {
     const p1Name = match.player1Name ?? "Player 1";
     const p2Name = match.player2Name ?? "Player 2";
     void sendScoreToWear(match.liveScore, {
+      matchId: id as string,
       status: match.status,
       player1Name: p1Name,
       player2Name: p2Name,
@@ -887,6 +889,7 @@ export default function MatchScreen() {
   useEffect(() => {
     if (!isParticipant || match?.status !== "in_progress") return;
     const subscription = addWearScoreInputListener((event) => {
+      if (event.matchId !== id) return;
       if (event.action === "undo") {
         void handleUndo();
         return;

@@ -10,11 +10,15 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
+import org.json.JSONObject
 
 class WearOsModule(
   private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext), MessageClient.OnMessageReceivedListener {
   private var listenerRegistered = false
+  private val commandValidator = WearCommandValidator()
+  private var snapshotSequence = 0L
+  private val acknowledgedEventIds = LinkedHashSet<String>()
 
   override fun getName(): String = "WearOs"
 
@@ -66,6 +70,20 @@ class WearOsModule(
   @ReactMethod
   fun sendScore(scoreJson: String, promise: Promise) {
     try {
+      val matchId = JSONObject(scoreJson).optString("matchId")
+      if (matchId.isBlank()) {
+        promise.reject("wear_invalid_snapshot", "A Wear score snapshot must include matchId")
+        return
+      }
+      commandValidator.activate(matchId)
+      snapshotSequence += 1
+      val snapshotJson = JSONObject()
+        .put("protocolVersion", CURRENT_VERSION)
+        .put("matchId", matchId)
+        .put("sequence", snapshotSequence)
+        .put("acknowledgedEventIds", acknowledgedEventIds.toList())
+        .put("scoreJson", scoreJson)
+        .toString()
       Wearable.getNodeClient(reactContext).connectedNodes
         .addOnSuccessListener { nodes ->
           val client = Wearable.getMessageClient(reactContext)
@@ -77,7 +95,7 @@ class WearOsModule(
           var remaining = nodes.size
           var failed = false
           for (node in nodes) {
-            client.sendMessage(node.id, SCORE_PATH, scoreJson.toByteArray())
+            client.sendMessage(node.id, SCORE_PATH, snapshotJson.toByteArray())
               .addOnFailureListener { failed = true }
               .addOnCompleteListener {
                 remaining -= 1
@@ -113,20 +131,38 @@ class WearOsModule(
   override fun onMessageReceived(event: MessageEvent) {
     when (event.path) {
       POINT_PATH -> {
-        val command = String(event.data)
+        val command = decodeCommand(event.data) ?: return
+        if (!commandValidator.accept(command)) {
+          Log.w(TAG, "Ignoring invalid, stale, or duplicate Wear command")
+          return
+        }
+        acknowledgedEventIds.add(command.eventId)
+        while (acknowledgedEventIds.size > MAX_ACKNOWLEDGED_EVENTS) acknowledgedEventIds.remove(acknowledgedEventIds.first())
         val payload = Arguments.createMap().apply {
-          if (command == "undo") {
+          if (command.action == "undo") {
             putString("action", "undo")
           } else {
             putString("action", "point")
-            putString("player", command)
+            putString("player", command.action)
           }
+          putString("matchId", command.matchId)
+          putString("eventId", command.eventId)
+          putDouble("sequence", command.sequence.toDouble())
         }
         emit("onWearScoreInput", payload)
       }
 
       SYNC_REQUEST_PATH -> emit("onWearSyncRequest", null)
     }
+  }
+
+  private fun decodeCommand(data: ByteArray): WearCommand? = try {
+    val json = JSONObject(String(data, Charsets.UTF_8))
+    WearCommand(json.optInt("protocolVersion", -1), json.optString("eventId"),
+      json.optString("matchId"), json.optLong("sequence", -1L), json.optString("action"))
+  } catch (e: Exception) {
+    Log.w(TAG, "Ignoring malformed Wear command", e)
+    null
   }
 
   private fun emit(eventName: String, payload: Any?) {
@@ -167,5 +203,6 @@ class WearOsModule(
     private const val POINT_PATH = COMMAND_PATH
     private const val SYNC_REQUEST_PATH = SYNC_PATH
     private const val TAG = "WearOsModule"
+    private const val MAX_ACKNOWLEDGED_EVENTS = 256
   }
 }

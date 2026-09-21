@@ -19,6 +19,7 @@ import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
+import java.util.UUID
 
 class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   private lateinit var player1Name: TextView
@@ -37,6 +38,8 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   private val pendingButtonPoints = mutableMapOf<Int, Runnable>()
 
   private var matchFinished = false
+  private var activeMatchId: String? = null
+  private var commandSequence = 0L
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -189,7 +192,13 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun renderPayload(payload: String) {
     try {
-      val root = JSONObject(payload)
+      val envelope = JSONObject(payload)
+      if (envelope.optInt("protocolVersion", -1) != PROTOCOL_VERSION) return
+      val matchId = envelope.optString("matchId")
+      if (matchId.isBlank()) return
+      activeMatchId = matchId
+      commandSequence = maxOf(commandSequence, envelope.optLong("sequence", 0L))
+      val root = JSONObject(envelope.getString("scoreJson"))
       val score = root.optJSONObject("score") ?: root
       val p1Name = root.optString("player1Name", "Player 1")
       val p2Name = root.optString("player2Name", "Player 2")
@@ -247,7 +256,20 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun sendCommand(command: String) {
     if (matchFinished && command != "undo") return
-    sendToConnectedNodes(POINT_PATH, command.toByteArray()) { hasNodes ->
+    val matchId = activeMatchId ?: run {
+      feedbackTitle.text = "Waiting for match"
+      feedbackBody.text = "Open a live match on your phone before scoring."
+      return
+    }
+    commandSequence += 1
+    val payload = JSONObject()
+      .put("protocolVersion", PROTOCOL_VERSION)
+      .put("eventId", UUID.randomUUID().toString())
+      .put("matchId", matchId)
+      .put("sequence", commandSequence)
+      .put("action", command)
+      .toString().toByteArray()
+    sendToConnectedNodes(POINT_PATH, payload) { hasNodes ->
       if (!hasNodes) {
         feedbackTitle.text = "Phone not found"
         feedbackBody.text = "Pair this watch and open the live match on your phone."
@@ -369,6 +391,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     private const val POINT_PATH = "/tennis/v1/command"
     private const val SYNC_REQUEST_PATH = "/tennis/v1/sync"
     private const val DOUBLE_PRESS_MS = 300L
+    private const val PROTOCOL_VERSION = 1
     private val BACKGROUND = Color.rgb(8, 16, 20)
     private val SCOREBOARD = Color.rgb(14, 20, 24)
     private val LINE = Color.rgb(242, 239, 230)
