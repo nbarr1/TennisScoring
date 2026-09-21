@@ -4,6 +4,8 @@ on:
     paths: ['apps/mobile/android/**', 'apps/mobile/ios/**', 'fixtures/mobile-contract/**']
   push:
     branches: [main]
+permissions:
+  contents: read
 jobs:
   android:
     runs-on: ubuntu-latest
