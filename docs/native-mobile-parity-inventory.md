@@ -31,6 +31,10 @@ The immutable scoring engine owns standard points, deuce/advantage, per-game ser
 
 Deep links preserve `tennisleague://` and `com.companytennisleague.app://`, routing notification taps to match, message, dispute, schedule, or administrative destinations only after auth/onboarding/role guards. Notification registration requests permission, obtains APNs/FCM tokens, uses atomic token registration/removal, and unregisters listeners on sign-out.
 
+## Android migration entry point
+
+The Android application continues to launch the existing React Native/Expo client while native destinations are under construction. The native Android domain and repository sources compile alongside that host, but a native UI must not become the launcher until it reaches feature parity.
+
 ## Removal and validation gate
 
 Do not remove Expo/React Native sources until Android and iOS execute the language-neutral fixtures identically to TypeScript; emulator tests cover rules and authorization; offline/reconnect and listener disposal pass; callable failures are surfaced; FCM/APNs navigation works; PDF and avatar access obey Storage rules; doubles/disputes work; watch delayed/duplicate/out-of-order tests pass; and signed release archives install. Apple project/signing work must be completed on macOS.
