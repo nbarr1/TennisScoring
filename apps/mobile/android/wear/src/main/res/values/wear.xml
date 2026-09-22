@@ -1,0 +1,17 @@
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@array/android_wear_capabilities">
+  <!--
+    Advertises this app to the paired phone over the Data Layer. The phone's
+    NodeClient only reports that a watch is connected, not that this app is on
+    it, so without a capability to query a "launch on watch" control would offer
+    itself for watches that have never had Tennis Score installed.
+
+    The string is a cross-artifact contract with :app that nothing compiles or
+    verifies — changing it here silently stops the phone from finding the watch
+    app. tools:keep pins the array against resource shrinking, which strips
+    resources that no code appears to reference.
+  -->
+  <string-array name="android_wear_capabilities">
+    <item>tennis_league_wear_app</item>
+  </string-array>
+</resources>

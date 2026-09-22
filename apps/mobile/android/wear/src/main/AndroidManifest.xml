@@ -8,10 +8,29 @@
     android:theme="@style/WatchTheme">
     <activity
       android:name=".MainActivity"
+      android:launchMode="singleTask"
       android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <!--
+        Lets the phone open this app on the watch. RemoteActivityHelper can only
+        deliver an ACTION_VIEW intent that carries a data URI and
+        CATEGORY_BROWSABLE, so without a filter matching exactly that shape the
+        intent resolves to nothing on the watch and the launch silently no-ops.
+        The scheme matches expo.scheme in app.json; :app and :wear run on
+        different devices, so sharing it resolves nothing ambiguously.
+
+        singleTask above is part of the same feature: under the default launch
+        mode a remote launch while the scoreboard is already open stacks a
+        second copy of it instead of bringing the live one forward.
+      -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="tennisleague" />
       </intent-filter>
     </activity>
   </application>

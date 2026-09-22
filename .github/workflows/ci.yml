@@ -232,6 +232,10 @@ jobs:
   # profiles already trigger the same branch in app/build.gradle via
   # EAS_BUILD_PROFILE. It is not a distributable artifact — real release signing
   # stays with EAS/Play.
+  #
+  # The job also assembles :wear. The two modules install and update as separate
+  # artifacts, so the watch half of a Data Layer change can break on its own, and
+  # this is the only pull-request signal that compiles it.
   mobile_native:
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
@@ -268,6 +272,15 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null
+      # Nothing else in CI builds :wear, so a broken watch manifest or resource
+      # surfaced only in an EAS wear-preview build. It compiles no C++ and
+      # bundles no JavaScript, so it runs before the much longer app assemble to
+      # fail fast, but after the step above, which is what accepts the SDK
+      # licenses that :wear's compileSdk may need to download against. Its APK is
+      # left unsigned: the step proves the module assembles, nothing more.
+      - name: Assemble watch release (compile check)
+        working-directory: apps/mobile/android
+        run: ./gradlew :wear:assembleRelease --no-daemon --stacktrace
       # Gradle bundles the JavaScript itself as part of assembleRelease, so it
       # needs the same placeholders mobile_bundle uses — app.config.js hard-fails
       # when CI=true and they are unset. They are deliberately not secrets, so this
