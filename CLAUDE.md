@@ -423,7 +423,9 @@ Defined in `.github/workflows/ci.yml`. Triggers: push **and** pull request to `M
 
 The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIREBASE_*` vars, not secrets: `app.config.js` hard-fails when `CI=true` and they are unset, and real secrets would make both jobs unusable on fork and Dependabot pull requests. Do not replace them with repository secrets.
 
-Other workflows run independently of `ci.yml`: `.github/workflows/codeql.yml` (CodeQL JavaScript/TypeScript analysis on push/PR to `main` and a weekly schedule) and `.github/workflows/firebase-safety-guard.yml` (blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test).
+**Code scanning runs through GitHub's default setup**, configured in the repository's settings rather than from a workflow file, and it analyzes JavaScript/TypeScript, Python, and Actions. There is deliberately no `codeql.yml`: an advanced CodeQL workflow cannot upload results while default setup is enabled (`CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled`), so the one this repository used to carry failed every single run. To move to an advanced configuration — for custom queries or a `codeql-config.yml` — turn default setup off in **Settings → Code security** first, then add the workflow; running both is what breaks.
+
+`.github/workflows/firebase-safety-guard.yml` also runs independently of `ci.yml`: it blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test. It checks out full history and resolves both the base and head commits before diffing, because under a shallow checkout the diff failed and the guard reported "no rules changes" instead of failing — a guard that cannot read the diff must never pass.
 
 `.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android mobile or Wear OS preview APK builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets.
 
