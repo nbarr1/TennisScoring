@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { colors } from "../../theme";
 import {
   View,
@@ -59,6 +59,7 @@ import {
 } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
+  addWearSyncRequestListener,
   sendScoreToWear,
 } from "../../modules/wear-os";
 import type { Match, TipTrigger, PublicProfile } from "@tennis/shared";
@@ -531,7 +532,7 @@ export default function MatchScreen() {
   const isPendingMyReview =
     opponentSubmitted && submission?.status === "pending_confirmation";
 
-  async function handleUndo() {
+  const handleUndo = useCallback(async () => {
     if (!match || !id || scoring) return;
     setScoring(true);
     try {
@@ -541,50 +542,56 @@ export default function MatchScreen() {
     } finally {
       setScoring(false);
     }
-  }
+  }, [match, id, scoring]);
 
-  async function handlePoint(
-    player: "player1" | "player2",
-    pointAttribution?: PointAttribution,
-  ) {
-    if (!match || !id || scoring) return;
-    setScoring(true);
-    try {
-      const result = await scorePoint(id, match, player, pointAttribution);
-      const p1 = match.player1Name ?? "Player 1";
-      const p2 = match.player2Name ?? "Player 2";
-      await sendScoreToWear(result.nextScore, {
-        status: result.matchWinner ? "pending_report" : match.status,
-        player1Name: p1,
-        player2Name: p2,
-        ...buildWearFeedback(
-          {
-            ...match,
-            liveScore: result.nextScore,
-            ...(result.matchWinner && {
-              status: "pending_report" as const,
-              winner: result.matchWinner,
-            }),
-          },
-          result.tips,
-        ),
-      });
-      if (match.tipsEnabled && result.tips.length > 0) {
-        const tips = getTipsForTriggers(result.tips);
-        if (tips.length > 0) setCurrentTip(tips[0]);
+  // Kept referentially stable so the Wear listener below is not torn down and
+  // re-registered on every render; the match clock re-renders once a second.
+  const handlePoint = useCallback(
+    async (
+      player: "player1" | "player2",
+      pointAttribution?: PointAttribution,
+    ) => {
+      if (!match || !id || scoring) return;
+      setScoring(true);
+      try {
+        const result = await scorePoint(id, match, player, pointAttribution);
+        const p1 = match.player1Name ?? "Player 1";
+        const p2 = match.player2Name ?? "Player 2";
+        await sendScoreToWear(result.nextScore, {
+          matchId: id,
+          status: result.matchWinner ? "pending_report" : match.status,
+          player1Name: p1,
+          player2Name: p2,
+          ...buildWearFeedback(
+            {
+              ...match,
+              liveScore: result.nextScore,
+              ...(result.matchWinner && {
+                status: "pending_report" as const,
+                winner: result.matchWinner,
+              }),
+            },
+            result.tips,
+          ),
+        });
+        if (match.tipsEnabled && result.tips.length > 0) {
+          const tips = getTipsForTriggers(result.tips);
+          if (tips.length > 0) setCurrentTip(tips[0]);
+        }
+        if (result.matchWinner) {
+          Alert.alert(
+            "Match Over!",
+            `${result.matchWinner === "player1" ? p1 : p2} wins!\n\nEither player can now submit the match report.`,
+          );
+        }
+      } catch (err) {
+        console.error("Failed to score point:", err);
+      } finally {
+        setScoring(false);
       }
-      if (result.matchWinner) {
-        Alert.alert(
-          "Match Over!",
-          `${result.matchWinner === "player1" ? p1 : p2} wins!\n\nEither player can now submit the match report.`,
-        );
-      }
-    } catch (err) {
-      console.error("Failed to score point:", err);
-    } finally {
-      setScoring(false);
-    }
-  }
+    },
+    [match, id, scoring],
+  );
 
   function showPointTypeMenu(player: "player1" | "player2") {
     if (!match?.advancedStatsEnabled) {
@@ -872,21 +879,32 @@ export default function MatchScreen() {
     return () => clearInterval(timer);
   }, [match?.status]);
 
-  useEffect(() => {
-    if (!match) return;
-    const p1Name = match.player1Name ?? "Player 1";
-    const p2Name = match.player2Name ?? "Player 2";
+  const syncWear = useCallback(() => {
+    if (!match || !id) return;
     void sendScoreToWear(match.liveScore, {
+      matchId: id,
       status: match.status,
-      player1Name: p1Name,
-      player2Name: p2Name,
+      player1Name: match.player1Name ?? "Player 1",
+      player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
     });
-  }, [match]);
+  }, [match, id]);
+
+  useEffect(() => {
+    syncWear();
+  }, [syncWear]);
+
+  // The watch asks for a snapshot whenever it comes to the foreground. Without an
+  // answer it shows whatever it last saw until the match document next changes.
+  useEffect(() => {
+    const subscription = addWearSyncRequestListener(syncWear);
+    return () => subscription.remove();
+  }, [syncWear]);
 
   useEffect(() => {
     if (!isParticipant || match?.status !== "in_progress") return;
     const subscription = addWearScoreInputListener((event) => {
+      if (event.matchId !== id) return;
       if (event.action === "undo") {
         void handleUndo();
         return;
@@ -894,7 +912,7 @@ export default function MatchScreen() {
       if (event.player) void handlePoint(event.player);
     });
     return () => subscription.remove();
-  }, [isParticipant, match?.status, handlePoint]);
+  }, [isParticipant, match?.status, id, handlePoint, handleUndo]);
 
   if (loading || !match) {
     return (

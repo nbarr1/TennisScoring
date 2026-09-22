@@ -1,10 +1,14 @@
 name: CI
 
+# `Main` is this repository's default branch. `main` is kept alongside it so these
+# triggers keep firing if the default is ever renamed: a filter naming only a branch
+# that does not exist never matches, and the workflow then silently never runs.
+
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [Main, main, 'claude/**']
   pull_request:
-    branches: [main, 'claude/**']
+    branches: [Main, main, 'claude/**']
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

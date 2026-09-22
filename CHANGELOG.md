@@ -3,6 +3,26 @@
 ## [Unreleased]
 
 ### Added
+- Added `sessionId` to the Wear OS protocol. Snapshot sequence numbers live in the phone's memory and restart at 1 when the process does, so a watch that kept counting across a phone restart rejected every snapshot from the new process as stale and had its own commands rejected in turn. The watch now resets its ordering state when the session id changes, and the phone rejects commands that name a different session.
+- Added an answer to the watch's sync request. `addWearSyncRequestListener` had no consumer, so a watch that came to the foreground showed whatever it last saw until the match document happened to change; the match screen now replies with the current snapshot.
+- Added `pnpm ios:typecheck` (`scripts/ios-typecheck.sh`), which typechecks the iOS sources against the iOS SDK and the watch sources against the watchOS SDK.
+- Added Kotlin unit tests for the Wear command validator covering session mismatch and the pre-v1 command path.
+
+### Changed
+- Both sides of the Wear protocol now carry the pre-v1 paths (`/tennis/score`, `/tennis/point`, `/tennis/sync-request`) for one rollout. `:app` and `:wear` install as separate artifacts and update independently, so the v1-only switch would have left a mixed pair unable to exchange scores or points until both updates landed. The watch uses the old paths only until it has seen a v1 snapshot, so an updated pair never sends a point twice.
+- `sendScoreToWear` no longer rejects. Watch sync is peripheral and the match screen awaits it after the score has already committed, so a transport failure logged a scoring error and skipped the tips and match-completion alert; failures are now logged inside the wrapper, and a Wear node lookup that fails resolves as "no watch reachable" instead of throwing.
+- `handlePoint` and `handleUndo` on the match screen are memoized, so the Wear input listener is no longer torn down and re-registered on every render — the match clock re-renders once a second.
+- Workflow branch filters name `Main` (the default branch) alongside `main`. Every workflow filtered on `main` alone, which matches nothing here, so CI, CodeQL and the Firebase safety guard had produced no runs on any pull request for a week; a filter that matches nothing yields no runs rather than a failure, so nothing reported it.
+- The Firebase safety guard checks out full history and fails closed. It diffed the pull request's base against its head under a shallow checkout, so `git diff` reported "bad object" and the `|| true` turned that into "no rules changes" — the guard passed without reading the diff it exists to read. It also pinned pnpm to `9` while `packageManager` pins `9.15.5`, which `pnpm/action-setup@v6` rejects outright, and set up no JDK, so firebase-tools 15 refused to start the emulators (it requires JDK 21 or newer) — the job now installs Temurin 21, matching `ci.yml`'s `firebase_rules_tests`. All three surfaced the first time the workflow ever ran.
+- `.github/workflows/native-mobile.yml` installs Node, pnpm and the workspace before running Gradle, and sets up JDK 17 and the pinned NDK. `android/settings.gradle` resolves its React Native and Expo plugins through Node, so without `node_modules` the build failed while evaluating the settings file. Its iOS job runs the Swift typecheck instead of opening an Xcode project that does not exist in the repository.
+
+### Removed
+- Removed `.github/workflows/codeql.yml`. Code scanning on this repository runs through GitHub's default setup, and an advanced CodeQL workflow cannot upload results while that is enabled — every run of this workflow failed with `CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled`. Default setup analyzes JavaScript/TypeScript, Python and Actions, so it already covers more than this workflow's JavaScript/TypeScript-only matrix. To move to an advanced configuration, disable default setup in the repository settings first.
+
+### Fixed
+- The Wear native module now releases its Data Layer listener. React Native calls `removeListeners` with the positive count of subscriptions being removed, so the `count <= 0` test never fired and the listener stayed registered after the match screen unmounted, accepting and acknowledging watch commands with no handler to apply them.
+- The Wear snapshot counter and acknowledgement ring are guarded by a lock. `sendScore` runs on the native modules thread while inbound commands arrive on the Wearable callback thread, so both mutated the same unsynchronized state.
+- Acknowledged event ids are serialized as a JSON array rather than a Java list's `toString()`.
 - Reworked the web `/admin` page around the two jobs leaders actually do — adding players and assigning them to a division for a season. The season is now a single page-level selector in the header (with a `N players · N division levels · N unassigned` summary), and the page is split into **Roster**, **Divisions**, and **Tools** tabs so only one panel renders at a time.
 - Added a roster toolbar with live name/email search, filter chips (`All`, `Unassigned`, one per division level with counts), and **Import roster** / **Add player** actions.
 - Added an unassigned callout above the roster that names how many players have no division for the selected season and jumps to the Unassigned filter.

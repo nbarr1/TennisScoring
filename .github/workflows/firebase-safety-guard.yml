@@ -2,7 +2,7 @@ name: Firebase Safety Guard
 
 on:
   pull_request:
-    branches: [main]
+    branches: [Main, main]
     paths:
       - 'firebase/**'
       - '.github/workflows/firebase-safety-guard.yml'
@@ -15,11 +15,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The guard diffs the pull request's base against its head, so both
+          # commits have to be in the clone. Under the default shallow fetch
+          # `git diff` failed with "bad object", and the `|| true` below turned
+          # that into "no rules changes" — the guard reported success without
+          # having read anything.
+          fetch-depth: 0
       - name: Block dangerous Firebase rules patterns
         run: |
           set -euo pipefail
           base_sha="${{ github.event.pull_request.base.sha }}"
           head_sha="${{ github.event.pull_request.head.sha }}"
+
+          # Fail closed: a guard that cannot read the diff must not pass.
+          for sha in "$base_sha" "$head_sha"; do
+            if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+              echo "Cannot resolve $sha, so this pull request cannot be inspected." >&2
+              exit 1
+            fi
+          done
+
           changed_files="$(git diff --name-only "$base_sha" "$head_sha" | grep -E '^firebase/.*\.rules$' || true)"
 
           if [ -z "$changed_files" ]; then
@@ -36,14 +52,26 @@ jobs:
           done
 
           echo "Firebase safety guard passed."
+      # Must match `packageManager` in package.json exactly: action-setup v6
+      # fails outright when the two disagree, and every other workflow pins the
+      # same version.
       - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 9.15.5
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # The Firestore and Storage emulators run on the JVM, and firebase-tools 15
+      # refuses to start on a JDK older than 21. The runner's preinstalled JDK is
+      # older, so without this the emulator exits before the smoke test runs.
+      # ci.yml's firebase_rules_tests job carries the same step.
+      - name: Set up Java for the Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Firebase emulator rules smoke test
         run: pnpm --filter @tennis/firebase-functions test:rules
