@@ -15,11 +15,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The guard diffs the pull request's base against its head, so both
+          # commits have to be in the clone. Under the default shallow fetch
+          # `git diff` failed with "bad object", and the `|| true` below turned
+          # that into "no rules changes" — the guard reported success without
+          # having read anything.
+          fetch-depth: 0
       - name: Block dangerous Firebase rules patterns
         run: |
           set -euo pipefail
           base_sha="${{ github.event.pull_request.base.sha }}"
           head_sha="${{ github.event.pull_request.head.sha }}"
+
+          # Fail closed: a guard that cannot read the diff must not pass.
+          for sha in "$base_sha" "$head_sha"; do
+            if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+              echo "Cannot resolve $sha, so this pull request cannot be inspected." >&2
+              exit 1
+            fi
+          done
+
           changed_files="$(git diff --name-only "$base_sha" "$head_sha" | grep -E '^firebase/.*\.rules$' || true)"
 
           if [ -z "$changed_files" ]; then
@@ -36,9 +52,12 @@ jobs:
           done
 
           echo "Firebase safety guard passed."
+      # Must match `packageManager` in package.json exactly: action-setup v6
+      # fails outright when the two disagree, and every other workflow pins the
+      # same version.
       - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 9.15.5
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
