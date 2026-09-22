@@ -48,6 +48,19 @@ const val LEGACY_SYNC_PATH = "/tennis/sync-request"
 
 val VALID_ACTIONS = setOf("player1", "player2", "undo")
 
+/**
+ * The remote-launch contract with :wear, which the phone uses to open the watch
+ * app. [WATCH_APP_CAPABILITY] must match the android_wear_capabilities entry in
+ * wear/src/main/res/values/wear.xml, and [LAUNCH_URI]'s scheme must match the
+ * VIEW intent filter on the watch's MainActivity.
+ *
+ * Neither is checked across the module boundary: a capability mismatch makes the
+ * phone report that no watch has the app, and a scheme mismatch makes the intent
+ * resolve to nothing on the watch, so the launch reports success and does nothing.
+ */
+const val WATCH_APP_CAPABILITY = "tennis_league_wear_app"
+const val LAUNCH_URI = "tennisleague://watch"
+
 class DuplicateEventGuard(private val capacity: Int = 256) {
   private val seen = LinkedHashSet<String>()
   @Synchronized fun accept(eventId: String): Boolean {

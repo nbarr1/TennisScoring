@@ -1,6 +1,9 @@
 package com.companytennisleague.app.wear
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -8,10 +11,12 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import java.util.UUID
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray
@@ -161,6 +166,90 @@ class WearOsModule(
     }
   }
 
+  /**
+   * Whether a reachable watch actually has this app, which [isWearOsAvailable]
+   * cannot answer: NodeClient reports that a watch is connected, never what is
+   * installed on it, so gating a launch control on it offers the control for
+   * watches that have never had the app.
+   */
+  @ReactMethod
+  fun isWatchAppInstalled(promise: Promise) {
+    try {
+      capableNodes()
+        .addOnSuccessListener { info -> promise.resolve(info.nodes.isNotEmpty()) }
+        .addOnFailureListener { error ->
+          Log.w(TAG, "Could not read the Wear app capability", error)
+          promise.resolve(false)
+        }
+    } catch (e: NoClassDefFoundError) {
+      Log.w(TAG, "Wearable API not available in isWatchAppInstalled()", e)
+      promise.resolve(false)
+    } catch (e: Exception) {
+      Log.w(TAG, "Unexpected error in isWatchAppInstalled()", e)
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * Opens the watch app on every reachable watch that has it, resolving true if
+   * at least one accepted. Not reaching a watch is an ordinary state rather than
+   * an error, so this resolves false instead of rejecting.
+   */
+  @ReactMethod
+  fun launchWatchApp(promise: Promise) {
+    try {
+      capableNodes()
+        .addOnSuccessListener { info ->
+          val nodes = info.nodes
+          if (nodes.isEmpty()) {
+            promise.resolve(false)
+            return@addOnSuccessListener
+          }
+
+          // RemoteActivityHelper rejects anything but ACTION_VIEW carrying a data
+          // URI and CATEGORY_BROWSABLE, and the watch matches that shape with the
+          // VIEW filter on its MainActivity.
+          val intent = Intent(Intent.ACTION_VIEW)
+            .setData(Uri.parse(LAUNCH_URI))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+          val helper = RemoteActivityHelper(reactContext)
+          val remaining = AtomicInteger(nodes.size)
+          val launched = AtomicBoolean(false)
+          for (node in nodes) {
+            val started = helper.startRemoteActivity(intent, node.id)
+            started.addListener(
+              {
+                // A ListenableFuture reports failure only when read, and this one
+                // has already completed, so get() returns without blocking.
+                try {
+                  started.get()
+                  launched.set(true)
+                } catch (e: Exception) {
+                  Log.w(TAG, "Could not open the watch app on ${node.id}", e)
+                }
+                if (remaining.decrementAndGet() == 0) promise.resolve(launched.get())
+              },
+              directExecutor,
+            )
+          }
+        }
+        .addOnFailureListener { error ->
+          Log.w(TAG, "Could not read the Wear app capability", error)
+          promise.resolve(false)
+        }
+    } catch (e: NoClassDefFoundError) {
+      Log.w(TAG, "Wearable API not available in launchWatchApp()", e)
+      promise.resolve(false)
+    } catch (e: Exception) {
+      Log.w(TAG, "Unexpected error in launchWatchApp()", e)
+      promise.resolve(false)
+    }
+  }
+
+  private fun capableNodes() =
+    Wearable.getCapabilityClient(reactContext)
+      .getCapability(WATCH_APP_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+
   override fun onMessageReceived(event: MessageEvent) {
     when (event.path) {
       COMMAND_PATH -> handleCommand(event.data)
@@ -274,6 +363,7 @@ class WearOsModule(
   }
 
   companion object {
+    private val directExecutor = Executor { command -> command.run() }
     private const val TAG = "WearOsModule"
     private const val MAX_ACKNOWLEDGED_EVENTS = 256
   }
