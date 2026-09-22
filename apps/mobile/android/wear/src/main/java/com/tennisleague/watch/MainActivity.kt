@@ -39,8 +39,17 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private var matchFinished = false
   private var activeMatchId: String? = null
+  private var activeSessionId: String? = null
   private var commandSequence = 0L
   private var latestRenderedSequence = -1L
+
+  /**
+   * Set once a v1 snapshot arrives, and never cleared. A v1 phone also mirrors every
+   * snapshot onto the pre-v1 path, so the watch has to ignore that mirror and keep
+   * its own commands on the v1 path, or the phone would score each point twice.
+   */
+  private var speaksV1 = false
+  private var hasRenderedScore = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -95,9 +104,11 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   }
 
   override fun onMessageReceived(event: MessageEvent) {
-    if (event.path != SCORE_PATH) return
     val payload = String(event.data)
-    runOnUiThread { renderPayload(payload) }
+    when (event.path) {
+      SCORE_PATH -> runOnUiThread { renderSnapshot(payload) }
+      LEGACY_SCORE_PATH -> runOnUiThread { renderLegacySnapshot(payload) }
+    }
   }
 
   private fun buildLayout() {
@@ -191,97 +202,157 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     feedbackBody.text = "Open a live match on your phone."
   }
 
-  private fun renderPayload(payload: String) {
+  /** Handles a v1 envelope: session reset, then ordering, then the score inside it. */
+  private fun renderSnapshot(payload: String) {
     try {
       val envelope = JSONObject(payload)
       if (envelope.optInt("protocolVersion", -1) != PROTOCOL_VERSION) return
+      speaksV1 = true
       val matchId = envelope.optString("matchId")
       if (matchId.isBlank()) return
+
+      // Snapshot sequences live in the phone's memory and restart at 1 when its
+      // process does, so ordering state kept from a previous session would reject
+      // every snapshot the new one sends.
+      val sessionId = envelope.optString("sessionId").ifBlank { UNKNOWN_SESSION }
+      if (sessionId != activeSessionId) {
+        Log.d(TAG, "New phone session; resetting Wear sync state")
+        activeSessionId = sessionId
+        latestRenderedSequence = -1L
+        commandSequence = 0L
+        activeMatchId = null
+        matchFinished = false
+      }
+
       val sequence = envelope.optLong("sequence", -1L)
       if (sequence <= latestRenderedSequence) {
         Log.d(TAG, "Ignoring stale Wear snapshot sequence $sequence; latest is $latestRenderedSequence")
         return
       }
-      val root = JSONObject(envelope.getString("scoreJson"))
-      val score = root.optJSONObject("score") ?: root
-      val p1Name = root.optString("player1Name", "Player 1")
-      val p2Name = root.optString("player2Name", "Player 2")
-      val status = root.optString("status", "in_progress")
-      val winnerName = root.optString("matchWinnerName", "")
-
-      val p1Sets = score.optInt("player1SetsWon", 0)
-      val p2Sets = score.optInt("player2SetsWon", 0)
-      val currentSetIndex = score.optInt("currentSet", 0)
-      val sets = score.optJSONArray("sets")
-      val currentSet = sets?.optJSONObject(currentSetIndex)
-      val p1Games = currentSet?.optInt("player1Games", 0) ?: 0
-      val p2Games = currentSet?.optInt("player2Games", 0) ?: 0
-      val isTiebreak = score.optBoolean("isTiebreak", false)
-      val currentGame = score.optJSONObject("currentGame")
-      val tiebreak = score.optJSONObject("tiebreakScore")
-      val server = score.optString("server", "player1")
-      val serviceSide = score.optString("serviceSide", "deuce")
 
       latestRenderedSequence = sequence
       activeMatchId = matchId
       commandSequence = maxOf(commandSequence, sequence)
-      player1Name.text = p1Name.take(10)
-      player2Name.text = p2Name.take(10)
-      player1Button.text = pointButtonLabel(p1Name, if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0")))
-      player2Button.text = pointButtonLabel(p2Name, if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0")))
-      setsScore.text = "Sets $p1Sets-$p2Sets"
-      gamesScore.text = "Games $p1Games-$p2Games"
-      pointScore.text =
-        if (isTiebreak && tiebreak != null) {
-          "TB ${tiebreak.optInt("player1Points", 0)}-${tiebreak.optInt("player2Points", 0)}"
-        } else {
-          "${formatPoint(currentGame?.optString("player1", "0"))}-${formatPoint(currentGame?.optString("player2", "0"))}"
-        }
-      serverText.text = "● ${if (server == "player1") p1Name else p2Name} · $serviceSide court"
-
-      matchFinished =
-        status == "pending_report" ||
-          status == "completed" ||
-          root.optString("feedbackTitle") == "Match complete" ||
-          winnerName.isNotBlank()
-      player1Button.isEnabled = !matchFinished
-      player2Button.isEnabled = !matchFinished
-
-      if (matchFinished) {
-        feedbackTitle.text = "MATCH COMPLETE"
-        feedbackBody.text = if (winnerName.isNotBlank()) "$winnerName wins. Confirm on phone." else "Confirm the report on phone."
-      } else {
-        feedbackTitle.text = root.optString("feedbackTitle", "Game")
-        feedbackBody.text = root.optString("feedbackBody", "Tap a plinth for point. Long-press to undo.")
-      }
+      renderScore(JSONObject(envelope.getString("scoreJson")))
     } catch (e: Exception) {
-      Log.e(TAG, "Error rendering payload", e)
-      feedbackTitle.text = "Sync error"
-      feedbackBody.text = "Could not read latest score."
+      reportRenderFailure(e)
     }
+  }
+
+  /**
+   * Handles a pre-v1 snapshot, which is the bare score payload with no envelope,
+   * ordering or match id. Ignored once the paired phone has proven it speaks v1.
+   */
+  private fun renderLegacySnapshot(payload: String) {
+    if (speaksV1) return
+    try {
+      val root = JSONObject(payload)
+      activeMatchId = root.optString("matchId").ifBlank { null }
+      renderScore(root)
+    } catch (e: Exception) {
+      reportRenderFailure(e)
+    }
+  }
+
+  private fun renderScore(root: JSONObject) {
+    val score = root.optJSONObject("score") ?: root
+    val p1Name = root.optString("player1Name", "Player 1")
+    val p2Name = root.optString("player2Name", "Player 2")
+    val status = root.optString("status", "in_progress")
+    val winnerName = root.optString("matchWinnerName", "")
+
+    val p1Sets = score.optInt("player1SetsWon", 0)
+    val p2Sets = score.optInt("player2SetsWon", 0)
+    val currentSetIndex = score.optInt("currentSet", 0)
+    val sets = score.optJSONArray("sets")
+    val currentSet = sets?.optJSONObject(currentSetIndex)
+    val p1Games = currentSet?.optInt("player1Games", 0) ?: 0
+    val p2Games = currentSet?.optInt("player2Games", 0) ?: 0
+    val isTiebreak = score.optBoolean("isTiebreak", false)
+    val currentGame = score.optJSONObject("currentGame")
+    val tiebreak = score.optJSONObject("tiebreakScore")
+    val server = score.optString("server", "player1")
+    val serviceSide = score.optString("serviceSide", "deuce")
+
+    player1Name.text = p1Name.take(10)
+    player2Name.text = p2Name.take(10)
+    player1Button.text = pointButtonLabel(p1Name, if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0")))
+    player2Button.text = pointButtonLabel(p2Name, if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0")))
+    setsScore.text = "Sets $p1Sets-$p2Sets"
+    gamesScore.text = "Games $p1Games-$p2Games"
+    pointScore.text =
+      if (isTiebreak && tiebreak != null) {
+        "TB ${tiebreak.optInt("player1Points", 0)}-${tiebreak.optInt("player2Points", 0)}"
+      } else {
+        "${formatPoint(currentGame?.optString("player1", "0"))}-${formatPoint(currentGame?.optString("player2", "0"))}"
+      }
+    serverText.text = "● ${if (server == "player1") p1Name else p2Name} · $serviceSide court"
+
+    matchFinished =
+      status == "pending_report" ||
+        status == "completed" ||
+        root.optString("feedbackTitle") == "Match complete" ||
+        winnerName.isNotBlank()
+    player1Button.isEnabled = !matchFinished
+    player2Button.isEnabled = !matchFinished
+
+    if (matchFinished) {
+      feedbackTitle.text = "MATCH COMPLETE"
+      feedbackBody.text = if (winnerName.isNotBlank()) "$winnerName wins. Confirm on phone." else "Confirm the report on phone."
+    } else {
+      feedbackTitle.text = root.optString("feedbackTitle", "Game")
+      feedbackBody.text = root.optString("feedbackBody", "Tap a plinth for point. Long-press to undo.")
+    }
+
+    hasRenderedScore = true
+  }
+
+  private fun reportRenderFailure(e: Exception) {
+    Log.e(TAG, "Error rendering payload", e)
+    feedbackTitle.text = "Sync error"
+    feedbackBody.text = "Could not read latest score."
   }
 
   private fun sendCommand(command: String) {
     if (matchFinished && command != "undo") return
-    val matchId = activeMatchId ?: run {
-      feedbackTitle.text = "Waiting for match"
-      feedbackBody.text = "Open a live match on your phone before scoring."
+    if (!hasRenderedScore) {
+      showWaitingForMatch()
+      return
+    }
+
+    if (!speaksV1) {
+      // A pre-v1 phone understands a bare action string on the old path only.
+      sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone)
+      return
+    }
+
+    val sessionId = activeSessionId
+    val matchId = activeMatchId
+    if (sessionId == null || matchId == null) {
+      showWaitingForMatch()
       return
     }
     commandSequence += 1
     val payload = JSONObject()
       .put("protocolVersion", PROTOCOL_VERSION)
+      .put("sessionId", sessionId)
       .put("eventId", UUID.randomUUID().toString())
       .put("matchId", matchId)
       .put("sequence", commandSequence)
       .put("action", command)
       .toString().toByteArray()
-    sendToConnectedNodes(POINT_PATH, payload) { hasNodes ->
-      if (!hasNodes) {
-        feedbackTitle.text = "Phone not found"
-        feedbackBody.text = "Pair this watch and open the live match on your phone."
-      }
-    }
+    sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone)
+  }
+
+  private fun showWaitingForMatch() {
+    feedbackTitle.text = "Waiting for match"
+    feedbackBody.text = "Open a live match on your phone before scoring."
+  }
+
+  private fun reportMissingPhone(hasNodes: Boolean) {
+    if (hasNodes) return
+    feedbackTitle.text = "Phone not found"
+    feedbackBody.text = "Pair this watch and open the live match on your phone."
   }
 
   private fun requestScoreSync() {
@@ -291,6 +362,9 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
         if (hasNodes) "Open the live match on your phone if the score does not appear."
         else "Install and open Tennis League on your paired phone."
     }
+    // A pre-v1 phone listens on the old path only. Stop asking there once the
+    // paired phone has answered on v1.
+    if (!speaksV1) sendToConnectedNodes(LEGACY_SYNC_REQUEST_PATH, ByteArray(0))
   }
 
   private fun sendToConnectedNodes(path: String, data: ByteArray, onNodesChecked: (Boolean) -> Unit = {}) {
@@ -397,6 +471,14 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     private const val SCORE_PATH = "/tennis/v1/snapshot"
     private const val POINT_PATH = "/tennis/v1/command"
     private const val SYNC_REQUEST_PATH = "/tennis/v1/sync"
+
+    // Pre-v1 paths, carried for one rollout so a watch and a phone that update at
+    // different times keep talking. Delete these along with every branch that
+    // reads [speaksV1] once a v1 build of both artifacts has shipped.
+    private const val LEGACY_SCORE_PATH = "/tennis/score"
+    private const val LEGACY_POINT_PATH = "/tennis/point"
+    private const val LEGACY_SYNC_REQUEST_PATH = "/tennis/sync-request"
+    private const val UNKNOWN_SESSION = "unknown-session"
     private const val DOUBLE_PRESS_MS = 300L
     private const val PROTOCOL_VERSION = 1
     private val BACKGROUND = Color.rgb(8, 16, 20)

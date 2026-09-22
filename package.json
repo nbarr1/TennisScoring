@@ -18,8 +18,7 @@
     "android:build": "cd apps/mobile/android && ./gradlew :app:assembleDebug",
     "android:test": "cd apps/mobile/android && ./gradlew :app:testDebugUnitTest",
     "android:release": "cd apps/mobile/android && ./gradlew :app:bundleRelease",
-    "ios:build": "swiftc -typecheck apps/mobile/ios/TennisScoring/DomainModels.swift apps/mobile/ios/TennisScoring/ScoreEngine.swift apps/mobile/ios/TennisScoring/RankingEngine.swift",
-    "ios:test": "swiftc -typecheck apps/mobile/ios/TennisScoring/DomainModels.swift apps/mobile/ios/TennisScoring/ScoreEngine.swift apps/mobile/ios/TennisScoring/RankingEngine.swift"
+    "ios:typecheck": "scripts/ios-typecheck.sh"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

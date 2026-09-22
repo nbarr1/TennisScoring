@@ -13,13 +13,13 @@ on:
           - wear
           - wear-production
   pull_request:
-    branches: [main]
+    branches: [Main, main]
     paths:
       - 'apps/mobile/**'
       - 'packages/shared/**'
       - '.github/workflows/eas-build.yml'
   push:
-    branches: [main]
+    branches: [Main, main]
     paths:
       - 'apps/mobile/**'
       - 'packages/shared/**'

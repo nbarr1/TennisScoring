@@ -27,13 +27,21 @@ Roles use exact wire values `player`, `division_leader`, `admin`, and `app_devel
 
 ## Scoring and cross-device behavior
 
-The immutable scoring engine owns standard points, deuce/advantage, per-game service rotation, 6–6 tiebreak entry, one-point then two-point tiebreak service blocks, six-point end changes, optional deciding-set play-out, set/match completion, formatting, snapshots, and undo. The phone is authoritative. Watch commands carry protocol version, match id, monotonic sequence and unique event id; the phone rejects duplicates/out-of-order commands and returns an acknowledged snapshot. Reconnect requests the newest snapshot before queued commands are replayed.
+The immutable scoring engine owns standard points, deuce/advantage, per-game service rotation, 6–6 tiebreak entry, one-point then two-point tiebreak service blocks, six-point end changes, optional deciding-set play-out, set/match completion, formatting, snapshots, and undo. The phone is authoritative.
+
+The Wear protocol (v1) is implemented on both sides today. Watch commands carry protocol version, phone session id, match id, a monotonic sequence and a unique event id; the phone rejects commands that fail any of those checks, and each snapshot carries the event ids it has applied. The watch resets its ordering state when the session id changes, which is what keeps a restarted phone from having every snapshot rejected as stale. On resume the watch requests the newest snapshot and the phone answers from the open match screen.
+
+Two parts of that contract are not finished. The watch does not yet queue commands while disconnected, so the acknowledged event ids in each snapshot are carried but not acted on; and both sides still accept the pre-v1 paths so a phone and a watch that update at different times keep working. Remove the pre-v1 branches once a v1 build of `:app` and `:wear` has shipped, and implement replay before claiming offline parity.
 
 Deep links preserve `tennisleague://` and `com.companytennisleague.app://`, routing notification taps to match, message, dispute, schedule, or administrative destinations only after auth/onboarding/role guards. Notification registration requests permission, obtains APNs/FCM tokens, uses atomic token registration/removal, and unregisters listeners on sign-out.
 
 ## Android migration entry point
 
-The Android application continues to launch the existing React Native/Expo client while native destinations are under construction. The native Android domain and repository sources compile alongside that host, but a native UI must not become the launcher until it reaches feature parity.
+The Android application continues to launch the existing React Native/Expo client while native destinations are under construction. `MainActivity` is a `ReactActivity`, and Metro and the JavaScript runtime are hosted as before. The native Kotlin domain and repository sources (`app/src/main/java/com/companytennisleague/app/domain` and `.../data`) compile alongside that host and are covered by the module's unit tests, but nothing in the shipping app reaches them yet: they add Firebase dependencies and code to release builds that no entry point calls. A native UI must not become the launcher until it reaches feature parity and clears the gate below.
+
+## iOS migration entry point
+
+No Xcode project is committed, so there is no iOS app to build and nothing exercises the Swift sources at runtime. `pnpm ios:typecheck` typechecks `TennisScoring` against the iOS SDK and `TennisScoringWatch` against the watchOS SDK, which is the whole of the current signal. Creating the project, its targets, signing, and XCTest targets is the next step, and it has to happen on macOS.
 
 ## Removal and validation gate
 

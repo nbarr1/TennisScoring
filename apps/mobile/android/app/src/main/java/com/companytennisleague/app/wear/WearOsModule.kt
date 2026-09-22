@@ -6,17 +6,34 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONArray
 import org.json.JSONObject
 
 class WearOsModule(
   private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext), MessageClient.OnMessageReceivedListener {
+  /** Identifies this phone process to the watch; see [WearCommand]. */
+  private val sessionId = UUID.randomUUID().toString()
+  private val commandValidator = WearCommandValidator(sessionId)
+
+  private val listenerLock = Any()
   private var listenerRegistered = false
-  private val commandValidator = WearCommandValidator()
+  private var jsListenerCount = 0
+
+  /**
+   * Guards the snapshot counter and the acknowledgement ring. [sendScore] runs on
+   * the native modules thread while [onMessageReceived] is delivered on the
+   * Wearable callback thread, so both touch this state concurrently.
+   */
+  private val snapshotLock = Any()
   private var snapshotSequence = 0L
   private val acknowledgedEventIds = LinkedHashSet<String>()
 
@@ -32,7 +49,10 @@ class WearOsModule(
   override fun invalidate() {
     // Ensure we try to unregister, but guard for missing classes.
     try {
-      unregisterListener()
+      synchronized(listenerLock) {
+        jsListenerCount = 0
+        unregisterListener()
+      }
     } catch (e: NoClassDefFoundError) {
       Log.w(TAG, "Wearable API not available during invalidate()", e)
     } catch (e: Exception) {
@@ -46,7 +66,10 @@ class WearOsModule(
   fun addListener(eventName: String) {
     // Register the listener lazily when JS indicates it will listen.
     try {
-      registerListener()
+      synchronized(listenerLock) {
+        jsListenerCount += 1
+        registerListener()
+      }
     } catch (e: NoClassDefFoundError) {
       Log.w(TAG, "Wearable API not available in addListener()", e)
     } catch (e: Exception) {
@@ -54,16 +77,22 @@ class WearOsModule(
     }
   }
 
+  /**
+   * React Native passes the number of JavaScript subscriptions being removed, which
+   * is always positive, so the listener has to be released by counting subscriptions
+   * down to zero rather than by testing this argument.
+   */
   @ReactMethod
   fun removeListeners(count: Int) {
-    if (count <= 0) {
-      try {
-        unregisterListener()
-      } catch (e: NoClassDefFoundError) {
-        Log.w(TAG, "Wearable API not available in removeListeners()", e)
-      } catch (e: Exception) {
-        Log.w(TAG, "Error unregistering wearable listener", e)
+    try {
+      synchronized(listenerLock) {
+        jsListenerCount = (jsListenerCount - count).coerceAtLeast(0)
+        if (jsListenerCount == 0) unregisterListener()
       }
+    } catch (e: NoClassDefFoundError) {
+      Log.w(TAG, "Wearable API not available in removeListeners()", e)
+    } catch (e: Exception) {
+      Log.w(TAG, "Error unregistering wearable listener", e)
     }
   }
 
@@ -76,34 +105,38 @@ class WearOsModule(
         return
       }
       commandValidator.activate(matchId)
-      snapshotSequence += 1
-      val snapshotJson = JSONObject()
-        .put("protocolVersion", CURRENT_VERSION)
-        .put("matchId", matchId)
-        .put("sequence", snapshotSequence)
-        .put("acknowledgedEventIds", acknowledgedEventIds.toList())
-        .put("scoreJson", scoreJson)
-        .toString()
+      val snapshotJson = nextSnapshotEnvelope(matchId, scoreJson)
       Wearable.getNodeClient(reactContext).connectedNodes
         .addOnSuccessListener { nodes ->
-          val client = Wearable.getMessageClient(reactContext)
           if (nodes.isEmpty()) {
             promise.resolve(false)
             return@addOnSuccessListener
           }
 
-          var remaining = nodes.size
-          var failed = false
+          val client = Wearable.getMessageClient(reactContext)
+          val payloads = listOf(
+            SNAPSHOT_PATH to snapshotJson.toByteArray(),
+            // Mirror for pre-v1 watches, which read this payload shape directly.
+            LEGACY_SNAPSHOT_PATH to scoreJson.toByteArray(),
+          )
+          val remaining = AtomicInteger(nodes.size * payloads.size)
+          val failed = AtomicBoolean(false)
           for (node in nodes) {
-            client.sendMessage(node.id, SCORE_PATH, snapshotJson.toByteArray())
-              .addOnFailureListener { failed = true }
-              .addOnCompleteListener {
-                remaining -= 1
-                if (remaining == 0) promise.resolve(!failed)
-              }
+            for ((path, data) in payloads) {
+              client.sendMessage(node.id, path, data)
+                .addOnFailureListener { failed.set(true) }
+                .addOnCompleteListener {
+                  if (remaining.decrementAndGet() == 0) promise.resolve(!failed.get())
+                }
+            }
           }
         }
-        .addOnFailureListener { error -> promise.reject("wear_nodes_failed", error) }
+        .addOnFailureListener { error ->
+          // Not reaching the watch is an ordinary state, not a scoring failure: the
+          // JS caller awaits this inside the scoring flow.
+          Log.w(TAG, "Could not list connected Wear nodes", error)
+          promise.resolve(false)
+        }
     } catch (e: NoClassDefFoundError) {
       Log.w(TAG, "Wearable API not available in sendScore()", e)
       promise.resolve(false)
@@ -130,36 +163,78 @@ class WearOsModule(
 
   override fun onMessageReceived(event: MessageEvent) {
     when (event.path) {
-      POINT_PATH -> {
-        val command = decodeCommand(event.data) ?: return
-        if (!commandValidator.accept(command)) {
-          Log.w(TAG, "Ignoring invalid, stale, or duplicate Wear command")
-          return
-        }
-        acknowledgedEventIds.add(command.eventId)
-        while (acknowledgedEventIds.size > MAX_ACKNOWLEDGED_EVENTS) acknowledgedEventIds.remove(acknowledgedEventIds.first())
-        val payload = Arguments.createMap().apply {
-          if (command.action == "undo") {
-            putString("action", "undo")
-          } else {
-            putString("action", "point")
-            putString("player", command.action)
-          }
-          putString("matchId", command.matchId)
-          putString("eventId", command.eventId)
-          putDouble("sequence", command.sequence.toDouble())
-        }
-        emit("onWearScoreInput", payload)
-      }
+      COMMAND_PATH -> handleCommand(event.data)
+      LEGACY_COMMAND_PATH -> handleLegacyCommand(event.data)
+      SYNC_PATH, LEGACY_SYNC_PATH -> emit("onWearSyncRequest", null)
+    }
+  }
 
-      SYNC_REQUEST_PATH -> emit("onWearSyncRequest", null)
+  private fun handleCommand(data: ByteArray) {
+    val command = decodeCommand(data) ?: return
+    if (!commandValidator.accept(command)) {
+      Log.w(TAG, "Ignoring invalid, stale, or duplicate Wear command")
+      return
+    }
+    recordAcknowledgement(command.eventId)
+    emit(
+      "onWearScoreInput",
+      scoreInputPayload(command.action, command.matchId, command.eventId, command.sequence),
+    )
+  }
+
+  private fun handleLegacyCommand(data: ByteArray) {
+    val action = String(data, Charsets.UTF_8).trim()
+    val matchId = commandValidator.acceptLegacy(action)
+    if (matchId == null) {
+      Log.w(TAG, "Ignoring pre-v1 Wear command with an unknown action or no open match")
+      return
+    }
+    emit("onWearScoreInput", scoreInputPayload(action, matchId, eventId = null, sequence = null))
+  }
+
+  private fun scoreInputPayload(
+    action: String,
+    matchId: String,
+    eventId: String?,
+    sequence: Long?,
+  ): WritableMap = Arguments.createMap().apply {
+    if (action == "undo") {
+      putString("action", "undo")
+    } else {
+      putString("action", "point")
+      putString("player", action)
+    }
+    putString("matchId", matchId)
+    eventId?.let { putString("eventId", it) }
+    sequence?.let { putDouble("sequence", it.toDouble()) }
+  }
+
+  private fun nextSnapshotEnvelope(matchId: String, scoreJson: String): String =
+    synchronized(snapshotLock) {
+      snapshotSequence += 1
+      JSONObject()
+        .put("protocolVersion", CURRENT_VERSION)
+        .put("sessionId", sessionId)
+        .put("matchId", matchId)
+        .put("sequence", snapshotSequence)
+        .put("acknowledgedEventIds", JSONArray(acknowledgedEventIds.toList()))
+        .put("scoreJson", scoreJson)
+        .toString()
+    }
+
+  private fun recordAcknowledgement(eventId: String) = synchronized(snapshotLock) {
+    acknowledgedEventIds.add(eventId)
+    while (acknowledgedEventIds.size > MAX_ACKNOWLEDGED_EVENTS) {
+      acknowledgedEventIds.remove(acknowledgedEventIds.first())
     }
   }
 
   private fun decodeCommand(data: ByteArray): WearCommand? = try {
     val json = JSONObject(String(data, Charsets.UTF_8))
-    WearCommand(json.optInt("protocolVersion", -1), json.optString("eventId"),
-      json.optString("matchId"), json.optLong("sequence", -1L), json.optString("action"))
+    WearCommand(
+      json.optInt("protocolVersion", -1), json.optString("sessionId"), json.optString("eventId"),
+      json.optString("matchId"), json.optLong("sequence", -1L), json.optString("action"),
+    )
   } catch (e: Exception) {
     Log.w(TAG, "Ignoring malformed Wear command", e)
     null
@@ -199,9 +274,6 @@ class WearOsModule(
   }
 
   companion object {
-    private const val SCORE_PATH = SNAPSHOT_PATH
-    private const val POINT_PATH = COMMAND_PATH
-    private const val SYNC_REQUEST_PATH = SYNC_PATH
     private const val TAG = "WearOsModule"
     private const val MAX_ACKNOWLEDGED_EVENTS = 256
   }

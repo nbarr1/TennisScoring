@@ -36,6 +36,17 @@ pnpm backfill:season-level   # One-off script: backfill division season/level da
 pnpm backfill:profiles       # One-off script: backfill missing profiles/{uid} docs
 ```
 
+### Native mobile (run from root, after `pnpm install`)
+
+```bash
+pnpm android:test            # Kotlin unit tests: score engine, ranking engine, Wear protocol
+pnpm android:build           # :app:assembleDebug
+pnpm android:release         # :app:bundleRelease
+pnpm ios:typecheck           # swiftc -typecheck over the iOS and watchOS sources (macOS only)
+```
+
+The Gradle build resolves its React Native and Expo plugins through `node --print require.resolve(...)` in `android/settings.gradle`, so `node_modules` must exist before any `android:*` task or Gradle fails while evaluating the settings file.
+
 ### Filtered (single package)
 
 ```bash
@@ -84,7 +95,8 @@ scripts/cleanup-branches.sh --remote      # Also prunes remote-tracking refs
 
 ```text
 apps/web/          # Next.js 16.3.2 web app (@tennis/web)
-apps/mobile/       # Expo 57 / React Native 0.86 mobile app (@tennis/mobile)
+apps/mobile/       # Expo 57 / React Native 0.86 mobile app (@tennis/mobile), plus the
+                   # in-progress native Kotlin (android/) and Swift (ios/) sources
 packages/shared/   # Core business logic (scoring, ranking, types) — no framework deps (@tennis/shared)
 packages/firebase-client/  # Firebase SDK wrapper with React hooks (@tennis/firebase-client)
 firebase/          # Cloud Functions, Firestore rules, indexes (@tennis/firebase-functions)
@@ -329,19 +341,24 @@ Any channel participant can report a message (reason: `harassment | spam | inapp
 
 ### Wearable support
 
-**`apps/mobile/modules/apple-watch/`** — Expo native module (TypeScript + Swift):
+**`apps/mobile/modules/wear-os/index.ts`** — the TypeScript surface, a thin wrapper over `NativeModules.WearOs`:
 
-- `sendScoreToWatch(score: LiveScore): void`
-- `isAppleWatchConnected(): boolean`
-- `addWatchScoreInputListener(handler)` / `addWatchConnectedListener(handler)`
+- `sendScoreToWear(score: LiveScore, payload: Omit<WearScorePayload, 'score'>): Promise<void>` — `payload.matchId` is **required**; the native side rejects a snapshot without one, since match id is what scopes commands to the match the watch is actually showing. This call never rejects: watch sync is peripheral and the match screen awaits it inside the scoring flow, so a transport failure is logged rather than thrown.
+- `isWearOsAvailable(): Promise<boolean>`
+- `addWearScoreInputListener(handler)` / `addWearSyncRequestListener(handler)` — the sync listener must answer with a snapshot, or a watch that just woke shows a stale score until the match document next changes.
 
-**`apps/mobile/modules/wear-os/`** — Expo native module (TypeScript + Kotlin):
+The Android implementation is **not** an Expo module. It is a React Native bridge module, `app/src/main/java/com/companytennisleague/app/wear/WearOsModule.kt`, registered through `WearOsPackage` in `MainApplication`. The Kotlin file still sitting under `apps/mobile/modules/wear-os/android/` is a pre-v1 Expo module that nothing autolinks (neither local module directory has an `expo-module.config.json`) — it is dead code kept only as a reference and must not be edited as if it were live.
 
-- `sendScoreToWear(score: LiveScore): Promise<void>`
-- `isWearOsAvailable(): boolean`
-- `addWearScoreInputListener(handler)`
+**`apps/mobile/modules/apple-watch/`** — the Apple Watch surface (`sendScoreToWatch`, `isAppleWatchConnected`, `addWatchScoreInputListener`, `addWatchConnectedListener`). Nothing in the app imports it yet, and it has none of the match-id scoping the Wear path has.
 
 Changes to the `LiveScore` type shape **must** be reflected in both native modules.
+
+**Wear protocol (v1).** `WearSyncProtocol.kt` holds the contract; the watch mirrors the same constants in `wear/src/main/java/com/tennisleague/watch/MainActivity.kt`. The phone is authoritative and wraps each score in an envelope carrying `protocolVersion`, `sessionId`, `matchId`, a monotonic `sequence`, and recently acknowledged event ids; the watch replies with commands carrying the same session, match, sequence, and a unique event id, which `WearCommandValidator` checks for version, session, match, ordering, and duplicates.
+
+Two things are load-bearing:
+
+- **`sessionId` identifies one phone process.** The sequence counter lives in memory and restarts at 1 when the process does. Without the session check, a watch that kept counting across a phone restart rejects every snapshot the new process sends as stale, and the phone in turn rejects the watch's commands. The watch resets its ordering state whenever the session id changes.
+- **Both sides carry the pre-v1 paths for one rollout.** `:app` and `:wear` install as separate artifacts and update independently, so switching paths in one release would leave a mixed pair silently unable to talk. The phone mirrors every snapshot onto `/tennis/score` and accepts bare-string commands on `/tennis/point`; the watch uses those paths only until it has seen a v1 snapshot, so a v1 pair never sends a command twice. Delete both sides together once a v1 build of each artifact has shipped.
 
 ## Key Conventions
 
@@ -389,13 +406,14 @@ See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setu
 
 - Tests live in `packages/shared/src/**/__tests__/` following `*.test.ts` naming.
 - Test files cover the score engine, ranking engine, round-robin scheduler, profile utilities, division/season helpers, and match status metadata.
-- Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes and pull requests targeting `main` or `claude/**`, and only when the `shared_or_root` path filter matches.
+- Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes and pull requests targeting `Main`, `main`, or `claude/**`, and only when the `shared_or_root` path filter matches.
+- The Android module carries Kotlin unit tests (`apps/mobile/android/app/src/test/`) for the score engine, ranking engine, and Wear protocol. `.github/workflows/native-mobile.yml` runs them; `pnpm android:test` runs them locally, after `pnpm install`.
 - Test runner: Jest 29 + ts-jest. Build tool: tsup 8.
 - Add tests when modifying scoring or ranking logic — the score engine is extensively tested.
 
 ### CI
 
-Defined in `.github/workflows/ci.yml`. Triggers: push **and** pull request to `main`/`claude/**`. Node 22, pnpm 9.15.5. A `changes` job path-filters which downstream jobs run. **Every filter also includes `.github/workflows/ci.yml` itself** — otherwise a PR editing only `ci.yml` would land a change to a filtered job with that very job skipped. Keep that entry in any new filter you add.
+Defined in `.github/workflows/ci.yml`. Triggers: push **and** pull request to `Main`/`main`/`claude/**`. **`Main` is the default branch and the filters are case-sensitive**: while every workflow named only `main`, no CI ran on any pull request for a week and the failure was invisible, because a workflow whose branch filter matches nothing produces no runs rather than a failure. `main` is kept alongside `Main` in every workflow so a rename does not repeat that. Node 22, pnpm 9.15.5. A `changes` job path-filters which downstream jobs run. **Every filter also includes `.github/workflows/ci.yml` itself** — otherwise a PR editing only `ci.yml` would land a change to a filtered job with that very job skipped. Keep that entry in any new filter you add.
 
 - `lint_typecheck` (always runs): install (`--frozen-lockfile`) → typecheck → lint → **build**. This is the unconditional gate. The build step runs last (it is the most expensive) and exists because only a real bundler catches a bad module path that `typecheck` waves through behind an `as any`.
 - `shared_tests` (filter `shared_or_root`: `packages/shared/**`, root `package.json`/`pnpm-lock.yaml`/`pnpm-workspace.yaml`/`tsconfig.base.json`): `pnpm --filter @tennis/shared test`.

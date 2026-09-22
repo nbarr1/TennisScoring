@@ -2,7 +2,7 @@ name: Firebase Safety Guard
 
 on:
   pull_request:
-    branches: [main]
+    branches: [Main, main]
     paths:
       - 'firebase/**'
       - '.github/workflows/firebase-safety-guard.yml'

@@ -12,7 +12,7 @@ on:
     # ever renamed. Naming only `main` meant the push trigger could never fire, because no
     # branch by that name exists here.
     branches:
-      - claude/setup-tennis-scoring-app-H7r7V
+      - Main
       - main
     paths:
       - "firebase/**"

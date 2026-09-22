@@ -1,13 +1,21 @@
 name: Native mobile
 
+# Covers the two signals ci.yml does not: the Android module's Kotlin unit tests
+# (the domain and Wear protocol suites the native migration is being built on) and
+# a typecheck of the Swift sources. ci.yml's mobile_native job owns the release
+# compile, so this workflow deliberately builds debug only.
+
 on:
   pull_request:
     paths:
       - 'apps/mobile/android/**'
       - 'apps/mobile/ios/**'
+      - 'scripts/ios-typecheck.sh'
       - 'fixtures/mobile-contract/**'
+      - '.github/workflows/native-mobile.yml'
   push:
     branches:
+      - Main
       - main
 
 permissions:
@@ -16,49 +24,84 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       NODE_ENV: production
-      EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.EXPO_PUBLIC_FIREBASE_API_KEY }}
-      EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-      EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_PROJECT_ID }}
-      EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-      EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-      EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_APP_ID }}
-      GOOGLE_SERVICES_JSON: ./google-services.json
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      # existing setup steps ...
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.5
 
-      - name: Restore environment Firebase configuration
-        shell: bash
-        env:
-          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      # android/settings.gradle resolves the react-native and expo Gradle plugins
+      # through `node --print require.resolve(...)`, so node_modules has to exist
+      # before Gradle can configure anything. Without this the build fails while
+      # evaluating the settings file, long before it reaches any Android code.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace dependencies
+        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+
+      # Android Gradle Plugin 8.12, pinned by react-native 0.86.2's version
+      # catalog, requires JDK 17 or newer.
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # react-native 0.86.2 pins this exact NDK in gradle/libs.versions.toml, and
+      # AGP fails rather than substituting whichever NDK the runner image ships.
+      - name: Install Android NDK
         run: |
-          test -n "$GOOGLE_SERVICES_JSON_BASE64" || {
-            echo "ANDROID_GOOGLE_SERVICES_JSON is not configured"
-            exit 1
-          }
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null
 
-          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" \
-            | base64 --decode > apps/mobile/google-services.json
+      # Gradle bundles the JavaScript itself, so it needs the same placeholders
+      # ci.yml uses: app.config.js hard-fails when CI=true and they are unset.
+      # They are deliberately not secrets, so this job still runs on fork and
+      # Dependabot pull requests.
+      - name: Run unit tests and assemble debug
+        working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_APP_ID: ci-placeholder
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
 
-          test -s apps/mobile/google-services.json
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-unit-test-reports
+          path: apps/mobile/android/app/build/reports/tests/
+          retention-days: 7
 
-      - name: Build Android
-        working-directory: apps/mobile
-        run: ./android/gradlew -p android :app:testDebugUnitTest :app:assembleDebug
   ios:
     runs-on: macos-15
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Run iOS tests
-        run: |
-          xcodebuild test \
-            -project apps/mobile/ios/TennisScoring.xcodeproj \
-            -scheme TennisScoring \
-            -destination 'platform=iOS Simulator,name=iPhone 16'
+      # There is no Xcode project in the repository yet, so there is nothing for
+      # xcodebuild to open. This typechecks the Swift sources against the iOS and
+      # watchOS SDKs instead; swap it for `xcodebuild test` once the project and
+      # its test targets are committed.
+      - name: Typecheck Swift sources
+        run: ./scripts/ios-typecheck.sh

@@ -4,9 +4,11 @@ This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/pass
 
 ## Native client migration
 
-Android requires JDK 17 and Android SDK 35. Restore the environment-specific `google-services.json` into `apps/mobile/android/app/` through the credential workflow, then run `apps/mobile/android/gradlew -p apps/mobile/android :app:assembleDebug`.
+The shipping mobile client is still Expo/React Native while Kotlin and Swift sources are built up beside it. See [`docs/native-mobile-parity-inventory.md`](docs/native-mobile-parity-inventory.md) for the gates a native client passes before it takes over.
 
-iOS requires macOS, current Xcode, the production signing team/profiles, APNs capability, associated domains, and an untracked `GoogleService-Info.plist`. Create/open `TennisScoring.xcodeproj`, retain bundle identifier `com.companytennisleague.app`, link Firebase Auth, Firestore, Functions, Messaging, and Storage through Swift Package Manager, and include `TennisScoringWatch` as a watchOS target. Apple project generation, signing, archive, and target integration cannot be validated on Linux.
+Android requires JDK 17, Android SDK 35, and NDK `27.1.12297006`. Run `pnpm install` first: `apps/mobile/android/settings.gradle` resolves the React Native and Expo Gradle plugins through `node --print require.resolve(...)`, so Gradle fails while evaluating the settings file if `node_modules` is missing. Restore the environment-specific `google-services.json` into `apps/mobile/android/app/` through the credential workflow, then run `apps/mobile/android/gradlew -p apps/mobile/android :app:assembleDebug`, or `pnpm android:test` for the Kotlin unit tests.
+
+iOS requires macOS, current Xcode, the production signing team/profiles, APNs capability, associated domains, and an untracked `GoogleService-Info.plist`. No Xcode project is committed yet, so the only iOS check is `pnpm ios:typecheck`, which typechecks `apps/mobile/ios/TennisScoring` against the iOS SDK and `apps/mobile/ios/TennisScoringWatch` against the watchOS SDK. Create `TennisScoring.xcodeproj`, retain bundle identifier `com.companytennisleague.app`, link Firebase Auth, Firestore, Functions, Messaging, and Storage through Swift Package Manager, and include `TennisScoringWatch` as a watchOS target; then replace that script with `xcodebuild test`. Apple project generation, signing, archive, and target integration cannot be validated on Linux.
 
 ---
 
