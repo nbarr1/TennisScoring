@@ -60,6 +60,8 @@ import {
 import {
   addWearScoreInputListener,
   addWearSyncRequestListener,
+  isWatchAppInstalled,
+  launchWatchApp,
   sendScoreToWear,
 } from "../../modules/wear-os";
 import type { Match, TipTrigger, PublicProfile } from "@tennis/shared";
@@ -506,6 +508,8 @@ export default function MatchScreen() {
   const [editSets, setEditSets] = useState<{ p1: string; p2: string }[]>([]);
   const [editSaving, setEditSaving] = useState(false);
   const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
+  const [watchAppInstalled, setWatchAppInstalled] = useState(false);
+  const [launchingWatch, setLaunchingWatch] = useState(false);
   const [clockTick, setClockTick] = useState(Date.now());
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
@@ -612,6 +616,7 @@ export default function MatchScreen() {
   function openManage() {
     setShowPostponeOptions(false);
     setShowManage(true);
+    void refreshWatchAppInstalled();
   }
 
   async function handleCancelMatch() {
@@ -879,6 +884,31 @@ export default function MatchScreen() {
     return () => clearInterval(timer);
   }, [match?.status]);
 
+  const refreshWatchAppInstalled = useCallback(async () => {
+    setWatchAppInstalled(await isWatchAppInstalled());
+  }, []);
+
+  // Resolves false on iOS and on Android without the native module, so the
+  // controls below never render where they could not work.
+  useEffect(() => {
+    void refreshWatchAppInstalled();
+  }, [refreshWatchAppInstalled]);
+
+  const handleLaunchWatch = useCallback(async () => {
+    setLaunchingWatch(true);
+    try {
+      if (await launchWatchApp()) return;
+      Alert.alert(
+        "Could not open the watch",
+        "Check that your watch is nearby, paired, and still has Tennis Score installed.",
+      );
+      // The watch may have gone out of range since the last check.
+      await refreshWatchAppInstalled();
+    } finally {
+      setLaunchingWatch(false);
+    }
+  }, [refreshWatchAppInstalled]);
+
   const syncWear = useCallback(() => {
     if (!match || !id) return;
     void sendScoreToWear(match.liveScore, {
@@ -1071,6 +1101,23 @@ export default function MatchScreen() {
               thumbColor="#F2EFE6"
             />
           </View>
+          {watchAppInstalled && (
+            <TouchableOpacity
+              style={styles.watchLaunchBtn}
+              onPress={() => void handleLaunchWatch()}
+              disabled={launchingWatch}
+              accessibilityRole="button"
+              accessibilityLabel="Open Tennis Score on your watch"
+            >
+              <IconLabel
+                name="applewatch"
+                color={COURT.amber}
+                textStyle={styles.watchLaunchText}
+              >
+                {launchingWatch ? "Opening on watch…" : "Open on watch"}
+              </IconLabel>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.startMatchKey}
             onPress={() =>
@@ -1668,6 +1715,23 @@ export default function MatchScreen() {
                     </IconLabel>
                   </TouchableOpacity>
                 )}
+                {watchAppInstalled &&
+                  isParticipant &&
+                  (match.status === "scheduled" ||
+                    match.status === "in_progress") && (
+                    <TouchableOpacity
+                      style={styles.manageOption}
+                      onPress={() => void handleLaunchWatch()}
+                      disabled={launchingWatch}
+                    >
+                      <IconLabel
+                        name="applewatch"
+                        textStyle={styles.manageOptionText}
+                      >
+                        {launchingWatch ? "Opening on watch…" : "Open on watch"}
+                      </IconLabel>
+                    </TouchableOpacity>
+                  )}
                 {isParticipant && match.status === "scheduled" && (
                   <TouchableOpacity
                     style={styles.manageOption}
@@ -2485,6 +2549,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   confirmedText: { color: "#a8d5a2", fontWeight: "600", fontSize: 13 },
+  watchLaunchBtn: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COURT.amber,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginBottom: 10,
+    width: "100%",
+    alignItems: "center",
+  },
+  watchLaunchText: { color: COURT.amber, fontWeight: "800", fontSize: 14 },
+
   shareBtn: {
     backgroundColor: colors.surface,
     borderRadius: 14,

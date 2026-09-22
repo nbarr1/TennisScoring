@@ -163,6 +163,11 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
+    // RemoteActivityHelper, which opens the watch app from the phone. The Data
+    // Layer cannot do this on its own: a message cannot start an activity on a
+    // watch whose app is not already running, because that is a background
+    // activity start and receiving a Data Layer message is not an exemption.
+    implementation("androidx.wear:wear-remote-interactions:1.2.0")
     // Native migration domain/repository sources compile alongside the active React Native host.
     implementation platform('com.google.firebase:firebase-bom:34.2.0')
     implementation 'com.google.firebase:firebase-auth'

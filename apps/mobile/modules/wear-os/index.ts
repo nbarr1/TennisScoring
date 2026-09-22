@@ -53,6 +53,37 @@ export async function isWearOsAvailable(): Promise<boolean> {
   }
 }
 
+/**
+ * Whether a reachable watch actually has this app installed, which
+ * `isWearOsAvailable` cannot answer — it only reports that some watch is
+ * connected. Gate any "open on watch" control on this instead, or the control
+ * appears for watches that have never had the app and does nothing when tapped.
+ */
+export async function isWatchAppInstalled(): Promise<boolean> {
+  if (!WearOsNative) return false;
+  try {
+    return (await WearOsNative.isWatchAppInstalled()) ?? false;
+  } catch (error) {
+    console.warn('Could not check whether the watch app is installed:', error);
+    return false;
+  }
+}
+
+/**
+ * Opens the app on the paired watch, resolving whether a watch accepted it.
+ * Like the rest of this module it never rejects: not reaching the watch is an
+ * ordinary state the caller reports to the player, not a failure to handle.
+ */
+export async function launchWatchApp(): Promise<boolean> {
+  if (!WearOsNative) return false;
+  try {
+    return (await WearOsNative.launchWatchApp()) ?? false;
+  } catch (error) {
+    console.warn('Could not open the app on the watch:', error);
+    return false;
+  }
+}
+
 export function addWearScoreInputListener(
   handler: (event: WearScoreInputEvent) => void,
 ): WearSubscription {
