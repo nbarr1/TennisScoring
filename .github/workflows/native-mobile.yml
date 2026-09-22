@@ -1,35 +1,64 @@
 name: Native mobile
+
 on:
   pull_request:
-    paths: ['apps/mobile/android/**', 'apps/mobile/ios/**', 'fixtures/mobile-contract/**']
+    paths:
+      - 'apps/mobile/android/**'
+      - 'apps/mobile/ios/**'
+      - 'fixtures/mobile-contract/**'
   push:
-    branches: [main]
+    branches:
+      - main
+
 permissions:
   contents: read
+
 jobs:
   android:
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.EXPO_PUBLIC_FIREBASE_API_KEY }}
+      EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_PROJECT_ID }}
+      EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_APP_ID }}
+      GOOGLE_SERVICES_JSON: ./google-services.json
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - uses: pnpm/action-setup@v6
-        with: { version: 9.15.5 }
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: '.nvmrc'
-          cache: pnpm
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build mobile workspace dependencies
-        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
+
+      # existing setup steps ...
+
       - name: Restore environment Firebase configuration
-        run: echo "$GOOGLE_SERVICES_JSON" | base64 --decode > apps/mobile/android/app/google-services.json
-        env: { GOOGLE_SERVICES_JSON: '${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}' }
-      - run: apps/mobile/android/gradlew -p apps/mobile/android :app:testDebugUnitTest :app:assembleDebug
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON_BASE64" || {
+            echo "ANDROID_GOOGLE_SERVICES_JSON is not configured"
+            exit 1
+          }
+
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" \
+            | base64 --decode > apps/mobile/google-services.json
+
+          test -s apps/mobile/google-services.json
+
+      - name: Build Android
+        working-directory: apps/mobile
+        run: ./android/gradlew -p android :app:testDebugUnitTest :app:assembleDebug
   ios:
     runs-on: macos-15
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Type-check checked-in Swift sources
-        run: swiftc -typecheck apps/mobile/ios/TennisScoring/DomainModels.swift apps/mobile/ios/TennisScoring/ScoreEngine.swift apps/mobile/ios/TennisScoring/RankingEngine.swift
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run iOS tests
+        run: |
+          xcodebuild test \
+            -project apps/mobile/ios/TennisScoring.xcodeproj \
+            -scheme TennisScoring \
+            -destination 'platform=iOS Simulator,name=iPhone 16'
