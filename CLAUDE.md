@@ -431,7 +431,13 @@ The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIRE
 
 `.github/workflows/firebase-safety-guard.yml` also runs independently of `ci.yml`: it blocks `allow read, write: if true` patterns landing in `firebase/**/*.rules` on PRs touching `firebase/**`, plus its own rules smoke test. It checks out full history and resolves both the base and head commits before diffing, because under a shallow checkout the diff failed and the guard reported "no rules changes" instead of failing — a guard that cannot read the diff must never pass.
 
-`.github/workflows/eas-build.yml` — manual `workflow_dispatch` trigger for Android mobile or Wear OS preview APK builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets.
+`.github/workflows/eas-build.yml` — Android builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets. It runs on three events, not just the manual one, and the profile it picks differs by event:
+
+- **`workflow_dispatch`** with a `target` of `mobile`, `wear`, or `wear-production` → `preview`, `wear-preview`, or `wear-production`. **This is the only way to build the watch APK**, so testing anything that needs both artifacts on real hardware means dispatching `wear` by hand alongside whatever built the phone.
+- **`pull_request`** → `preview`, the phone APK. Every pull request touching `apps/mobile/**` or `packages/shared/**` gets one, and it takes about 70 minutes, so a pull request's checks stay amber long after `ci.yml` is green.
+- **`push`** to `Main`/`main` → `production`, which carries `autoIncrement: true` and does not set `buildType: apk` the way `preview` does.
+
+That last branch was dead until recently: it compared `github.ref` against `refs/heads/main` alone, and the comparison is case-sensitive, so after the rename to `Main` no push ever selected `production` — every merge quietly built `preview`. It now matches both spellings, which means **merging to `Main` starts a production build**. The APK or AAB lands in the Expo dashboard, never as a GitHub artifact.
 
 `.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
 

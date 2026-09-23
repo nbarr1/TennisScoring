@@ -46,7 +46,13 @@ jobs:
       - name: Select EAS profile
         id: profile
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          # The default branch is Main and this comparison is case-sensitive, so
+          # refs/heads/main alone matched nothing: every push selected preview and
+          # the production profile had never been built. Both spellings are named
+          # here for the same reason every workflow's branch filter names both, so
+          # a rename cannot silently disable it again.
+          if [ "${{ github.event_name }}" = "push" ] &&
+             { [ "${{ github.ref }}" = "refs/heads/Main" ] || [ "${{ github.ref }}" = "refs/heads/main" ]; }; then
             echo "name=production" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event.inputs.target }}" = "wear-production" ]; then
             echo "name=wear-production" >> "$GITHUB_OUTPUT"
