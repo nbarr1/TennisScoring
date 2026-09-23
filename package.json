@@ -21,13 +21,13 @@
     "ios:typecheck": "scripts/ios-typecheck.sh"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
-    "@typescript-eslint/parser": "^8.67.0",
-    "eslint": "^10.9.0",
-    "firebase-admin": "^14.3.0",
-    "prettier": "^3.9.6",
-    "turbo": "^2.10.11",
+    "@types/node": "^26.6.2",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^10.11.0",
+    "firebase-admin": "^14.4.0",
+    "prettier": "^3.9.8",
+    "turbo": "^2.11.2",
     "typescript": "^6.0.3"
   },
   "pnpm": {
