@@ -24,6 +24,8 @@ apps/mobile/android/app/build/
 apps/mobile/ios/Pods/
 apps/mobile/ios/build/
 apps/mobile/ios/DerivedData/
+apps/mobile/ios/TennisKit/.build/
+apps/mobile/ios/TennisKit/.swiftpm/
 
 # Firebase
 .firebase/

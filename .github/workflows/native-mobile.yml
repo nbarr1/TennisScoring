@@ -1,9 +1,10 @@
 name: Native mobile
 
-# Covers the two signals ci.yml does not: the Android module's Kotlin unit tests
-# (the domain and Wear protocol suites the native migration is being built on) and
-# a typecheck of the Swift sources. ci.yml's mobile_native job owns the release
-# compile, so this workflow deliberately builds debug only.
+# Covers the signals ci.yml does not: the Android module's Kotlin unit tests (the
+# domain and Wear protocol suites the native migration is being built on), the
+# Swift TennisKit package's tests, and a typecheck of the iOS and watchOS app
+# sources. ci.yml's mobile_native job owns the release compile, so this workflow
+# deliberately builds debug only.
 
 on:
   pull_request:
@@ -91,6 +92,24 @@ jobs:
           path: apps/mobile/android/app/build/reports/tests/
           retention-days: 7
 
+  # TennisKit (the Swift port of @tennis/shared plus the app's view models) has
+  # no Apple framework dependencies, so its tests run on Linux in the official
+  # Swift image: minutes faster to start than a macOS runner, and it is the
+  # toolchain the suite was written against. The macOS job runs them again,
+  # because Foundation differs between the platforms (string comparison in the
+  # ranking tiebreak, for one).
+  ios_kit_linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: swift:6.1-noble
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Test TennisKit
+        run: swift test --package-path apps/mobile/ios/TennisKit
+
   ios:
     runs-on: macos-15
     timeout-minutes: 30
@@ -99,9 +118,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Test TennisKit
+        run: swift test --package-path apps/mobile/ios/TennisKit
+
       # There is no Xcode project in the repository yet, so there is nothing for
-      # xcodebuild to open. This typechecks the Swift sources against the iOS and
-      # watchOS SDKs instead; swap it for `xcodebuild test` once the project and
-      # its test targets are committed.
+      # xcodebuild to open. This emits the TennisKit modules for the iOS and
+      # watchOS simulator SDKs and typechecks the app and watch sources against
+      # them; swap it for `xcodebuild test` once the project and its test targets
+      # are committed.
       - name: Typecheck Swift sources
         run: ./scripts/ios-typecheck.sh

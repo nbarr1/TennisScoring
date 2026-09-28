@@ -41,7 +41,11 @@ The Android application continues to launch the existing React Native/Expo clien
 
 ## iOS migration entry point
 
-No Xcode project is committed, so there is no iOS app to build and nothing exercises the Swift sources at runtime. `pnpm ios:typecheck` typechecks `TennisScoring` against the iOS SDK and `TennisScoringWatch` against the watchOS SDK, which is the whole of the current signal. Creating the project, its targets, signing, and XCTest targets is the next step, and it has to happen on macOS.
+The iOS client is split in two. `apps/mobile/ios/TennisKit` is a Swift package with no Apple-framework dependencies: `TennisCore` (models, the score and ranking engines, match sides, doubles ids, tips, and the watch message format) and `TennisAppModel` (view models, service protocols, and an in-memory `DemoBackend`). Its XCTest suites run on Linux and macOS in CI, and `TennisCore` replays `fixtures/mobile-contract/engine-parity.json` point for point against the TypeScript engines. `TennisScoring` holds the SwiftUI screens, Firebase adapters, and phone-side WatchConnectivity; `TennisScoringWatch` holds the watch app.
+
+Native destinations so far: Login, Division (join by code), Matches and match detail/live score (proposal responses, start, scoring through `scoreMatchPoint`, undo, report submit/confirm/dispute), Rankings (singles and doubles, split by season and level), a read-only Profile with sign-out, and match deep links. Still missing against the table above: Google sign-in, Tutorial, Dashboard, Messages, profile editing and availability, account deletion, Administration, Feedback, Privacy, Round robin, match proposal and recording, leader dispute resolution, and FCM/APNs registration.
+
+No Xcode project is committed, so nothing runs the app itself. `pnpm ios:typecheck` typechecks the app and watch sources against the simulator SDKs, except `FirebaseServices.swift`, which compiles only once the Firebase packages are linked. Creating the project, its targets, signing, and XCTest integration is the next step, and it has to happen on macOS; `apps/mobile/ios/README.md` lists the steps.
 
 ## Removal and validation gate
 

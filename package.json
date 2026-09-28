@@ -18,7 +18,9 @@
     "android:build": "cd apps/mobile/android && ./gradlew :app:assembleDebug",
     "android:test": "cd apps/mobile/android && ./gradlew :app:testDebugUnitTest",
     "android:release": "cd apps/mobile/android && ./gradlew :app:bundleRelease",
-    "ios:typecheck": "scripts/ios-typecheck.sh"
+    "ios:typecheck": "scripts/ios-typecheck.sh",
+    "ios:test": "swift test --package-path apps/mobile/ios/TennisKit",
+    "fixtures:mobile-contract": "pnpm --filter @tennis/shared build && node scripts/generate-mobile-contract-fixtures.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
