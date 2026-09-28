@@ -21,6 +21,9 @@ public final class DemoBackend: @unchecked Sendable {
   private var doublesRankings: [DoublesTeamRanking]
   private let inviteCodes: [String: String]
   private var failure: ServiceError?
+  private var channels: [String: Channel]
+  private var messages: [String: [Message]]
+  private var reports: [(message: Message, reason: MessageReportReason, divisionId: String)] = []
   private var actions: [MatchAction] = []
 
   private var accountWatchers: [UUID: AsyncStream<AuthAccount?>.Continuation] = [:]
@@ -30,6 +33,8 @@ public final class DemoBackend: @unchecked Sendable {
   private var rankingWatchers: [UUID: (String, AsyncThrowingStream<[PlayerRanking], Error>.Continuation)] = [:]
   private var doublesWatchers: [UUID: AsyncThrowingStream<[DoublesTeamRanking], Error>.Continuation] = [:]
   private var levelWatchers: [UUID: AsyncThrowingStream<[DivisionLevel], Error>.Continuation] = [:]
+  private var channelWatchers: [UUID: (String, AsyncThrowingStream<[Channel], Error>.Continuation)] = [:]
+  private var messageWatchers: [UUID: (String, Int, AsyncThrowingStream<[Message], Error>.Continuation)] = [:]
 
   public init(
     users: [User],
@@ -37,8 +42,12 @@ public final class DemoBackend: @unchecked Sendable {
     levels: [DivisionLevel] = [],
     doublesRankings: [DoublesTeamRanking] = [],
     inviteCodes: [String: String] = [:],
+    channels: [Channel] = [],
+    messages: [Message] = [],
     signedInAs uid: String? = nil
   ) {
+    self.channels = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    self.messages = Dictionary(grouping: messages, by: \.channelId)
     self.users = Dictionary(users.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     self.matches = Dictionary(matches.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
     self.levels = levels
@@ -51,7 +60,7 @@ public final class DemoBackend: @unchecked Sendable {
   }
 
   public var services: AppServices {
-    AppServices(auth: self, users: self, matches: self, rankings: self, divisions: self, isDemo: true)
+    AppServices(auth: self, users: self, matches: self, rankings: self, divisions: self, messaging: self, isDemo: true)
   }
 
   /// Makes the next write fail with `message`. For tests.
@@ -63,6 +72,17 @@ public final class DemoBackend: @unchecked Sendable {
   public var performedActions: [MatchAction] { lock.withLock { actions } }
 
   public func match(id: String) -> Match? { lock.withLock { matches[id] } }
+
+  /// Every message report filed so far, in order. For tests.
+  public var filedReports: [(messageId: String, reason: MessageReportReason, divisionId: String)] {
+    lock.withLock { reports.map { ($0.message.id, $0.reason, $0.divisionId) } }
+  }
+
+  /// Adds a message as another player would send it. For tests and previews.
+  public func deliver(_ message: Message) {
+    lock.withLock { appendMessage(message) }
+    broadcastMessaging()
+  }
 
   /// Replaces or inserts a match, as another device's write would. For tests.
   public func upsert(_ match: Match) {
@@ -369,5 +389,143 @@ extension DemoBackend: RankingRepository {
       },
       unregister: { [weak self] token in self?.lock.withLock { _ = self?.levelWatchers.removeValue(forKey: token) } }
     )
+  }
+}
+
+// MARK: - MessagingRepository
+
+extension DemoBackend: MessagingRepository {
+  /// Must be called with `lock` held. Updates the channel's `lastMessage`, as the
+  /// `onNewMessage` Cloud Function does.
+  private func appendMessage(_ message: Message) {
+    messages[message.channelId, default: []].append(message)
+    channels[message.channelId]?.lastMessage = Channel.LastMessage(
+      content: message.content,
+      senderId: message.senderId,
+      senderName: message.senderName,
+      timestamp: message.createdAt
+    )
+  }
+
+  /// Must be called with `lock` held.
+  private func channelsFor(_ userId: String) -> [Channel] {
+    channels.values.filter { $0.participantIds.contains(userId) }
+  }
+
+  /// Must be called with `lock` held.
+  private func newestMessages(_ channelId: String, limit: Int) -> [Message] {
+    let sorted = (messages[channelId] ?? []).sorted { $0.createdAt < $1.createdAt }
+    return Array(sorted.suffix(limit))
+  }
+
+  private func broadcastMessaging() {
+    let (channelTargets, messageTargets) = lock.withLock {
+      (
+        channelWatchers.values.map { userId, continuation in (continuation, channelsFor(userId)) },
+        messageWatchers.values.map { channelId, limit, continuation in (continuation, newestMessages(channelId, limit: limit)) }
+      )
+    }
+    for (continuation, value) in channelTargets { continuation.yield(value) }
+    for (continuation, value) in messageTargets { continuation.yield(value) }
+  }
+
+  public func observeChannels(userId: String) -> AsyncThrowingStream<[Channel], Error> {
+    stream(
+      register: { [unowned self] token, continuation in
+        lock.withLock {
+          channelWatchers[token] = (userId, continuation)
+          return channelsFor(userId)
+        }
+      },
+      unregister: { [weak self] token in self?.lock.withLock { _ = self?.channelWatchers.removeValue(forKey: token) } }
+    )
+  }
+
+  public func observeMessages(channelId: String, limit: Int) -> AsyncThrowingStream<[Message], Error> {
+    stream(
+      register: { [unowned self] token, continuation in
+        lock.withLock {
+          messageWatchers[token] = (channelId, limit, continuation)
+          return newestMessages(channelId, limit: limit)
+        }
+      },
+      unregister: { [weak self] token in self?.lock.withLock { _ = self?.messageWatchers.removeValue(forKey: token) } }
+    )
+  }
+
+  public func send(channelId: String, sender: User, content: String, sharedContact: SharedContact?) async throws {
+    if let failure = takeFailure() { throw failure }
+    try lock.withLock {
+      guard let channel = channels[channelId], channel.participantIds.contains(sender.id) else {
+        throw ServiceError("You can't post in this conversation.")
+      }
+      guard !content.isEmpty, content.count <= Message.maxLength else {
+        throw ServiceError("Messages must be 1 to \(Message.maxLength) characters.")
+      }
+      let existing = messages[channelId] ?? []
+      let now = max(Self.now(), (existing.map(\.createdAt).max() ?? 0) + 1)
+      appendMessage(Message(
+        id: UUID().uuidString,
+        channelId: channelId,
+        senderId: sender.id,
+        senderName: sender.displayName,
+        content: content,
+        kind: sharedContact == nil ? .text : .contactShare,
+        sharedContact: sharedContact,
+        readBy: [sender.id],
+        createdAt: now
+      ))
+    }
+    broadcastMessaging()
+  }
+
+  public func displayName(of userId: String) async -> String? {
+    lock.withLock { users[userId]?.displayName }
+  }
+
+  public func searchPlayers(divisionId: String, matching text: String) async throws -> [PlayerSummary] {
+    if let failure = takeFailure() { throw failure }
+    let needle = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return lock.withLock {
+      users.values
+        .filter { $0.divisionId == divisionId && $0.displayName.lowercased().contains(needle) }
+        .map { PlayerSummary(id: $0.id, displayName: $0.displayName) }
+    }
+  }
+
+  public func openDirectChannel(between userId: String, and otherUserId: String) async throws -> Channel {
+    if let failure = takeFailure() { throw failure }
+    let pair = [userId, otherUserId].sorted()
+    let channel = lock.withLock { () -> Channel in
+      if let existing = channels.values.first(where: { $0.isDirect && $0.participantIds == pair }) {
+        return existing
+      }
+      let created = Channel(id: "dm-\(pair[0])-\(pair[1])", type: "direct", participantIds: pair, createdAt: Self.now())
+      channels[created.id] = created
+      return created
+    }
+    broadcastMessaging()
+    return channel
+  }
+
+  public func report(_ message: Message, reportedBy: String, reason: MessageReportReason, note: String?, divisionId: String) async throws {
+    if let failure = takeFailure() { throw failure }
+    lock.withLock { reports.append((message, reason, divisionId)) }
+  }
+
+  public func block(_ blockedUserId: String, by userId: String) async throws {
+    if let failure = takeFailure() { throw failure }
+    lock.withLock {
+      guard var user = users[userId], !user.blockedUserIds.contains(blockedUserId) else { return }
+      user.blockedUserIds.append(blockedUserId)
+      users[userId] = user
+    }
+    broadcastUsers()
+  }
+
+  public func unblock(_ blockedUserId: String, by userId: String) async throws {
+    if let failure = takeFailure() { throw failure }
+    lock.withLock { users[userId]?.blockedUserIds.removeAll { $0 == blockedUserId } }
+    broadcastUsers()
   }
 }

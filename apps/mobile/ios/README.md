@@ -21,12 +21,13 @@ TennisScoringWatch/        watchOS app target: scoreboard and point buttons
 - Signs in with Firebase email and password. A player without a division joins one with an invite code (the `joinDivisionByCode` callable).
 - **Matches** tab: groups matches the same way the Expo client does. The sections are proposals to answer, live, reports, upcoming, proposals awaiting the opponent, and recent results. The tab badge counts proposals and reports waiting on the player.
 - **Match screen**: shows the scoreboard, including the server and service court. From it you can accept, decline, or withdraw a proposal, start the match with a chosen server, and score points through the `scoreMatchPoint` callable, which is authoritative. You can also undo the last point, submit the result, and confirm or dispute the opponent's result. It shows the scoring tips when the player and match have them turned on.
+- **Messages** tab: the division chat and direct conversations, most recent first. Direct channels are titled with the other player's name. The channel documents don't store names, and the Expo app shows "Direct Message" instead. A conversation loads its newest 50 messages. You can send messages of up to 2,000 characters, share your phone or email when your contact preferences allow it, and report or block another player from a message's context menu. Messages from blocked players are hidden. New direct messages start from a search of your division.
 - **Standings** tab: shows singles and doubles standings, split by season and division level, with the player's own table first.
-- **Profile** tab: shows the account details and has the sign-out button.
+- **Profile** tab: shows the account details, lists blocked players with an unblock button, and has the sign-out button.
 - Opens `tennisleague://match/<id>` and `com.companytennisleague.app://match/<id>` links after sign-in.
 - **Apple Watch**: shows the open match's score and sends points back. Every command carries the match id, and the phone discards commands for any match other than the one on screen. Leaving the match screen leaves the watch read-only.
 
-Messaging, admin tools, feedback, push notifications, profile editing, proposing or recording matches, account deletion, and the tutorial are not built yet. The Expo client remains the reference for all of them.
+Admin tools (including the reported-message queue), feedback, push notifications, read receipts, profile editing, proposing or recording matches, account deletion, and the tutorial are not built yet. The Expo client remains the reference for all of them.
 
 ## Build and test without Xcode
 

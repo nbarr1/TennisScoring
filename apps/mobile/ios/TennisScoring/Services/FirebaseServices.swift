@@ -23,7 +23,8 @@ enum FirebaseServices {
       users: FirestoreUserRepository(db: db),
       matches: FirestoreMatchRepository(db: db, functions: functions),
       rankings: FirestoreRankingRepository(db: db),
-      divisions: FunctionsDivisionService(functions: functions)
+      divisions: FunctionsDivisionService(functions: functions),
+      messaging: FirestoreMessagingRepository(db: db)
     )
   }
 }
@@ -324,6 +325,165 @@ final class FirestoreRankingRepository: RankingRepository, @unchecked Sendable {
       let box = ListenerBox { registration.remove() }
       continuation.onTermination = { _ in box.cancel() }
     }
+  }
+}
+
+// MARK: - Messaging
+
+final class FirestoreMessagingRepository: MessagingRepository, @unchecked Sendable {
+  private let db: Firestore
+
+  init(db: Firestore) { self.db = db }
+
+  private func messagesRef(_ channelId: String) -> CollectionReference {
+    db.collection("channels").document(channelId).collection("messages")
+  }
+
+  /// `participantIds` array-contains alone, with no `orderBy`: the React Native
+  /// query adds `orderBy('createdAt')`, which needs a composite index that
+  /// `firestore.indexes.json` does not declare. The list model orders by activity.
+  func observeChannels(userId: String) -> AsyncThrowingStream<[Channel], Error> {
+    AsyncThrowingStream { continuation in
+      let registration = db.collection("channels")
+        .whereField("participantIds", arrayContains: userId)
+        .addSnapshotListener { snapshot, error in
+          if let error {
+            continuation.finish(throwing: error)
+            return
+          }
+          let channels = (snapshot?.documents ?? []).compactMap { document -> Channel? in
+            guard var channel = try? document.data(as: Channel.self) else { return nil }
+            channel.id = document.documentID
+            return channel
+          }
+          continuation.yield(channels)
+        }
+      let box = ListenerBox { registration.remove() }
+      continuation.onTermination = { _ in box.cancel() }
+    }
+  }
+
+  /// The newest page, read newest first and returned oldest first. Ordering
+  /// ascending with a limit, as `channelMessagesQuery` does, returns the oldest
+  /// page instead, so a busy channel would stop showing new messages.
+  func observeMessages(channelId: String, limit: Int) -> AsyncThrowingStream<[Message], Error> {
+    AsyncThrowingStream { continuation in
+      let registration = messagesRef(channelId)
+        .order(by: "createdAt", descending: true)
+        .limit(to: limit)
+        .addSnapshotListener { snapshot, error in
+          if let error {
+            continuation.finish(throwing: error)
+            return
+          }
+          let messages = (snapshot?.documents ?? []).compactMap { document -> Message? in
+            guard var message = try? document.data(as: Message.self) else { return nil }
+            message.id = document.documentID
+            return message
+          }
+          continuation.yield(Array(messages.reversed()))
+        }
+      let box = ListenerBox { registration.remove() }
+      continuation.onTermination = { _ in box.cancel() }
+    }
+  }
+
+  /// Mirrors `sendMessage`. The rules allow exactly these keys, require
+  /// `readBy == [sender]`, and accept `sharedContact` as null or a map.
+  func send(channelId: String, sender: User, content: String, sharedContact: SharedContact?) async throws {
+    var contact: Any = NSNull()
+    if let sharedContact {
+      var fields: [String: Any] = [:]
+      if let phone = sharedContact.phone { fields["phone"] = phone }
+      if let email = sharedContact.email { fields["email"] = email }
+      contact = fields
+    }
+    let senderName = sender.displayName.isEmpty ? "Unknown" : String(sender.displayName.prefix(100))
+    _ = try await messagesRef(channelId).addDocument(data: [
+      "channelId": channelId,
+      "senderId": sender.id,
+      "senderName": senderName,
+      "content": content,
+      "type": sharedContact == nil ? Message.Kind.text.rawValue : Message.Kind.contactShare.rawValue,
+      "sharedContact": contact,
+      "readBy": [sender.id],
+      "createdAt": nowMillis(),
+    ])
+  }
+
+  func displayName(of userId: String) async -> String? {
+    guard let snapshot = try? await db.collection("profiles").document(userId).getDocument(),
+          let name = snapshot.data()?["displayName"] as? String,
+          !name.trimmingCharacters(in: .whitespaces).isEmpty
+    else { return nil }
+    return name
+  }
+
+  /// Mirrors `searchDivisionPlayers`: the division's public profiles, filtered
+  /// by name on the device.
+  func searchPlayers(divisionId: String, matching text: String) async throws -> [PlayerSummary] {
+    let snapshot = try await db.collection("profiles").whereField("divisionId", isEqualTo: divisionId).getDocuments()
+    let needle = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return snapshot.documents.compactMap { document -> PlayerSummary? in
+      guard var player = try? document.data(as: PlayerSummary.self) else { return nil }
+      player.id = document.documentID
+      return player.displayName.lowercased().contains(needle) ? player : nil
+    }
+  }
+
+  /// Mirrors `getOrCreateDM`: the rules accept a direct channel whose
+  /// `participantIds` are exactly the two players, sorted.
+  func openDirectChannel(between userId: String, and otherUserId: String) async throws -> Channel {
+    let pair = [userId, otherUserId].sorted()
+    let existing = try await db.collection("channels")
+      .whereField("type", isEqualTo: "direct")
+      .whereField("participantIds", isEqualTo: pair)
+      .limit(to: 1)
+      .getDocuments()
+    if let document = existing.documents.first, var channel = try? document.data(as: Channel.self) {
+      channel.id = document.documentID
+      return channel
+    }
+    let createdAt = nowMillis()
+    let ref = try await db.collection("channels").addDocument(data: [
+      "type": "direct",
+      "participantIds": pair,
+      "createdAt": createdAt,
+    ])
+    return Channel(id: ref.documentID, type: "direct", participantIds: pair, createdAt: createdAt)
+  }
+
+  /// Mirrors `reportMessage`. The rules compare the copied content, sender id,
+  /// and sender name against the stored message, so they are sent unchanged.
+  func report(_ message: Message, reportedBy: String, reason: MessageReportReason, note: String?, divisionId: String) async throws {
+    var data: [String: Any] = [
+      "channelId": message.channelId,
+      "messageId": message.id,
+      "messageContent": message.content,
+      "messageSenderId": message.senderId,
+      "messageSenderName": message.senderName,
+      "reportedBy": reportedBy,
+      "reason": reason.rawValue,
+      "status": "pending",
+      "divisionId": divisionId,
+      "createdAt": nowMillis(),
+    ]
+    if let note { data["note"] = String(note.prefix(1000)) }
+    _ = try await db.collection("messageReports").addDocument(data: data)
+  }
+
+  func block(_ blockedUserId: String, by userId: String) async throws {
+    try await db.collection("users").document(userId).updateData([
+      "blockedUserIds": FieldValue.arrayUnion([blockedUserId]),
+      "updatedAt": nowMillis(),
+    ])
+  }
+
+  func unblock(_ blockedUserId: String, by userId: String) async throws {
+    try await db.collection("users").document(userId).updateData([
+      "blockedUserIds": FieldValue.arrayRemove([blockedUserId]),
+      "updatedAt": nowMillis(),
+    ])
   }
 }
 

@@ -128,12 +128,48 @@ extension DemoBackend {
       )
     }
 
+    let divisionChannel = Channel(
+      id: "demo-division-chat",
+      type: "division",
+      divisionId: demoDivisionId,
+      participantIds: users.map(\.id),
+      name: "Demo Division",
+      createdAt: now - 90 * day
+    )
+    let directChannel = Channel(id: "dm-demo-sam", type: "direct", participantIds: ["demo", "sam"], createdAt: now - 5 * day)
+    func message(_ id: String, _ channel: Channel, _ sender: String, _ content: String, minutesAgo: Int64) -> Message {
+      Message(
+        id: id,
+        channelId: channel.id,
+        senderId: sender,
+        senderName: names[sender] ?? sender,
+        content: content,
+        readBy: [sender],
+        createdAt: now - minutesAgo * 60_000
+      )
+    }
+    let messages = [
+      message("m1", divisionChannel, "jordan", "Courts 3 and 4 are booked for league night on Thursday.", minutesAgo: 3 * 24 * 60),
+      message("m2", divisionChannel, "casey", "Thanks! Anyone free for a practice hit on Saturday morning?", minutesAgo: 2 * 24 * 60),
+      message("m3", divisionChannel, "riley", "I'm in, 9am works for me.", minutesAgo: 2 * 24 * 60 - 30),
+      message("m4", directChannel, "sam", "Good match yesterday. Want to finish the second set tonight?", minutesAgo: 90),
+      message("m5", directChannel, "demo", "Sounds good, see you at 6.", minutesAgo: 75),
+    ]
+
     return DemoBackend(
       users: users,
       matches: matches,
       levels: levels,
       doublesRankings: doubles,
       inviteCodes: [demoInviteCode: demoDivisionId],
+      channels: [divisionChannel, directChannel].map { channel in
+        var channel = channel
+        if let last = messages.filter({ $0.channelId == channel.id }).max(by: { $0.createdAt < $1.createdAt }) {
+          channel.lastMessage = Channel.LastMessage(content: last.content, senderId: last.senderId, senderName: last.senderName, timestamp: last.createdAt)
+        }
+        return channel
+      },
+      messages: messages,
       signedInAs: signedIn ? "demo" : nil
     )
   }

@@ -18,3 +18,9 @@ func eventually(
     try? await Task.sleep(nanoseconds: 1_000_000)
   }
 }
+
+/// The first value a listener delivers (its current state), or nil.
+func firstValue<T>(_ stream: AsyncThrowingStream<T, Error>) async -> T? {
+  var iterator = stream.makeAsyncIterator()
+  return try? await iterator.next() ?? nil
+}

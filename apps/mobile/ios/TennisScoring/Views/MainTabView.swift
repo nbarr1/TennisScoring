@@ -3,7 +3,7 @@ import TennisAppModel
 import TennisCore
 
 struct MainTabView: View {
-  private enum Tab: Hashable { case matches, rankings, profile }
+  private enum Tab: Hashable { case matches, messages, rankings, profile }
 
   let session: SessionModel
   let user: User
@@ -13,12 +13,18 @@ struct MainTabView: View {
   @State private var matchPath: [String] = []
   @State private var matchList: MatchListModel
   @State private var rankings: RankingsModel?
+  @State private var messagePath: [String] = []
+  @State private var channels: ChannelListModel
+  @State private var names: PlayerNameCache
 
   init(session: SessionModel, user: User, pendingMatchId: Binding<String?>) {
     self.session = session
     self.user = user
     _pendingMatchId = pendingMatchId
     _matchList = State(initialValue: MatchListModel(userId: user.id, repository: session.services.matches))
+    let names = PlayerNameCache(repository: session.services.messaging)
+    _names = State(initialValue: names)
+    _channels = State(initialValue: ChannelListModel(user: user, repository: session.services.messaging, names: names))
     _rankings = State(initialValue: user.divisionId.map {
       RankingsModel(divisionId: $0, userId: user.id, repository: session.services.rankings)
     })
@@ -37,6 +43,25 @@ struct MainTabView: View {
       .badge(matchList.actionCount)
       .tag(Tab.matches)
 
+      NavigationStack(path: $messagePath) {
+        MessagesView(model: channels, services: session.services, path: $messagePath)
+          .navigationTitle("Messages")
+          .navigationDestination(for: String.self) { channelId in
+            if let channel = channels.channel(id: channelId) {
+              ConversationView(
+                channel: channel,
+                title: channels.title(for: channel),
+                user: user,
+                repository: session.services.messaging
+              )
+            } else {
+              ContentUnavailableView("Conversation not found", systemImage: "bubble.left")
+            }
+          }
+      }
+      .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right") }
+      .tag(Tab.messages)
+
       NavigationStack {
         Group {
           if let rankings {
@@ -51,7 +76,7 @@ struct MainTabView: View {
       .tag(Tab.rankings)
 
       NavigationStack {
-        ProfileView(session: session, user: user)
+        ProfileView(session: session, user: user, names: names)
           .navigationTitle("Profile")
       }
       .tabItem { Label("Profile", systemImage: "person.crop.circle") }
@@ -61,6 +86,11 @@ struct MainTabView: View {
     // pushing a match screen does not tear the listeners down.
     .task { await matchList.observe() }
     .task { await rankings?.observe() }
+    .task { await channels.observe() }
+    .onChange(of: user) { _, user in
+      // Blocks and profile edits arrive through the session's user listener.
+      channels.user = user
+    }
     .onChange(of: pendingMatchId, initial: true) { _, matchId in
       guard let matchId else { return }
       selection = .matches

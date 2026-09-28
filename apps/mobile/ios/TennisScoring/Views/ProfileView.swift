@@ -5,6 +5,8 @@ import TennisCore
 struct ProfileView: View {
   let session: SessionModel
   let user: User
+  let names: PlayerNameCache
+  @State private var unblockError: String?
 
   var body: some View {
     List {
@@ -30,9 +32,40 @@ struct ProfileView: View {
         Text("Edit your profile, availability, and tips on the web app.")
       }
 
+      if !user.blockedUserIds.isEmpty {
+        Section {
+          ForEach(user.blockedUserIds, id: \.self) { blockedId in
+            HStack {
+              Text(names.name(for: blockedId) ?? "Player")
+              Spacer()
+              Button("Unblock") {
+                Task {
+                  do {
+                    try await session.services.messaging.unblock(blockedId, by: user.id)
+                  } catch {
+                    unblockError = error.localizedDescription
+                  }
+                }
+              }
+              .buttonStyle(.borderless)
+            }
+          }
+        } header: {
+          Text("Blocked players")
+        } footer: {
+          Text("You don't see messages from blocked players.")
+        }
+      }
+
       Section {
         Button("Sign out", role: .destructive) { session.signOut() }
       }
+    }
+    .task(id: user.blockedUserIds) { await names.resolve(user.blockedUserIds) }
+    .alert("Couldn't unblock", isPresented: Binding(get: { unblockError != nil }, set: { if !$0 { unblockError = nil } })) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(unblockError ?? "")
     }
   }
 

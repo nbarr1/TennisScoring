@@ -73,7 +73,7 @@ final class SessionModelTests: XCTestCase {
     let backend = DemoBackend(users: [User(id: "ghost", displayName: "Ghost", email: "ghost@example.test")], signedInAs: "ghost")
     // Sign in as an account whose profile document is absent.
     let empty = DemoBackend(users: [], signedInAs: nil)
-    let services = AppServices(auth: backend, users: empty, matches: empty, rankings: empty, divisions: empty, isDemo: true)
+    let services = AppServices(auth: backend, users: empty, matches: empty, rankings: empty, divisions: empty, messaging: empty, isDemo: true)
     let session = SessionModel(services: services)
     let observation = Task { await session.observe() }
     defer { observation.cancel() }

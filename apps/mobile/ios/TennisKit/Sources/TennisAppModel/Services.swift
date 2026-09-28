@@ -101,6 +101,7 @@ public struct AppServices: Sendable {
   public let matches: any MatchRepository
   public let rankings: any RankingRepository
   public let divisions: any DivisionService
+  public let messaging: any MessagingRepository
   /// True for the in-memory backend, so the UI can say it is showing demo data.
   public let isDemo: Bool
 
@@ -110,6 +111,7 @@ public struct AppServices: Sendable {
     matches: any MatchRepository,
     rankings: any RankingRepository,
     divisions: any DivisionService,
+    messaging: any MessagingRepository,
     isDemo: Bool = false
   ) {
     self.auth = auth
@@ -117,6 +119,7 @@ public struct AppServices: Sendable {
     self.matches = matches
     self.rankings = rankings
     self.divisions = divisions
+    self.messaging = messaging
     self.isDemo = isDemo
   }
 }
