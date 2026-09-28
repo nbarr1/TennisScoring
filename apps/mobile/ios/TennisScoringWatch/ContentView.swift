@@ -10,9 +10,7 @@ struct TennisScoringWatchApp: App {
 }
 
 struct ContentView: View {
-  @StateObject private var session = WatchSessionManager.shared
-
   var body: some View {
-    ScoreView()
+    ScoreView(session: WatchSessionManager.shared)
   }
 }

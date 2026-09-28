@@ -1,13 +1,34 @@
 import SwiftUI
+import TennisAppModel
 
-@main struct TennisScoringApp: App {
-  var body: some Scene { WindowGroup { RootView() } }
-}
+@main
+struct TennisScoringApp: App {
+  @State private var session: SessionModel?
+  private let configurationError: String?
 
-enum AppRoute: Hashable { case division, tutorial, dashboard, matches, match(String), rankings, messages, profile, admin, feedback, privacy, roundRobin }
-struct RootView: View {
-  @State private var path: [AppRoute] = []
-  var body: some View { NavigationStack(path: $path) { SignInView().navigationDestination(for: AppRoute.self) { route in DestinationView(title: String(describing: route)) } }.onOpenURL { url in if url.host == "match", let id=url.pathComponents.last { path=[.match(id)] } } }
+  init() {
+    switch AppBootstrap.makeServices() {
+    case let .success(services):
+      _session = State(initialValue: SessionModel(services: services))
+      configurationError = nil
+    case let .failure(error):
+      _session = State(initialValue: nil)
+      configurationError = error.message
+    }
+    PhoneWatchConnector.shared.activate()
+  }
+
+  var body: some Scene {
+    WindowGroup {
+      if let session {
+        RootView(session: session)
+      } else {
+        ContentUnavailableView(
+          "Tennis League can't start",
+          systemImage: "exclamationmark.triangle",
+          description: Text(configurationError ?? "")
+        )
+      }
+    }
+  }
 }
-struct SignInView: View { var body: some View { VStack { Text("Tennis League").font(.largeTitle).accessibilityAddTraits(.isHeader); Text("Sign in") }.padding() } }
-struct DestinationView: View { let title: String; var body: some View { ContentUnavailableView(title, systemImage: "tennis.racket") } }

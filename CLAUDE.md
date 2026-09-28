@@ -42,7 +42,9 @@ pnpm backfill:profiles       # One-off script: backfill missing profiles/{uid} d
 pnpm android:test            # Kotlin unit tests: score engine, ranking engine, Wear protocol
 pnpm android:build           # :app:assembleDebug
 pnpm android:release         # :app:bundleRelease
-pnpm ios:typecheck           # swiftc -typecheck over the iOS and watchOS sources (macOS only)
+pnpm ios:test                # swift test for apps/mobile/ios/TennisKit (macOS or Linux, Swift 6)
+pnpm ios:typecheck           # typecheck the iOS and watchOS app sources against the simulator SDKs (macOS only)
+pnpm fixtures:mobile-contract  # regenerate fixtures/mobile-contract/engine-parity.json from @tennis/shared
 ```
 
 The Gradle build resolves its React Native and Expo plugins through `node --print require.resolve(...)` in `android/settings.gradle`, so `node_modules` must exist before any `android:*` task or Gradle fails while evaluating the settings file.
@@ -353,7 +355,9 @@ The Android implementation is **not** an Expo module. It is a React Native bridg
 
 **`apps/mobile/modules/apple-watch/`** — the Apple Watch surface (`sendScoreToWatch`, `isAppleWatchConnected`, `addWatchScoreInputListener`, `addWatchConnectedListener`). Nothing in the app imports it yet, and it has none of the match-id scoping the Wear path has.
 
-Changes to the `LiveScore` type shape **must** be reflected in both native modules.
+**Native iOS ↔ watchOS protocol.** The native iOS client (`apps/mobile/ios`) and `TennisScoringWatch` share one message format, `WatchMessages.swift` in `TennisCore`. Every value is a string, so each message is a valid property list. `score` is the `LiveScore` JSON (the same key the React Native module sends, which the watch shows read-only), and commands are `{ action: "point", player, matchId }`. The phone discards any command whose `matchId` is not the match on screen, and a command without one fails to parse. Unlike the Wear pair, the iOS and watchOS apps ship in one bundle and update together, so there is no pre-v1 path to carry.
+
+Changes to the `LiveScore` type shape **must** be reflected in both native modules and in `TennisCore`'s `ScoringModels.swift`.
 
 **Wear protocol (v1).** `WearSyncProtocol.kt` holds the contract; the watch mirrors the same constants in `wear/src/main/java/com/tennisleague/watch/MainActivity.kt`. The phone is authoritative and wraps each score in an envelope carrying `protocolVersion`, `sessionId`, `matchId`, a monotonic `sequence`, and recently acknowledged event ids; the watch replies with commands carrying the same session, match, sequence, and a unique event id, which `WearCommandValidator` checks for version, session, match, ordering, and duplicates.
 
@@ -410,7 +414,9 @@ See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setu
 
 - Tests live in `packages/shared/src/**/__tests__/` following `*.test.ts` naming.
 - Test files cover the score engine, ranking engine, round-robin scheduler, profile utilities, division/season helpers, and match status metadata.
-- Only `@tennis/shared` has tests. CI runs `pnpm --filter @tennis/shared test` on pushes and pull requests targeting `Main`, `main`, or `claude/**`, and only when the `shared_or_root` path filter matches.
+- `@tennis/shared` holds the JavaScript tests. CI runs `pnpm --filter @tennis/shared test` on pushes and pull requests targeting `Main`, `main`, or `claude/**`, and only when the `shared_or_root` path filter matches.
+- `fixtures/mobile-contract/engine-parity.json` records what the TypeScript score engine, ranking engine, match-side helpers, doubles ids, and tip priority return for deterministic inputs (six full matches played point by point, among others). `mobileContractFixture.test.ts` replays it against TypeScript and `ParityFixtureTests.swift` against Swift. **After any intentional engine change, run `pnpm fixtures:mobile-contract` and port the change to Swift**: the Jest replay fails until the fixture is regenerated, and the Swift replay fails until the port matches. Never hand-edit the fixture.
+- The Swift package `apps/mobile/ios/TennisKit` carries XCTest suites for `TennisCore` (the engine ports, tolerant Firestore decoding, the watch messages) and `TennisAppModel` (the view models, driven by the in-memory `DemoBackend`). `native-mobile.yml` runs them in the `swift:6.1-noble` container and again on macOS, because Foundation string comparison differs between the platforms. `pnpm ios:test` runs them locally.
 - The Android module carries Kotlin unit tests (`apps/mobile/android/app/src/test/`) for the score engine, ranking engine, and Wear protocol. `.github/workflows/native-mobile.yml` runs them; `pnpm android:test` runs them locally, after `pnpm install`.
 - Test runner: Jest 29 + ts-jest. Build tool: tsup 8.
 - Add tests when modifying scoring or ranking logic — the score engine is extensively tested.
