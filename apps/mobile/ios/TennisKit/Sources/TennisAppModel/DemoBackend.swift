@@ -279,7 +279,7 @@ extension DemoBackend: MatchRepository {
     if let failure = takeFailure() { throw failure }
     let response = try lock.withLock { () throws -> ScorePointResponse in
       guard var match = matches[matchId] else { throw ServiceError("Match not found.") }
-      guard let uid = account?.uid, uid == match.player1Id || uid == match.player2Id else {
+      guard let uid = account?.uid, match.side(of: uid) != nil else {
         throw ServiceError("Only match participants can score this match.")
       }
       guard match.status == .scheduled || match.status == .inProgress else {

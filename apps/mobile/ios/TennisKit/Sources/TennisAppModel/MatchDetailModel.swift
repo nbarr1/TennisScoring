@@ -34,14 +34,13 @@ public final class MatchDetailModel {
 
   public var mySide: Player? { match?.side(of: userId) }
 
-  /// `scoreMatchPoint` accepts only `player1Id` and `player2Id`, so in doubles
-  /// only the first-listed player on each side can score. The callable would also
-  /// score a `scheduled` match, but it never changes the status, so the match has
-  /// to be started first (as the React Native app does) or it would stay listed
-  /// as upcoming while being played.
+  /// Any player on either side may score, as `scoreMatchPoint` allows. The
+  /// callable would also score a `scheduled` match, but it never changes the
+  /// status, so the match has to be started first (as the React Native app does)
+  /// or it would stay listed as upcoming while being played.
   public var canScore: Bool {
     guard let match, match.status == .inProgress else { return false }
-    return userId == match.player1Id || userId == match.player2Id
+    return match.side(of: userId) != nil
   }
 
   public var canStart: Bool {

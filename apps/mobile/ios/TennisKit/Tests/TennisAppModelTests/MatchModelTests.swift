@@ -169,6 +169,31 @@ final class MatchDetailTests: XCTestCase {
     XCTAssertEqual(snapshot?.canScore, true)
   }
 
+  /// The second player on each doubles side is neither player1Id nor player2Id,
+  /// and used to be shut out of scoring.
+  func testEveryDoublesPlayerCanScore() async {
+    let players = ["ann", "bob", "cara", "dan", "eve"].map {
+      User(id: $0, displayName: $0.capitalized, email: "\($0)@example.test", divisionId: "d")
+    }
+    let doubles = Match(
+      id: "dbl", divisionId: "d", matchType: "doubles",
+      side1: MatchSide(playerIds: ["ann", "bob"]), side2: MatchSide(playerIds: ["cara", "dan"]),
+      player1Id: "ann", player2Id: "cara", status: .inProgress
+    )
+    for (userId, expected) in [("ann", true), ("bob", true), ("cara", true), ("dan", true), ("eve", false)] {
+      let backend = DemoBackend(users: players, matches: [doubles], signedInAs: userId)
+      let model = MatchDetailModel(matchId: "dbl", userId: userId, tipsEnabled: false, repository: backend)
+      let observation = Task { await model.observe() }
+      await eventually("loaded") { model.match != nil }
+      XCTAssertEqual(model.canScore, expected, userId)
+
+      await model.handle(.point(matchId: "dbl", scorer: .player2))
+      XCTAssertNil(model.errorMessage, userId)
+      XCTAssertEqual(backend.match(id: "dbl")?.liveScore.currentGame.player2 == .fifteen, expected, userId)
+      observation.cancel()
+    }
+  }
+
   func testSpectatorsCannotScore() async {
     let (model, _, observation) = await load("other-1", as: "demo")
     defer { observation.cancel() }
