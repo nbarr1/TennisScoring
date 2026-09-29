@@ -363,9 +363,10 @@ final class FirestoreMessagingRepository: MessagingRepository, @unchecked Sendab
     }
   }
 
-  /// The newest page, read newest first and returned oldest first. Ordering
-  /// ascending with a limit, as `channelMessagesQuery` does, returns the oldest
-  /// page instead, so a busy channel would stop showing new messages.
+  /// The newest page, read newest first and returned oldest first, the same
+  /// shape as `channelMessagesQuery` plus `messagesFromSnapshot`. Ordering
+  /// ascending with a limit would select the oldest page instead, so a busy
+  /// channel would stop showing new messages.
   func observeMessages(channelId: String, limit: Int) -> AsyncThrowingStream<[Message], Error> {
     AsyncThrowingStream { continuation in
       let registration = messagesRef(channelId)

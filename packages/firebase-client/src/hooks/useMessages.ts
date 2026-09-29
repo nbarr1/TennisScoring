@@ -6,6 +6,7 @@ import {
   query,
   where,
   writeBatch,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import {
   channelDoc,
@@ -16,6 +17,21 @@ import {
 } from "../collections";
 import { db } from "../config";
 import type { Message, Channel } from "@tennis/shared";
+
+/**
+ * The messages in a `channelMessagesQuery()` snapshot, oldest first.
+ *
+ * The query reads newest first so that its limit keeps the latest page; this
+ * restores chronological order, which is what both message screens render.
+ */
+export function messagesFromSnapshot(snap: QuerySnapshot<Message>): Message[] {
+  return snap.docs
+    .map((d) => ({
+      id: d.id,
+      ...(d.data() as Omit<Message, "id">),
+    }))
+    .reverse();
+}
 
 export function useMessages(channelId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -34,12 +50,7 @@ export function useMessages(channelId: string | null) {
     const unsub = onSnapshot(
       channelMessagesQuery(channelId),
       (snap) => {
-        setMessages(
-          snap.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as Omit<Message, "id">),
-          })),
-        );
+        setMessages(messagesFromSnapshot(snap));
         setLoading(false);
       },
       (err) => {

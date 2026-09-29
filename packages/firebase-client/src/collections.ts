@@ -84,8 +84,15 @@ export const doublesRankingsQuery = (divisionId: string, ...extra: QueryConstrai
 export const divisionMembershipsQuery = (divisionId: string, seasonId: string, ...extra: QueryConstraint[]) =>
   query(divisionMembershipsCol(divisionId), where('seasonId', '==', seasonId), ...extra);
 
+/**
+ * The newest `messageLimit` messages in a channel, **newest first**. Read results
+ * through `messagesFromSnapshot()`, which returns them oldest first for display.
+ *
+ * Ordering ascending with a limit selects the channel's *oldest* page instead, so
+ * once a channel passed the limit, new messages stopped appearing.
+ */
 export const channelMessagesQuery = (channelId: string, messageLimit = 50) =>
-  query(messagesCol(channelId), orderBy('createdAt', 'asc'), limit(messageLimit));
+  query(messagesCol(channelId), orderBy('createdAt', 'desc'), limit(messageLimit));
 
 export const userChannelsQuery = (userId: string) =>
   query(channelsCol(), where('participantIds', 'array-contains', userId), orderBy('createdAt', 'desc'));

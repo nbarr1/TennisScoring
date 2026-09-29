@@ -525,8 +525,12 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
     }
 
     const match = matchSnap.data() as Match;
-    const isParticipant =
-      request.auth!.uid === match.player1Id || request.auth!.uid === match.player2Id;
+    // Any player on either side may score. Checking only player1Id/player2Id
+    // shut out the second partner on each doubles side. sideOfPlayer reads the
+    // side rosters, which only the Admin SDK writes (clients cannot set
+    // side1/side2), and falls back to player1Id/player2Id for singles, so a
+    // singles match admits exactly the same two players as before.
+    const isParticipant = sideOfPlayer(match, request.auth!.uid) !== undefined;
     if (!isParticipant) {
       throw new functions.https.HttpsError(
         'permission-denied',
