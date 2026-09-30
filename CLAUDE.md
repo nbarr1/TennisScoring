@@ -280,6 +280,19 @@ round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin 
 privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
 ```
 
+### Live-scoring screen (mobile)
+
+`apps/mobile/app/match/[id].tsx` owns the data and handlers (`useMatch`, `scorePoint`, undo, reports, and Wear sync). The presentation lives in `apps/mobile/components/live-scoring/`:
+
+- `ScoreboardSurface` is the split scoreboard. Each player's row is the tap target, with a status band between the rows driven by `getMatchMoment()`. It renders read-only for spectators and before or after the match.
+- `ScoreboardSetup` is the pre-match surface.
+- `PointTypeSheet` is the advanced-stats chooser.
+- `scoreboardTheme.ts` holds the `SB` palette, the band tones, and `useScoreboardFonts()`.
+
+The screen hides the stack header and draws its own top bar.
+
+Barlow Condensed ships through `@expo-google-fonts/barlow-condensed`, but only three weights are loaded, each `require`d by file path. Importing the package index would pull all eighteen TTFs into the bundle. Use `font(loaded, weight)` instead of setting `fontFamily` directly, so text falls back to a system weight until the fonts load.
+
 ### Match scheduling and report workflow
 
 Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_report` → `completed` (or `disputed`; cancelled proposals/matches use `cancelled`):

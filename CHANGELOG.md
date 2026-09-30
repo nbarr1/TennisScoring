@@ -15,6 +15,14 @@
 - Added Kotlin unit tests for the Wear command validator covering session mismatch and the pre-v1 command path.
 
 ### Changed
+- Redesigned the mobile live-scoring screen as a split scoreboard, direction B from the live-scoring design canvas. Each player's full-width row is the button that scores their point. It shows the name, serve state, games per set, and the point score in 172 px numerals. A status band between the rows reads the call ("30–15") or the moment ("DEUCE", "BREAK POINT · OKAFOR", "CHANGE ENDS · TAP TO SWAP"). The screen is black and white for glare, player stripes are blue and orange, and every text pairing is at least 9:1.
+  - The match screen now hides the stack header and draws its own top bar, which carries back, the set and format, the match clock, and the options menu.
+  - Swap exchanges the two rows so each one sits on its player's side of the net. At a changeover, the band itself is the swap control.
+  - With advanced stats on, tapping a row opens a Point / Ace / Winner / Opponent error sheet with Cancel, which replaces the hidden long press and the undismissable system dialog.
+  - Hold-to-undo fills as it is held, and rule tips moved into the options sheet.
+  - Setup lets you pick who serves first before starting, where tapping a name used to start the match at once. It drops the three format cards, which looked selectable but were fixed labels.
+  - After the match, the scoreboard shows sets won with a WINNER flag in place of the separate "Match complete" card, and the report actions follow below it.
+- Added `expo-font` and `@expo-google-fonts/barlow-condensed` to the mobile app. Only the 600, 700, and 800 weights are loaded, each required directly so the package's other fifteen weights stay out of the bundle, and text falls back to the system font until they load.
 - The Apple Watch app scopes every point to a match. Snapshots from the native iPhone app carry the match id, player names, status, and whether the player may score, and the watch echoes the match id in each command. The phone discards commands for any other match, so a watch still showing an earlier match cannot score the current one. Leaving the match screen leaves the watch read-only. A score-only message from the React Native module still displays, but read-only.
 - `pnpm ios:typecheck` emits the `TennisKit` modules for the iOS and watchOS simulator SDKs and typechecks the app and watch sources against them, recursing into subdirectories.
 - `ci.yml`'s `mobile_native` job now assembles `:wear` as well as `:app`. `:wear` was the one Gradle module no workflow built, so a broken watch manifest or resource surfaced only in an EAS `wear-preview` build. The step runs after the NDK install, which is what accepts the SDK licenses, and before the much longer app assemble so it fails fast.
