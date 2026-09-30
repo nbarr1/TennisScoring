@@ -51,6 +51,7 @@ import {
   isMatchParticipant,
   canRespondToReport,
   isDoublesMatch,
+  getMatchMoment,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import {
@@ -64,7 +65,13 @@ import {
   launchWatchApp,
   sendScoreToWear,
 } from "../../modules/wear-os";
-import type { Match, TipTrigger, PublicProfile } from "@tennis/shared";
+import type {
+  Match,
+  MatchMoment,
+  MatchMomentTone,
+  TipTrigger,
+  PublicProfile,
+} from "@tennis/shared";
 
 const COURT = {
   court: "#2A6F7E",
@@ -74,6 +81,10 @@ const COURT = {
   amber: "#FFB44A",
   pA: "#1E88FF",
   pB: "#FF5A4E",
+  // Tap-zone fills. pA/pB are too light for white text (3.5:1 and 3.1:1);
+  // these keep the hues and reach 7.9:1 and 8.0:1.
+  zoneA: "#0B4FA0",
+  zoneB: "#9E1B14",
   ad: "#FFD23F",
   bp: "#FF7A47",
   mp: "#FF3B5C",
@@ -101,161 +112,20 @@ function getPointValue(match: Match, player: "player1" | "player2"): string {
       : match.liveScore.currentGame[player];
 }
 
-function getStatusState(match: Match): {
-  label: string;
-  player?: "player1" | "player2";
-  color: string;
-  tone: string;
-  sideChange: boolean;
-  flags: Partial<Record<"player1" | "player2", string>>;
-} {
-  const score = match.liveScore;
-  const currentSet = score.sets[score.currentSet];
-  const p1Point = score.currentGame.player1;
-  const p2Point = score.currentGame.player2;
-  const isP1Ad = p1Point === "Ad";
-  const isP2Ad = p2Point === "Ad";
-  const isDeuce = !score.isTiebreak && p1Point === "40" && p2Point === "40";
-  const leader = isP1Ad ? "player1" : isP2Ad ? "player2" : undefined;
-  const p1CanWinGame = score.isTiebreak
-    ? false
-    : p1Point === "40" || p1Point === "Ad";
-  const p2CanWinGame = score.isTiebreak
-    ? false
-    : p2Point === "40" || p2Point === "Ad";
-  const p1Break = p1CanWinGame && score.server === "player2";
-  const p2Break = p2CanWinGame && score.server === "player1";
-  const p1SetPoint =
-    p1CanWinGame &&
-    currentSet.player1Games + 1 >= match.format.gamesPerSet &&
-    currentSet.player1Games + 1 - currentSet.player2Games >= 2;
-  const p2SetPoint =
-    p2CanWinGame &&
-    currentSet.player2Games + 1 >= match.format.gamesPerSet &&
-    currentSet.player2Games + 1 - currentSet.player1Games >= 2;
-  const p1MatchPoint =
-    p1SetPoint && score.player1SetsWon === match.format.setsToWin - 1;
-  const p2MatchPoint =
-    p2SetPoint && score.player2SetsWon === match.format.setsToWin - 1;
-  const totalGames = score.sets.reduce(
-    (sum, set) => sum + set.player1Games + set.player2Games,
-    0,
-  );
-  const sideChange = totalGames > 0 && totalGames % 2 === 1;
+const MOMENT_COLORS: Record<MatchMomentTone, string> = {
+  mp: COURT.mp,
+  sp: COURT.ad,
+  bp: COURT.bp,
+  ad: COURT.ad,
+  deuce: COURT.line,
+  tb: COURT.amber,
+  ok: COURT.ok,
+  live: COURT.line,
+};
 
-  if (score.isTiebreak && score.tiebreakScore) {
-    const tb = score.tiebreakScore;
-    const p1CanWinTiebreak =
-      tb.player1Points >= 6 && tb.player1Points > tb.player2Points;
-    const p2CanWinTiebreak =
-      tb.player2Points >= 6 && tb.player2Points > tb.player1Points;
-    const p1TbMatchPoint =
-      p1CanWinTiebreak && score.player1SetsWon === match.format.setsToWin - 1;
-    const p2TbMatchPoint =
-      p2CanWinTiebreak && score.player2SetsWon === match.format.setsToWin - 1;
-
-    if (p1TbMatchPoint || p2TbMatchPoint) {
-      const player = p1TbMatchPoint ? "player1" : "player2";
-      return {
-        label: "Match point",
-        player,
-        color: COURT.mp,
-        tone: "mp",
-        sideChange,
-        flags: { [player]: "MP" },
-      };
-    }
-    if (p1CanWinTiebreak || p2CanWinTiebreak) {
-      const player = p1CanWinTiebreak ? "player1" : "player2";
-      return {
-        label: "Set point",
-        player,
-        color: COURT.ad,
-        tone: "sp",
-        sideChange,
-        flags: { [player]: "SP" },
-      };
-    }
-    return {
-      label: "Tiebreak",
-      player: undefined,
-      color: COURT.amber,
-      tone: "tb",
-      sideChange,
-      flags: {} as Partial<Record<"player1" | "player2", string>>,
-    };
-  }
-  if (p1MatchPoint || p2MatchPoint) {
-    const player = p1MatchPoint ? "player1" : "player2";
-    return {
-      label: "Match point",
-      player,
-      color: COURT.mp,
-      tone: "mp",
-      sideChange,
-      flags: { [player]: "MP" },
-    };
-  }
-  if (p1SetPoint || p2SetPoint) {
-    const player = p1SetPoint ? "player1" : "player2";
-    return {
-      label: "Set point",
-      player,
-      color: COURT.ad,
-      tone: "sp",
-      sideChange,
-      flags: { [player]: "SP" },
-    };
-  }
-  if (p1Break || p2Break) {
-    const player = p1Break ? "player1" : "player2";
-    return {
-      label: "Break point",
-      player,
-      color: COURT.bp,
-      tone: "bp",
-      sideChange,
-      flags: { [player]: "BP" },
-    };
-  }
-  if (leader) {
-    return {
-      label: "Advantage",
-      player: leader,
-      color: COURT.ad,
-      tone: "ad",
-      sideChange,
-      flags: {} as Partial<Record<"player1" | "player2", string>>,
-    };
-  }
-  if (isDeuce) {
-    return {
-      label: "Deuce",
-      player: undefined,
-      color: COURT.line,
-      tone: "deuce",
-      sideChange,
-      flags: {} as Partial<Record<"player1" | "player2", string>>,
-    };
-  }
-  if (sideChange) {
-    return {
-      label: "Side change",
-      player: undefined,
-      color: COURT.ok,
-      tone: "ok",
-      sideChange,
-      flags: {} as Partial<Record<"player1" | "player2", string>>,
-    };
-  }
-  return {
-    label: "Live",
-    player: undefined,
-    color: COURT.line,
-    tone: "live",
-    sideChange,
-    flags: {} as Partial<Record<"player1" | "player2", string>>,
-  };
+function getStatusState(match: Match): MatchMoment & { color: string } {
+  const moment = getMatchMoment(match.liveScore, match.format);
+  return { ...moment, color: MOMENT_COLORS[moment.tone] };
 }
 
 function TipOverlay({
@@ -286,7 +156,12 @@ function TipOverlay({
 
   if (!tip) return null;
   return (
-    <Animated.View style={[styles.tipOverlay, { opacity }]}>
+    // Pinned to the top and transparent to touches, so a tip never covers or
+    // swallows a tap on the court or the hold-to-undo key.
+    <Animated.View
+      style={[styles.tipOverlay, { opacity }]}
+      pointerEvents="none"
+    >
       <Text style={styles.tipTitle}>{tip.title}</Text>
       <Text style={styles.tipBody}>{tip.body}</Text>
     </Animated.View>
@@ -1314,8 +1189,6 @@ export default function MatchScreen() {
                 </Pressable>
               </View>
               <View style={styles.bottomCourtBar}>
-                <Text style={styles.bottomIcon}>↺</Text>
-                <Text style={styles.bottomIcon}>⇄</Text>
                 <Pressable
                   style={({ pressed }) => [
                     styles.holdUndoKey,
@@ -2205,12 +2078,12 @@ const styles = StyleSheet.create({
     elevation: 7,
   },
   tapZoneP1: {
-    backgroundColor: COURT.pA,
+    backgroundColor: COURT.zoneA,
     borderTopColor: COURT.amber,
     borderTopWidth: 5,
   },
   tapZoneP2: {
-    backgroundColor: COURT.pB,
+    backgroundColor: COURT.zoneB,
     borderTopColor: COURT.amber,
     borderTopWidth: 5,
   },
@@ -2237,13 +2110,13 @@ const styles = StyleSheet.create({
   },
   tapZoneScoreCompact: { fontSize: 64, minWidth: 80 },
   tapZoneSub: {
-    color: "rgba(255,255,255,0.72)",
+    color: colors.surface,
     fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
   },
   tapZoneFooter: {
-    color: "rgba(255,255,255,0.58)",
+    color: colors.surface,
     fontSize: 13,
     fontWeight: "900",
   },
@@ -2286,13 +2159,6 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: "center",
     marginTop: 10,
-  },
-  bottomIcon: {
-    color: COURT.line,
-    fontSize: 28,
-    fontWeight: "800",
-    width: 40,
-    textAlign: "center",
   },
   holdUndoKey: {
     flex: 1,
@@ -2691,7 +2557,7 @@ const styles = StyleSheet.create({
   // Tip overlay
   tipOverlay: {
     position: "absolute",
-    bottom: 20,
+    top: 8,
     left: 0,
     right: 0,
     margin: 16,
