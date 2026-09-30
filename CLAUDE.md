@@ -126,6 +126,8 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - `updateRankingWithMatchResult(existing, won, setsWon, setsLost, gamesWon, gamesLost): RankingInput` — helper to update a single player's running totals.
 - `extractMatchTotals(sets): { p1Sets, p2Sets, p1Games, p2Games }` — derives set/game counts from a completed match's set array.
 
+**`packages/shared/src/scoring/matchMoment.ts`** — `getMatchMoment(score, format)` describes the live match's current moment for the scoring screen's status pill: match, set, or break point, advantage, deuce, tiebreak, or a changeover, plus per-player `MP`/`SP`/`BP` flags. It returns tones, not colors; the mobile match screen maps tones to its palette. A player on 40 wins the game on the next point only when the opponent is below 40, which is what keeps deuce from reading as a break point. `changeEnds` is true only at the changeover itself.
+
 **`packages/shared/src/match/matchSides.ts`** — the side accessors every consumer should use instead of reading `player1Id`/`player2Id` directly. `Player` (`'player1' | 'player2'`) is a *side* label, not a person: singles carries one player per side, doubles carries two. `sidePlayerIds()`, `sideDisplayName()`, `sideOfPlayer()`, `opposingSide()`, `isDoublesMatch()`, `isMatchParticipant()`, `arePartners()`, and `canRespondToReport()` all fall back to the flat fields, so legacy singles documents with no `side1`/`side2` behave identically.
 
 **`packages/shared/src/doubles/doublesTeam.ts`** — doubles team identity. `doublesTeamId(playerIds)` sorts the member ids and uses a length-prefixed encoding, so a partnership is stable, order-independent, and collision-safe even when user ids contain punctuation. Also `doublesTeamPlayerIds()`, `formatDoublesTeamName()` (`"Ann Smith / Bob Jones"`), and `doublesHeadToHeadId()` (an opaque id scoped to division, season, and level). Persisted documents retain explicit `playerIds` and competition fields; consumers must not parse document ids themselves.
@@ -277,6 +279,19 @@ match/           # Match detail screens
 round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
 privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
 ```
+
+### Live-scoring screen (mobile)
+
+`apps/mobile/app/match/[id].tsx` owns the data and handlers (`useMatch`, `scorePoint`, undo, reports, and Wear sync). The presentation lives in `apps/mobile/components/live-scoring/`:
+
+- `ScoreboardSurface` is the split scoreboard. Each player's row is the tap target, with a status band between the rows driven by `getMatchMoment()`. It renders read-only for spectators and before or after the match.
+- `ScoreboardSetup` is the pre-match surface.
+- `PointTypeSheet` is the advanced-stats chooser.
+- `scoreboardTheme.ts` holds the `SB` palette, the band tones, and `useScoreboardFonts()`.
+
+The screen hides the stack header and draws its own top bar.
+
+Barlow Condensed ships through `@expo-google-fonts/barlow-condensed`, but only three weights are loaded, each `require`d by file path. Importing the package index would pull all eighteen TTFs into the bundle. Use `font(loaded, weight)` instead of setting `fontFamily` directly, so text falls back to a system weight until the fonts load.
 
 ### Match scheduling and report workflow
 

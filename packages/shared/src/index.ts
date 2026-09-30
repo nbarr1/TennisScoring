@@ -17,6 +17,7 @@ export * from "./doubles/doublesTeam";
 // Score engine
 export * from "./scoring/scoreEngine";
 export * from "./scoring/rankingEngine";
+export * from "./scoring/matchMoment";
 
 // Scheduling
 export * from "./scheduling/roundRobin";
