@@ -470,7 +470,7 @@ The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIRE
 
 That last branch was dead until recently: it compared `github.ref` against `refs/heads/main` alone, and the comparison is case-sensitive, so after the rename to `Main` no push ever selected `production` — every merge quietly built `preview`. It now matches both spellings, which means **merging to `Main` starts a production build**. The APK or AAB lands in the Expo dashboard, never as a GitHub artifact.
 
-`apps/mobile/eas.json` sets `"appVersionSource": "remote"`, so EAS keeps the `versionCode`/`buildNumber` counter. With `local`, `autoIncrement` bumped the runner's copy of `app.json`, which nothing committed back, so every production build would have reused the same version code and Google Play rejects a repeat upload.
+`apps/mobile/eas.json` keeps `"appVersionSource": "local"`, and that has a known gap: `autoIncrement` bumps the runner's copy of `app.json`, which nothing commits back, so successive production builds reuse one `versionCode` and Google Play rejects a repeat upload. Bump `android.versionCode` (and `ios.buildNumber`) in `app.json` before a release. `"remote"` is not a drop-in fix here: `android/app/build.gradle` reads `versionCode` from the app config through `rootProject.ext.appVersionCode`, so EAS can neither seed a remote counter from it (it tried to store the literal variable name and the build failed) nor write a remote value into the build.
 
 `.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
 
