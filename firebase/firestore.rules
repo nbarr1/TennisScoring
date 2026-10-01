@@ -99,10 +99,15 @@ service cloud.firestore {
 
       // Single-document reads can afford the extra get() needed to check the target's
       // live users/{uid}.divisionId instead of this doc's own (stale) divisionId.
+      // Two accounts with no division both read divisionId == null, so the
+      // shared-division checks below also require the caller to have one.
       allow get: if isAuth() && (
         isUser(userId) ||
         isAdmin() ||
-        getUserDataById(userId).divisionId == getUserData().divisionId
+        (
+          getUserData().get('divisionId', null) != null &&
+          getUserDataById(userId).get('divisionId', null) == getUserData().divisionId
+        )
       );
       // List queries (e.g. division roster/opponent search) must stay resolvable from the
       // queried document's own field plus the requester's cached identity, or Firestore
@@ -112,7 +117,10 @@ service cloud.firestore {
       // staleness here is an accepted trade-off for list operations.
       allow list: if isAuth() && (
         isAdmin() ||
-        resource.data.divisionId == getUserData().divisionId
+        (
+          getUserData().get('divisionId', null) != null &&
+          resource.data.divisionId == getUserData().divisionId
+        )
       );
       // Profiles are primarily managed by Cloud Functions. Admin can write profiles directly
       // for maintenance. A user may also self-heal/sync their own profile doc (e.g. via
@@ -308,11 +316,32 @@ service cloud.firestore {
         changed.hasOnly(['status', 'startedAt', 'currentSetStartedAt', 'advancedStatsEnabled', 'liveScore']);
     }
 
+    // Undo restores the snapshot scoreMatchPoint wrote before the last point,
+    // and nothing else. That snapshot is the only thing this rule trusts, so
+    // the restore must consume it (an undo can never plant a new one), may only
+    // run on a live or just-finished match, and may only land on a status from
+    // before the match ended. Without those checks a participant could stage a
+    // snapshot that reads 'completed' and "undo" straight past the opponent's
+    // confirmation into the standings. A pending report is cleared with it,
+    // since it described a score that no longer stands.
     function isUndoUpdate(existing, incoming, changed) {
-      return 'undoSnapshot' in existing &&
-        incoming.liveScore == existing.undoSnapshot.liveScore &&
-        incoming.status == existing.undoSnapshot.status &&
-        changed.hasOnly(['status', 'liveScore', 'stats', 'winner', 'completedAt', 'currentSetStartedAt', 'matchDurationMs', 'undoSnapshot']);
+      let snapshot = existing.get('undoSnapshot', null);
+      return snapshot != null &&
+        existing.status in ['in_progress', 'pending_report'] &&
+        snapshot.status in ['scheduled', 'in_progress'] &&
+        incoming.status == snapshot.status &&
+        incoming.liveScore == snapshot.liveScore &&
+        incoming.get('stats', null) == snapshot.get('stats', null) &&
+        incoming.get('winner', null) == snapshot.get('winner', null) &&
+        incoming.get('completedAt', null) == snapshot.get('completedAt', null) &&
+        !('undoSnapshot' in incoming) &&
+        !('reportSubmission' in incoming) &&
+        changed.hasOnly(['status', 'liveScore', 'stats', 'winner', 'completedAt', 'currentSetStartedAt', 'matchDurationMs', 'undoSnapshot', 'reportSubmission']);
+    }
+
+    function isTipsToggleUpdate(existing, incoming, changed) {
+      return incoming.tipsEnabled is bool &&
+        changed.hasOnly(['tipsEnabled']);
     }
 
     function isReportSubmitUpdate(existing, incoming, changed) {
@@ -368,7 +397,25 @@ service cloud.firestore {
         incoming.reportSubmission.confirmedAt is number;
     }
 
+    // Replacing a guest with a real account. A guest result is self-confirmed,
+    // so linking a *completed* one must send it back for the newly named
+    // opponent to confirm: the link reopens it as pending_report with a fresh
+    // submission from player1 (which notifies the opponent), and clears the
+    // report built for the guest version. Otherwise player1 could credit a
+    // result they confirmed alone to any division member.
     function isLinkGuestUpdate(existing, incoming, changed) {
+      let linkFields = ['player2Id', 'player2Name', 'player2IsGuest', 'playerIds'];
+      let keepsStatus = existing.status != 'completed' &&
+        incoming.status == existing.status &&
+        changed.hasOnly(linkFields);
+      let reopensForConfirmation = existing.status == 'completed' &&
+        incoming.status == 'pending_report' &&
+        !('reportUrl' in incoming) &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status']) &&
+        incoming.reportSubmission.submittedBy == request.auth.uid &&
+        incoming.reportSubmission.submittedAt is number &&
+        incoming.reportSubmission.status == 'pending_confirmation' &&
+        changed.hasOnly(linkFields.concat(['status', 'reportSubmission', 'reportUrl']));
       return existing.get('player2IsGuest', false) == true &&
         request.auth.uid == existing.player1Id &&
         incoming.player2IsGuest == false &&
@@ -383,7 +430,7 @@ service cloud.firestore {
           getUserDataById(incoming.player2Id).divisionId == existing.divisionId ||
           isUserInDivisionRoster(existing.divisionId, incoming.player2Id)
         ) &&
-        changed.hasOnly(['player2Id', 'player2Name', 'player2IsGuest', 'playerIds']);
+        (keepsStatus || reopensForConfirmation);
     }
 
     // A score edit reopens the match for re-confirmation. It must CLEAR any existing
@@ -394,12 +441,15 @@ service cloud.firestore {
     // division standings). Forcing the field to be deleted means the editor must re-submit
     // via isReportSubmitUpdate — which pins submittedBy to their own uid — and the opponent
     // remains the only party who can confirm.
+    // The edit also clears reportUrl, so the PDF is rebuilt for the new score
+    // once the opponent confirms it instead of keeping the original.
     function isEditScoreUpdate(existing, incoming, changed) {
       return existing.status in ['pending_report', 'completed'] &&
         incoming.status == 'pending_report' &&
         !('reportSubmission' in incoming) &&
         !('undoSnapshot' in incoming) &&
-        changed.hasOnly(['liveScore', 'winner', 'status', 'completedAt', 'reportSubmission', 'undoSnapshot']);
+        !('reportUrl' in incoming) &&
+        changed.hasOnly(['liveScore', 'winner', 'status', 'completedAt', 'reportSubmission', 'undoSnapshot', 'reportUrl']);
     }
 
     function canUpdateMatch(existing, incoming) {
@@ -411,6 +461,7 @@ service cloud.firestore {
         isAcceptProposalUpdate(existing, incoming, changed) ||
         isStartMatchUpdate(existing, incoming, changed) ||
         isUndoUpdate(existing, incoming, changed) ||
+        isTipsToggleUpdate(existing, incoming, changed) ||
         isReportSubmitUpdate(existing, incoming, changed) ||
         isGuestFinalizeUpdate(existing, incoming, changed) ||
         isLinkGuestUpdate(existing, incoming, changed) ||
@@ -426,6 +477,14 @@ service cloud.firestore {
       // four uninvolved players and have their teams credited. Doubles
       // matches are created by the createDoublesMatch callable, which uses
       // the Admin SDK and bypasses these rules.
+      //
+      // Fields that only exist once a match has been played are absent for
+      // the same reason: a new match is always scheduled or proposed, and
+      // letting its creator pre-plant them gives the later transitions
+      // something forged to trust. 'undoSnapshot' and 'reportSubmission'
+      // each let one player complete a match without the opponent, and
+      // 'reportUrl' suppressed the real report and put an arbitrary link on
+      // the match page.
       function matchFields() {
         return [
           'divisionId',
@@ -443,19 +502,11 @@ service cloud.firestore {
           'liveScore',
           'stats',
           'advancedStatsEnabled',
-          'currentSetStartedAt',
-          'matchDurationMs',
-          'reportSubmission',
-          'winner',
-          'reportUrl',
           'tipsEnabled',
-          'undoSnapshot',
           'source',
           'isDivisionMatch',
           'createdBy',
           'scheduledAt',
-          'startedAt',
-          'completedAt',
           'createdAt'
         ];
       }
@@ -479,6 +530,7 @@ service cloud.firestore {
         (
           (
             request.resource.data.get('player2IsGuest', false) == true &&
+            request.resource.data.player2Id == 'guest' &&
             request.resource.data.playerIds == [request.auth.uid]
           ) ||
           (
@@ -498,22 +550,12 @@ service cloud.firestore {
 
       // Score actions sub-collection
       match /actions/{actionId} {
-        function actionFields() {
-          return ['type', 'player', 'scorer', 'score', 'snapshot', 'metadata', 'createdBy', 'createdAt'];
-        }
-
-        function validActionCreate() {
-          return request.resource.data.keys().hasOnly(actionFields()) &&
-            request.resource.data.createdBy == request.auth.uid &&
-            request.resource.data.createdAt is number &&
-            request.resource.data.type is string;
-        }
-
         allow read: if isAuth() &&
           isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data);
-        allow create: if isMatchParticipant(get(/databases/$(database)/documents/matches/$(matchId)).data) &&
-          validActionCreate();
-        allow update, delete: if false;
+        // Nothing writes score actions any more (points go through the
+        // scoreMatchPoint callable), and an open create let participants
+        // store unbounded documents here.
+        allow create, update, delete: if false;
       }
     }
 
@@ -559,8 +601,9 @@ service cloud.firestore {
           request.resource.data.participantIds[0] != request.resource.data.participantIds[1] &&
           request.auth.uid in request.resource.data.participantIds &&
           request.resource.data.createdAt is number &&
-          getUserDataById(request.resource.data.participantIds[0]).divisionId == getUserData().divisionId &&
-          getUserDataById(request.resource.data.participantIds[1]).divisionId == getUserData().divisionId;
+          getUserData().get('divisionId', null) != null &&
+          getUserDataById(request.resource.data.participantIds[0]).get('divisionId', null) == getUserData().divisionId &&
+          getUserDataById(request.resource.data.participantIds[1]).get('divisionId', null) == getUserData().divisionId;
       }
 
       allow read: if isChannelParticipant(resource.data);
