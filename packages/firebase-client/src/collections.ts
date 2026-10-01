@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   CollectionReference,
   DocumentReference,
   query,
@@ -15,6 +16,23 @@ import type { User, PublicProfile, Match, Division, DivisionLevel, DivisionMembe
 // Typed collection helpers
 export const usersCol = () => collection(db, 'users') as CollectionReference<User>;
 export const userDoc = (uid: string) => doc(db, 'users', uid) as DocumentReference<User>;
+
+/**
+ * Reads users/{uid}, resolving to null when the rules deny the read.
+ *
+ * A leader may read the private user doc only of players whose active division
+ * is theirs, so a roster can include members whose doc is unreadable (a player
+ * who belongs to several divisions and is active in another). Roster loads read
+ * every member at once, and one denied read must not fail the whole load.
+ */
+export async function readableUserDoc(uid: string) {
+  try {
+    return await getDoc(userDoc(uid));
+  } catch (err) {
+    if ((err as { code?: string }).code === 'permission-denied') return null;
+    throw err;
+  }
+}
 
 export const profilesCol = () => collection(db, 'profiles') as CollectionReference<PublicProfile>;
 export const profileDoc = (uid: string) => doc(db, 'profiles', uid) as DocumentReference<PublicProfile>;

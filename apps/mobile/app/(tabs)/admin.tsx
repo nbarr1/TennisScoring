@@ -16,7 +16,6 @@ import { useRouter } from "expo-router";
 import { onSnapshot, getDoc, getDocs, query, where } from "firebase/firestore";
 import {
   divisionsCol,
-  userDoc,
   usersCol,
   divisionDoc,
   matchesCol,
@@ -31,6 +30,7 @@ import {
   useDivisionLevels,
   useDivisionMessageReports,
   resolveMessageReport,
+  readableUserDoc,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
@@ -148,7 +148,7 @@ export default function AdminScreen() {
               await Promise.all([
                 activeDivision.playerIds.length
                   ? Promise.all(
-                      activeDivision.playerIds.map((id) => getDoc(userDoc(id))),
+                      activeDivision.playerIds.map((id) => readableUserDoc(id)),
                     )
                   : Promise.resolve([]),
                 getDocs(
@@ -164,7 +164,7 @@ export default function AdminScreen() {
               byId.set(id, { id, ...data });
             };
             divisionMemberProfiles.forEach((d) => {
-              if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
+              if (d?.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
             });
             divisionProfileSnap.docs.forEach((d) =>
               addProfile(d.id, d.data() as Omit<User, "id">),

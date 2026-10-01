@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { onSnapshot, query, where } from 'firebase/firestore';
-import { rankingsQuery, completedDivisionMatchesQuery, usersCol } from '../collections';
+import { rankingsQuery, completedDivisionMatchesQuery, profilesCol } from '../collections';
 import { computeRankings, extractMatchTotals, isDoublesMatch } from '@tennis/shared';
-import type { PlayerRanking, Match, HeadToHead, User } from '@tennis/shared';
+import type { PlayerRanking, Match, HeadToHead, PublicProfile } from '@tennis/shared';
 
 function hasRankingStats(ranking: PlayerRanking): boolean {
   return (
@@ -16,28 +16,44 @@ function hasRankingStats(ranking: PlayerRanking): boolean {
   );
 }
 
-function rankingFromRosterUser(user: User, divisionId: string): PlayerRanking {
-  const summary =
-    user.rankingSummary?.divisionId === divisionId ? user.rankingSummary : null;
-  const gamesWon = summary?.gamesWon ?? 0;
-  const gamesLost = summary?.gamesLost ?? 0;
-
+/**
+ * A zero-stat standings row for a roster member, so players without a result in
+ * the selected season still appear at the foot of the table.
+ *
+ * Built from the public profile, which any member of the division can read; the
+ * private users doc is readable only by leaders, so a roster built from it was
+ * denied for everyone else. It deliberately carries no stats: the profile's
+ * owner may have results in other seasons, and those must not leak into this one.
+ */
+function rankingFromRosterProfile(profile: PublicProfile, divisionId: string): PlayerRanking {
   return {
-    userId: user.id,
-    displayName: user.displayName || user.email || user.id,
+    userId: profile.id,
+    displayName: profile.displayName || profile.id,
     divisionId,
     season: 'current',
-    rank: summary?.rank ?? 0,
-    matchesPlayed: summary?.matchesPlayed ?? 0,
-    matchesWon: summary?.matchesWon ?? 0,
-    matchesLost: summary?.matchesLost ?? 0,
-    setsWon: summary?.setsWon ?? 0,
-    setsLost: summary?.setsLost ?? 0,
-    gamesWon,
-    gamesLost,
-    gameDifferential: summary?.gameDifferential ?? gamesWon - gamesLost,
-    updatedAt: summary?.updatedAt ?? user.updatedAt ?? 0,
+    rank: 0,
+    matchesPlayed: 0,
+    matchesWon: 0,
+    matchesLost: 0,
+    setsWon: 0,
+    setsLost: 0,
+    gamesWon: 0,
+    gamesLost: 0,
+    gameDifferential: 0,
+    updatedAt: 0,
   };
+}
+
+/**
+ * Whether the server's rows can be shown as they are.
+ *
+ * The server ranks each season and division level separately. Rows from more
+ * than one level (a season with several levels, viewed without a level filter)
+ * carry ranks from different tables, so they cannot be merged into one list;
+ * the matches-based computation below pools them instead.
+ */
+function isSingleTable(rankings: PlayerRanking[]): boolean {
+  return new Set(rankings.map((r) => r.divisionLevelId ?? '')).size <= 1;
 }
 
 function mergeRankingSources(
@@ -261,7 +277,8 @@ export function useRankings(
 
     const syncRankings = () => {
       let nextRankings: PlayerRanking[];
-      const hasFirestoreStats = firestoreRankings.some(hasRankingStats);
+      const hasFirestoreStats =
+        isSingleTable(firestoreRankings) && firestoreRankings.some(hasRankingStats);
       if (hasFirestoreStats) {
         // Prefer server-calculated standings when present, but merge in
         // locally computed and roster-only fallbacks so a missing ranking
@@ -272,22 +289,26 @@ export function useRankings(
           rosterRankings,
         );
       } else if (computedRankings.length > 0) {
-        // Fallback to local computation only before server standings exist.
+        // Fall back to local computation before server standings exist, or when
+        // they span several levels.
         const computedIds = new Set(computedRankings.map((r) => r.userId));
-        const unplayed = [...firestoreRankings, ...rosterRankings]
-          .filter((r) => !computedIds.has(r.userId) && !hasRankingStats(r))
+        const unplayed = rosterRankings
+          .filter((r) => !computedIds.has(r.userId))
           .sort((a, b) => a.displayName.localeCompare(b.displayName));
         nextRankings = mergeRankingSources(computedRankings, unplayed, []).map((r, index) => ({
           ...r,
           rank: index + 1,
         }));
       } else if (matchesReady && countedMatchCount === 0) {
-        nextRankings = [...firestoreRankings, ...rosterRankings]
-          .filter((r) => !hasRankingStats(r))
+        nextRankings = [...rosterRankings]
           .sort((a, b) => a.displayName.localeCompare(b.displayName))
           .map((r, index) => ({ ...r, rank: index + 1 }));
       } else {
-        nextRankings = mergeRankingSources(firestoreRankings, [], rosterRankings);
+        nextRankings = mergeRankingSources(
+          isSingleTable(firestoreRankings) ? firestoreRankings : [],
+          [],
+          rosterRankings,
+        );
       }
       setRankings(nextRankings);
       if (rankingsReady && matchesReady && rosterReady) {
@@ -346,16 +367,18 @@ export function useRankings(
     );
 
     const unsubRoster = onSnapshot(
-      query(usersCol(), where('divisionId', '==', divisionId)),
+      query(profilesCol(), where('divisionId', '==', divisionId)),
       (snap) => {
         rosterRankings = snap.docs.map((d) =>
-          rankingFromRosterUser({ ...(d.data() as User), id: d.id }, divisionId),
+          rankingFromRosterProfile({ ...d.data(), id: d.id }, divisionId),
         );
         rosterReady = true;
         syncRankings();
       },
-      (err) => {
-        setError(err);
+      () => {
+        // The roster only adds zero-match rows. Profiles are readable by members
+        // whose active division is this one, so a viewer active elsewhere is
+        // denied; that is expected and leaves the standings themselves intact.
         rosterRankings = [];
         rosterReady = true;
         syncRankings();

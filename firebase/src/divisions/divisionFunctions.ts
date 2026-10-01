@@ -3,7 +3,7 @@ import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
-import { divisionMembershipId, toCsv } from '@tennis/shared';
+import { divisionMembershipId, isAdminRole, toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
@@ -101,6 +101,76 @@ export function publicProfileUpdate(input: {
     ...(typeof input.tutorialDone === 'boolean' ? { tutorialDone: input.tutorialDone } : {}),
     updatedAt: FieldValue.serverTimestamp(),
   };
+}
+
+/**
+ * Whether a leader-side callable may make `divisionId` the account's *active*
+ * division (`users/{uid}.divisionId`).
+ *
+ * Leaders may add any account to their roster, but may only make their division
+ * the active one when the account has none yet or already points here. Moving an
+ * account that is active elsewhere would switch its owner's app to the leader's
+ * division without their say, and, because the rules let a leader read the
+ * private user doc of anyone whose divisionId names their division, hand the
+ * leader that account's email, phone, and push tokens. Joining another division
+ * stays the owner's call, through an invite or a join code.
+ */
+function mayAdoptActiveDivision(
+  userData: FirebaseFirestore.DocumentData | undefined,
+  divisionId: string,
+): boolean {
+  const current = userData?.divisionId;
+  return current === undefined || current === null || current === '' || current === divisionId;
+}
+
+/**
+ * True for accounts nobody signs in to: roster placeholders created by leaders.
+ * Their contact details belong to the division; a registered account's email
+ * mirrors its sign-in address and its contact details are its owner's to edit.
+ */
+function isPlaceholderAccount(userData: FirebaseFirestore.DocumentData | undefined): boolean {
+  return userData?.isRegistered === false && userData?.accountDeleted !== true;
+}
+
+/**
+ * The match update that hands every reference to `sourceId` over to `targetId`,
+ * or null when the match does not reference `sourceId`.
+ *
+ * Covers the flat fields and, for doubles, the side rosters: those decide team
+ * standings credit, so leaving the old id there would keep crediting it.
+ */
+export function matchUpdateReplacingPlayer(
+  data: FirebaseFirestore.DocumentData,
+  sourceId: string,
+  targetId: string,
+  targetDisplayName?: string | null,
+): Record<string, unknown> | null {
+  const swap = (id: unknown) => (id === sourceId ? targetId : id);
+  const existingPlayerIds = Array.isArray(data.playerIds)
+    ? (data.playerIds as unknown[]).filter(
+        (id): id is string => typeof id === 'string' && id.trim().length > 0 && id !== 'guest',
+      )
+    : [];
+  const referencesSource =
+    data.player1Id === sourceId ||
+    data.player2Id === sourceId ||
+    existingPlayerIds.includes(sourceId);
+  if (!referencesSource) return null;
+
+  const update: Record<string, unknown> = {
+    player1Id: swap(data.player1Id),
+    player2Id: swap(data.player2Id),
+    playerIds: Array.from(new Set(existingPlayerIds.map((id) => swap(id) as string))),
+  };
+  if (data.player1Id === sourceId && targetDisplayName) update.player1Name = targetDisplayName;
+  if (data.player2Id === sourceId && targetDisplayName) update.player2Name = targetDisplayName;
+  for (const side of ['side1', 'side2'] as const) {
+    const roster = data[side]?.playerIds;
+    if (Array.isArray(roster) && roster.includes(sourceId)) {
+      update[side] = { ...data[side], playerIds: roster.map(swap) };
+    }
+  }
+  return update;
 }
 
 type MatchLike = {
@@ -234,7 +304,7 @@ async function requireDivisionLeaderOrAdmin(
     throw new HttpsError('not-found', 'Division not found.');
   }
 
-  const isAdmin = userSnap.data()?.role === 'admin';
+  const isAdmin = isAdminRole(userSnap.data()?.role);
   const isLeader = (divisionSnap.data()?.leaderIds ?? []).includes(uid);
   if (!isAdmin && !isLeader) {
     throw new HttpsError(
@@ -361,6 +431,68 @@ async function upsertMembershipDocument(
   return membershipId;
 }
 
+/**
+ * Hands a placeholder's division history to the real account that replaced it:
+ * every match in the division that names the placeholder, and every rostered
+ * membership it holds. Returns how many matches moved.
+ *
+ * Marking the placeholder merged is not enough on its own. Its matches keep
+ * naming it, so it stays in the standings, the real account starts with no
+ * history, and the roster shows both.
+ */
+export async function transferPlaceholderRecords(
+  db: FirebaseFirestore.Firestore,
+  input: { divisionId: string; placeholderId: string; targetId: string; targetDisplayName?: string },
+): Promise<number> {
+  const { divisionId, placeholderId, targetId, targetDisplayName } = input;
+  const matches = await db
+    .collection('matches')
+    .where('divisionId', '==', divisionId)
+    .where('playerIds', 'array-contains', placeholderId)
+    .get();
+  let moved = 0;
+  for (let i = 0; i < matches.docs.length; i += 400) {
+    const batch = db.batch();
+    matches.docs.slice(i, i + 400).forEach((matchDoc) => {
+      const update = matchUpdateReplacingPlayer(matchDoc.data(), placeholderId, targetId, targetDisplayName);
+      if (!update) return;
+      batch.update(matchDoc.ref, update);
+      moved += 1;
+    });
+    await batch.commit();
+  }
+
+  const memberships = await db
+    .collection('divisions')
+    .doc(divisionId)
+    .collection('memberships')
+    .where('userId', '==', placeholderId)
+    .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
+    .get();
+  for (const membershipDoc of memberships.docs) {
+    const membership = membershipDoc.data();
+    if (typeof membership.seasonId !== 'string' || typeof membership.divisionLevelId !== 'string') continue;
+    await upsertMembershipDocument(db, {
+      divisionId,
+      seasonId: membership.seasonId,
+      divisionLevelId: membership.divisionLevelId,
+      userId: targetId,
+      displayName: targetDisplayName || membership.displayNameSnapshot || targetId,
+      email: membership.emailSnapshot,
+      phone: membership.phoneSnapshot,
+      assignedBy: typeof membership.assignedBy === 'string' ? membership.assignedBy : targetId,
+      source: 'registered_user',
+      role: membership.role === 'division_leader' ? 'division_leader' : 'player',
+      status: membership.status === 'waitlisted' ? 'waitlisted' : 'active',
+    });
+    await membershipDoc.ref.set(
+      { status: 'removed', mergedIntoUserId: targetId, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  }
+  return moved;
+}
+
 export const createDivision = onCall(callableOptions, async (request) => {
   if (!request.auth) {
     throw new HttpsError(
@@ -369,7 +501,7 @@ export const createDivision = onCall(callableOptions, async (request) => {
     );
   }
 
-  const { name, displayName, email } = (request.data ??
+  const { name, displayName } = (request.data ??
     {}) as CreateDivisionInput;
   const safeName = name?.trim();
   if (!safeName) {
@@ -378,13 +510,22 @@ export const createDivision = onCall(callableOptions, async (request) => {
 
   const db = getFirestore();
   const uid = request.auth.uid;
+  // The stored email is what leader-side lookups match on, so it comes from the
+  // verified sign-in token, never from the request.
+  const tokenEmail = request.auth.token.email ? normalizeEmail(request.auth.token.email) : '';
   const now = FieldValue.serverTimestamp();
   const inviteCode = await uniqueInviteCode(db);
 
   const divisionRef = db.collection('divisions').doc();
   const channelRef = db.collection('channels').doc();
+  const userRef = db.collection('users').doc(uid);
 
   await db.runTransaction(async (tx) => {
+    const currentRole = (await tx.get(userRef)).data()?.role;
+    // Leading a division raises a player to division_leader, but must never
+    // demote an admin or app developer who creates one from the admin page.
+    const role = currentRole === undefined || currentRole === 'player' ? 'division_leader' : currentRole;
+
     tx.set(divisionRef, {
       name: safeName,
       inviteCode,
@@ -395,12 +536,12 @@ export const createDivision = onCall(callableOptions, async (request) => {
     });
 
     tx.set(
-      db.collection('users').doc(uid),
+      userRef,
       {
         ...(displayName ? { displayName } : {}),
-        ...(email ? { email: normalizeEmail(email) } : {}),
+        ...(tokenEmail ? { email: tokenEmail } : {}),
         divisionId: divisionRef.id,
-        role: 'division_leader',
+        role,
         updatedAt: now,
       },
       { merge: true },
@@ -412,7 +553,7 @@ export const createDivision = onCall(callableOptions, async (request) => {
         id: uid,
         displayName,
         divisionId: divisionRef.id,
-        role: 'division_leader',
+        role,
       }),
       { merge: true },
     );
@@ -518,11 +659,14 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
   }
 
   const userId = users.docs[0].id;
+  const userData = users.docs[0].data();
+  const adoptsDivision = mayAdoptActiveDivision(userData, safeDivisionId);
   await db.runTransaction(async (tx) => {
     tx.update(db.collection('divisions').doc(safeDivisionId), {
       playerIds: FieldValue.arrayUnion(userId),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    if (!adoptsDivision) return;
     tx.set(
       db.collection('users').doc(userId),
       {
@@ -535,11 +679,11 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
       db.collection('profiles').doc(userId),
       publicProfileUpdate({
         id: userId,
-        displayName: users.docs[0].data()?.displayName,
-        avatarUrl: users.docs[0].data()?.avatarUrl,
+        displayName: userData?.displayName,
+        avatarUrl: userData?.avatarUrl,
         divisionId: safeDivisionId,
-        role: users.docs[0].data()?.role ?? 'player',
-        tutorialDone: users.docs[0].data()?.tutorialDone,
+        role: userData?.role ?? 'player',
+        tutorialDone: userData?.tutorialDone,
       }),
       { merge: true },
     );
@@ -585,6 +729,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
       if (!existing.empty) {
         const existingUserId = existing.docs[0].id;
         const existingUserData = existing.docs[0].data();
+        const adoptsDivision = mayAdoptActiveDivision(existingUserData, safeDivisionId);
         await db.runTransaction(async (tx) => {
           tx.set(
             db.collection('divisions').doc(safeDivisionId),
@@ -594,6 +739,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
             },
             { merge: true },
           );
+          if (!adoptsDivision) return;
           tx.set(
             db.collection('users').doc(existingUserId),
             {
@@ -821,6 +967,18 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
   const linkedDivisionPlayerIds = new Set<string>([safeTargetUserId]);
   docsToUpdate.forEach((matchDoc) => {
     const data = matchDoc.data();
+    if (safeSourceUserId) {
+      const replaced = matchUpdateReplacingPlayer(data, safeSourceUserId, safeTargetUserId, targetDisplayName);
+      if (!replaced) return;
+      (replaced.playerIds as string[]).forEach((id) => linkedDivisionPlayerIds.add(id));
+      batch.update(matchDoc.ref, replaced);
+      updatedMatches += 1;
+      writesInBatch += 1;
+      if (writesInBatch >= maxWritesPerBatch) {
+        commitAndRotate();
+      }
+      return;
+    }
     const player1Name = typeof data.player1Name === 'string' ? data.player1Name : '';
     const player2Name = typeof data.player2Name === 'string' ? data.player2Name : '';
     const player1LooksLikeTarget =
@@ -924,11 +1082,12 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     },
     { merge: true },
   );
+  const targetData = targetSnap.data();
   batch.set(
     db.collection('users').doc(safeTargetUserId),
     {
-      divisionId: safeDivisionId,
-      ...(safeTargetEmail ? { email: safeTargetEmail } : {}),
+      ...(mayAdoptActiveDivision(targetData, safeDivisionId) ? { divisionId: safeDivisionId } : {}),
+      ...(safeTargetEmail && isPlaceholderAccount(targetData) ? { email: safeTargetEmail } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -981,13 +1140,23 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
   const playerIds = (divisionData.playerIds ?? []) as string[];
   const leaderIds = (divisionData.leaderIds ?? []) as string[];
   const userSnap = await db.collection('users').doc(safeUserId).get();
-  const userDivisionId = userSnap.data()?.divisionId;
+  const userData = userSnap.data();
+  const userDivisionId = userData?.divisionId;
   const isDivisionMember =
     playerIds.includes(safeUserId) ||
     leaderIds.includes(safeUserId) ||
     userDivisionId === safeDivisionId;
   if (!isDivisionMember) {
     throw new HttpsError('failed-precondition', 'User is not a member of this division.');
+  }
+  // A registered account's email mirrors the address it signs in with, and
+  // leader-side lookups match on it, so only placeholders have theirs edited
+  // here. Registered players change their own contact details.
+  if (!isPlaceholderAccount(userData)) {
+    throw new HttpsError(
+      'failed-precondition',
+      'This player has their own account. They can update their contact details from their profile.',
+    );
   }
 
   const batch = db.batch();
@@ -996,7 +1165,7 @@ export const updateDivisionPlayerEmail = onCall(callableOptions, async (request)
     {
       email: safeEmail,
       ...(safePhone !== undefined ? { phone: safePhone } : {}),
-      divisionId: safeDivisionId,
+      ...(mayAdoptActiveDivision(userData, safeDivisionId) ? { divisionId: safeDivisionId } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -1213,6 +1382,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
   await assertDivisionLevel(db, safeDivisionId, safeSeasonId, safeLevelId);
 
   let targetUserId = safeUserId;
+  let targetUserData: FirebaseFirestore.DocumentData | undefined;
   let createdPlaceholder = false;
   let displayName = safeName || safeEmail || 'Player';
   let targetEmail = safeEmail;
@@ -1225,6 +1395,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     const userSnap = await db.collection('users').doc(targetUserId).get();
     if (!userSnap.exists) throw new HttpsError('not-found', 'Player not found.');
     const data = userSnap.data() ?? {};
+    targetUserData = data;
     displayName = (typeof data.displayName === 'string' && data.displayName.trim()) || displayName;
     targetEmail = safeEmail || (typeof data.email === 'string' ? data.email : '');
     targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
@@ -1233,6 +1404,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     if (!existing.empty) {
       targetUserId = existing.docs[0].id;
       const data = existing.docs[0].data();
+      targetUserData = data;
       displayName = (typeof data.displayName === 'string' && data.displayName.trim()) || displayName;
       targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
     }
@@ -1247,6 +1419,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     if (exactNameMatch) {
       targetUserId = exactNameMatch.id;
       const data = exactNameMatch.data();
+      targetUserData = data;
       displayName = data.displayName ?? displayName;
       targetEmail = safeEmail || (typeof data.email === 'string' ? data.email : '');
       targetPhone = safePhone || (typeof data.phone === 'string' ? data.phone : undefined);
@@ -1295,21 +1468,28 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     status: safeMembershipStatus,
   });
 
+  // A freshly created placeholder already carries these fields. An existing
+  // placeholder may have its contact details filled in; a registered account
+  // keeps its own, and is only made active here if it has no other division.
+  const editsContact = !createdPlaceholder && isPlaceholderAccount(targetUserData);
+  const adoptsDivision = !createdPlaceholder && mayAdoptActiveDivision(targetUserData, safeDivisionId);
   await Promise.all([
     db.collection('divisions').doc(safeDivisionId).set(
       { playerIds: FieldValue.arrayUnion(targetUserId), updatedAt: FieldValue.serverTimestamp() },
       { merge: true },
     ),
-    db.collection('users').doc(targetUserId).set(
-      {
-        ...(targetEmail ? { email: targetEmail } : {}),
-        ...(targetPhone ? { phone: targetPhone } : {}),
-        divisionId: safeDivisionId,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    ),
-    addUserToDivisionChannel(db, safeDivisionId, targetUserId),
+    editsContact || adoptsDivision
+      ? db.collection('users').doc(targetUserId).set(
+          {
+            ...(editsContact && targetEmail ? { email: targetEmail } : {}),
+            ...(editsContact && targetPhone ? { phone: targetPhone } : {}),
+            ...(adoptsDivision ? { divisionId: safeDivisionId } : {}),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        )
+      : Promise.resolve(),
+    addUserToDivisionChannel(db, safeDivisionId, targetUserId!),
   ]);
 
   return { membershipId, userId: targetUserId, createdPlaceholder };

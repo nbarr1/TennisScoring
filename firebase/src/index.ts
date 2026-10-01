@@ -11,6 +11,7 @@ export { createDoublesMatch } from './matches/doublesFunctions';
 export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
 export { generateMatchReport } from './reports/generateReport';
 export { onNewMessage } from './messaging/onNewMessage';
+export { resolveMessageReport } from './messaging/moderationFunctions';
 
 export { onUserCreated } from './auth/onUserCreated';
 export { sendInvite, getInvitePreview, acceptInvite } from './users/sendInvite';

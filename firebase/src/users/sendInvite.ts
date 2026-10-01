@@ -2,7 +2,9 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
-import { publicProfileUpdate } from '../divisions/divisionFunctions';
+import { isAdminRole } from '@tennis/shared';
+import { publicProfileUpdate, transferPlaceholderRecords } from '../divisions/divisionFunctions';
+import { recalculateRankings } from '../matches/matchFunctions';
 
 if (!getApps().length) initializeApp();
 
@@ -149,8 +151,7 @@ export const sendInvite = onCall(async (request) => {
   await assertRateLimit(db, ['sendInvite', requestClientKey(request)], 20, 60 * 60 * 1000);
 
   const inviterSnap = await db.collection('users').doc(inviterId).get();
-  const inviterRole = inviterSnap.data()?.role;
-  const isAdmin = inviterRole === 'admin';
+  const isAdmin = isAdminRole(inviterSnap.data()?.role);
 
   let isLeader = false;
   if (divisionId) {
@@ -281,29 +282,29 @@ export const acceptInvite = onCall(async (request) => {
 
   const inviteRef = db.collection('invites').doc(safeToken);
   const userRef = db.collection('users').doc(uid);
-  const inviteSnap = await inviteRef.get();
-  if (!inviteSnap.exists) {
-    throw new HttpsError('not-found', 'Invite not found.');
-  }
-  const inviteData = inviteSnap.data();
-  if (!inviteData) {
-    throw new HttpsError('not-found', 'Invite not found.');
-  }
-  if (inviteData.accepted) {
-    throw new HttpsError('already-exists', 'Invite already accepted.');
-  }
-  if (inviteData.expiresAt && Date.now() > inviteData.expiresAt) {
-    throw new HttpsError('failed-precondition', 'This invite link has expired.');
-  }
-  if (normalizeEmail(inviteData.email ?? '') !== authEmail) {
-    throw new HttpsError(
-      'permission-denied',
-      'This invite is for a different email address.',
-    );
-  }
-  const inviteDivisionId = inviteData.divisionId as string | undefined;
 
-  await db.runTransaction(async (tx) => {
+  // The invite is read and marked accepted inside one transaction, so two
+  // concurrent calls cannot both pass the "not yet accepted" check.
+  const { inviteData, displayName } = await db.runTransaction(async (tx) => {
+    const inviteSnap = await tx.get(inviteRef);
+    const inviteData = inviteSnap.data();
+    if (!inviteSnap.exists || !inviteData) {
+      throw new HttpsError('not-found', 'Invite not found.');
+    }
+    if (inviteData.accepted) {
+      throw new HttpsError('already-exists', 'Invite already accepted.');
+    }
+    if (inviteData.expiresAt && Date.now() > inviteData.expiresAt) {
+      throw new HttpsError('failed-precondition', 'This invite link has expired.');
+    }
+    if (normalizeEmail(inviteData.email ?? '') !== authEmail) {
+      throw new HttpsError(
+        'permission-denied',
+        'This invite is for a different email address.',
+      );
+    }
+    const inviteDivisionId = inviteData.divisionId as string | undefined;
+
     const userSnap = await tx.get(userRef);
     const wasIncomplete = validateUserCompleteness(userSnap.data()) === undefined;
     const displayName = userSnap.data()?.displayName || inviteData.name;
@@ -354,7 +355,9 @@ export const acceptInvite = onCall(async (request) => {
         updatedAt: FieldValue.serverTimestamp(),
       });
     }
+    return { inviteData, displayName: displayName as string | undefined };
   });
+  const inviteDivisionId = inviteData.divisionId as string | undefined;
 
   if (inviteDivisionId) {
     const placeholderSnap = await db
@@ -367,6 +370,12 @@ export const acceptInvite = onCall(async (request) => {
     if (!placeholderSnap.empty) {
       const placeholderRef = placeholderSnap.docs[0].ref;
       if (placeholderRef.id !== uid) {
+        const movedMatches = await transferPlaceholderRecords(db, {
+          divisionId: inviteDivisionId,
+          placeholderId: placeholderRef.id,
+          targetId: uid,
+          targetDisplayName: displayName,
+        });
         await db.runTransaction(async (tx) => {
           tx.update(db.collection('divisions').doc(inviteDivisionId), {
             playerIds: FieldValue.arrayRemove(placeholderRef.id),
@@ -384,6 +393,9 @@ export const acceptInvite = onCall(async (request) => {
             { merge: true },
           );
         });
+        if (movedMatches > 0) {
+          await recalculateRankings(inviteDivisionId);
+        }
       }
     }
   }

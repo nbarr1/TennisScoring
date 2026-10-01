@@ -67,9 +67,8 @@ export function useScoreboardFonts(): boolean {
  */
 export function font(loaded: boolean, weight: keyof typeof FONT) {
   if (loaded) return { fontFamily: FONT[weight] };
-  return {
-    fontWeight: weight === "semibold" ? ("600" as const) : ("800" as const),
-  };
+  const fontWeight = { semibold: "600", bold: "700", extrabold: "800" } as const;
+  return { fontWeight: fontWeight[weight] };
 }
 
 /** "Alex Rivera" → "Rivera"; a doubles team "Ann Smith / Bob Jones" → "Smith / Jones". */

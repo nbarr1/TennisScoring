@@ -3,11 +3,10 @@ import { Stack } from 'expo-router';
 import { View, ActivityIndicator, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { auth, useAuthUser, usePrivateUser } from '@tennis/firebase-client';
+import { signOutReleasingPushToken, useAuthUser, usePrivateUser } from '@tennis/firebase-client';
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
-import { signOut } from 'firebase/auth';
 function LoadingScreen() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f0' }}>
@@ -228,7 +227,7 @@ function AuthGate() {
           message="The app could not load your account data. This is usually caused by a temporary network issue, a Firebase configuration problem, or missing account data."
           details={`uid=${firebaseUser?.uid ?? 'none'}\nerror=${error.message ?? 'unknown'}`}
           onRetry={() => setRetryKey((key) => key + 1)}
-          onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
+          onSignOut={firebaseUser ? () => { void signOutReleasingPushToken(); setUser(null); } : undefined}
         />
       </GateOverlay>
     );
@@ -243,7 +242,7 @@ function AuthGate() {
             message="Loading is taking longer than expected. You can keep waiting, retry the account listener, or sign out and try again."
             details={`authLoading=${authLoading}\nprofileLoading=${profileLoading}\nrouteMismatch=${routeMismatch}\nsegments=${segments.join('/') || '(none)'}\nuid=${firebaseUser?.uid ?? 'none'}`}
             onRetry={() => setRetryKey((key) => key + 1)}
-            onSignOut={firebaseUser ? () => { void signOut(auth); setUser(null); } : undefined}
+            onSignOut={firebaseUser ? () => { void signOutReleasingPushToken(); setUser(null); } : undefined}
           />
         </GateOverlay>
       );

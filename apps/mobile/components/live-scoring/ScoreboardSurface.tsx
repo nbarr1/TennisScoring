@@ -4,6 +4,7 @@ import {
   formatGameScore,
   formatScoreDisplay,
   getMatchMoment,
+  type LiveScore,
   type Match,
   type MatchMomentTone,
   type Player,
@@ -45,13 +46,27 @@ function pointValue(match: Match, player: Player): string {
   return score.currentGame[player] === "Ad" ? "AD" : score.currentGame[player];
 }
 
+/**
+ * The game score as an umpire calls it: the server's points first, whichever
+ * row they occupy. formatGameScore reads player1 first, which put the call
+ * backwards whenever player2 served.
+ */
+function serverFirstCall(score: LiveScore): string {
+  const call = formatGameScore(score);
+  if (score.server !== "player2") return call;
+  const [first, second, ...rest] = call.split(" – ");
+  return second !== undefined && rest.length === 0 ? `${second} – ${first}` : call;
+}
+
 function bandText(
   tone: MatchMomentTone,
   match: Match,
   who: string,
-  p1Point: string,
-  p2Point: string,
+  points: Record<Player, string>,
+  interactive: boolean,
 ): string {
+  const server = match.liveScore.server;
+  const receiver: Player = server === "player1" ? "player2" : "player1";
   switch (tone) {
     case "deuce":
       return "Deuce";
@@ -64,11 +79,35 @@ function bandText(
     case "mp":
       return `Match point · ${who}`;
     case "tb":
-      return `Tiebreak ${p1Point}–${p2Point}`;
+      return `Tiebreak ${points[server]}–${points[receiver]}`;
     case "ok":
-      return "Change ends · tap to swap";
+      // Only a participant's scoreboard can swap ends; a read-only one just says so.
+      return interactive ? "Change ends · tap to swap" : "Change ends";
     default:
-      return formatGameScore(match.liveScore);
+      return serverFirstCall(match.liveScore);
+  }
+}
+
+/**
+ * Whether the scoreboard shows a result. A disputed match was played to the
+ * end, and a match cancelled mid-play has a partial score worth showing;
+ * treating either as unplayed printed "Not started" above a full scoreboard.
+ */
+function resultLabel(match: Match): string | null {
+  switch (match.status) {
+    case "pending_report":
+    case "completed":
+      return "Final";
+    case "disputed":
+      return "Disputed";
+    case "cancelled": {
+      const played =
+        match.startedAt !== undefined ||
+        match.liveScore.sets.some((set) => set.player1Games + set.player2Games > 0);
+      return played ? "Cancelled" : null;
+    }
+    default:
+      return null;
   }
 }
 
@@ -93,8 +132,8 @@ export function ScoreboardSurface({
   const holdProgress = useRef(new Animated.Value(0)).current;
   const score = match.liveScore;
   const live = match.status === "in_progress";
-  const finished =
-    match.status === "pending_report" || match.status === "completed";
+  const finalLabel = resultLabel(match);
+  const finished = finalLabel !== null;
   const moment = getMatchMoment(score, match.format);
   const names: Record<Player, string> = {
     player1: match.player1Name ?? "Player 1",
@@ -104,20 +143,22 @@ export function ScoreboardSurface({
     player1: pointValue(match, "player1"),
     player2: pointValue(match, "player2"),
   };
+  // Room for every set the format allows: best of five needs five boxes.
+  const maxSets = Math.max(3, (match.format?.setsToWin ?? 2) * 2 - 1);
   const sets = score.sets
     .filter(
       (set) => set.winner !== undefined || set.setNumber === score.currentSet,
     )
-    .slice(0, 3);
+    .slice(0, maxSets);
   const court = score.serviceSide === "advantage" ? "AD" : "DEUCE";
 
   const tone: MatchMomentTone = live ? moment.tone : "live";
   const band = BAND_TONES[tone];
   const who = moment.player ? shortName(names[moment.player]) : "";
   const text = finished
-    ? `Final · ${formatScoreDisplay(score).replace(/, /g, "  ")}`
+    ? `${finalLabel} · ${formatScoreDisplay(score).replace(/, /g, "  ")}`
     : live
-      ? bandText(tone, match, who, points.player1, points.player2)
+      ? bandText(tone, match, who, points, interactive)
       : "Not started";
   const bandIsSwap = interactive && tone === "ok";
 

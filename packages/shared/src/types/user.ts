@@ -10,6 +10,16 @@ export function isPrivilegedRole(role: unknown): role is UserRole {
   return typeof role === 'string' && (PRIVILEGED_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * Whether a role has app-wide admin rights. Mirrors `isAdmin()` in
+ * firestore.rules, which grants both admins and app developers; server checks
+ * that tested `role === 'admin'` alone locked app developers out of actions
+ * the rules let them take directly.
+ */
+export function isAdminRole(role: unknown): boolean {
+  return role === 'admin' || role === 'app_developer';
+}
+
 export interface ContactPreferences {
   allowEmail: boolean;
   allowSMS: boolean;
@@ -62,6 +72,9 @@ export interface User {
 
 export interface UserRankingSummary {
   divisionId: string;
+  /** The season and level of the standings row this summary was taken from. */
+  seasonId?: string;
+  divisionLevelId?: string;
   rank: number;
   matchesPlayed: number;
   matchesWon: number;

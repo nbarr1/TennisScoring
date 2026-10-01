@@ -181,7 +181,11 @@ export function useDoublesRankings(
     let matchesReady = false;
 
     const syncRankings = () => {
-      const hasServerStats = firestoreRankings.some(hasTeamStats);
+      // The server ranks each season and level separately; rows from several
+      // levels carry ranks from different tables, so pool them from matches.
+      const singleTable =
+        new Set(firestoreRankings.map((r) => r.divisionLevelId ?? '')).size <= 1;
+      const hasServerStats = singleTable && firestoreRankings.some(hasTeamStats);
       setRankings(hasServerStats ? firestoreRankings : computedRankings);
       if (rankingsReady && matchesReady) {
         setLoading(false);
