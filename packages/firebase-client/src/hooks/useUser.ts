@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { arrayUnion, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
+import { arrayRemove, arrayUnion, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
 import type { User, PublicProfile } from '@tennis/shared';
@@ -148,13 +148,58 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   await batch.commit();
 }
 
+/** The rules cap `users/{uid}.fcmTokens` at this many entries. */
+const MAX_PUSH_TOKENS = 20;
+
+/** The token this device registered, so signing out can release it. */
+let registeredPushToken: { uid: string; token: string } | null = null;
+
 /**
- * Deliberately does not bump `updatedAt`. `arrayUnion` is a genuine no-op when
- * the token is already registered, but any `updatedAt: Date.now()` alongside it
- * is not — it rewrites the doc on every launch, which fires the `usePrivateUser`
- * snapshot listener, which hands AuthGate a fresh `profile` identity, which
- * re-runs its redirect effect for a value that did not change.
+ * Deliberately does not bump `updatedAt`, and writes nothing when the token is
+ * already registered. Any write here rewrites the doc on every launch, which
+ * fires the `usePrivateUser` snapshot listener, which hands AuthGate a fresh
+ * `profile` identity, which re-runs its redirect effect for a value that did not
+ * change.
+ *
+ * At the rules' cap the oldest tokens give way. A plain `arrayUnion` past the
+ * cap is rejected, which left an account with 20 stale tokens unable to
+ * register any new device.
  */
 export async function registerFcmToken(uid: string, token: string): Promise<void> {
-  await updateDoc(userDoc(uid), { fcmTokens: arrayUnion(token) });
+  registeredPushToken = { uid, token };
+  const current = ((await getDoc(userDoc(uid))).data()?.fcmTokens ?? []).filter(
+    (existing): existing is string => typeof existing === 'string',
+  );
+  if (current.includes(token)) return;
+  if (current.length < MAX_PUSH_TOKENS) {
+    await updateDoc(userDoc(uid), { fcmTokens: arrayUnion(token) });
+    return;
+  }
+  await updateDoc(userDoc(uid), {
+    fcmTokens: [...current.slice(-(MAX_PUSH_TOKENS - 1)), token],
+  });
+}
+
+/**
+ * Removes this device's push token from the account it was registered for.
+ *
+ * Tokens belong to a device, not an account: without this, the next person to
+ * sign in on a shared device kept receiving the previous account's
+ * notifications, message text included.
+ */
+export async function releasePushToken(): Promise<void> {
+  const registered = registeredPushToken;
+  registeredPushToken = null;
+  if (!registered) return;
+  await updateDoc(userDoc(registered.uid), { fcmTokens: arrayRemove(registered.token) });
+}
+
+/** Signs out of Firebase Auth after releasing this device's push token. */
+export async function signOutReleasingPushToken(): Promise<void> {
+  try {
+    await releasePushToken();
+  } catch {
+    // Best effort: a failed release must never keep someone signed in.
+  }
+  await signOut(auth);
 }

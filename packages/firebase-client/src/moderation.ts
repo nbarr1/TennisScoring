@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { addDoc, arrayRemove, arrayUnion, deleteDoc, onSnapshot, updateDoc, type FirestoreError } from 'firebase/firestore';
-import { divisionMessageReportsQuery, messageDoc, messageReportDoc, messageReportsCol, userDoc } from './collections';
+import { addDoc, arrayRemove, arrayUnion, onSnapshot, updateDoc, type FirestoreError } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './config';
+import { divisionMessageReportsQuery, messageReportsCol, userDoc } from './collections';
 import type { Message, MessageReport, MessageReportReason } from '@tennis/shared';
 
 export async function reportMessage(params: {
@@ -61,19 +63,25 @@ export function useDivisionMessageReports(
   return { reports, loading, error };
 }
 
+/**
+ * Dismisses a pending report, or removes the reported message and resolves the
+ * report. Runs server-side: the rules cannot let a leader delete a message in a
+ * direct conversation they are not part of, so the client-side delete failed
+ * for every reported direct message and left the report pending.
+ *
+ * `resolvedBy` is kept for callers' convenience; the server records the
+ * signed-in caller.
+ */
 export async function resolveMessageReport(
   report: MessageReport,
-  resolvedBy: string,
+  _resolvedBy: string,
   action: 'dismiss' | 'remove',
 ): Promise<void> {
-  if (action === 'remove') {
-    await deleteDoc(messageDoc(report.channelId, report.messageId));
-  }
-  await updateDoc(messageReportDoc(report.id), {
-    status: action === 'remove' ? 'removed' : 'dismissed',
-    resolvedBy,
-    resolvedAt: Date.now(),
-  });
+  const callable = httpsCallable<{ reportId: string; action: 'dismiss' | 'remove' }, { success: boolean }>(
+    functions,
+    'resolveMessageReport',
+  );
+  await callable({ reportId: report.id, action });
 }
 
 export async function blockUser(uid: string, blockedUserId: string): Promise<void> {

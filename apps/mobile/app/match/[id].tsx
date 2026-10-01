@@ -36,6 +36,7 @@ import {
   disputeMatchReport,
   submitGuestReport,
   linkGuestOpponent,
+  setMatchTipsEnabled,
   searchDivisionPlayers,
   type PointAttribution,
 } from "@tennis/firebase-client";
@@ -329,6 +330,7 @@ export default function MatchScreen() {
   const [setupServer, setSetupServer] = useState<Player>("player1");
   const [swapped, setSwapped] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<Player | null>(null);
+  const [starting, setStarting] = useState(false);
   const fontsLoaded = useScoreboardFonts();
   const [managing, setManaging] = useState(false);
   const [showEditScore, setShowEditScore] = useState(false);
@@ -423,6 +425,30 @@ export default function MatchScreen() {
     },
     [match, id, scoring],
   );
+
+  // Awaited and guarded: a double tap used to write the start twice, and a
+  // failed write was an unhandled rejection that left the setup screen silent.
+  async function handleStartMatch() {
+    if (!match || !id || starting) return;
+    setStarting(true);
+    try {
+      await startMatch(id, setupServer, advancedStatsEnabled, match.liveScore);
+    } catch (err) {
+      console.error("Failed to start match:", err);
+      Alert.alert("Error", "Could not start the match. Check your connection and try again.");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // A point-type choice only makes sense while the match is live. If it ends or
+  // changes underneath an open sheet (a point from the watch can finish it),
+  // close the sheet instead of scoring a pick against a finished match.
+  useEffect(() => {
+    if (pendingPoint !== null && match?.status !== "in_progress") {
+      setPendingPoint(null);
+    }
+  }, [match?.status, pendingPoint]);
 
   // With advanced stats on, a tap asks for the point type first; see PointTypeSheet.
   function requestPoint(player: Player) {
@@ -652,21 +678,25 @@ export default function MatchScreen() {
   }
 
   async function handleLinkOpponent(opponent: PublicProfile) {
-    if (!match || !id) return;
+    if (!match || !id || !user) return;
     setLinking(true);
     try {
+      const wasCompleted = match.status === "completed";
       await linkGuestOpponent(
         id,
         opponent.id,
         opponent.displayName ?? "",
-        match.playerIds ?? [match.player1Id],
+        match,
+        user.id,
       );
       setShowLinkOpponent(false);
       setLinkSearch("");
       setLinkResults([]);
       Alert.alert(
         "Opponent Linked!",
-        `${opponent.displayName ?? "Player"} has been added to this match. Rankings will update after the next match is completed.`,
+        wasCompleted
+          ? `${opponent.displayName ?? "Player"} has been added to this match and asked to confirm the result. It counts toward rankings once they confirm.`
+          : `${opponent.displayName ?? "Player"} has been added to this match.`,
       );
     } catch (err) {
       console.error("Failed to link opponent:", err);
@@ -677,6 +707,12 @@ export default function MatchScreen() {
   }
 
   async function handleShareReport() {
+    // Only open a report the server generated. Older matches could carry a
+    // client-written link, and the rules no longer let clients set one.
+    if (match?.reportUrl && !match.reportUrl.startsWith("https://")) {
+      Alert.alert("Report Unavailable", "This match's report link is not valid.");
+      return;
+    }
     if (!match?.reportUrl) {
       Alert.alert(
         "Report Not Ready",
@@ -693,9 +729,12 @@ export default function MatchScreen() {
 
   async function toggleTips() {
     if (!id || !match) return;
-    const { updateDoc } = await import("firebase/firestore");
-    const { matchDoc } = await import("@tennis/firebase-client");
-    await updateDoc(matchDoc(id), { tipsEnabled: !match.tipsEnabled });
+    try {
+      await setMatchTipsEnabled(id, !match.tipsEnabled);
+    } catch (err) {
+      console.error("Failed to toggle tips:", err);
+      Alert.alert("Error", "Could not change the tips setting. Please try again.");
+    }
   }
 
   useEffect(() => {
@@ -876,14 +915,8 @@ export default function MatchScreen() {
               formatLabel={formatFormatLabel(match)}
               advancedStats={advancedStatsEnabled}
               onToggleAdvancedStats={setAdvancedStatsEnabled}
-              onStart={() =>
-                startMatch(
-                  id!,
-                  setupServer,
-                  advancedStatsEnabled,
-                  match.liveScore,
-                )
-              }
+              onStart={() => void handleStartMatch()}
+              starting={starting}
               watchAppInstalled={watchAppInstalled}
               launchingWatch={launchingWatch}
               onLaunchWatch={() => void handleLaunchWatch()}
@@ -1241,6 +1274,10 @@ export default function MatchScreen() {
 
       <PointTypeSheet
         playerName={pendingPoint ? names[pendingPoint] : null}
+        isServer={pendingPoint !== null && match.liveScore.server === pendingPoint}
+        // The sheet stays open while another point (say, from the watch) is
+        // being recorded; handlePoint ignores picks made then, which dropped them.
+        busy={scoring}
         onPick={(attribution) => {
           const player = pendingPoint;
           setPendingPoint(null);

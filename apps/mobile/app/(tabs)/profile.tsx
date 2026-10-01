@@ -12,14 +12,12 @@ import {
   ActivityIndicator,
 } from "react-native";
 import {
-  signOut,
   EmailAuthProvider,
   reauthenticateWithCredential,
 } from "firebase/auth";
 import { useRouter } from "expo-router";
 import { getDoc } from "firebase/firestore";
 import {
-  auth,
   useAuthUser,
   usePrivateUser,
   updateUserProfile,
@@ -27,6 +25,7 @@ import {
   deleteAccountCallable,
   unblockUser,
   profileDoc,
+  signOutReleasingPushToken,
 } from "@tennis/firebase-client";
 import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import {
@@ -201,7 +200,7 @@ export default function ProfileScreen() {
         text: "Sign Out",
         style: "destructive",
         onPress: async () => {
-          await signOut(auth);
+          await signOutReleasingPushToken();
           setUser(null);
         },
       },

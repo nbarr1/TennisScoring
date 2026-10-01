@@ -1,6 +1,8 @@
 'use client';
 
 import Link from "next/link";
+import type { FormEvent } from "react";
+import { signOutReleasingPushToken } from "@tennis/firebase-client";
 import { ViewModeToggle } from "./ViewModeToggle";
 
 export type AppNavSection =
@@ -23,6 +25,24 @@ const NAV_ITEMS: Array<{
   { section: "profile", href: "/profile", label: "Profile" },
   { section: "admin", href: "/admin", label: "Admin" },
 ];
+
+/**
+ * Releases this browser's push token and signs out of Firebase before the form
+ * posts to the logout route, which only clears the session cookie. Without
+ * this the token stayed on the account, so whoever signed in next on the same
+ * browser kept receiving its notifications. The form still posts without
+ * JavaScript, and still posts if either step fails.
+ */
+async function handleSignOut(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  try {
+    await signOutReleasingPushToken();
+  } catch (error) {
+    console.error("Firebase sign-out failed; clearing the session anyway:", error);
+  }
+  form.submit();
+}
 
 export function AppNav({
   active,
@@ -47,7 +67,12 @@ export function AppNav({
           </Link>
         ))}
         <ViewModeToggle />
-        <form method="post" action="/api/auth/logout" style={styles.logoutForm}>
+        <form
+          method="post"
+          action="/api/auth/logout"
+          style={styles.logoutForm}
+          onSubmit={(event) => void handleSignOut(event)}
+        >
           <button type="submit" style={styles.logoutButton}>
             Sign out
           </button>

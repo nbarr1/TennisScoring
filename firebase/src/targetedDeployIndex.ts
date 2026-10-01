@@ -3,11 +3,18 @@ export {
   scoreMatchPoint,
   recordHistoricMatch,
   recordMatchOnBehalf,
+  resolveDisputedReport,
+  recalculateDivisionRankings,
+  repairAllDivisionRankings,
 } from './matches/matchFunctions';
 export { createDoublesMatch } from './matches/doublesFunctions';
 export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
 
+export { onNewMessage } from './messaging/onNewMessage';
+export { resolveMessageReport } from './messaging/moderationFunctions';
+
 export {
+  addPlayerToDivisionByEmail,
   addDivisionMemberPlaceholder,
   mergeDivisionPlayerRecords,
   updateDivisionPlayerEmail,

@@ -43,4 +43,14 @@ describe('division season helpers', () => {
       'Name,Note\nAva,"Won ""fast"", then left"\n',
     );
   });
+
+  it('neutralizes text a spreadsheet would run as a formula', () => {
+    expect(toCsv([['=HYPERLINK("http://x","y")', '+1', '-2', '@SUM(A1)']])).toBe(
+      `"'=HYPERLINK(""http://x"",""y"")",'+1,'-2,'@SUM(A1)\n`,
+    );
+  });
+
+  it('leaves numbers alone, including negative ones', () => {
+    expect(toCsv([[-3, 0, 12]])).toBe('-3,0,12\n');
+  });
 });

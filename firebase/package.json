@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "build:targeted-deploy": "pnpm --filter @tennis/shared build && esbuild src/targetedDeployIndex.ts --bundle --platform=node --external:firebase-admin --external:firebase-admin/app --external:firebase-admin/auth --external:firebase-admin/firestore --external:firebase-admin/messaging --external:firebase-functions --external:firebase-functions/v2 --external:pdf-lib --outfile=lib/index.js --format=cjs",
-    "test:rules": "npx firebase-tools emulators:exec --only firestore,storage \"node ./scripts/rules-smoke.mjs\""
+    "test:rules": "npx firebase-tools emulators:exec --only firestore,storage \"node ./scripts/rules-smoke.mjs && node --test ./scripts/rules-auth.test.mjs\""
   },
   "main": "lib/index.js",
   "engines": {
@@ -22,9 +22,12 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.29.6",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tennis/shared": "workspace:*",
-    "typescript": "^6.0.3",
     "@types/node": "^26.2.0",
-    "esbuild": "0.28.0"
+    "esbuild": "0.28.0",
+    "firebase": "^12.18.0",
+    "typescript": "^6.0.3"
   }
 }

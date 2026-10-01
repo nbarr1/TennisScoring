@@ -246,18 +246,38 @@ export async function submitGuestReport(
 /**
  * Links a real player account to a match that was originally recorded against a guest.
  * Updates playerIds so the match appears in both players' match histories.
+ *
+ * A guest result is confirmed by its recorder alone, so linking a completed one
+ * reopens it: the match goes back to `pending_report` with a fresh submission
+ * from `linkedBy`, and the newly linked opponent confirms or disputes it like any
+ * other report before it counts toward their standings.
  */
 export async function linkGuestOpponent(
   matchId: string,
   player2Id: string,
   player2Name: string,
-  currentPlayerIds: string[],
+  match: Pick<Match, 'player1Id' | 'status'>,
+  linkedBy: string,
 ): Promise<void> {
-  await updateDoc(matchDoc(matchId), {
+  const linkFields = {
     player2Id,
     player2Name,
     player2IsGuest: false,
-    playerIds: [...new Set([...currentPlayerIds, player2Id])],
+    playerIds: [match.player1Id, player2Id],
+  };
+  if (match.status !== 'completed') {
+    await updateDoc(matchDoc(matchId), linkFields);
+    return;
+  }
+  await updateDoc(matchDoc(matchId), {
+    ...linkFields,
+    status: 'pending_report',
+    reportSubmission: {
+      submittedBy: linkedBy,
+      submittedAt: Date.now(),
+      status: 'pending_confirmation',
+    },
+    reportUrl: deleteField(),
   });
 }
 
@@ -442,7 +462,17 @@ export async function undoLastPoint(
     currentSetStartedAt: snapshot.currentSetStartedAt ?? deleteField(),
     matchDurationMs: snapshot.matchDurationMs ?? deleteField(),
     undoSnapshot: deleteField(),
+    // A report submitted for the finished score no longer describes the match.
+    reportSubmission: deleteField(),
   });
+}
+
+/** Turns the rule tips shown during live scoring on or off for one match. */
+export async function setMatchTipsEnabled(
+  matchId: string,
+  tipsEnabled: boolean,
+): Promise<void> {
+  await updateDoc(matchDoc(matchId), { tipsEnabled });
 }
 
 /**
@@ -515,6 +545,8 @@ export async function editMatchScore(
     completedAt: deleteField(),
     reportSubmission: deleteField(),
     undoSnapshot: deleteField(),
+    // The report PDF is rebuilt for the new score once it is confirmed.
+    reportUrl: deleteField(),
   });
 }
 

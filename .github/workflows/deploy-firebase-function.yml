@@ -158,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
+          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback,addPlayerToDivisionByEmail,resolveDisputedReport,recalculateDivisionRankings,repairAllDivisionRankings,onNewMessage,resolveMessageReport'
 
           FILTERS="$FILTERS" node <<'NODE'
           const path = require('path');
@@ -176,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback'
+          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback,addPlayerToDivisionByEmail,resolveDisputedReport,recalculateDivisionRankings,repairAllDivisionRankings,onNewMessage,resolveMessageReport'
 
           npx firebase-tools deploy \
             --only "functions:${DEPLOY_FUNCTIONS//,/\,functions:}" \

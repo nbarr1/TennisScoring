@@ -1,7 +1,6 @@
 import * as functions from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { getMessaging } from 'firebase-admin/messaging';
 import {
   DEFAULT_FORMAT,
   EMPTY_STATS,
@@ -18,18 +17,22 @@ import {
   sideDisplayName,
   sideOfPlayer,
   isDoublesMatch,
+  isAdminRole,
   opposingSide as opposingMatchSide,
+  singlesHeadToHeadId,
 } from '@tennis/shared';
 import type {
   Match,
   HeadToHead,
   Player,
   PlayerMatchStats,
+  PlayerRanking,
   ReportSubmission,
   DoublesTeamRankingInput,
 } from '@tennis/shared';
 
 import { buildDoublesMatchFields, requestsDoubles, validateDoublesCompetition } from './doublesSides';
+import { sendPushToUsers } from '../notifications/push';
 
 if (!getApps().length) initializeApp();
 
@@ -104,6 +107,21 @@ function doublesRankingDocId(seasonId: string, teamId: string, divisionLevelId?:
   return encodedKey([seasonId, divisionLevelId ?? '', teamId]);
 }
 
+/** One player's singles totals within one season and division level. */
+type SinglesTotals = RankingStats & {
+  userId: string;
+  seasonId: string;
+  divisionLevelId?: string;
+};
+
+/**
+ * Singles standings doc id, one per player per season and level. Opaque, like
+ * the doubles ids: readers must use the seasonId/divisionLevelId/userId fields.
+ */
+function singlesRankingDocId(seasonId: string, userId: string, divisionLevelId?: string): string {
+  return encodedKey([seasonId, divisionLevelId ?? '', userId]);
+}
+
 function cloneStats(stats: Match['stats']): Match['stats'] {
   return {
     player1: { ...EMPTY_STATS, ...stats.player1 },
@@ -153,7 +171,9 @@ function applyBasicPointStats(match: Match, scorer: Player, pointAttribution?: P
   if (match.advancedStatsEnabled) {
     const scorerStats = stats[scorer] as PlayerMatchStats;
     const opponentStats = stats[oppositePlayer(scorer)] as PlayerMatchStats;
-    if (pointAttribution === 'ace') {
+    // Only the server can hit an ace. The point still counts if a client
+    // attributes one to the receiver; the impossible stat is just not recorded.
+    if (pointAttribution === 'ace' && scorer === server) {
       scorerStats.aces += 1;
     } else if (pointAttribution === 'winner') {
       scorerStats.winners += 1;
@@ -191,16 +211,14 @@ const emptyRankingStats = (): RankingStats => ({
 });
 
 /**
- * Triggered on every match document write. Handles three transitions:
+ * Triggered on every match document write. Two independent jobs:
  *
- * 1. reportSubmission.status → 'pending_confirmation'
- *    Notify the other player that a report has been submitted for their review.
- *
- * 2. status → 'completed' (reportSubmission.status === 'confirmed')
- *    Recalculate division rankings and trigger PDF report generation.
- *
- * 3. status → 'disputed' (reportSubmission.status === 'disputed')
- *    Notify the division leader to resolve the disagreement.
+ * - Notifications: proposals, acceptances, cancellations, report submissions
+ *   (the other side reviews them), and disputes (the division leaders resolve
+ *   them). At most one per write.
+ * - Standings: recalculated whenever a completed result appears, stops being
+ *   completed, or changes a field that affects rankings. The PDF report is
+ *   handled by the generateMatchReport trigger.
  */
 export const onMatchUpdate = functions.firestore.onDocumentWritten(
   'matches/{matchId}',
@@ -222,41 +240,45 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     const prevSubmission = before?.reportSubmission;
     const curSubmission = after.reportSubmission;
 
-    // 1. Match proposed (new doc) — notify the opponent
-    if (!before && after.status === 'proposed' && !after.player2IsGuest) {
-      await notifyMatchProposed(db, after, matchId);
-      return;
+    // Notifications and standings are independent: one write can need both
+    // (linking a completed guest result reopens it for confirmation, which both
+    // notifies the opponent and takes the result out of the standings), so a
+    // notification must never short-circuit the recalculation below. A failed
+    // send is logged rather than thrown for the same reason.
+    try {
+      if (!before && after.status === 'proposed' && !after.player2IsGuest) {
+        // 1. Match proposed (new doc) — notify the opponent
+        await notifyMatchProposed(db, after, matchId);
+      } else if (before?.status === 'proposed' && after.status === 'scheduled') {
+        // 2. Proposal accepted — notify the proposer
+        await notifyMatchAccepted(db, after, matchId);
+      } else if (before?.status === 'proposed' && after.status === 'cancelled') {
+        // 3. Proposal cancelled (declined or withdrawn) — notify the proposer
+        await notifyMatchProposalCancelled(db, after, matchId);
+      } else if (
+        curSubmission?.status === 'pending_confirmation' &&
+        prevSubmission?.status !== 'pending_confirmation'
+      ) {
+        // 4. Report submitted — notify the other side
+        await notifyOpponentOfSubmission(db, after, matchId, curSubmission);
+      } else if (after.status === 'disputed' && before?.status !== 'disputed') {
+        // 5. Report disputed — notify the division leaders
+        await notifyLeaderOfDispute(db, after, matchId);
+      }
+    } catch (error) {
+      functions.logger.error('onMatchUpdate notification failed', {
+        matchId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
-    // 2. Proposal accepted — notify the proposer
-    if (before?.status === 'proposed' && after.status === 'scheduled') {
-      await notifyMatchAccepted(db, after, matchId);
-      return;
-    }
-
-    // 3. Proposal cancelled (declined or withdrawn) — notify the proposer
-    if (before?.status === 'proposed' && after.status === 'cancelled') {
-      await notifyMatchProposalCancelled(db, after, matchId);
-      return;
-    }
-
-    // 4. Report submitted — notify the other player
-    if (
-      curSubmission?.status === 'pending_confirmation' &&
-      prevSubmission?.status !== 'pending_confirmation'
-    ) {
-      await notifyOpponentOfSubmission(db, after, matchId, curSubmission);
-      return;
-    }
-
-    // 5. Report confirmed — update rankings (PDF is handled by generateReport trigger)
+    // 6. Standings — recomputed whenever a completed result appears, leaves, or changes.
     if (after.status === 'completed' && before?.status !== 'completed') {
       // CLEANUP: Remove any open/incomplete sets and persist to Firestore
       if (after.liveScore && Array.isArray(after.liveScore.sets)) {
         const cleanedSets = after.liveScore.sets.filter((set) => !!set.winner);
         if (cleanedSets.length !== after.liveScore.sets.length) {
-          const db = getFirestore();
-          await db.collection('matches').doc(event.params.matchId).update({
+          await db.collection('matches').doc(matchId).update({
             'liveScore.sets': cleanedSets,
           });
           after.liveScore.sets = cleanedSets;
@@ -264,14 +286,9 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
       }
 
       await recalculateRankings(after.divisionId);
-      return;
-    }
-    if (before?.status === 'completed' && after.status !== 'completed') {
+    } else if (before?.status === 'completed' && after.status !== 'completed') {
       await recalculateRankings(before.divisionId);
-      return;
-    }
-
-    if (
+    } else if (
       before?.status === 'completed' &&
       after.status === 'completed' &&
       rankingsRelevantFieldsChanged(before, after)
@@ -280,12 +297,6 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
         await recalculateRankings(before.divisionId);
       }
       await recalculateRankings(after.divisionId);
-      return;
-    }
-    // 6. Report disputed — notify division leader
-    if (after.status === 'disputed' && before?.status !== 'disputed') {
-      await notifyLeaderOfDispute(db, after, matchId);
-      return;
     }
   },
 );
@@ -304,31 +315,6 @@ function rankingsRelevantFieldsChanged(before: Match, after: Match): boolean {
     JSON.stringify(before.liveScore?.sets ?? []) !==
       JSON.stringify(after.liveScore?.sets ?? [])
   );
-}
-
-/** FCM tokens for a set of users, skipping guests and users with no tokens. */
-async function fcmTokensForUsers(
-  db: ReturnType<typeof getFirestore>,
-  userIds: string[],
-): Promise<string[]> {
-  const realIds = userIds.filter((id) => typeof id === 'string' && id.length > 0 && id !== 'guest');
-  if (realIds.length === 0) return [];
-  const snaps = await Promise.all(realIds.map((id) => db.collection('users').doc(id).get()));
-  return snaps.flatMap((snap) => (snap.data()?.fcmTokens as string[] | undefined) ?? []);
-}
-
-/**
- * FCM tokens for everyone on one side of a match.
- *
- * Singles resolves to the single player; doubles reaches both partners, so a
- * partner is never left out of a proposal or report notification.
- */
-async function fcmTokensForSide(
-  db: ReturnType<typeof getFirestore>,
-  match: Match,
-  side: Player,
-): Promise<string[]> {
-  return fcmTokensForUsers(db, sidePlayerIds(match, side));
 }
 
 /** The display name to use for a side in notification copy. */
@@ -354,13 +340,9 @@ async function notifyMatchProposed(
   match: Match,
   matchId: string,
 ) {
-  const tokens = await fcmTokensForSide(db, match, 'player2');
-  if (tokens.length === 0) return;
-
   const proposerName = await notificationNameForSide(db, match, 'player1', 'A player');
 
-  await getMessaging().sendEachForMulticast({
-    tokens,
+  await sendPushToUsers(db, sidePlayerIds(match, 'player2'), {
     notification: {
       title: 'New Match Proposal',
       body: `${proposerName} proposed a match. Accept or decline.`,
@@ -376,13 +358,9 @@ async function notifyMatchAccepted(
   match: Match,
   matchId: string,
 ) {
-  const tokens = await fcmTokensForSide(db, match, 'player1');
-  if (tokens.length === 0) return;
-
   const opponentName = await notificationNameForSide(db, match, 'player2', 'Your opponent');
 
-  await getMessaging().sendEachForMulticast({
-    tokens,
+  await sendPushToUsers(db, sidePlayerIds(match, 'player1'), {
     notification: {
       title: 'Match Accepted',
       body: `${opponentName} accepted your match proposal.`,
@@ -399,11 +377,7 @@ async function notifyMatchProposalCancelled(
   matchId: string,
 ) {
   // Notify the proposing side. If they withdrew themselves, the message is still informative.
-  const tokens = await fcmTokensForSide(db, match, 'player1');
-  if (tokens.length === 0) return;
-
-  await getMessaging().sendEachForMulticast({
-    tokens,
+  await sendPushToUsers(db, sidePlayerIds(match, 'player1'), {
     notification: {
       title: 'Match Proposal Cancelled',
       body: 'Your match proposal was cancelled.',
@@ -424,17 +398,13 @@ async function notifyOpponentOfSubmission(
   const submitterSide = sideOfPlayer(match, submission.submittedBy) ?? 'player1';
   const opponentSide = opposingMatchSide(submitterSide);
 
-  const tokens = await fcmTokensForSide(db, match, opponentSide);
-  if (tokens.length === 0) return;
-
   const submitterSnap = await db
     .collection('users')
     .doc(submission.submittedBy)
     .get();
   const submitterName = submitterSnap.data()?.displayName ?? 'Your opponent';
 
-  await getMessaging().sendEachForMulticast({
-    tokens,
+  await sendPushToUsers(db, sidePlayerIds(match, opponentSide), {
     notification: {
       title: 'Match Report Submitted',
       body: `${submitterName} has submitted the match report. Review and confirm or dispute.`,
@@ -463,17 +433,7 @@ async function notifyLeaderOfDispute(
   ];
   if (!leaderIds.length) return;
 
-  const leaderSnaps = await Promise.all(
-    leaderIds.map((leaderId) => db.collection('users').doc(leaderId).get()),
-  );
-  const tokens = leaderSnaps.flatMap((leaderSnap) => {
-    const leader = leaderSnap.data();
-    return Array.isArray(leader?.fcmTokens) ? leader.fcmTokens : [];
-  });
-  if (!tokens.length) return;
-
-  await getMessaging().sendEachForMulticast({
-    tokens,
+  await sendPushToUsers(db, leaderIds, {
     notification: {
       title: 'Match Report Disputed',
       body: 'A player has disputed a match report. Your resolution is needed.',
@@ -775,7 +735,11 @@ export async function recalculateRankings(
     ? division.activeSeasonId
     : currentSeasonForDate().id;
 
-  const statsMap = new Map<string, RankingStats>();
+  // Singles totals accumulate per player within one season and division level,
+  // the same buckets as doubles: pooling every season into one row inflated the
+  // current table with past results and left the dashboards, which always ask
+  // for one season, with nothing to read.
+  const singlesTotals = new Map<string, SinglesTotals>();
   // Doubles totals accumulate per fixed partnership, keyed by doublesTeamId.
   const doublesTeamTotals = new Map<string, DoublesTeamTotals>();
 
@@ -821,17 +785,15 @@ export async function recalculateRankings(
       continue;
     }
 
+    // Player ids are authoritative. Results used to be dropped whenever the
+    // name stamped on the match differed from the player's current display
+    // name, so renaming an account (or deleting it, which renames it to
+    // "Deleted User") silently erased their matches from both players' rows.
     const { player1Id, player2Id, liveScore, winner } = match;
     const isGuestMatch = match.player2IsGuest === true;
+    const seasonId = match.seasonId?.trim() || activeSeasonId;
+    const divisionLevelId = match.divisionLevelId?.trim() || undefined;
 
-    if (!isGuestMatch && hasDivisionRoster) {
-      const canonicalName = rosterDisplayNames.get(player2Id);
-      const providedName = (match.player2Name ?? '').trim();
-      if (canonicalName && providedName && canonicalName !== providedName) {
-        result.skippedNonDivisionMatches += 1;
-        continue;
-      }
-    }
     const player1Included =
       !hasDivisionRoster || divisionPlayerIdSet.has(player1Id);
     const player2Included =
@@ -843,12 +805,19 @@ export async function recalculateRankings(
     result.countedMatches += 1;
     if (isGuestMatch) result.guestMatchesCounted += 1;
 
-    for (const pid of [
-      ...(player1Included ? [player1Id] : []),
-      ...(player2Included ? [player2Id] : []),
-    ]) {
-      if (!statsMap.has(pid)) statsMap.set(pid, emptyRankingStats());
-    }
+    const totalsFor = (userId: string): SinglesTotals => {
+      const key = singlesRankingDocId(seasonId, userId, divisionLevelId);
+      const existing = singlesTotals.get(key);
+      if (existing) return existing;
+      const created: SinglesTotals = {
+        ...emptyRankingStats(),
+        userId,
+        seasonId,
+        ...(divisionLevelId ? { divisionLevelId } : {}),
+      };
+      singlesTotals.set(key, created);
+      return created;
+    };
 
     const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
       liveScore.sets,
@@ -856,7 +825,7 @@ export async function recalculateRankings(
     const p1Won = winner === 'player1';
 
     if (player1Included) {
-      const p1Stats = statsMap.get(player1Id)!;
+      const p1Stats = totalsFor(player1Id);
       if (p1Won) p1Stats.matchesWon++;
       else p1Stats.matchesLost++;
       p1Stats.setsWon += p1Sets;
@@ -866,7 +835,7 @@ export async function recalculateRankings(
     }
 
     if (player2Included) {
-      const p2Stats = statsMap.get(player2Id)!;
+      const p2Stats = totalsFor(player2Id);
       if (p1Won) p2Stats.matchesLost++;
       else p2Stats.matchesWon++;
       p2Stats.setsWon += p2Sets;
@@ -877,8 +846,8 @@ export async function recalculateRankings(
 
     if (!player1Included || !player2Included) continue;
 
+    const h2hId = singlesHeadToHeadId(player1Id, player2Id, seasonId, divisionLevelId, divisionId);
     const [h2hPlayer1Id, h2hPlayer2Id] = [player1Id, player2Id].sort();
-    const h2hId = `${h2hPlayer1Id}_${h2hPlayer2Id}`;
     if (!h2hAccum.has(h2hId)) {
       h2hAccum.set(h2hId, {
         id: h2hId,
@@ -887,93 +856,135 @@ export async function recalculateRankings(
         player2Id: h2hPlayer2Id,
         player1Wins: 0,
         player2Wins: 0,
+        matchType: 'singles',
+        seasonId,
+        ...(divisionLevelId ? { divisionLevelId } : {}),
       });
     }
     const h2h = h2hAccum.get(h2hId)!;
-    if (winner === 'player1') {
-      if (player1Id === h2hPlayer1Id) h2h.player1Wins++;
-      else h2h.player2Wins++;
-    } else {
-      if (player2Id === h2hPlayer1Id) h2h.player1Wins++;
-      else h2h.player2Wins++;
-    }
+    const winnerId = p1Won ? player1Id : player2Id;
+    if (winnerId === h2hPlayer1Id) h2h.player1Wins++;
+    else h2h.player2Wins++;
   }
-
-  const playerIds = divisionPlayerIds.length
-    ? divisionPlayerIds
-    : [...statsMap.keys()];
 
   // Optimization: Use a cache to avoid redundant Firestore reads for user documents
   const userCache = new Map<string, FirebaseFirestore.DocumentSnapshot>();
   rosterUserSnaps.forEach((s) => userCache.set(s.id, s));
-
-  const userSnaps = await Promise.all(
-    playerIds.map(async (id) => {
-      const cached = userCache.get(id);
-      if (cached) return cached;
-      return db.collection('users').doc(id).get();
-    }),
+  const rankedUserIds = [...new Set([...singlesTotals.values()].map((totals) => totals.userId))];
+  await Promise.all(
+    rankedUserIds
+      .filter((id) => !userCache.has(id))
+      .map(async (id) => userCache.set(id, await db.collection('users').doc(id).get())),
   );
+  const displayNameFor = (userId: string) =>
+    (userCache.get(userId)?.data()?.displayName ?? userId).trim();
 
-  const displayNames = new Map(
-    userSnaps.map((s) => [s.id, (s.data()?.displayName ?? s.id).trim()]),
-  );
+  const singlesByBucket = new Map<string, SinglesTotals[]>();
+  for (const totals of singlesTotals.values()) {
+    const key = encodedKey([totals.seasonId, totals.divisionLevelId ?? '']);
+    const bucket = singlesByBucket.get(key);
+    if (bucket) bucket.push(totals);
+    else singlesByBucket.set(key, [totals]);
+  }
 
-  const rankingInputs = playerIds.map((userId) => ({
-    userId,
-    displayName: displayNames.get(userId) ?? userId,
-    divisionId,
-    season: activeSeasonId,
-    ...(statsMap.get(userId) ?? emptyRankingStats()),
-  }));
+  const singlesH2Hs = [...h2hAccum.values()].filter((h2h) => h2h.matchType === 'singles');
+  const singlesRankingDocIds = new Set<string>();
+  // The row each player's rankingSummary is taken from: their busiest level in
+  // the division's active season.
+  const summaryRows = new Map<string, PlayerRanking>();
 
-  const rankings = computeRankings(rankingInputs, [...h2hAccum.values()]);
+  for (const bucketTotals of singlesByBucket.values()) {
+    const { seasonId, divisionLevelId } = bucketTotals[0];
+    const inputs = bucketTotals.map((totals) => ({
+      userId: totals.userId,
+      displayName: displayNameFor(totals.userId),
+      divisionId,
+      season: seasonId,
+      matchesWon: totals.matchesWon,
+      matchesLost: totals.matchesLost,
+      setsWon: totals.setsWon,
+      setsLost: totals.setsLost,
+      gamesWon: totals.gamesWon,
+      gamesLost: totals.gamesLost,
+    }));
+    const bucketH2Hs = singlesH2Hs.filter((h2h) =>
+      h2h.seasonId === seasonId && h2h.divisionLevelId === divisionLevelId);
 
-  const rankingIds = new Set(rankings.map((ranking) => ranking.userId));
+    for (const ranking of computeRankings(inputs, bucketH2Hs)) {
+      const row: PlayerRanking = {
+        ...ranking,
+        seasonId,
+        ...(divisionLevelId ? { divisionLevelId } : {}),
+        matchType: 'singles',
+      };
+      const docId = singlesRankingDocId(seasonId, ranking.userId, divisionLevelId);
+      singlesRankingDocIds.add(docId);
+      writer.set(
+        db.collection('divisions').doc(divisionId).collection('rankings').doc(docId),
+        { ...row, updatedAt: FieldValue.serverTimestamp() },
+      );
+      result.rankingsWritten += 1;
+
+      if (seasonId === activeSeasonId) {
+        const current = summaryRows.get(ranking.userId);
+        if (!current || row.matchesPlayed > current.matchesPlayed) {
+          summaryRows.set(ranking.userId, row);
+        }
+      }
+    }
+  }
+
   const existingRankingsSnap = await db
     .collection('divisions')
     .doc(divisionId)
     .collection('rankings')
     .get();
   for (const doc of existingRankingsSnap.docs) {
-    if (!rankingIds.has(doc.id)) {
+    if (!singlesRankingDocIds.has(doc.id)) {
       writer.delete(doc.ref);
       result.rankingsDeleted += 1;
     }
   }
 
-  for (const ranking of rankings) {
-    const ref = db
-      .collection('divisions')
-      .doc(divisionId)
-      .collection('rankings')
-      .doc(ranking.userId);
-    writer.set(ref, { ...ranking, updatedAt: FieldValue.serverTimestamp() });
-    result.rankingsWritten += 1;
-
-    const userRef = db.collection('users').doc(ranking.userId);
-    writer.set(
-      userRef,
-      {
-        divisionId: ranking.divisionId,
-        mergedIntoUserId: FieldValue.delete(),
-        rankingSummary: {
-          divisionId: ranking.divisionId,
-          rank: ranking.rank,
-          matchesPlayed: ranking.matchesPlayed,
-          matchesWon: ranking.matchesWon,
-          matchesLost: ranking.matchesLost,
-          setsWon: ranking.setsWon,
-          setsLost: ranking.setsLost,
-          gamesWon: ranking.gamesWon,
-          gamesLost: ranking.gamesLost,
-          gameDifferential: ranking.gameDifferential,
-          updatedAt: Date.now(),
+  // Only the denormalized summary is written back to users/{uid}. This pass
+  // used to also write divisionId and delete mergedIntoUserId on every ranked
+  // player, which re-attached removed players, flipped multi-division players'
+  // active division to whichever division last confirmed a match, and revived
+  // placeholders already merged into real accounts. A player active in another
+  // division keeps that division's summary.
+  for (const userId of new Set([...summaryRows.keys(), ...rankedUserIds, ...divisionPlayerIds])) {
+    const userData = userCache.get(userId)?.data();
+    if (!userData) continue;
+    const activeDivision = userData.divisionId;
+    if (activeDivision && activeDivision !== divisionId) continue;
+    const row = summaryRows.get(userId);
+    const userRef = db.collection('users').doc(userId);
+    if (row) {
+      writer.set(
+        userRef,
+        {
+          rankingSummary: {
+            divisionId,
+            seasonId: row.seasonId,
+            ...(row.divisionLevelId ? { divisionLevelId: row.divisionLevelId } : {}),
+            rank: row.rank,
+            matchesPlayed: row.matchesPlayed,
+            matchesWon: row.matchesWon,
+            matchesLost: row.matchesLost,
+            setsWon: row.setsWon,
+            setsLost: row.setsLost,
+            gamesWon: row.gamesWon,
+            gamesLost: row.gamesLost,
+            gameDifferential: row.gameDifferential,
+            updatedAt: Date.now(),
+          },
         },
-        updatedAt: Date.now(),
-      },
-      { merge: true },
-    );
+        { merge: true },
+      );
+    } else if (userData.rankingSummary?.divisionId === divisionId) {
+      // No results this season: drop last season's numbers rather than show them.
+      writer.update(userRef, { rankingSummary: FieldValue.delete() });
+    }
   }
 
   // Doubles standings: one row per fixed partnership, in a sibling collection
@@ -1191,6 +1202,17 @@ async function notifyPlayersMatchRecorded(
     recipientIds.map((id) => db.collection('users').doc(id).get()),
   );
   const playerNames = `${match.player1Name ?? 'Player 1'} vs ${match.player2Name ?? 'Player 2'}`;
+
+  await sendPushToUsers(db, recipientIds, {
+    notification: {
+      title: 'Match Recorded',
+      body: `${recorderName} recorded ${playerNames} on your behalf.`,
+    },
+    data: { type: 'match_recorded_on_behalf', matchId },
+    android: { priority: 'high' },
+    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+  });
+
   const link = matchLinkForId(matchId);
   const htmlLink = escapeHtml(link);
   const htmlRecorder = escapeHtml(recorderName);
@@ -1200,20 +1222,6 @@ async function notifyPlayersMatchRecorded(
     userSnaps.map(async (snap) => {
       const user = snap.data();
       if (!user) return;
-
-      const tokens = Array.isArray(user.fcmTokens) ? user.fcmTokens : [];
-      if (tokens.length) {
-        await getMessaging().sendEachForMulticast({
-          tokens,
-          notification: {
-            title: 'Match Recorded',
-            body: `${recorderName} recorded ${playerNames} on your behalf.`,
-          },
-          data: { type: 'match_recorded_on_behalf', matchId },
-          android: { priority: 'high' },
-          apns: { payload: { aps: { sound: 'default', badge: 1 } } },
-        });
-      }
 
       const email = typeof user.email === 'string' ? user.email.trim() : '';
       const allowEmail = user.contactPreferences?.allowEmail !== false;
@@ -1604,21 +1612,35 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
     );
   }
 
-  const { matchId } = request.data as { matchId: string };
+  const { matchId } = (request.data ?? {}) as { matchId?: unknown };
+  if (typeof matchId !== 'string' || !matchId.trim()) {
+    throw new functions.https.HttpsError('invalid-argument', 'matchId is required');
+  }
   const db = getFirestore();
 
-  const matchRef = db.collection('matches').doc(matchId);
+  const matchRef = db.collection('matches').doc(matchId.trim());
   const matchSnap = await matchRef.get();
-  const match = matchSnap.data() as Match;
+  const match = matchSnap.data() as Match | undefined;
 
   if (!match)
     throw new functions.https.HttpsError('not-found', 'Match not found');
 
-  const isLeader = await checkIsLeader(request.auth.uid, match.divisionId);
-  if (!isLeader) {
+  const [isLeader, actorSnap] = await Promise.all([
+    checkIsLeader(request.auth.uid, match.divisionId),
+    db.collection('users').doc(request.auth.uid).get(),
+  ]);
+  if (!isLeader && !isAdminRole(actorSnap.data()?.role)) {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Only the division leader can resolve disputes',
+    );
+  }
+  // Resolving confirms the reported score. Anything not under dispute has no
+  // report to confirm, and forcing it to completed would skip the players.
+  if (match.status !== 'disputed') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Only disputed matches can be resolved',
     );
   }
 
@@ -1669,7 +1691,7 @@ export const recalculateDivisionRankings = functions.https.onCall(
       db.collection('divisions').doc(divisionId).get(),
     ]);
 
-    const isAdmin = userSnap.data()?.role === 'admin';
+    const isAdmin = isAdminRole(userSnap.data()?.role);
     const divData = divSnap.data();
     const isLeader =
       (divData?.leaderIds ?? []).includes(request.auth.uid) ||
@@ -1704,7 +1726,7 @@ export const repairAllDivisionRankings = functions.https.onCall(
 
     const db = getFirestore();
     const userSnap = await db.collection('users').doc(request.auth.uid).get();
-    if (userSnap.data()?.role !== 'admin') {
+    if (!isAdminRole(userSnap.data()?.role)) {
       throw new functions.https.HttpsError(
         'permission-denied',
         'Only admins can repair all division rankings',

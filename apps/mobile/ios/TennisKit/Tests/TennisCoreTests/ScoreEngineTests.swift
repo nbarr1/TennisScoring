@@ -82,6 +82,27 @@ final class ScoreEngineTests: XCTestCase {
     XCTAssertEqual(servers, [.player1, .player2, .player2, .player1, .player1, .player2])
   }
 
+  func testServiceCourtAlternatesWithinAGame() {
+    var score = LiveScore()
+    var courts: [ServiceSide] = [score.serviceSide]
+    for scorer in [Player.player1, .player2, .player1] {
+      score = ScoreEngine.applyPoint(score, scorer: scorer, format: .standard).nextScore
+      courts.append(score.serviceSide)
+    }
+    XCTAssertEqual(courts, [.deuce, .advantage, .deuce, .advantage])
+  }
+
+  func testTiebreakReceiverServesFirstInTheNextSet() {
+    // 7-0 is one of the scores that used to hand the next set's first serve
+    // back to the tiebreak's opening server.
+    var score = LiveScore(sets: [SetScore(setNumber: 0, player1Games: 6, player2Games: 6)], isTiebreak: true, tiebreakScore: TiebreakScore())
+    for _ in 0..<7 {
+      score = ScoreEngine.applyPoint(score, scorer: .player1, format: .standard).nextScore
+    }
+    XCTAssertEqual(score.sets[0].winner, .player1)
+    XCTAssertEqual(score.server, .player2)
+  }
+
   func testDecidingSetCanPlayOutWithoutATiebreak() {
     let format = MatchFormat(setsToWin: 2, gamesPerSet: 6, tiebreakAt: 6, finalSetTiebreak: false)
     let score = LiveScore(

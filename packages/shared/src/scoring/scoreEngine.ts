@@ -38,8 +38,19 @@ function oppositePlayer(p: Player): Player {
   return p === 'player1' ? 'player2' : 'player1';
 }
 
-function nextServiceSide(side: ServiceSide): ServiceSide {
-  return side === 'deuce' ? 'advantage' : 'deuce';
+const POINTS_PLAYED: Record<TennisPoint, number> = { '0': 0, '15': 1, '30': 2, '40': 3, Ad: 4 };
+
+/**
+ * The court the next point is served from: deuce after an even number of points,
+ * ad after an odd number. A game's score encodes the parity even through deuce,
+ * because losing an advantage returns the game to 40-40 two points later.
+ */
+function serviceSideAfter(pointsPlayed: number): ServiceSide {
+  return pointsPlayed % 2 === 0 ? 'deuce' : 'advantage';
+}
+
+function serviceSideForGame(game: GameScore): ServiceSide {
+  return serviceSideAfter(POINTS_PLAYED[game.player1] + POINTS_PLAYED[game.player2]);
 }
 
 function makeEmptySet(setNumber: number): SetScore {
@@ -151,15 +162,20 @@ function completeTiebreak(
   }
 
   // Tiebreak service order: one opening point, then alternating two-point blocks.
-  if (total > 0 && total % 2 === 1) {
+  // Each new server starts from the ad court, since the court follows the total.
+  if (total % 2 === 1) {
     next.server = oppositePlayer(next.server);
-    next.serviceSide = 'deuce';
-  } else if (total > 0) {
-    next.serviceSide = nextServiceSide(next.serviceSide);
   }
+  next.serviceSide = serviceSideAfter(total);
 
   const winner = resolveTiebreakWinner(tb.player1Points, tb.player2Points);
   if (winner) {
+    // The player who received first in the tiebreak serves first in the next
+    // set. The server changes after every odd point, so after `total` points it
+    // has changed ceil(total / 2) times since the opening serve.
+    const firstServer =
+      Math.ceil(total / 2) % 2 === 0 ? next.server : oppositePlayer(next.server);
+    next.server = oppositePlayer(firstServer);
     const currentSet = next.sets[next.currentSet];
     if (winner === 'player1') {
       currentSet.player1Games = Math.max(currentSet.player1Games, currentSet.player2Games + 1);
@@ -223,10 +239,12 @@ export function applyPoint(
     } else if (game.player1 === '40' && game.player2 === 'Ad') {
       // Opponent had advantage — back to deuce
       game.player2 = '40';
+      next.serviceSide = serviceSideForGame(game);
       tips.push('deuce');
       return { nextScore: next, tips };
     } else if (game.player1 === '40' && game.player2 === '40') {
       game.player1 = 'Ad';
+      next.serviceSide = serviceSideForGame(game);
       tips.push('advantage');
       pushOpportunityTips(next, format, tips);
       return { nextScore: next, tips };
@@ -240,10 +258,12 @@ export function applyPoint(
       gameWinner = 'player2';
     } else if (game.player2 === '40' && game.player1 === 'Ad') {
       game.player1 = '40';
+      next.serviceSide = serviceSideForGame(game);
       tips.push('deuce');
       return { nextScore: next, tips };
     } else if (game.player2 === '40' && game.player1 === '40') {
       game.player2 = 'Ad';
+      next.serviceSide = serviceSideForGame(game);
       tips.push('advantage');
       pushOpportunityTips(next, format, tips);
       return { nextScore: next, tips };
@@ -255,6 +275,7 @@ export function applyPoint(
   }
 
   if (!gameWinner) {
+    next.serviceSide = serviceSideForGame(game);
     if (game.player1 === '40' && game.player2 === '40') {
       tips.push('deuce');
     }

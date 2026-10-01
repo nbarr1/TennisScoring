@@ -435,7 +435,9 @@ export default function MatchPage(): React.JSX.Element {
           </div>
         )}
 
-        {match.status === 'completed' && match.reportUrl && (
+        {/* Only render links the server generated: older matches could carry a
+            client-written reportUrl, and an href is never given another scheme. */}
+        {match.status === 'completed' && match.reportUrl?.startsWith('https://') && (
           <div style={containerStyles.section}>
             <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
               📊 Download Match Report (PDF)
