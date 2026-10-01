@@ -212,6 +212,82 @@ describe('scoreEngine', () => {
       score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // 8-6, should win
       expect(score.player1SetsWon).toBe(1);
     });
+
+    it('serves each two-point block from the ad court first', () => {
+      let score = reachTiebreak();
+      const served: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        served.push(`${score.server}:${score.serviceSide}`);
+        score = applyPoint(score, i % 2 === 0 ? 'player1' : 'player2', DEFAULT_FORMAT).nextScore;
+      }
+      expect(served).toEqual([
+        'player1:deuce',
+        'player2:advantage',
+        'player2:deuce',
+        'player1:advantage',
+        'player1:deuce',
+      ]);
+    });
+
+    // The player who received first in the tiebreak serves first in the next
+    // set, whatever the tiebreak score. 7-0, 7-1, 7-4, and 7-5 used to hand the
+    // first serve back to the tiebreak's opening server.
+    it.each([
+      [7, 0],
+      [7, 1],
+      [7, 2],
+      [7, 3],
+      [7, 4],
+      [7, 5],
+      [8, 6],
+      [9, 7],
+    ])('gives the next set to the tiebreak receiver after %i-%i', (won, lost) => {
+      let score = reachTiebreak();
+      const openingServer = score.server;
+      // Alternate points until the loser's total is reached, then close it out.
+      for (let i = 0; i < lost; i++) {
+        score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+        score = applyPoint(score, 'player2', DEFAULT_FORMAT).nextScore;
+      }
+      for (let i = lost; i < won; i++) {
+        score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      }
+      expect(score.player1SetsWon).toBe(1);
+      expect(score.isTiebreak).toBe(false);
+      expect(score.server).toBe(openingServer === 'player1' ? 'player2' : 'player1');
+      expect(score.serviceSide).toBe('deuce');
+    });
+  });
+
+  describe('service court', () => {
+    it('alternates deuce and ad court on every point of a game', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      const courts: string[] = [score.serviceSide];
+      for (const scorer of ['player1', 'player2', 'player1', 'player2', 'player1', 'player2'] as const) {
+        score = applyPoint(score, scorer, DEFAULT_FORMAT).nextScore;
+        courts.push(score.serviceSide);
+      }
+      // 15-0, 15-15, 30-15, 30-30, 40-30, deuce
+      expect(courts).toEqual(['deuce', 'advantage', 'deuce', 'advantage', 'deuce', 'advantage', 'deuce']);
+    });
+
+    it('keeps the parity through advantage and back to deuce', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player2', DEFAULT_FORMAT).nextScore;
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore; // Ad in, 7 points played
+      expect(score.serviceSide).toBe('advantage');
+      score = applyPoint(score, 'player2', DEFAULT_FORMAT).nextScore; // deuce, 8 points played
+      expect(score.serviceSide).toBe('deuce');
+    });
+
+    it('starts every game from the deuce court', () => {
+      let score = createInitialScore(DEFAULT_FORMAT);
+      score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      for (let i = 0; i < 3; i++) score = applyPoint(score, 'player1', DEFAULT_FORMAT).nextScore;
+      expect(score.sets[0].player1Games).toBe(1);
+      expect(score.serviceSide).toBe('deuce');
+    });
   });
 
   describe('match completion', () => {
