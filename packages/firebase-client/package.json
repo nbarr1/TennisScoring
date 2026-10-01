@@ -26,8 +26,9 @@
     "@react-native-async-storage/async-storage": ">=1.23.0"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/react": "^19.2.18"
+    "@babel/core": "^7.29.6",
+    "@types/react": "^19.2.18",
+    "typescript": "^6.0.3"
   },
   "peerDependenciesMeta": {
     "@react-native-async-storage/async-storage": {
