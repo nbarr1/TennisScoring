@@ -73,12 +73,49 @@ export const deleteAccount = onCall(async (request) => {
     { merge: true },
   );
 
-  if (divisionId) {
-    batch.update(db.collection('divisions').doc(divisionId), {
+  // Detach from every division the account is rostered in, not only the
+  // active one: a player can belong to several, and the others kept listing a
+  // deleted account on their rosters and in their group chats.
+  const [rosteredDivisions, channels] = await Promise.all([
+    db.collection('divisions').where('playerIds', 'array-contains', uid).get(),
+    db.collection('channels').where('participantIds', 'array-contains', uid).get(),
+  ]);
+  const divisionIds = new Set([
+    ...rosteredDivisions.docs.map((doc) => doc.id),
+    ...(divisionId ? [divisionId] : []),
+  ]);
+  for (const id of divisionIds) {
+    batch.update(db.collection('divisions').doc(id), {
       playerIds: FieldValue.arrayRemove(uid),
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
+  // Division group chats only. Direct conversations are left intact so the
+  // other participant keeps their history.
+  channels.docs
+    .filter((doc) => doc.data().type === 'division')
+    .forEach((doc) => batch.update(doc.ref, { participantIds: FieldValue.arrayRemove(uid) }));
+
+  const memberships = await Promise.all(
+    [...divisionIds].map((id) =>
+      db
+        .collection('divisions')
+        .doc(id)
+        .collection('memberships')
+        .where('userId', '==', uid)
+        .where('status', 'in', ['active', 'waitlisted'])
+        .get(),
+    ),
+  );
+  memberships
+    .flatMap((snap) => snap.docs)
+    .forEach((doc) =>
+      batch.set(
+        doc.ref,
+        { status: 'removed', removedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() },
+        { merge: true },
+      ),
+    );
 
   await batch.commit();
   await getAuth().deleteUser(uid);

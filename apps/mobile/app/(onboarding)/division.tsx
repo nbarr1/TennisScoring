@@ -9,14 +9,13 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { signOut } from "firebase/auth";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import {
-  auth,
   useAuthUser,
   createDivision,
   joinDivisionByCode,
   getDivision,
+  signOutReleasingPushToken,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { FormErrorSummary, FormField } from "../../components/FormField";
@@ -48,7 +47,7 @@ export default function DivisionOnboardingScreen() {
           text: "Sign Out",
           style: "destructive",
           onPress: async () => {
-            await signOut(auth);
+            await signOutReleasingPushToken();
             setUser(null);
           },
         },

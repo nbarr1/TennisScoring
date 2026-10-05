@@ -29,6 +29,7 @@ import {
   publishRoundRobinSchedule,
   useDivisionMessageReports,
   resolveMessageReport,
+  readableUserDoc,
 } from "@tennis/firebase-client";
 import {
   currentSeasonForDate,
@@ -487,7 +488,7 @@ export default function AdminPage(): React.JSX.Element {
           const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
             await Promise.all([
               div.playerIds.length
-                ? Promise.all(div.playerIds.map((id) => getDoc(userDoc(id))))
+                ? Promise.all(div.playerIds.map((id) => readableUserDoc(id)))
                 : Promise.resolve([]),
               getDocs(query(usersCol(), where("divisionId", "==", div.id))),
               getDocs(rankingsCol(div.id)),
@@ -501,7 +502,7 @@ export default function AdminPage(): React.JSX.Element {
             byId.set(id, { id, ...data });
           };
           divisionMemberProfiles.forEach((d) => {
-            if (d.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
+            if (d?.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
           });
           divisionProfileSnap.docs.forEach((d) =>
             addProfile(d.id, d.data() as Omit<User, "id">),

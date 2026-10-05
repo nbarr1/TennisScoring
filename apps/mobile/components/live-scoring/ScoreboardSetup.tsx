@@ -12,6 +12,8 @@ type Props = {
   advancedStats: boolean;
   onToggleAdvancedStats: (value: boolean) => void;
   onStart: () => void;
+  /** The start write is in flight; the button ignores further taps. */
+  starting: boolean;
   watchAppInstalled: boolean;
   launchingWatch: boolean;
   onLaunchWatch: () => void;
@@ -27,6 +29,7 @@ export function ScoreboardSetup({
   advancedStats,
   onToggleAdvancedStats,
   onStart,
+  starting,
   watchAppInstalled,
   launchingWatch,
   onLaunchWatch,
@@ -132,12 +135,17 @@ export function ScoreboardSetup({
       <View style={styles.spacer} />
       <Pressable
         onPress={onStart}
-        style={({ pressed }) => [styles.start, pressed && styles.startPressed]}
+        disabled={starting}
+        style={({ pressed }) => [
+          styles.start,
+          (pressed || starting) && styles.startPressed,
+        ]}
         accessibilityRole="button"
         accessibilityLabel={`Start match, ${names[server]} serves`}
+        accessibilityState={{ disabled: starting, busy: starting }}
       >
         <Text style={[styles.startText, font(fontsLoaded, "extrabold")]}>
-          START MATCH
+          {starting ? "STARTING…" : "START MATCH"}
         </Text>
       </Pressable>
     </View>

@@ -267,10 +267,13 @@ final class FirestoreMatchRepository: MatchRepository, @unchecked Sendable {
           )
           return nil
         }
+        // The rules require an undo to consume the snapshot and to clear any
+        // report submitted for the score being undone.
         var updates: [String: Any] = [
           "liveScore": liveScore,
           "status": status,
           "undoSnapshot": FieldValue.delete(),
+          "reportSubmission": FieldValue.delete(),
         ]
         if let stats = undo["stats"] { updates["stats"] = stats }
         for key in ["winner", "completedAt", "currentSetStartedAt", "matchDurationMs"] {

@@ -33,7 +33,6 @@
       "environment": "preview"
     },
     "production": {
-      "autoIncrement": true,
       "ios": {
         "autoIncrement": "buildNumber"
       },
@@ -61,7 +60,6 @@
       "environment": "preview"
     },
     "wear-production": {
-      "autoIncrement": true,
       "android": {
         "gradleCommand": ":wear:bundleRelease",
         "applicationArchivePath": "android/wear/build/outputs/**/*.{aab,apk}"

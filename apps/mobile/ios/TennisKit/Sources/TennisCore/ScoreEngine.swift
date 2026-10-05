@@ -82,10 +82,12 @@ public enum ScoreEngine {
     } else if mine == .forty && theirs == .advantage {
       // The opponent had advantage: back to deuce.
       next.currentGame[scorer.opponent] = .forty
+      next.serviceSide = serviceSide(for: next.currentGame)
       tips.append(.deuce)
       return ScoreResult(nextScore: next, tips: tips)
     } else if mine == .forty && theirs == .forty {
       next.currentGame[scorer] = .advantage
+      next.serviceSide = serviceSide(for: next.currentGame)
       tips.append(.advantage)
       appendOpportunityTip(next, format: format, to: &tips)
       return ScoreResult(nextScore: next, tips: tips)
@@ -95,6 +97,7 @@ public enum ScoreEngine {
     }
 
     guard let gameWinner else {
+      next.serviceSide = serviceSide(for: next.currentGame)
       if next.currentGame.player1 == .forty && next.currentGame.player2 == .forty {
         tips.append(.deuce)
       }
@@ -202,6 +205,26 @@ public enum ScoreEngine {
     }
   }
 
+  /// Deuce court after an even number of points, ad court after an odd number.
+  private static func serviceSide(afterPoints points: Int) -> ServiceSide {
+    points % 2 == 0 ? .deuce : .advantage
+  }
+
+  /// A game's score encodes its point parity even through deuce, because losing
+  /// an advantage returns the game to 40-40 two points later.
+  private static func serviceSide(for game: GameScore) -> ServiceSide {
+    let played: (TennisPoint) -> Int = { point in
+      switch point {
+      case .love: return 0
+      case .fifteen: return 1
+      case .thirty: return 2
+      case .forty: return 3
+      case .advantage: return 4
+      }
+    }
+    return serviceSide(afterPoints: played(game.player1) + played(game.player2))
+  }
+
   private static func isSetPoint(_ score: LiveScore, for player: Player, format: MatchFormat) -> Bool {
     let set = score.sets[score.currentSet]
     let gamesIfWon = set.games(for: player) + 1
@@ -219,18 +242,21 @@ public enum ScoreEngine {
     let total = tiebreak.player1Points + tiebreak.player2Points
     if total > 0 && total % 6 == 0 { tips.append(.serviceChange) }
 
-    // One opening point, then alternating two-point blocks.
-    if total > 0 && total % 2 == 1 {
+    // One opening point, then alternating two-point blocks. Each new server
+    // starts from the ad court, since the court follows the total.
+    if total % 2 == 1 {
       next.server = next.server.opponent
-      next.serviceSide = .deuce
-    } else if total > 0 {
-      next.serviceSide = next.serviceSide.toggled
     }
+    next.serviceSide = serviceSide(afterPoints: total)
 
     guard let winner = resolveTiebreakWinner(tiebreak) else {
       next.tiebreakScore = tiebreak
       return (next, tips, nil)
     }
+    // The tiebreak's first receiver serves first in the next set. The server has
+    // changed ceil(total / 2) times since the tiebreak's opening serve.
+    let firstServer = ((total + 1) / 2) % 2 == 0 ? next.server : next.server.opponent
+    next.server = firstServer.opponent
     var set = next.sets[next.currentSet]
     if winner == .player1 {
       set.player1Games = max(set.player1Games, set.player2Games + 1)

@@ -8,6 +8,7 @@
  */
 
 const DOUBLES_H2H_PREFIX = "doubles";
+const SINGLES_H2H_PREFIX = "singles";
 
 /** Encode arbitrary Firebase ids without relying on a reserved delimiter. */
 function encodeIdParts(parts: readonly string[]): string {
@@ -90,8 +91,38 @@ export function doublesHeadToHeadId(
   divisionLevelId?: string,
   divisionId?: string,
 ): string {
-  const [first, second] = [teamAId, teamBId].sort();
-  const parts = [DOUBLES_H2H_PREFIX];
+  return headToHeadId(DOUBLES_H2H_PREFIX, teamAId, teamBId, seasonId, divisionLevelId, divisionId);
+}
+
+/**
+ * Head-to-head document id for a singles pairing.
+ *
+ * The singles counterpart of `doublesHeadToHeadId`, with its own marker so both
+ * share the `headToHead` collection. Scoped like the standings it breaks ties
+ * for: per division, season, and level. A bare `${a}_${b}` id was shared by two
+ * players who meet in two divisions, so each division's recalculation
+ * overwrote the record and the other's prune pass deleted it.
+ */
+export function singlesHeadToHeadId(
+  playerAId: string,
+  playerBId: string,
+  seasonId?: string,
+  divisionLevelId?: string,
+  divisionId?: string,
+): string {
+  return headToHeadId(SINGLES_H2H_PREFIX, playerAId, playerBId, seasonId, divisionLevelId, divisionId);
+}
+
+function headToHeadId(
+  prefix: string,
+  aId: string,
+  bId: string,
+  seasonId?: string,
+  divisionLevelId?: string,
+  divisionId?: string,
+): string {
+  const [first, second] = [aId, bId].sort();
+  const parts = [prefix];
   if (divisionId && divisionId.trim().length > 0) parts.push(divisionId.trim());
   if (seasonId && seasonId.trim().length > 0) parts.push(seasonId.trim());
   if (divisionLevelId && divisionLevelId.trim().length > 0)

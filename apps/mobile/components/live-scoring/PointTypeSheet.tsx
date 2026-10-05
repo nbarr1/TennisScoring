@@ -6,6 +6,10 @@ import { SB, font } from "./scoreboardTheme";
 type Props = {
   /** The player the point goes to; the sheet is hidden while this is null. */
   playerName: string | null;
+  /** Whether that player is serving. Only the server can hit an ace. */
+  isServer: boolean;
+  /** A point is being recorded; picks wait for it rather than getting dropped. */
+  busy: boolean;
   onPick: (attribution?: PointAttribution) => void;
   onCancel: () => void;
   fontsLoaded: boolean;
@@ -25,10 +29,13 @@ const CHOICES: { label: string; attribution?: PointAttribution }[] = [
  */
 export function PointTypeSheet({
   playerName,
+  isServer,
+  busy,
   onPick,
   onCancel,
   fontsLoaded,
 }: Props) {
+  const choices = CHOICES.filter((choice) => isServer || choice.attribution !== "ace");
   return (
     <Modal
       visible={playerName !== null}
@@ -46,15 +53,18 @@ export function PointTypeSheet({
             POINT TO {(playerName ?? "").toUpperCase()}
           </Text>
           <View style={styles.grid}>
-            {CHOICES.map((choice, index) => (
+            {choices.map((choice, index) => (
               <Pressable
                 key={choice.label}
                 onPress={() => onPick(choice.attribution)}
+                disabled={busy}
                 style={[
                   styles.choice,
                   index === 0 ? styles.primary : styles.secondary,
+                  busy && styles.busy,
                 ]}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
               >
                 <Text
                   style={[
@@ -84,6 +94,7 @@ export function PointTypeSheet({
 }
 
 const styles = StyleSheet.create({
+  busy: { opacity: 0.5 },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",

@@ -61,6 +61,25 @@ jobs:
           else
             echo "name=preview" >> "$GITHUB_OUTPUT"
           fi
+      # Release builds take their versionCode from this workflow's run number,
+      # which only grows (:wear ships 1000000 + it). EAS's own autoIncrement
+      # bumped this runner's copy of app.json and nothing committed it back, so
+      # every production build reused one versionCode and Google Play rejects a
+      # repeat upload. Remote app versioning cannot replace it: build.gradle
+      # reads versionCode from app.json, so EAS can neither seed a remote
+      # counter nor write one into the build. The edit is uncommitted, and the
+      # upload includes it the way it included autoIncrement's.
+      #
+      # VERSION_CODE_OFFSET only ever goes up. Raise it if this workflow is
+      # renamed or recreated (its run number restarts at 1), or if a build was
+      # uploaded with a higher versionCode by hand; the script fails rather
+      # than produce a versionCode Play has already seen.
+      - name: Stamp release versionCode
+        if: steps.profile.outputs.name == 'production' || steps.profile.outputs.name == 'wear-production'
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          VERSION_CODE_OFFSET: '0'
+        run: node scripts/stamp-android-version-code.mjs apps/mobile/app.json
         # Run with --stacktrace option to get the stack trace.
         # Run with --info or --debug option to get more log output.
         # Run with --scan to get full insights.
@@ -79,6 +98,7 @@ jobs:
             echo "## EAS Build Metadata"
             echo "- Commit: $GITHUB_SHA"
             echo "- Profile: ${{ steps.profile.outputs.name }}"
+            echo "- Android versionCode: $(node -p "require('./apps/mobile/app.json').expo.android.versionCode")"
             echo "- Event: $GITHUB_EVENT_NAME"
             echo ""
             echo "## Debug Options"

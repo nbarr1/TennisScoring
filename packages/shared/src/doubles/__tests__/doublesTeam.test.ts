@@ -3,6 +3,7 @@ import {
   doublesTeamPlayerIds,
   formatDoublesTeamName,
   doublesHeadToHeadId,
+  singlesHeadToHeadId,
 } from "../doublesTeam";
 import {
   sidePlayerIds,
@@ -118,6 +119,35 @@ describe("doublesHeadToHeadId", () => {
   it("scopes persisted ids to a division", () => {
     expect(doublesHeadToHeadId("team-a", "team-b", "spring-2026", "level-a", "east")).not.toBe(
       doublesHeadToHeadId("team-a", "team-b", "spring-2026", "level-a", "west"),
+    );
+  });
+});
+
+describe("singlesHeadToHeadId", () => {
+  it("is order independent", () => {
+    expect(singlesHeadToHeadId("ann", "bob", "spring-2026", "open", "east")).toBe(
+      singlesHeadToHeadId("bob", "ann", "spring-2026", "open", "east"),
+    );
+  });
+
+  it("gives two players who meet in two divisions a record in each", () => {
+    expect(singlesHeadToHeadId("ann", "bob", "spring-2026", undefined, "east")).not.toBe(
+      singlesHeadToHeadId("ann", "bob", "spring-2026", undefined, "west"),
+    );
+  });
+
+  it("scopes ids to a season and a division level", () => {
+    expect(singlesHeadToHeadId("ann", "bob", "spring-2026")).not.toBe(
+      singlesHeadToHeadId("ann", "bob", "fall-2026"),
+    );
+    expect(singlesHeadToHeadId("ann", "bob", "spring-2026", "level-a")).not.toBe(
+      singlesHeadToHeadId("ann", "bob", "spring-2026", "level-b"),
+    );
+  });
+
+  it("never collides with a doubles record over the same ids", () => {
+    expect(singlesHeadToHeadId("ann", "bob", "spring-2026")).not.toBe(
+      doublesHeadToHeadId("ann", "bob", "spring-2026"),
     );
   });
 });
