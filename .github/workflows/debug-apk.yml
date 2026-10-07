@@ -83,7 +83,7 @@ jobs:
           echo "No placeholder values found in the bundle."
       - name: Upload APK
         if: success()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: debug-apk-arm64-v8a-${{ github.sha }}
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
