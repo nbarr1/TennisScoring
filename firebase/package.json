@@ -17,17 +17,17 @@
     "node": "22"
   },
   "dependencies": {
-    "firebase-admin": "^14.3.0",
-    "firebase-functions": "^7.3.2",
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0",
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@babel/core": "^7.29.6",
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tennis/shared": "workspace:*",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.4",
     "esbuild": "0.28.0",
-    "firebase": "^12.18.0",
+    "firebase": "^12.19.0",
     "typescript": "^6.0.3"
   }
 }

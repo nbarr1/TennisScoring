@@ -23,13 +23,13 @@
     "fixtures:mobile-contract": "pnpm --filter @tennis/shared build && node scripts/generate-mobile-contract-fixtures.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "@typescript-eslint/eslint-plugin": "^8.67.0",
-    "@typescript-eslint/parser": "^8.67.0",
-    "eslint": "^10.9.0",
-    "firebase-admin": "^14.3.0",
-    "prettier": "^3.9.6",
-    "turbo": "^2.10.11",
+    "@types/node": "^26.6.4",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
+    "eslint": "^10.12.0",
+    "firebase-admin": "^14.5.0",
+    "prettier": "^3.9.9",
+    "turbo": "^2.11.7",
     "typescript": "^6.0.3"
   },
   "pnpm": {
