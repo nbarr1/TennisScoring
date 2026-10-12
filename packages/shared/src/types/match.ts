@@ -102,6 +102,11 @@ export interface SetScore {
   player1Games: number;
   player2Games: number;
   tiebreak?: TiebreakScore;
+  /**
+   * The set was replaced by a 10-point match tiebreak. Games read 1-0 to the
+   * winner and `tiebreak` holds the points. Only recorded matches set this.
+   */
+  matchTiebreak?: boolean;
   winner?: Player;
   startedAt?: number;
   completedAt?: number;

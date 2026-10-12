@@ -35,11 +35,17 @@ import {
   currentSeasonForDate,
   defaultSeasonOptions,
   sideOfPlayer,
+  validateRecordedSets,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
 import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
-import type { Match, PublicProfile } from "@tennis/shared";
+import type { Match, PublicProfile, RecordedSetInput } from "@tennis/shared";
+import {
+  MatchTiebreakToggle,
+  withEligibleTiebreaks,
+  type SetDraft,
+} from "../../components/MatchTiebreakToggle";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
 import {
   AppIcon,
@@ -262,7 +268,9 @@ export default function MatchesScreen() {
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
   // Historic match set scores: array of { p1, p2 } per set
-  const [historicSets, setHistoricSets] = useState([{ p1: "", p2: "" }]);
+  const [historicSets, setHistoricSets] = useState<SetDraft[]>([
+    { p1: "", p2: "" },
+  ]);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const guestNameRef = useRef<TextInput>(null);
   const router = useRouter();
@@ -441,27 +449,14 @@ export default function MatchesScreen() {
       return;
     }
 
-    const parsed = historicSets.map((s) => ({
+    const parsed: RecordedSetInput[] = historicSets.map((s) => ({
       p1: parseInt(s.p1, 10),
       p2: parseInt(s.p2, 10),
+      ...(s.matchTiebreak ? { matchTiebreak: true } : {}),
     }));
-    const invalid = parsed.some(
-      (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
-    );
-    if (invalid || parsed.length === 0) {
-      setCreateErrors({
-        scores: "Enter a valid number of games for every set.",
-      });
-      return;
-    }
-    if (parsed.some((s) => s.p1 === s.p2)) {
-      setCreateErrors({ scores: "Each set must have a clear winner." });
-      return;
-    }
-    const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
-    const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
-    if (p1Sets === p2Sets) {
-      setCreateErrors({ scores: "The match must have a clear winner." });
+    const invalid = validateRecordedSets(parsed);
+    if (invalid) {
+      setCreateErrors({ scores: invalid });
       return;
     }
     setCreating(true);
@@ -1276,51 +1271,67 @@ export default function MatchesScreen() {
                       : "Enter set scores (your games first)"}
                   </Text>
                   {historicSets.map((s, i) => (
-                    <View key={i} style={styles.setRow}>
-                      <Text style={styles.setLabel}>Set {i + 1}</Text>
-                      <TextInput
-                        accessibilityLabel={`Set ${i + 1} ${
-                          recordingMode === "onBehalf"
-                            ? "first player's"
-                            : "your"
-                        } games`}
-                        style={styles.setInput}
-                        value={s.p1}
-                        onChangeText={(v) => {
-                          const next = [...historicSets];
-                          next[i] = { ...next[i], p1: v };
-                          setHistoricSets(next);
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        placeholder={
-                          recordingMode === "onBehalf" ? "P1" : "You"
-                        }
+                    <React.Fragment key={i}>
+                      <View style={styles.setRow}>
+                        <Text style={styles.setLabel}>
+                          {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+                        </Text>
+                        <TextInput
+                          accessibilityLabel={`Set ${i + 1} ${
+                            recordingMode === "onBehalf"
+                              ? "first player's"
+                              : "your"
+                          } ${s.matchTiebreak ? "tiebreak points" : "games"}`}
+                          style={styles.setInput}
+                          value={s.p1}
+                          onChangeText={(v) => {
+                            const next = [...historicSets];
+                            next[i] = { ...next[i], p1: v };
+                            setHistoricSets(next);
+                          }}
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          placeholder={
+                            recordingMode === "onBehalf" ? "P1" : "You"
+                          }
+                        />
+                        <Text style={styles.setDash}>–</Text>
+                        <TextInput
+                          accessibilityLabel={`Set ${i + 1} opponent ${
+                            s.matchTiebreak ? "tiebreak points" : "games"
+                          }`}
+                          style={styles.setInput}
+                          value={s.p2}
+                          onChangeText={(v) => {
+                            const next = [...historicSets];
+                            next[i] = { ...next[i], p2: v };
+                            setHistoricSets(next);
+                          }}
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          placeholder={
+                            recordingMode === "onBehalf" ? "P2" : "Opp"
+                          }
+                        />
+                      </View>
+                      <MatchTiebreakToggle
+                        sets={historicSets}
+                        index={i}
+                        onChangeSets={setHistoricSets}
                       />
-                      <Text style={styles.setDash}>–</Text>
-                      <TextInput
-                        accessibilityLabel={`Set ${i + 1} opponent games`}
-                        style={styles.setInput}
-                        value={s.p2}
-                        onChangeText={(v) => {
-                          const next = [...historicSets];
-                          next[i] = { ...next[i], p2: v };
-                          setHistoricSets(next);
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        placeholder={
-                          recordingMode === "onBehalf" ? "P2" : "Opp"
-                        }
-                      />
-                    </View>
+                    </React.Fragment>
                   ))}
                   {historicSets.length < 5 && (
                     <TouchableOpacity
                       accessibilityRole="button"
                       accessibilityLabel="Add another set"
                       onPress={() =>
-                        setHistoricSets([...historicSets, { p1: "", p2: "" }])
+                        setHistoricSets(
+                          withEligibleTiebreaks([
+                            ...historicSets,
+                            { p1: "", p2: "" },
+                          ]),
+                        )
                       }
                     >
                       <Text style={styles.addSet}>+ Add Set</Text>

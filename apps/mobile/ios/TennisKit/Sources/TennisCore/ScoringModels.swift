@@ -70,6 +70,9 @@ public struct SetScore: Codable, Equatable, Sendable {
   public var player1Games: Int
   public var player2Games: Int
   public var tiebreak: TiebreakScore?
+  /// The set was replaced by a 10-point match tiebreak: games read 1-0 to the
+  /// winner and `tiebreak` holds the points. Only recorded matches set this.
+  public var matchTiebreak: Bool?
   public var winner: Player?
   public var startedAt: Int64?
   public var completedAt: Int64?
@@ -80,6 +83,7 @@ public struct SetScore: Codable, Equatable, Sendable {
     player1Games: Int = 0,
     player2Games: Int = 0,
     tiebreak: TiebreakScore? = nil,
+    matchTiebreak: Bool? = nil,
     winner: Player? = nil,
     startedAt: Int64? = nil,
     completedAt: Int64? = nil,
@@ -89,6 +93,7 @@ public struct SetScore: Codable, Equatable, Sendable {
     self.player1Games = player1Games
     self.player2Games = player2Games
     self.tiebreak = tiebreak
+    self.matchTiebreak = matchTiebreak
     self.winner = winner
     self.startedAt = startedAt
     self.completedAt = completedAt
@@ -101,6 +106,7 @@ public struct SetScore: Codable, Equatable, Sendable {
     player1Games = c.decode(.player1Games, default: 0)
     player2Games = c.decode(.player2Games, default: 0)
     tiebreak = c.decodeLenient(TiebreakScore.self, .tiebreak)
+    matchTiebreak = c.decodeLenient(Bool.self, .matchTiebreak)
     winner = c.decodeLenient(Player.self, .winner)
     startedAt = c.decodeMillis(.startedAt)
     completedAt = c.decodeMillis(.completedAt)

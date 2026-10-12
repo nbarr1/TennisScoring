@@ -301,9 +301,13 @@ export function ScoreboardSurface({
                       ]}
                       maxFontSizeMultiplier={1.1}
                     >
-                      {player === "player1"
-                        ? set.player1Games
-                        : set.player2Games}
+                      {set.matchTiebreak && set.tiebreak
+                        ? player === "player1"
+                          ? set.tiebreak.player1Points
+                          : set.tiebreak.player2Points
+                        : player === "player1"
+                          ? set.player1Games
+                          : set.player2Games}
                     </Text>
                   </View>
                 );

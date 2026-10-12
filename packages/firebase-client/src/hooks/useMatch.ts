@@ -11,13 +11,13 @@ import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
 import { functions } from '../config';
 import type {
   Match,
-  Player,
   TipTrigger,
   LiveScore,
-  SetScore,
+  RecordedSetInput,
 } from '@tennis/shared';
 import {
   DEFAULT_FORMAT as defaultFormat,
+  buildRecordedMatchScore,
   createInitialScore,
   EMPTY_STATS,
 } from '@tennis/shared';
@@ -108,57 +108,6 @@ export async function createMatch(params: {
   return ref.id;
 }
 
-function buildHistoricScore(sets: { p1: number; p2: number }[]): {
-  score: LiveScore;
-  winner: Player;
-} {
-  if (sets.length === 0) {
-    throw new Error('At least one set is required.');
-  }
-  for (const set of sets) {
-    if (
-      !Number.isInteger(set.p1) ||
-      !Number.isInteger(set.p2) ||
-      set.p1 < 0 ||
-      set.p2 < 0 ||
-      set.p1 === set.p2
-    ) {
-      throw new Error(
-        'Each set must have non-negative whole-number game counts and a clear winner.',
-      );
-    }
-  }
-
-  let p1Sets = 0;
-  let p2Sets = 0;
-  const builtSets: SetScore[] = sets.map((s, i) => {
-    const setWinner: Player = s.p1 > s.p2 ? 'player1' : 'player2';
-    if (setWinner === 'player1') p1Sets++;
-    else p2Sets++;
-    return {
-      setNumber: i,
-      player1Games: s.p1,
-      player2Games: s.p2,
-      winner: setWinner,
-    };
-  });
-  if (p1Sets === p2Sets) {
-    throw new Error('The match must have a clear winner.');
-  }
-  const winner: Player = p1Sets > p2Sets ? 'player1' : 'player2';
-  const score: LiveScore = {
-    sets: builtSets,
-    currentSet: sets.length - 1,
-    currentGame: { player1: '0', player2: '0' },
-    isTiebreak: false,
-    server: 'player1',
-    serviceSide: 'deuce',
-    player1SetsWon: p1Sets,
-    player2SetsWon: p2Sets,
-  };
-  return { score, winner };
-}
-
 export async function recordHistoricMatch(params: {
   player1Id: string;
   player2Id: string;
@@ -173,7 +122,7 @@ export async function recordHistoricMatch(params: {
   side1PlayerIds?: string[];
   side2PlayerIds?: string[];
   createdBy: string;
-  sets: { p1: number; p2: number }[];
+  sets: RecordedSetInput[];
   isDivisionMatch?: boolean;
 }): Promise<string> {
   const callable = httpsCallable<
@@ -210,7 +159,7 @@ export async function recordMatchOnBehalf(params: {
   /** Doubles only: both members of each side. The server derives every flat field from these. */
   side1PlayerIds?: string[];
   side2PlayerIds?: string[];
-  sets: { p1: number; p2: number }[];
+  sets: RecordedSetInput[];
   isDivisionMatch?: boolean;
   notifyPlayers?: boolean;
 }): Promise<string> {
@@ -535,9 +484,9 @@ export async function resolveDisputedReport(matchId: string): Promise<void> {
 
 export async function editMatchScore(
   matchId: string,
-  sets: { p1: number; p2: number }[],
+  sets: RecordedSetInput[],
 ): Promise<void> {
-  const { score, winner } = buildHistoricScore(sets);
+  const { score, winner } = buildRecordedMatchScore(sets);
   await updateDoc(matchDoc(matchId), {
     liveScore: score,
     winner,

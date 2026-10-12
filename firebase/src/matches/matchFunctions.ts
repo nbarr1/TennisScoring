@@ -20,6 +20,8 @@ import {
   isAdminRole,
   opposingSide as opposingMatchSide,
   singlesHeadToHeadId,
+  buildRecordedMatchScore,
+  validateRecordedSets,
 } from '@tennis/shared';
 import type {
   Match,
@@ -29,6 +31,7 @@ import type {
   PlayerRanking,
   ReportSubmission,
   DoublesTeamRankingInput,
+  RecordedSetInput,
 } from '@tennis/shared';
 
 import { buildDoublesMatchFields, requestsDoubles, validateDoublesCompetition } from './doublesSides';
@@ -1082,7 +1085,7 @@ type RecordHistoricMatchInput = {
   matchType?: Match['matchType'];
   side1PlayerIds?: unknown;
   side2PlayerIds?: unknown;
-  sets?: { p1?: number; p2?: number }[];
+  sets?: { p1?: number; p2?: number; matchTiebreak?: boolean }[];
   isDivisionMatch?: boolean;
 };
 
@@ -1095,7 +1098,7 @@ type RecordMatchOnBehalfInput = {
   player2Id?: string;
   side1PlayerIds?: unknown;
   side2PlayerIds?: unknown;
-  sets?: { p1?: number; p2?: number }[];
+  sets?: { p1?: number; p2?: number; matchTiebreak?: boolean }[];
   isDivisionMatch?: boolean;
   notifyPlayers?: boolean;
 };
@@ -1127,63 +1130,24 @@ function matchLinkForId(matchId: string): string {
   return `${appBaseUrl().replace(/\/$/, '')}/matches/${encodeURIComponent(matchId)}`;
 }
 
-function buildManualCompletedScore(sets: { p1: number; p2: number }[]): {
+function buildManualCompletedScore(sets: RecordedSetInput[]): {
   score: Match['liveScore'];
   winner: Player;
 } {
-  if (!sets.length) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'At least one set is required',
-    );
+  const error = validateRecordedSets(sets);
+  if (error) {
+    throw new functions.https.HttpsError('invalid-argument', error);
   }
+  return buildRecordedMatchScore(sets);
+}
 
-  let p1Sets = 0;
-  let p2Sets = 0;
-  const builtSets: Match['liveScore']['sets'] = sets.map((set, index) => {
-    if (
-      !Number.isInteger(set.p1) ||
-      !Number.isInteger(set.p2) ||
-      set.p1 < 0 ||
-      set.p2 < 0 ||
-      set.p1 === set.p2
-    ) {
-      throw new functions.https.HttpsError(
-        'invalid-argument',
-        'Each set must have non-negative game counts and a clear winner',
-      );
-    }
-    const winner: Player = set.p1 > set.p2 ? 'player1' : 'player2';
-    if (winner === 'player1') p1Sets += 1;
-    else p2Sets += 1;
-    return {
-      setNumber: index,
-      player1Games: set.p1,
-      player2Games: set.p2,
-      winner,
-    };
-  });
-
-  if (p1Sets === p2Sets) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'The match must have a clear winner',
-    );
-  }
-
-  return {
-    winner: p1Sets > p2Sets ? 'player1' : 'player2',
-    score: {
-      sets: builtSets,
-      currentSet: sets.length - 1,
-      currentGame: { player1: '0', player2: '0' },
-      isTiebreak: false,
-      server: 'player1',
-      serviceSide: 'deuce',
-      player1SetsWon: p1Sets,
-      player2SetsWon: p2Sets,
-    },
-  };
+function sanitizeRecordedSets(sets: unknown): RecordedSetInput[] {
+  if (!Array.isArray(sets)) return [];
+  return sets.map((set) => ({
+    p1: Number(set?.p1),
+    p2: Number(set?.p2),
+    ...(set?.matchTiebreak === true ? { matchTiebreak: true } : {}),
+  }));
 }
 
 async function notifyPlayersMatchRecorded(
@@ -1262,9 +1226,7 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
   const safeSeasonId = typeof seasonId === 'string' ? seasonId.trim() : '';
   const safeDivisionLevelId = typeof divisionLevelId === 'string' ? divisionLevelId.trim() : '';
   const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
-  const safeSets = Array.isArray(sets)
-    ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
-    : [];
+  const safeSets = sanitizeRecordedSets(sets);
   const isGuest = player2IsGuest === true;
 
   // Doubles: the two side rosters fully determine every flat field, so this
@@ -1440,9 +1402,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
   const safeSeasonId = typeof seasonId === 'string' ? seasonId.trim() : '';
   const safeDivisionLevelId = typeof divisionLevelId === 'string' ? divisionLevelId.trim() : '';
   const safeMatchType = matchType === 'singles' || matchType === 'doubles' ? matchType : undefined;
-  const safeSets = Array.isArray(sets)
-    ? sets.map((set) => ({ p1: Number(set.p1), p2: Number(set.p2) }))
-    : [];
+  const safeSets = sanitizeRecordedSets(sets);
 
   // Doubles payloads carry side rosters instead of the two flat player ids.
   const isDoubles = requestsDoubles({ matchType: safeMatchType, side1PlayerIds, side2PlayerIds });
