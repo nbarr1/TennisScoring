@@ -8,7 +8,7 @@ import {
   type FirestoreError,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { divisionDoc, divisionLevelsCol, divisionMembershipsQuery, divisionsCol, profilesCol } from './collections';
+import { divisionDoc, divisionLevelsCol, divisionMembershipsCol, divisionMembershipsQuery, divisionsCol, profilesCol } from './collections';
 import { functions } from './config';
 import type { CsvExportResult, Division, DivisionLevel, DivisionMembership, DivisionMembershipStatus, DivisionMatchType, DivisionSkillLevel, SeasonHalf, PublicProfile } from '@tennis/shared';
 
@@ -354,19 +354,68 @@ export async function getDivision(
   return { ...snap.data(), id: snap.id };
 }
 
+/**
+ * Players in a division whose display name contains `searchText`.
+ *
+ * `profiles/{uid}.divisionId` names a player's *active* division only, and leader-side
+ * callables never move a registered account's active division. A player rostered here
+ * whose active division is another one therefore has no profile matching this division,
+ * so by default the division's rostered season memberships are searched too. Match
+ * writes accept any roster member (`divisions.playerIds`), so those players are valid
+ * opponents.
+ *
+ * Pass `profilesOnly` where the result feeds a write that requires a shared *active*
+ * division, such as starting a direct conversation.
+ */
 export async function searchDivisionPlayers(
   divisionId: string,
   searchText: string,
+  options: { profilesOnly?: boolean } = {},
 ): Promise<PublicProfile[]> {
-  const q = query(profilesCol(), where('divisionId', '==', divisionId));
-  const snap = await getDocs(q);
+  const [profilesResult, membershipsResult] = await Promise.allSettled([
+    getDocs(query(profilesCol(), where('divisionId', '==', divisionId))),
+    options.profilesOnly
+      ? Promise.resolve(null)
+      : getDocs(
+          query(
+            divisionMembershipsCol(divisionId),
+            where('status', 'in', ['active', 'waitlisted']),
+          ),
+        ),
+  ]);
+  // The profiles query is rejected when the caller's own active division is another one;
+  // the roster is still readable to them, so that alone must not empty the results.
+  if (profilesResult.status === 'rejected' && (options.profilesOnly || membershipsResult.status === 'rejected')) {
+    throw profilesResult.reason;
+  }
+
+  const byId = new Map<string, PublicProfile>();
+  if (profilesResult.status === 'fulfilled') {
+    for (const d of profilesResult.value.docs) {
+      byId.set(d.id, { ...d.data(), id: d.id });
+    }
+  }
+  if (membershipsResult.status === 'fulfilled' && membershipsResult.value) {
+    // Newest first, so a player rostered in several seasons gets their latest name.
+    const memberships = membershipsResult.value.docs
+      .map((d) => d.data())
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    for (const m of memberships) {
+      if (!m.userId || !m.displayNameSnapshot || byId.has(m.userId)) continue;
+      byId.set(m.userId, {
+        id: m.userId,
+        displayName: m.displayNameSnapshot,
+        divisionId,
+        role: m.role === 'division_leader' ? 'division_leader' : 'player',
+        updatedAt: m.updatedAt ?? 0,
+      });
+    }
+  }
+
   const lower = searchText.toLowerCase().trim();
-  return snap.docs
-    .map((d): PublicProfile => ({ ...d.data(), id: d.id }))
-    .filter(
-      (u) =>
-        u.displayName.toLowerCase().includes(lower),
-    );
+  return [...byId.values()].filter((u) =>
+    (u.displayName ?? '').toLowerCase().includes(lower),
+  );
 }
 
 export async function addPlayerToDivisionByEmail(

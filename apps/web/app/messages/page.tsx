@@ -180,7 +180,8 @@ function NewDmModal({
     const t = setTimeout(async () => {
       setSearching(true);
       try {
-        const r = await searchDivisionPlayers(divisionId, searchText);
+        // A direct conversation needs a shared active division, which roster-only players lack.
+        const r = await searchDivisionPlayers(divisionId, searchText, { profilesOnly: true });
         const blockedIds = new Set(blockedUserIds);
         setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
       } catch {
