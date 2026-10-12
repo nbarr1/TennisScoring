@@ -371,6 +371,9 @@ export function formatScoreDisplay(score: LiveScore): string {
   const sets = score.sets
     .filter((s) => s.winner !== undefined || score.sets.indexOf(s) === score.currentSet)
     .map((s) => {
+      if (s.matchTiebreak && s.tiebreak) {
+        return `[${s.tiebreak.player1Points}-${s.tiebreak.player2Points}]`;
+      }
       if (s.tiebreak && s.winner) {
         const loserPts = s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points;
         return `${s.player1Games}-${s.player2Games}(${loserPts})`;

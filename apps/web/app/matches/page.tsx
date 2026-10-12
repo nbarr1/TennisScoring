@@ -32,9 +32,23 @@ import {
   currentSeasonForDate,
   defaultSeasonOptions,
   sideOfPlayer,
+  canBeMatchTiebreak,
+  parseRecordedSetToken,
+  validateRecordedSets,
 } from "@tennis/shared";
-import type { Match, PublicProfile } from "@tennis/shared";
+import type { Match, PublicProfile, RecordedSetInput } from "@tennis/shared";
 import { PlayerSlotPicker } from "../shared/PlayerSlotPicker";
+
+type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
+
+/** Clears the match tiebreak flag from any row that is no longer the deciding set. */
+function withEligibleTiebreaks(rows: SetDraft[]): SetDraft[] {
+  return rows.map((row, i) =>
+    row.matchTiebreak && !canBeMatchTiebreak(i, rows.length)
+      ? { p1: row.p1, p2: row.p2 }
+      : row,
+  );
+}
 
 function formatScheduledAt(ts?: number): string {
   if (!ts) return "Time TBD";
@@ -568,7 +582,7 @@ function RecordPastMatchModal({
   const [selectedOpponent, setSelectedOpponent] =
     useState<PublicProfile | null>(null);
   const [searching, setSearching] = useState(false);
-  const [sets, setSets] = useState([{ p1: "", p2: "" }]);
+  const [sets, setSets] = useState<SetDraft[]>([{ p1: "", p2: "" }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isDivisionMatch, setIsDivisionMatch] = useState(true);
@@ -634,15 +648,9 @@ function RecordPastMatchModal({
     : !!selectedOpponent;
   const player1Ready = recordingMode === "self" || !!selectedPlayer1;
 
-  function parseSetToken(token: string): { p1: number; p2: number } | null {
-    const m = token.trim().match(/^(\d{1,2})\s*[-:]\s*(\d{1,2})$/);
-    if (!m) return null;
-    return { p1: parseInt(m[1], 10), p2: parseInt(m[2], 10) };
-  }
-
   function parseBulkLine(
     line: string,
-  ): { opponentName: string; sets: { p1: number; p2: number }[] } | null {
+  ): { opponentName: string; sets: RecordedSetInput[] } | null {
     const cleaned = line.trim();
     if (!cleaned) return null;
     const parts = cleaned
@@ -651,9 +659,9 @@ function RecordPastMatchModal({
       .filter(Boolean);
     if (parts.length < 3) return null;
     const opponentName = parts[0];
-    const sets = parts.slice(1).map(parseSetToken);
+    const sets = parts.slice(1).map(parseRecordedSetToken);
     if (!opponentName || sets.some((s) => !s)) return null;
-    return { opponentName, sets: sets as { p1: number; p2: number }[] };
+    return { opponentName, sets: sets as RecordedSetInput[] };
   }
 
   async function handleSubmit() {
@@ -669,19 +677,18 @@ function RecordPastMatchModal({
       }
       const parsedLines = lines.map(parseBulkLine);
       if (parsedLines.some((line) => !line)) {
-        setError("Each line must be: Opponent Name, 6-4, 7-5");
+        setError("Each line must be: Opponent Name, 6-4, 7-5 (or [10-8] for a match tiebreak)");
         return;
       }
       setSubmitting(true);
       try {
         for (const item of parsedLines as {
           opponentName: string;
-          sets: { p1: number; p2: number }[];
+          sets: RecordedSetInput[];
         }[]) {
-          const p1Sets = item.sets.filter((s) => s.p1 > s.p2).length;
-          const p2Sets = item.sets.filter((s) => s.p2 > s.p1).length;
-          if (p1Sets === p2Sets || item.sets.some((s) => s.p1 === s.p2)) {
-            throw new Error(`Invalid winner in line for ${item.opponentName}.`);
+          const invalid = validateRecordedSets(item.sets);
+          if (invalid) {
+            throw new Error(`Line for ${item.opponentName}: ${invalid}`);
           }
           await recordHistoricMatch({
             player1Id: currentUser.id,
@@ -711,25 +718,14 @@ function RecordPastMatchModal({
       return;
     }
 
-    const parsed = sets.map((s) => ({
+    const parsed: RecordedSetInput[] = sets.map((s) => ({
       p1: parseInt(s.p1, 10),
       p2: parseInt(s.p2, 10),
+      ...(s.matchTiebreak ? { matchTiebreak: true } : {}),
     }));
-    const invalid = parsed.some(
-      (s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0,
-    );
-    if (invalid || parsed.length === 0) {
-      setError("Please enter a valid number of games for each set.");
-      return;
-    }
-    if (parsed.some((s) => s.p1 === s.p2)) {
-      setError("Each set must have a clear winner. Check the set scores.");
-      return;
-    }
-    const p1Sets = parsed.filter((s) => s.p1 > s.p2).length;
-    const p2Sets = parsed.filter((s) => s.p2 > s.p1).length;
-    if (p1Sets === p2Sets) {
-      setError("The match must have a clear winner. Check the set scores.");
+    const invalid = validateRecordedSets(parsed);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     setSubmitting(true);
@@ -1071,50 +1067,71 @@ function RecordPastMatchModal({
                   Set scores ({recordingMode === "onBehalf" ? "first player's" : "your"} games first)
                 </div>
                 {sets.map((s, i) => (
-                  <div key={i} style={modalStyles.setRow}>
-                    <span style={modalStyles.setLabel}>Set {i + 1}</span>
-                    <input
-                      aria-label={`Set ${i + 1} ${recordingMode === "onBehalf" ? "first player's" : "your"} games`}
-                      style={modalStyles.setInput}
-                      value={s.p1}
-                      onChange={(e) => {
-                        const next = [...sets];
-                        next[i] = {
-                          ...next[i],
-                          p1: e.target.value.replace(/[^0-9]/g, ""),
-                        };
-                        setSets(next);
-                      }}
-                      placeholder={recordingMode === "onBehalf" ? "P1" : "You"}
-                      inputMode="numeric"
-                      maxLength={2}
-                    />
-                    <span style={modalStyles.setDash}>–</span>
-                    <input
-                      aria-label={`Set ${i + 1} opponent games`}
-                      style={modalStyles.setInput}
-                      value={s.p2}
-                      onChange={(e) => {
-                        const next = [...sets];
-                        next[i] = {
-                          ...next[i],
-                          p2: e.target.value.replace(/[^0-9]/g, ""),
-                        };
-                        setSets(next);
-                      }}
-                      placeholder={recordingMode === "onBehalf" ? "P2" : "Opp"}
-                      inputMode="numeric"
-                      maxLength={2}
-                    />
-                    {sets.length > 1 && (
-                      <button
-                        type="button"
-                        style={modalStyles.removeSet}
-                        aria-label={`Remove set ${i + 1}`}
-                        onClick={() => setSets(sets.filter((_, j) => j !== i))}
-                      >
-                        ✕
-                      </button>
+                  <div key={i}>
+                    <div style={modalStyles.setRow}>
+                      <span style={modalStyles.setLabel}>
+                        {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+                      </span>
+                      <input
+                        aria-label={`Set ${i + 1} ${recordingMode === "onBehalf" ? "first player's" : "your"} ${s.matchTiebreak ? "tiebreak points" : "games"}`}
+                        style={modalStyles.setInput}
+                        value={s.p1}
+                        onChange={(e) => {
+                          const next = [...sets];
+                          next[i] = {
+                            ...next[i],
+                            p1: e.target.value.replace(/[^0-9]/g, ""),
+                          };
+                          setSets(next);
+                        }}
+                        placeholder={recordingMode === "onBehalf" ? "P1" : "You"}
+                        inputMode="numeric"
+                        maxLength={2}
+                      />
+                      <span style={modalStyles.setDash}>–</span>
+                      <input
+                        aria-label={`Set ${i + 1} opponent ${s.matchTiebreak ? "tiebreak points" : "games"}`}
+                        style={modalStyles.setInput}
+                        value={s.p2}
+                        onChange={(e) => {
+                          const next = [...sets];
+                          next[i] = {
+                            ...next[i],
+                            p2: e.target.value.replace(/[^0-9]/g, ""),
+                          };
+                          setSets(next);
+                        }}
+                        placeholder={recordingMode === "onBehalf" ? "P2" : "Opp"}
+                        inputMode="numeric"
+                        maxLength={2}
+                      />
+                      {sets.length > 1 && (
+                        <button
+                          type="button"
+                          style={modalStyles.removeSet}
+                          aria-label={`Remove set ${i + 1}`}
+                          onClick={() =>
+                            setSets(withEligibleTiebreaks(sets.filter((_, j) => j !== i)))
+                          }
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    {canBeMatchTiebreak(i, sets.length) && (
+                      <label style={modalStyles.tiebreakToggle}>
+                        <input
+                          type="checkbox"
+                          checked={!!s.matchTiebreak}
+                          onChange={(e) => {
+                            const next = [...sets];
+                            next[i] = { ...next[i], matchTiebreak: e.target.checked };
+                            setSets(next);
+                          }}
+                          style={modalStyles.checkbox}
+                        />
+                        <span>Played as a 10-point match tiebreak (enter points)</span>
+                      </label>
                     )}
                   </div>
                 ))}
@@ -1122,7 +1139,9 @@ function RecordPastMatchModal({
                   <button
                     type="button"
                     style={modalStyles.addSet}
-                    onClick={() => setSets([...sets, { p1: "", p2: "" }])}
+                    onClick={() =>
+                      setSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
+                    }
                   >
                     + Add Set
                   </button>
@@ -1137,7 +1156,8 @@ function RecordPastMatchModal({
             <div style={modalStyles.toggleSection}>
               <div style={modalStyles.checkboxHint}>
                 Format: <strong>Opponent Name, 6-4, 7-5</strong> (one match per
-                line; guest opponents only).
+                line; guest opponents only). Write a match tiebreak in brackets,
+                such as <strong>4-6, 6-3, [10-8]</strong>.
               </div>
             </div>
             <label htmlFor="bulk-match-import" style={modalStyles.label}>
@@ -1566,6 +1586,15 @@ const modalStyles: Record<string, React.CSSProperties> = {
     color: "#1a472a",
   },
   setDash: { color: "#999", fontWeight: 600 },
+  tiebreakToggle: {
+    display: "flex" as const,
+    alignItems: "center",
+    gap: 8,
+    margin: "0 0 8px 56px",
+    fontSize: 13,
+    color: "#666",
+    cursor: "pointer",
+  } as const,
   removeSet: {
     marginLeft: "auto",
     background: "transparent",

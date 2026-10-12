@@ -145,6 +145,9 @@ public enum ScoreEngine {
     score.sets.enumerated()
       .filter { index, set in set.winner != nil || index == score.currentSet }
       .map { _, set in
+        if set.matchTiebreak == true, let tiebreak = set.tiebreak {
+          return "[\(tiebreak.player1Points)-\(tiebreak.player2Points)]"
+        }
         if let tiebreak = set.tiebreak, let winner = set.winner {
           return "\(set.player1Games)-\(set.player2Games)(\(tiebreak.points(for: winner.opponent)))"
         }

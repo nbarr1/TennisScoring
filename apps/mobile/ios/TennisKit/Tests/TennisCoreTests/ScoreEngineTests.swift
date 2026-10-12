@@ -71,6 +71,22 @@ final class ScoreEngineTests: XCTestCase {
     XCTAssertEqual(ScoreEngine.formatScoreDisplay(result.nextScore), "7-6(0)")
   }
 
+  func testFormatScoreDisplayShowsRecordedMatchTiebreakInBrackets() {
+    let score = LiveScore(
+      sets: [
+        SetScore(setNumber: 0, player1Games: 6, player2Games: 4, winner: .player1),
+        SetScore(setNumber: 1, player1Games: 3, player2Games: 6, winner: .player2),
+        SetScore(
+          setNumber: 2, player1Games: 1, player2Games: 0,
+          tiebreak: TiebreakScore(player1Points: 10, player2Points: 8),
+          matchTiebreak: true, winner: .player1
+        ),
+      ],
+      currentSet: 2
+    )
+    XCTAssertEqual(ScoreEngine.formatScoreDisplay(score), "6-4, 3-6, [10-8]")
+  }
+
   func testTiebreakServeOrder() {
     var score = LiveScore(sets: [SetScore(setNumber: 0, player1Games: 6, player2Games: 6)], isTiebreak: true, tiebreakScore: TiebreakScore())
     var servers: [Player] = [score.server]

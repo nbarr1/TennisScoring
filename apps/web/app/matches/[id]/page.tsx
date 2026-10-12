@@ -395,11 +395,11 @@ export default function MatchPage(): React.JSX.Element {
           <h2 style={styles.sectionTitle}>Set Breakdown</h2>
           {match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).map((s, i) => (
             <div key={i} style={styles.setRow}>
-              <span style={styles.setLabel}>Set {i + 1}</span>
-              <span style={{ ...styles.setScore, fontWeight: s.winner === 'player1' ? 700 : 400 }}>{s.player1Games}</span>
+              <span style={styles.setLabel}>{s.matchTiebreak ? 'Match TB' : `Set ${i + 1}`}</span>
+              <span style={{ ...styles.setScore, fontWeight: s.winner === 'player1' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player1Points : s.player1Games}</span>
               <span style={styles.setDash}>–</span>
-              <span style={{ ...styles.setScore, fontWeight: s.winner === 'player2' ? 700 : 400 }}>{s.player2Games}</span>
-              {s.tiebreak && (
+              <span style={{ ...styles.setScore, fontWeight: s.winner === 'player2' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player2Points : s.player2Games}</span>
+              {s.tiebreak && !s.matchTiebreak && (
                 <span style={styles.tbScore}>
                   ({s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points})
                 </span>

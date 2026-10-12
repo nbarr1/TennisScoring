@@ -48,6 +48,8 @@ import {
   isMatchParticipant,
   canRespondToReport,
   getMatchStatusMetadata,
+  recordedSetsFromScore,
+  validateRecordedSets,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { ScoreboardSurface } from "../../components/live-scoring/ScoreboardSurface";
@@ -69,7 +71,18 @@ import {
   launchWatchApp,
   sendScoreToWear,
 } from "../../modules/wear-os";
-import type { Match, Player, TipTrigger, PublicProfile } from "@tennis/shared";
+import type {
+  Match,
+  Player,
+  TipTrigger,
+  PublicProfile,
+  RecordedSetInput,
+} from "@tennis/shared";
+import {
+  MatchTiebreakToggle,
+  withEligibleTiebreaks,
+  type SetDraft,
+} from "../../components/MatchTiebreakToggle";
 
 function formatFormatLabel(match: Match): string {
   if (match.format.setsToWin >= 3) return "Best of 5";
@@ -205,8 +218,8 @@ function EditScoreModal({
   p2Name,
 }: {
   visible: boolean;
-  sets: { p1: string; p2: string }[];
-  onChangeSets: (s: { p1: string; p2: string }[]) => void;
+  sets: SetDraft[];
+  onChangeSets: (s: SetDraft[]) => void;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
@@ -249,38 +262,47 @@ function EditScoreModal({
           </Text>
         </View>
         {sets.map((s, i) => (
-          <View key={i} style={editScoreStyles.setRow}>
-            <Text style={editScoreStyles.setLabel}>Set {i + 1}</Text>
-            <TextInput
-              style={editScoreStyles.setInput}
-              value={s.p1}
-              onChangeText={(v) => updateSet(i, "p1", v)}
-              keyboardType="number-pad"
-              maxLength={2}
-              placeholder="0"
-              placeholderTextColor="#aaa"
-            />
-            <TextInput
-              style={editScoreStyles.setInput}
-              value={s.p2}
-              onChangeText={(v) => updateSet(i, "p2", v)}
-              keyboardType="number-pad"
-              maxLength={2}
-              placeholder="0"
-              placeholderTextColor="#aaa"
-            />
-          </View>
+          <React.Fragment key={i}>
+            <View style={editScoreStyles.setRow}>
+              <Text style={editScoreStyles.setLabel}>
+                {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+              </Text>
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p1}
+                onChangeText={(v) => updateSet(i, "p1", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+              />
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p2}
+                onChangeText={(v) => updateSet(i, "p2", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+              />
+            </View>
+            <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
+          </React.Fragment>
         ))}
         <View style={editScoreStyles.setActionRow}>
           {sets.length < 5 && (
             <TouchableOpacity
-              onPress={() => onChangeSets([...sets, { p1: "", p2: "" }])}
+              onPress={() =>
+                onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
+              }
             >
               <Text style={editScoreStyles.addSetText}>+ Add Set</Text>
             </TouchableOpacity>
           )}
           {sets.length > 1 && (
-            <TouchableOpacity onPress={() => onChangeSets(sets.slice(0, -1))}>
+            <TouchableOpacity
+              onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+            >
               <Text style={editScoreStyles.removeSetText}>− Remove Set</Text>
             </TouchableOpacity>
           )}
@@ -334,7 +356,7 @@ export default function MatchScreen() {
   const fontsLoaded = useScoreboardFonts();
   const [managing, setManaging] = useState(false);
   const [showEditScore, setShowEditScore] = useState(false);
-  const [editSets, setEditSets] = useState<{ p1: string; p2: string }[]>([]);
+  const [editSets, setEditSets] = useState<SetDraft[]>([]);
   const [editSaving, setEditSaving] = useState(false);
   const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
   const [watchAppInstalled, setWatchAppInstalled] = useState(false);
@@ -536,34 +558,27 @@ export default function MatchScreen() {
   }
 
   function handleOpenEditScore() {
-    const existing = (match?.liveScore.sets ?? []).map((s) => ({
-      p1: String(s.player1Games),
-      p2: String(s.player2Games),
-    }));
+    const existing: SetDraft[] = match
+      ? recordedSetsFromScore(match.liveScore).map((s) => ({
+          p1: String(s.p1),
+          p2: String(s.p2),
+          ...(s.matchTiebreak ? { matchTiebreak: true } : {}),
+        }))
+      : [];
     setEditSets(existing.length > 0 ? existing : [{ p1: "", p2: "" }]);
     setShowManage(false);
     setShowEditScore(true);
   }
 
   async function handleSaveEditScore() {
-    const parsed = editSets.map((s) => ({
+    const parsed: RecordedSetInput[] = editSets.map((s) => ({
       p1: parseInt(s.p1, 10),
       p2: parseInt(s.p2, 10),
+      ...(s.matchTiebreak ? { matchTiebreak: true } : {}),
     }));
-    if (
-      parsed.some((s) => isNaN(s.p1) || isNaN(s.p2) || s.p1 < 0 || s.p2 < 0)
-    ) {
-      Alert.alert(
-        "Invalid Score",
-        "Please enter a valid number of games for each set.",
-      );
-      return;
-    }
-    if (parsed.some((s) => s.p1 === s.p2)) {
-      Alert.alert(
-        "Invalid Score",
-        "Each set must have a clear winner. Check the set scores.",
-      );
+    const invalid = validateRecordedSets(parsed);
+    if (invalid) {
+      Alert.alert("Invalid Score", invalid);
       return;
     }
     if (!id) return;

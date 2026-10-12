@@ -112,7 +112,9 @@ async function createAndStoreReport(matchId: string, match: Match) {
     .filter((s) => s.winner)
     .entries()) {
     let setStr = `  Set ${index + 1}: ${set.player1Games}–${set.player2Games}`;
-    if (set.tiebreak) {
+    if (set.matchTiebreak && set.tiebreak) {
+      setStr = `  Set ${index + 1}: match tiebreak ${set.tiebreak.player1Points}–${set.tiebreak.player2Points}`;
+    } else if (set.tiebreak) {
       const loserPts =
         set.winner === 'player1'
           ? set.tiebreak.player2Points
