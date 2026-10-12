@@ -561,7 +561,8 @@ export default function MessagesScreen() {
     }
     setDmSearching(true);
     try {
-      const results = await searchDivisionPlayers(divisionId, text);
+      // A direct conversation needs a shared active division, which roster-only players lack.
+      const results = await searchDivisionPlayers(divisionId, text, { profilesOnly: true });
       const blockedIds = new Set(user?.blockedUserIds ?? []);
       setDmResults(
         results.filter((u) => u.id !== user?.id && !blockedIds.has(u.id)),
