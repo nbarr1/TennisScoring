@@ -83,6 +83,17 @@ function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }
 
+// A same-name record in the division is treated as the player being added only
+// when nothing says otherwise. If the caller supplied an email and the record
+// carries a different one, they are two people who share a name, and matching
+// would put the new player's membership on someone else's account.
+function isSameNamePlayer(data: FirebaseFirestore.DocumentData | undefined, name: string, email: string): boolean {
+  const displayName = data?.displayName;
+  if (typeof displayName !== 'string' || normalizeName(displayName) !== normalizeName(name)) return false;
+  const recordEmail = typeof data?.email === 'string' ? normalizeEmail(data.email) : '';
+  return !email || !recordEmail || recordEmail === email;
+}
+
 
 export function publicProfileUpdate(input: {
   id: string;
@@ -770,10 +781,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
       .collection('users')
       .where('divisionId', '==', safeDivisionId)
       .get();
-    const exactNameMatch = existingByName.docs.find((doc) => {
-      const displayName = doc.data()?.displayName;
-      return typeof displayName === 'string' && normalizeName(displayName) === normalizeName(safeName);
-    });
+    const exactNameMatch = existingByName.docs.find((doc) => isSameNamePlayer(doc.data(), safeName, safeEmail));
     if (exactNameMatch) {
       await db.collection('divisions').doc(safeDivisionId).set(
         {
@@ -1412,10 +1420,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
 
   if (!targetUserId && safeName) {
     const sameDivision = await db.collection('users').where('divisionId', '==', safeDivisionId).get();
-    const exactNameMatch = sameDivision.docs.find((doc) => {
-      const display = doc.data()?.displayName;
-      return typeof display === 'string' && normalizeName(display) === normalizeName(safeName);
-    });
+    const exactNameMatch = sameDivision.docs.find((doc) => isSameNamePlayer(doc.data(), safeName, safeEmail));
     if (exactNameMatch) {
       targetUserId = exactNameMatch.id;
       const data = exactNameMatch.data();
