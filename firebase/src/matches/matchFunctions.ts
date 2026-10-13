@@ -456,14 +456,17 @@ type ScoreMatchPointInput = {
   matchId?: string;
   scorer?: 'player1' | 'player2';
   pointAttribution?: PointAttribution;
+  pointId?: string;
 };
+
+const MAX_POINT_ID_LENGTH = 64;
 
 export const scoreMatchPoint = functions.https.onCall(async (request) => {
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
 
-  const { matchId, scorer, pointAttribution } = (request.data ?? {}) as ScoreMatchPointInput;
+  const { matchId, scorer, pointAttribution, pointId } = (request.data ?? {}) as ScoreMatchPointInput;
   const safeMatchId = typeof matchId === 'string' ? matchId.trim() : undefined;
   const hasValidAttribution =
     pointAttribution === undefined ||
@@ -475,6 +478,12 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
       'invalid-argument',
       'matchId, scorer, and valid point attribution are required',
     );
+  }
+  const hasValidPointId =
+    pointId === undefined ||
+    (typeof pointId === 'string' && pointId.length > 0 && pointId.length <= MAX_POINT_ID_LENGTH);
+  if (!hasValidPointId) {
+    throw new functions.https.HttpsError('invalid-argument', 'pointId must be a short string');
   }
 
   const db = getFirestore();
@@ -499,6 +508,18 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
         'permission-denied',
         'Only match participants can score this match',
       );
+    }
+    // A retry of the point applied last (its reply was lost, so the client
+    // tried again) answers with the current score instead of scoring twice.
+    // This sits before the status check because that point may have ended the
+    // match.
+    if (pointId !== undefined && match.lastPointId === pointId) {
+      response = {
+        nextScore: match.liveScore,
+        ...(match.status === 'pending_report' && match.winner && { matchWinner: match.winner }),
+        tips: [],
+      };
+      return;
     }
     if (match.status !== 'scheduled' && match.status !== 'in_progress') {
       throw new functions.https.HttpsError(
@@ -525,6 +546,9 @@ export const scoreMatchPoint = functions.https.onCall(async (request) => {
         ...(match.currentSetStartedAt !== undefined && { currentSetStartedAt: match.currentSetStartedAt }),
         ...(match.matchDurationMs !== undefined && { matchDurationMs: match.matchDurationMs }),
       },
+      ...(pointId !== undefined
+        ? { lastPointId: pointId }
+        : { lastPointId: FieldValue.delete() as never }),
     };
 
     if (result.setCompleted) {

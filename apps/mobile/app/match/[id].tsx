@@ -176,6 +176,26 @@ function statPercent(won: number, total: number): string {
   return `${Math.round((won / total) * 100)}%`;
 }
 
+// Identifies one tap for scoreMatchPoint's duplicate check. Hermes has no
+// crypto.randomUUID, and uniqueness only has to hold within one match.
+function newPointId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// scoreMatchPoint refuses a match that is no longer scheduled or in progress,
+// for example when the opponent's device just finished it. Retrying cannot help.
+function isNoLongerLiveError(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "functions/failed-precondition";
+}
+
+// Release builds show nothing for console.error, so every failed action says so.
+function showActionError(action: string): void {
+  Alert.alert(
+    "Something Went Wrong",
+    `Could not ${action}. Check your connection and try again.`,
+  );
+}
+
 function buildWearFeedback(
   match: Match,
   tipTriggers: TipTrigger[] = [],
@@ -394,6 +414,7 @@ export default function MatchScreen() {
       await undoLastPoint(id, match);
     } catch (err) {
       console.error("Failed to undo last point:", err);
+      showActionError("undo the last point");
     } finally {
       setScoring(false);
     }
@@ -405,11 +426,18 @@ export default function MatchScreen() {
     async (
       player: "player1" | "player2",
       pointAttribution?: PointAttribution,
+      pointId: string = newPointId(),
     ) => {
       if (!match || !id || scoring) return;
       setScoring(true);
       try {
-        const result = await scorePoint(id, match, player, pointAttribution);
+        const result = await scorePoint(
+          id,
+          match,
+          player,
+          pointAttribution,
+          pointId,
+        );
         const p1 = match.player1Name ?? "Player 1";
         const p2 = match.player2Name ?? "Player 2";
         await sendScoreToWear(result.nextScore, {
@@ -441,12 +469,37 @@ export default function MatchScreen() {
         }
       } catch (err) {
         console.error("Failed to score point:", err);
+        if (isNoLongerLiveError(err)) {
+          Alert.alert(
+            "Point Not Recorded",
+            "This match is no longer in progress, so the point was not added.",
+          );
+          return;
+        }
+        // Retry resends the same point id, so if the first request did land
+        // and only its reply was lost, the server does not count it twice.
+        Alert.alert(
+          "Point Not Recorded",
+          "Could not record the point. Check your connection and retry.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Retry",
+              onPress: () =>
+                void handlePointRef.current(player, pointAttribution, pointId),
+            },
+          ],
+        );
       } finally {
         setScoring(false);
       }
     },
     [match, id, scoring],
   );
+  // The retry above runs after a re-render, so it calls the latest handler
+  // rather than the one that failed, which closed over a stale `scoring`.
+  const handlePointRef = useRef(handlePoint);
+  handlePointRef.current = handlePoint;
 
   // Awaited and guarded: a double tap used to write the start twice, and a
   // failed write was an unhandled rejection that left the setup screen silent.
@@ -499,6 +552,9 @@ export default function MatchScreen() {
           try {
             await cancelMatch(id);
             setShowManage(false);
+          } catch (err) {
+            console.error("Failed to cancel match:", err);
+            showActionError("cancel the match");
           } finally {
             setManaging(false);
           }
@@ -526,6 +582,9 @@ export default function MatchScreen() {
               await deleteMatch(id);
               setShowManage(false);
               router.back();
+            } catch (err) {
+              console.error("Failed to delete match:", err);
+              showActionError("delete the match");
             } finally {
               setManaging(false);
             }
@@ -549,6 +608,9 @@ export default function MatchScreen() {
           try {
             await postponeMatch(id, newTime);
             setShowManage(false);
+          } catch (err) {
+            console.error("Failed to postpone match:", err);
+            showActionError("postpone the match");
           } finally {
             setManaging(false);
           }
@@ -606,6 +668,9 @@ export default function MatchScreen() {
             setSubmitting(true);
             try {
               await submitMatchReport(id, user.id);
+            } catch (err) {
+              console.error("Failed to submit match report:", err);
+              showActionError("submit the match report");
             } finally {
               setSubmitting(false);
             }
@@ -628,6 +693,9 @@ export default function MatchScreen() {
             setSubmitting(true);
             try {
               await confirmMatchReport(id, user.id);
+            } catch (err) {
+              console.error("Failed to confirm match report:", err);
+              showActionError("confirm the match report");
             } finally {
               setSubmitting(false);
             }
@@ -647,6 +715,9 @@ export default function MatchScreen() {
     setSubmitting(true);
     try {
       await disputeMatchReport(id, user.id);
+    } catch (err) {
+      console.error("Failed to dispute match report:", err);
+      showActionError("dispute the match report");
     } finally {
       setSubmitting(false);
     }
@@ -665,6 +736,9 @@ export default function MatchScreen() {
             setSubmitting(true);
             try {
               await submitGuestReport(id, user.id);
+            } catch (err) {
+              console.error("Failed to finalize match result:", err);
+              showActionError("finalize the match result");
             } finally {
               setSubmitting(false);
             }

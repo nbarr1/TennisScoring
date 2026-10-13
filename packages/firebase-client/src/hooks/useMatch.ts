@@ -383,16 +383,26 @@ export async function scorePoint(
   _match: Match,
   scorer: 'player1' | 'player2',
   pointAttribution?: PointAttribution,
+  /**
+   * A client-generated id for this tap. Retrying a failed call with the same id
+   * is safe: the server ignores a repeat of the last point it applied.
+   */
+  pointId?: string,
 ): Promise<{
   nextScore: LiveScore;
   matchWinner?: 'player1' | 'player2';
   tips: TipTrigger[];
 }> {
   const callable = httpsCallable<
-    { matchId: string; scorer: 'player1' | 'player2'; pointAttribution?: PointAttribution },
+    { matchId: string; scorer: 'player1' | 'player2'; pointAttribution?: PointAttribution; pointId?: string },
     { nextScore: LiveScore; matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }
   >(functions, 'scoreMatchPoint');
-  const result = await callable({ matchId, scorer, ...(pointAttribution && { pointAttribution }) });
+  const result = await callable({
+    matchId,
+    scorer,
+    ...(pointAttribution && { pointAttribution }),
+    ...(pointId && { pointId }),
+  });
   return result.data;
 }
 
