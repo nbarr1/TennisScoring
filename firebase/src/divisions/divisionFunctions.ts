@@ -646,8 +646,67 @@ export const joinDivisionByCode = onCall(callableOptions, async (request) => {
 
   await addUserToDivisionChannel(db, divisionRef.id, uid);
 
+  // A leader may have pre-built the roster with a placeholder for this player
+  // and recorded matches against it. acceptInvite hands that history over, but
+  // a player who joins by code never passes through it, so without this they
+  // appeared twice on the roster and in the standings. The code is shared with
+  // the whole division, so only a verified address may claim a placeholder.
+  const tokenEmail = request.auth.token.email ? normalizeEmail(request.auth.token.email) : '';
+  if (tokenEmail && request.auth.token.email_verified === true) {
+    await claimPlaceholderByEmail(db, {
+      divisionId: divisionRef.id,
+      email: tokenEmail,
+      targetId: uid,
+      targetDisplayName: request.auth.token.name,
+    });
+  }
+
   return { divisionId: divisionRef.id, divisionName: division.name };
 });
+
+async function claimPlaceholderByEmail(
+  db: FirebaseFirestore.Firestore,
+  input: { divisionId: string; email: string; targetId: string; targetDisplayName?: string },
+): Promise<void> {
+  const { divisionId, email, targetId, targetDisplayName } = input;
+  const placeholderSnap = await db
+    .collection('users')
+    .where('divisionId', '==', divisionId)
+    .where('email', '==', email)
+    .where('isRegistered', '==', false)
+    .limit(1)
+    .get();
+  if (placeholderSnap.empty) return;
+  const placeholderRef = placeholderSnap.docs[0].ref;
+  if (placeholderRef.id === targetId || !isPlaceholderAccount(placeholderSnap.docs[0].data())) return;
+
+  const movedMatches = await transferPlaceholderRecords(db, {
+    divisionId,
+    placeholderId: placeholderRef.id,
+    targetId,
+    targetDisplayName,
+  });
+  const batch = db.batch();
+  batch.update(db.collection('divisions').doc(divisionId), {
+    playerIds: FieldValue.arrayRemove(placeholderRef.id),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  batch.set(
+    placeholderRef,
+    {
+      divisionId: null,
+      inviteStatus: 'registered',
+      isRegistered: true,
+      mergedIntoUserId: targetId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+  await batch.commit();
+  if (movedMatches > 0) {
+    await recalculateRankings(divisionId);
+  }
+}
 
 export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request) => {
   if (!request.auth) {
