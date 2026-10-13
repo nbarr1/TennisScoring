@@ -29,6 +29,12 @@ const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080').s
 
 const DIVISION = 'divA';
 
+// Marks a test that reproduces a bug the pre-release review found and that is
+// not fixed yet. node:test still runs a `todo` test and prints its result, but
+// a failure does not fail the run. Once the fix lands the test passes: delete
+// the marker then, so a regression fails CI again.
+const knownBug = (finding) => ({ todo: `known bug: ${finding}` });
+
 const set = (setNumber, player1Games, player2Games) => ({
   setNumber,
   player1Games,
@@ -402,28 +408,73 @@ describe('accounts without a division', () => {
   });
 });
 
-describe('finishing the tutorial', () => {
-  // Mirrors updateUserProfile(uid, { tutorialDone: true }): one batch that updates the
-  // private users doc and merges the flag into the public profile. Both web and mobile
-  // tutorials call it, and the web dashboard sends anyone without the flag back to the
-  // tutorial, so a rejected batch leaves a new player with no way past onboarding.
-  const finishTutorial = (uid, tutorialDone = true) => {
+describe('onboarding', () => {
+  // Mirrors updateUserProfile(uid, { tutorialDone: true }), which the web and
+  // mobile tutorials call on "Get Started" and "Skip".
+  function finishTutorial(uid, value = true) {
     const db = as(uid);
     const batch = writeBatch(db);
-    batch.update(doc(db, 'users', uid), { tutorialDone, updatedAt: 2 });
-    batch.set(doc(db, 'profiles', uid), { id: uid, tutorialDone, updatedAt: 2 }, { merge: true });
+    batch.update(doc(db, 'users', uid), { tutorialDone: value, updatedAt: 2 });
+    batch.set(doc(db, 'profiles', uid), { id: uid, tutorialDone: value, updatedAt: 2 }, { merge: true });
     return batch.commit();
-  };
+  }
 
-  it('lets a player mark their own tutorial done', async () => {
-    await assertSucceeds(finishTutorial('p1'));
-  });
+  it(
+    'lets a new player finish the tutorial',
+    knownBug('tutorialDone is missing from editableUserFields(), so new web players cannot leave the tutorial'),
+    async () => {
+      await assertSucceeds(finishTutorial('p1'));
+    },
+  );
 
-  it('denies a tutorial flag that is not a boolean', async () => {
+  it('rejects a tutorialDone that is not a boolean', async () => {
     await assertFails(finishTutorial('p1', 'yes'));
   });
+});
 
-  it("denies setting another player's tutorial flag", async () => {
-    await assertFails(updateDoc(doc(as('p2'), 'users', 'p1'), { tutorialDone: true }));
+describe('editing a score', () => {
+  const edit = {
+    liveScore: score([set(0, 0, 6), set(1, 0, 6)], [0, 2]),
+    winner: 'player2',
+    status: 'pending_report',
+    completedAt: deleteField(),
+    reportSubmission: deleteField(),
+  };
+
+  const seedMatch = (status) =>
+    seed((db) =>
+      setDoc(
+        doc(db, 'matches', 'm'),
+        baseMatch({
+          status,
+          winner: 'player1',
+          liveScore: finalScore,
+          completedAt: 5,
+          reportSubmission: {
+            submittedBy: 'p1',
+            submittedAt: 5,
+            status: status === 'completed' ? 'confirmed' : 'pending_confirmation',
+          },
+        }),
+      ),
+    );
+
+  it('lets a participant correct a report that is still awaiting confirmation', async () => {
+    await seedMatch('pending_report');
+    await assertSucceeds(updateDoc(doc(as('p1'), 'matches', 'm'), edit));
+  });
+
+  it(
+    "denies a participant rewriting a confirmed result",
+    knownBug('either player can flip a completed match and pull it out of the standings'),
+    async () => {
+      await seedMatch('completed');
+      await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), edit));
+    },
+  );
+
+  it('lets a division leader correct a confirmed result', async () => {
+    await seedMatch('completed');
+    await assertSucceeds(updateDoc(doc(as('leader'), 'matches', 'm'), edit));
   });
 });

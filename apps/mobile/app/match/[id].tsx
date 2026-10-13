@@ -513,7 +513,7 @@ export default function MatchScreen() {
     Alert.alert(
       "Delete Match?",
       isCompleted
-        ? "Deleting a completed match will not automatically reverse its effect on rankings. Continue?"
+        ? "Deleting a completed match removes it from the standings, and rankings are recalculated without it. Continue?"
         : "This match and all its data will be permanently deleted.",
       [
         { text: "Cancel", style: "cancel" },
