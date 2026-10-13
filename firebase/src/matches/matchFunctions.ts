@@ -656,10 +656,49 @@ function accumulateDoublesMatch(
   return true;
 }
 
+// Each pass reads every completed match and rewrites the whole table, pruning
+// rows it did not produce, and nothing serializes passes for one division. When
+// two results are confirmed seconds apart, a pass whose read missed the other
+// match can finish last and overwrite the correct table. So after writing, a
+// pass re-reads the completed matches and runs again if they changed since its
+// read: whichever pass writes last has then verified its input was current.
+const MAX_RECALCULATION_PASSES = 4;
+
 export async function recalculateRankings(
   divisionId: string,
   options: RecalculateRankingsOptions = {},
 ): Promise<RecalculateRankingsResult> {
+  let pass = await recalculateRankingsPass(divisionId, options);
+  for (let attempt = 1; attempt < MAX_RECALCULATION_PASSES; attempt += 1) {
+    const current = completedMatchesFingerprint(await completedDivisionMatches(divisionId).get());
+    if (current === pass.fingerprint) break;
+    functions.logger.info('Completed matches changed during ranking recalculation; recomputing', {
+      divisionId,
+      attempt,
+    });
+    pass = await recalculateRankingsPass(divisionId, options);
+  }
+  return pass.result;
+}
+
+function completedDivisionMatches(divisionId: string) {
+  return getFirestore()
+    .collection('matches')
+    .where('divisionId', '==', divisionId)
+    .where('status', '==', 'completed');
+}
+
+function completedMatchesFingerprint(snap: FirebaseFirestore.QuerySnapshot): string {
+  return snap.docs
+    .map((doc) => `${doc.id}@${doc.updateTime.toMillis()}`)
+    .sort()
+    .join(',');
+}
+
+async function recalculateRankingsPass(
+  divisionId: string,
+  options: RecalculateRankingsOptions,
+): Promise<{ result: RecalculateRankingsResult; fingerprint: string }> {
   const db = getFirestore();
   const result: RecalculateRankingsResult = {
     divisionId,
@@ -680,11 +719,7 @@ export async function recalculateRankings(
 
   const [divisionSnap, matchesSnap] = await Promise.all([
     db.collection('divisions').doc(divisionId).get(),
-    db
-      .collection('matches')
-      .where('divisionId', '==', divisionId)
-      .where('status', '==', 'completed')
-      .get(),
+    completedDivisionMatches(divisionId).get(),
   ]);
   const division = divisionSnap.data();
   const baseDivisionPlayerIds: string[] = Array.isArray(division?.playerIds)
@@ -1069,7 +1104,7 @@ export async function recalculateRankings(
     result.headToHeadsWritten += 1;
   }
   await writer.close();
-  return result;
+  return { result, fingerprint: completedMatchesFingerprint(matchesSnap) };
 }
 
 
