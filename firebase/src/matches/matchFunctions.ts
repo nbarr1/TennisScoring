@@ -669,6 +669,10 @@ export async function recalculateRankings(
   options: RecalculateRankingsOptions = {},
 ): Promise<RecalculateRankingsResult> {
   let pass = await recalculateRankingsPass(divisionId, options);
+  // Writes an earlier pass made (normalized matches, pruned rows) are not
+  // repeated by the next one, so they are summed rather than taken from the
+  // final pass alone.
+  const mutations = mutationCounts(pass.result);
   for (let attempt = 1; attempt < MAX_RECALCULATION_PASSES; attempt += 1) {
     const current = completedMatchesFingerprint(await completedDivisionMatches(divisionId).get());
     if (current === pass.fingerprint) break;
@@ -677,8 +681,28 @@ export async function recalculateRankings(
       attempt,
     });
     pass = await recalculateRankingsPass(divisionId, options);
+    const next = mutationCounts(pass.result);
+    for (const key of MUTATION_COUNT_KEYS) mutations[key] += next[key];
   }
-  return pass.result;
+  return { ...pass.result, ...mutations };
+}
+
+const MUTATION_COUNT_KEYS = [
+  'matchesNormalized',
+  'rankingsDeleted',
+  'doublesRankingsDeleted',
+  'headToHeadsDeleted',
+] as const;
+
+function mutationCounts(
+  result: RecalculateRankingsResult,
+): Record<(typeof MUTATION_COUNT_KEYS)[number], number> {
+  return {
+    matchesNormalized: result.matchesNormalized,
+    rankingsDeleted: result.rankingsDeleted,
+    doublesRankingsDeleted: result.doublesRankingsDeleted,
+    headToHeadsDeleted: result.headToHeadsDeleted,
+  };
 }
 
 function completedDivisionMatches(divisionId: string) {

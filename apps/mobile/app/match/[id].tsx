@@ -48,6 +48,7 @@ import {
   isMatchParticipant,
   canRespondToReport,
   getMatchStatusMetadata,
+  isAdminRole,
   recordedSetsFromScore,
   validateRecordedSets,
 } from "@tennis/shared";
@@ -836,7 +837,8 @@ export default function MatchScreen() {
   // only a leader or admin can change it (the rules enforce the same split).
   const canEditScore =
     (canManage && match.status === "pending_report") ||
-    (isAdminOrLeader && match.status === "completed");
+    ((isAdminOrLeader || isAdminRole(user?.role)) &&
+      match.status === "completed");
   const elapsedMs =
     match.matchDurationMs ??
     (match.startedAt && match.status === "in_progress"

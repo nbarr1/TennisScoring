@@ -1617,6 +1617,26 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
     : rosteredMemberships.docs;
 
   if (targets.length === 0) {
+    // A player whose memberships were archived by an earlier call that then
+    // failed while detaching would otherwise stay in playerIds and the
+    // division chat for good, since every retry ends here. Repeat the
+    // (idempotent) detach for them; a player who was never removed through
+    // this flow is left alone.
+    const [remaining, previouslyRemoved] = await Promise.all([
+      membershipCol
+        .where('userId', '==', safeUserId)
+        .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
+        .limit(1)
+        .get(),
+      membershipCol
+        .where('userId', '==', safeUserId)
+        .where('status', '==', 'removed')
+        .limit(1)
+        .get(),
+    ]);
+    if (remaining.empty && !previouslyRemoved.empty) {
+      await detachPlayerFromDivision(db, safeDivisionId, safeUserId);
+    }
     return { removed: 0, detachedFromDivision: false };
   }
 
@@ -1649,31 +1669,40 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
 
   let detachedFromDivision = false;
   if (remaining.empty) {
-    const userRef = db.collection('users').doc(safeUserId);
-    const userSnap = await userRef.get();
-    await Promise.all([
-      db.collection('divisions').doc(safeDivisionId).set(
-        {
-          playerIds: FieldValue.arrayRemove(safeUserId),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      ),
-      // Only clear the pointer if it still names this division; a player already moved
-      // elsewhere must keep theirs.
-      userSnap.exists && userSnap.data()?.divisionId === safeDivisionId
-        ? userRef.set(
-            { divisionId: null, updatedAt: FieldValue.serverTimestamp() },
-            { merge: true },
-          )
-        : Promise.resolve(),
-      removeUserFromDivisionChannel(db, safeDivisionId, safeUserId),
-    ]);
+    await detachPlayerFromDivision(db, safeDivisionId, safeUserId);
     detachedFromDivision = true;
   }
 
   return { removed: targets.length, detachedFromDivision };
 });
+
+// Every step is idempotent, so a failed call can be repeated safely.
+async function detachPlayerFromDivision(
+  db: FirebaseFirestore.Firestore,
+  divisionId: string,
+  userId: string,
+) {
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  await Promise.all([
+    db.collection('divisions').doc(divisionId).set(
+      {
+        playerIds: FieldValue.arrayRemove(userId),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    ),
+    // Only clear the pointer if it still names this division; a player already moved
+    // elsewhere must keep theirs.
+    userSnap.exists && userSnap.data()?.divisionId === divisionId
+      ? userRef.set(
+          { divisionId: null, updatedAt: FieldValue.serverTimestamp() },
+          { merge: true },
+        )
+      : Promise.resolve(),
+    removeUserFromDivisionChannel(db, divisionId, userId),
+  ]);
+}
 
 
 export const backfillDivisionSeasonLevel = onCall(callableOptions, async (request) => {
