@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   updateProfile,
 } from 'firebase/auth';
 import { auth } from '@tennis/firebase-client';
@@ -22,10 +23,41 @@ export default function LoginPage(): React.JSX.Element {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  async function handleForgotPassword() {
+    setError('');
+    setNotice('');
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('Enter your email address, then select "Forgot password?" again.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, trimmed);
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (code === 'auth/too-many-requests') {
+        setError('Too many attempts. Wait a few minutes and try again.');
+        return;
+      }
+      // Any other failure, including an unknown address, gets the same neutral
+      // message, so the form never reveals which addresses have accounts.
+    } finally {
+      setLoading(false);
+    }
+    setNotice('If an account exists for that address, we sent a password reset link. Check your inbox.');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setNotice('');
     setLoading(true);
     try {
       let user;
@@ -123,14 +155,21 @@ export default function LoginPage(): React.JSX.Element {
             />
           </div>
 
+          {mode === 'signin' && (
+            <button type="button" style={styles.forgotBtn} onClick={handleForgotPassword} disabled={loading}>
+              Forgot password?
+            </button>
+          )}
+
           {error && <p role="alert" style={styles.error}>{error}</p>}
+          {notice && <p role="status" style={styles.notice}>{notice}</p>}
 
           <button style={{ ...styles.button, ...(loading ? styles.buttonDisabled : {}) }} type="submit" disabled={loading}>
             {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
-        <button style={styles.toggleBtn} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>
+        <button style={styles.toggleBtn} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); setNotice(''); }}>
           {mode === 'signin' ? "Don't have an account? Create one" : 'Already have an account? Sign in'}
         </button>
 
@@ -153,6 +192,8 @@ const styles: Record<string, React.CSSProperties> = {
   label: { fontSize: 13, fontWeight: 600, color: '#444' },
   input: { border: '1px solid #ddd', borderRadius: 10, padding: '12px 14px', fontSize: 15, color: '#111' },
   error: { fontSize: 13, color: '#c0392b', textAlign: 'center' as const },
+  notice: { fontSize: 13, color: 'var(--green-dark)', textAlign: 'center' as const },
+  forgotBtn: { alignSelf: 'flex-end', background: 'none', border: 'none', padding: 0, color: 'var(--green-dark)', fontSize: 13, fontWeight: 500, cursor: 'pointer' },
   button: { background: 'var(--green-dark)', color: 'white', border: 'none', borderRadius: 12, padding: '15px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer', marginTop: 8 },
   buttonDisabled: { opacity: 0.6, cursor: 'not-allowed' },
   toggleBtn: { marginTop: 20, background: 'none', border: 'none', color: 'var(--green-dark)', fontSize: 14, fontWeight: 500, cursor: 'pointer', width: '100%' },
