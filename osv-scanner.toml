@@ -8,13 +8,3 @@
 # [[IgnoredVulns]]
 # id = "GHSA-xxxx-xxxx-xxxx"
 # reason = "Why it does not apply, and when to revisit it."
-
-[[IgnoredVulns]]
-id = "GHSA-vfj7-8cjw-p6xm"
-ignoreUntil = 2027-01-13
-reason = "braces 3.0.3 has no patched release. It is reached only through micromatch in build tooling (metro-file-map, @expo/metro-file-map, and fast-glob under the React Native CLI and the Next.js ESLint plugin), which expand glob patterns from project config, never user input. Nothing in the web app, mobile bundle, or Cloud Functions runtime loads it. Revisit on January 13, 2027, or sooner if a fixed version ships."
-
-[[IgnoredVulns]]
-id = "GHSA-86w9-cpqp-85rv"
-ignoreUntil = 2027-01-13
-reason = "node-forge 1.4.0 has no patched release. It is reached only through @expo/cli and @expo/code-signing-certificates, the Expo development CLI, which is not bundled into the app and does not run in Cloud Functions. Revisit on January 13, 2027, or sooner if a fixed version ships."
