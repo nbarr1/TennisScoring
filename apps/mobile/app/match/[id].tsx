@@ -1163,7 +1163,9 @@ export default function MatchScreen() {
                       color="#a8d5a2"
                       textStyle={styles.confirmedText}
                     >
-                      Score confirmed · Rankings updated
+                      {match.player2IsGuest
+                        ? "Score recorded · Not in the standings until your opponent's account is linked and they confirm"
+                        : "Score confirmed · Rankings updated"}
                     </IconLabel>
                   </View>
                   <TouchableOpacity

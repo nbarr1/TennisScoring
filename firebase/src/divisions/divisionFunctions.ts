@@ -1041,6 +1041,15 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
     throw new HttpsError('invalid-argument', 'Select at least one match when source user is not provided.');
   }
 
+  // Remove the source from the division chat before any batch commit starts.
+  // Once the commits land the source is no longer an active member, so a
+  // retry would stop at the membership check and never reach a cleanup that
+  // had failed. Removing first keeps a failed merge retryable, and the
+  // removal is idempotent.
+  if (safeSourceUserId && !sourceIsPrivileged) {
+    await removeUserFromDivisionChannel(db, safeDivisionId, safeSourceUserId);
+  }
+
   const maxWritesPerBatch = 450;
   let batch = db.batch();
   let writesInBatch = 0;
@@ -1202,9 +1211,6 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
 
   await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
-  if (safeSourceUserId && !sourceIsPrivileged) {
-    await removeUserFromDivisionChannel(db, safeDivisionId, safeSourceUserId);
-  }
   if (updatedMatches > 0) {
     await recalculateRankings(safeDivisionId);
   }
