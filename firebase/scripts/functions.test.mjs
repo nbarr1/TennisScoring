@@ -246,7 +246,7 @@ describe('match report PDF', () => {
 
 describe('record match on behalf', () => {
   const request = {
-    auth: { uid: 'leader', token: { email: 'leader@example.com' } },
+    auth: { uid: 'leader', token: { email: 'leader@example.com', email_verified: true } },
     data: { divisionId: DIVISION, player1Id: 'p1', player2Id: 'p2', sets: [{ p1: 6, p2: 3 }, { p1: 6, p2: 4 }] },
     rawRequest: {},
   };
