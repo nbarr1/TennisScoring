@@ -129,8 +129,15 @@ jobs:
             }
           }
 
+          // Match links in emails are built from APP_BASE_URL. Falling back to
+          // localhost made recordMatchOnBehalf either throw after saving the
+          // match or send players localhost links, so a missing value fails here.
+          const appBaseUrl = (process.env.APP_BASE_URL || '').trim();
+          if (!appBaseUrl.startsWith('https://')) {
+            throw new Error('Set the APP_BASE_URL repository variable to the web app\'s https:// origin');
+          }
+
           const escapeDotenvValue = (value) => JSON.stringify(value);
-          const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
           const lines = [
             `APP_BASE_URL=${escapeDotenvValue(appBaseUrl)}`,
             `GITHUB_OWNER=${escapeDotenvValue(process.env.GITHUB_OWNER)}`,
@@ -147,7 +154,7 @@ jobs:
           GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
-          APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
@@ -187,4 +194,4 @@ jobs:
           GITHUB_REPO: ${{ vars.GITHUB_REPO || github.event.repository.name }}
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
-          APP_BASE_URL: ${{ vars.APP_BASE_URL || 'http://localhost:3000' }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}

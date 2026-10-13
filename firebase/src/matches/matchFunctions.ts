@@ -1150,6 +1150,22 @@ function sanitizeRecordedSets(sets: unknown): RecordedSetInput[] {
   }));
 }
 
+// The match is already saved when this runs. Letting a notification error
+// reach the caller told the leader the save failed, and their retry created a
+// second completed match that counted twice in the standings.
+async function notifyPlayersMatchRecordedSafely(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string,
+  recorderName: string,
+): Promise<void> {
+  try {
+    await notifyPlayersMatchRecorded(db, match, matchId, recorderName);
+  } catch (error) {
+    console.error(`Failed to notify players about recorded match ${matchId}`, error);
+  }
+}
+
 async function notifyPlayersMatchRecorded(
   db: ReturnType<typeof getFirestore>,
   match: Match,
@@ -1491,7 +1507,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
     };
     const doublesRef = await db.collection('matches').add(doublesMatchData);
     if (notifyPlayers !== false) {
-      await notifyPlayersMatchRecorded(
+      await notifyPlayersMatchRecordedSafely(
         db,
         { id: doublesRef.id, ...doublesMatchData },
         doublesRef.id,
@@ -1554,7 +1570,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
 
   const matchRef = await db.collection('matches').add(matchData);
   if (notifyPlayers !== false) {
-    await notifyPlayersMatchRecorded(db, { id: matchRef.id, ...matchData }, matchRef.id, actorName);
+    await notifyPlayersMatchRecordedSafely(db, { id: matchRef.id, ...matchData }, matchRef.id, actorName);
   }
 
   return { success: true, matchId: matchRef.id };
