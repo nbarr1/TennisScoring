@@ -290,6 +290,27 @@ async function addUserToDivisionChannel(
   }
 }
 
+// The division chat's participantIds is what the rules check for read and
+// post access, and what onNewMessage notifies, so a player leaving the
+// division must leave it too.
+async function removeUserFromDivisionChannel(
+  db: FirebaseFirestore.Firestore,
+  divisionId: string,
+  uid: string,
+) {
+  const channels = await db
+    .collection('channels')
+    .where('type', '==', 'division')
+    .where('divisionId', '==', divisionId)
+    .get();
+
+  await Promise.all(
+    channels.docs.map((doc) =>
+      doc.ref.update({ participantIds: FieldValue.arrayRemove(uid) }),
+    ),
+  );
+}
+
 async function requireDivisionLeaderOrAdmin(
   db: FirebaseFirestore.Firestore,
   uid: string,
@@ -1114,6 +1135,9 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
 
   await Promise.all(commits);
   await addUserToDivisionChannel(db, safeDivisionId, safeTargetUserId);
+  if (safeSourceUserId && !sourceIsPrivileged) {
+    await removeUserFromDivisionChannel(db, safeDivisionId, safeSourceUserId);
+  }
   if (updatedMatches > 0) {
     await recalculateRankings(safeDivisionId);
   }
@@ -1584,6 +1608,7 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
             { merge: true },
           )
         : Promise.resolve(),
+      removeUserFromDivisionChannel(db, safeDivisionId, safeUserId),
     ]);
     detachedFromDivision = true;
   }
