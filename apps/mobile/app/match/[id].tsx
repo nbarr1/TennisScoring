@@ -656,7 +656,7 @@ export default function MatchScreen() {
     if (!match || !id || !user) return;
     Alert.alert(
       "Finalize Match Result?",
-      `Save the final score (${formatScoreDisplay(match.liveScore)})? Rankings will update immediately.`,
+      `Save the final score (${formatScoreDisplay(match.liveScore)})? Guest matches don't count in the standings until you link your opponent's account and they confirm the score.`,
       [
         { text: "Cancel", style: "cancel" },
         {

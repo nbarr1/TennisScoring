@@ -59,7 +59,7 @@ type RecalculateRankingsResult = {
   skippedMissingWinner: number;
   skippedMissingScore: number;
   skippedNonDivisionMatches: number;
-  guestMatchesCounted: number;
+  guestMatchesSkipped: number;
   matchesNormalized: number;
   rankingsWritten: number;
   rankingsDeleted: number;
@@ -707,7 +707,7 @@ async function recalculateRankingsPass(
     skippedMissingWinner: 0,
     skippedMissingScore: 0,
     skippedNonDivisionMatches: 0,
-    guestMatchesCounted: 0,
+    guestMatchesSkipped: 0,
     matchesNormalized: 0,
     rankingsWritten: 0,
     rankingsDeleted: 0,
@@ -828,20 +828,25 @@ async function recalculateRankingsPass(
     // name, so renaming an account (or deleting it, which renames it to
     // "Deleted User") silently erased their matches from both players' rows.
     const { player1Id, player2Id, liveScore, winner } = match;
-    const isGuestMatch = match.player2IsGuest === true;
+    // A guest result is confirmed by the player who recorded it alone, with no
+    // opponent to dispute it, so it stays on the match history but out of the
+    // standings. Linking the guest to a real account reopens it for that
+    // player to confirm, after which it counts.
+    if (match.player2IsGuest === true) {
+      result.guestMatchesSkipped += 1;
+      continue;
+    }
     const seasonId = match.seasonId?.trim() || activeSeasonId;
     const divisionLevelId = match.divisionLevelId?.trim() || undefined;
 
     const player1Included =
       !hasDivisionRoster || divisionPlayerIdSet.has(player1Id);
     const player2Included =
-      !isGuestMatch &&
-      (!hasDivisionRoster || divisionPlayerIdSet.has(player2Id));
+      !hasDivisionRoster || divisionPlayerIdSet.has(player2Id);
 
     if (!player1Included && !player2Included) continue;
 
     result.countedMatches += 1;
-    if (isGuestMatch) result.guestMatchesCounted += 1;
 
     const totalsFor = (userId: string): SinglesTotals => {
       const key = singlesRankingDocId(seasonId, userId, divisionLevelId);
@@ -1760,8 +1765,8 @@ export const repairAllDivisionRankings = functions.https.onCall(
         completedMatchesScanned:
           acc.completedMatchesScanned + result.completedMatchesScanned,
         countedMatches: acc.countedMatches + result.countedMatches,
-        guestMatchesCounted:
-          acc.guestMatchesCounted + result.guestMatchesCounted,
+        guestMatchesSkipped:
+          acc.guestMatchesSkipped + result.guestMatchesSkipped,
         matchesNormalized: acc.matchesNormalized + result.matchesNormalized,
         rankingsWritten: acc.rankingsWritten + result.rankingsWritten,
         rankingsDeleted: acc.rankingsDeleted + result.rankingsDeleted,
@@ -1778,7 +1783,7 @@ export const repairAllDivisionRankings = functions.https.onCall(
         divisionsProcessed: 0,
         completedMatchesScanned: 0,
         countedMatches: 0,
-        guestMatchesCounted: 0,
+        guestMatchesSkipped: 0,
         matchesNormalized: 0,
         rankingsWritten: 0,
         rankingsDeleted: 0,
