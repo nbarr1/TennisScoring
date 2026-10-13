@@ -17,7 +17,9 @@ function LoadingScreen() {
 
 // Release builds have no red-box/dev overlay, so an uncaught render error here
 // would otherwise surface only as a silent crash/restart loop with no way to
-// see why. Surfacing it on-screen gives us a diagnosable error in the field.
+// see why. The error is logged in every build, but the message and stack are
+// shown on screen only in development: release users see a plain explanation
+// instead of internals.
 class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
 
@@ -39,10 +41,18 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
           <Text style={{ fontSize: 18, fontWeight: '700', color: '#b00020', marginBottom: 12 }}>
             Something went wrong
           </Text>
-          <Text style={{ fontSize: 14, color: '#333', marginBottom: 12 }}>
-            {this.state.error.message}
-          </Text>
-          <Text style={{ fontSize: 12, color: '#666' }}>{this.state.error.stack}</Text>
+          {__DEV__ ? (
+            <>
+              <Text style={{ fontSize: 14, color: '#333', marginBottom: 12 }}>
+                {this.state.error.message}
+              </Text>
+              <Text style={{ fontSize: 12, color: '#666' }}>{this.state.error.stack}</Text>
+            </>
+          ) : (
+            <Text style={{ fontSize: 14, color: '#333' }}>
+              The app hit an unexpected error. Close the app and open it again. If this keeps happening, contact your league organizer.
+            </Text>
+          )}
         </ScrollView>
       );
     }
@@ -75,7 +85,7 @@ function DiagnosticScreen({
       <Text style={{ fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 16 }}>
         {message}
       </Text>
-      {details ? (
+      {details && __DEV__ ? (
         <Text style={{ fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 18 }}>
           {details}
         </Text>

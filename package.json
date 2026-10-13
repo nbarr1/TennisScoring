@@ -69,11 +69,7 @@
       "shell-quote": ">=1.11.0",
       "source-map-js": ">=1.2.2",
       "websocket-driver": ">=0.7.5",
-      "ws": ">=8.21.0",
-      "proxy-addr": "^2.0.8",
-      "handlebars": "^4.7.10",
-      "compression": "^1.8.2",
-      "source-map-js": "^1.2.2"
+      "ws": ">=8.21.0"
     }
   },
   "engines": {
