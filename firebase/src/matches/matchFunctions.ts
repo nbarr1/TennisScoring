@@ -36,6 +36,7 @@ import type {
 
 import { buildDoublesMatchFields, requestsDoubles, validateDoublesCompetition } from './doublesSides';
 import { sendPushToUsers } from '../notifications/push';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -459,6 +460,7 @@ type ScoreMatchPointInput = {
 };
 
 export const scoreMatchPoint = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
@@ -1214,6 +1216,7 @@ async function notifyPlayersMatchRecorded(
  * opponent to confirm before standings update.
  */
 export const recordHistoricMatch = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
@@ -1390,6 +1393,7 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
  * completed match between any two players in a division.
  */
 export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }
@@ -1565,6 +1569,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
  * Forces the match to 'completed' and triggers rankings + PDF.
  */
 export const resolveDisputedReport = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError(
       'unauthenticated',
@@ -1630,6 +1635,7 @@ async function checkIsLeader(
  */
 export const recalculateDivisionRankings = functions.https.onCall(
   async (request) => {
+  assertVerifiedEmail(request.auth);
     if (!request.auth) {
       throw new functions.https.HttpsError(
         'unauthenticated',
@@ -1677,6 +1683,7 @@ export const recalculateDivisionRankings = functions.https.onCall(
  */
 export const repairAllDivisionRankings = functions.https.onCall(
   async (request) => {
+  assertVerifiedEmail(request.auth);
     if (!request.auth) {
       throw new functions.https.HttpsError(
         'unauthenticated',

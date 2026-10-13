@@ -7,9 +7,9 @@
     "presence": {
       "$userId": {
         // Any authenticated user can see who is online
-        ".read": "auth != null",
+        ".read": "auth != null && auth.token.email_verified === true",
         // Users can only update their own presence status
-        ".write": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.token.email_verified === true && auth.uid === $userId",
         ".validate": "newData.hasChildren(['state', 'lastChanged'])",
         "state": {
           ".validate": "newData.isString() && (newData.val() === 'online' || newData.val() === 'offline' || newData.val() === 'away')"
@@ -25,9 +25,9 @@
       "$channelId": {
         "$userId": {
           // Any participant in the app can read typing indicators
-          ".read": "auth != null",
+          ".read": "auth != null && auth.token.email_verified === true",
           // A user can only flag themselves as typing
-          ".write": "auth != null && auth.uid === $userId",
+          ".write": "auth != null && auth.token.email_verified === true && auth.uid === $userId",
           ".validate": "newData.isBoolean()"
         }
       }
@@ -37,10 +37,10 @@
     "liveMatches": {
       "$matchId": {
         // Any authenticated user can view live match scoring streams
-        ".read": "auth != null",
+        ".read": "auth != null && auth.token.email_verified === true",
 
         // Root write rule: allow setting up initial match or if the requester is player1 or player2
-        ".write": "auth != null && ( !data.exists() || auth.uid === data.child('metadata/player1Id').val() || auth.uid === data.child('metadata/player2Id').val() )",
+        ".write": "auth != null && auth.token.email_verified === true && ( !data.exists() || auth.uid === data.child('metadata/player1Id').val() || auth.uid === data.child('metadata/player2Id').val() )",
 
         "metadata": {
           // Initialize metadata: creator must be player1Id

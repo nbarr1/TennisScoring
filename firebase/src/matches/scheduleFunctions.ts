@@ -9,6 +9,7 @@ import {
   isPrivilegedRole,
 } from '@tennis/shared';
 import type { Match } from '@tennis/shared';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -39,6 +40,7 @@ const DOUBLES_NOT_SUPPORTED_MESSAGE =
   'Round-robin scheduling is not yet available for doubles division levels';
 
 export const publishRoundRobinSchedule = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
   }

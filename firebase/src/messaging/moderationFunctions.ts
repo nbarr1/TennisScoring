@@ -2,6 +2,7 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { isAdminRole } from '@tennis/shared';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -20,6 +21,7 @@ type ResolveMessageReportInput = {
  * was always denied. The report then stayed pending forever.
  */
 export const resolveMessageReport = onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to resolve reports.');
   }

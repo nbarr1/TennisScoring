@@ -5,6 +5,7 @@ import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
 import { divisionMembershipId, isAdminRole, toCsv } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -494,6 +495,7 @@ export async function transferPlaceholderRecords(
 }
 
 export const createDivision = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -571,6 +573,7 @@ export const createDivision = onCall(callableOptions, async (request) => {
 });
 
 export const joinDivisionByCode = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -629,6 +632,7 @@ export const joinDivisionByCode = onCall(callableOptions, async (request) => {
 });
 
 export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -696,6 +700,7 @@ export const addPlayerToDivisionByEmail = onCall(callableOptions, async (request
 
 
 export const addDivisionMemberPlaceholder = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   const { divisionId, name, email, sendInvite, seasonId, divisionLevelId } = (request.data ?? {}) as AddPlaceholderInput;
   const safeDivisionId = divisionId?.trim();
   const safeName = name?.trim();
@@ -879,6 +884,7 @@ export const addDivisionMemberPlaceholder = onCall(callableOptions, async (reque
 });
 
 export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
@@ -1122,6 +1128,7 @@ export const mergeDivisionPlayerRecords = onCall(callableOptions, async (request
 });
 
 export const updateDivisionPlayerEmail = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage players.');
   }
@@ -1300,6 +1307,7 @@ function validateCompletedExportedMatch(
 
 
 export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage division levels.');
   }
@@ -1360,6 +1368,7 @@ export const upsertDivisionLevel = onCall(callableOptions, async (request) => {
 
 
 export const upsertDivisionMembership = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage division memberships.');
   }
@@ -1503,6 +1512,7 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
  * historical match/ranking record that references the membership resolvable.
  */
 export const removeDivisionMembership = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to manage division memberships.');
   }
@@ -1593,6 +1603,7 @@ export const removeDivisionMembership = onCall(callableOptions, async (request) 
 
 
 export const backfillDivisionSeasonLevel = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to backfill division data.');
   }
@@ -1695,6 +1706,7 @@ export const backfillDivisionSeasonLevel = onCall(callableOptions, async (reques
  * ever creating the public profile doc; this repairs those accounts.
  */
 export const backfillMissingProfiles = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to backfill profiles.');
   }
@@ -1754,6 +1766,7 @@ export const backfillMissingProfiles = onCall(callableOptions, async (request) =
 });
 
 export const exportDivisionCsv = onCall(callableOptions, async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to export division data.');
   }

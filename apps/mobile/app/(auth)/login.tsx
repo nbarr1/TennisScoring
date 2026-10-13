@@ -11,6 +11,7 @@ import {
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   updateProfile,
 } from "firebase/auth";
 import { auth, db } from "@tennis/firebase-client";
@@ -77,6 +78,11 @@ export default function LoginScreen() {
         );
         await updateProfile(credential.user, {
           displayName: displayName.trim(),
+        });
+        // The verify-email screen offers a resend, so a failed send is not
+        // fatal here.
+        await sendEmailVerification(credential.user).catch((sendError) => {
+          console.error("Failed to send verification email:", sendError);
         });
         const now = Date.now();
         await setDoc(

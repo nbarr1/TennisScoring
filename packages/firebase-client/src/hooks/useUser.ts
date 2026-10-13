@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
+import { onIdTokenChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { arrayRemove, arrayUnion, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
@@ -7,6 +7,12 @@ import type { User, PublicProfile } from '@tennis/shared';
 
 type AuthUserState = {
   firebaseUser: FirebaseUser | null;
+  /**
+   * Whether the signed-in account's email address is verified. Tracked
+   * separately because verifying mutates the same `firebaseUser` object, which
+   * would not re-render anything; `refreshEmailVerification()` updates it.
+   */
+  emailVerified: boolean;
   loading: boolean;
   error: Error | null;
 };
@@ -25,19 +31,24 @@ type PublicProfileState = {
 
 export function useAuthUser(): AuthUserState {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(
+    // onIdTokenChanged rather than onAuthStateChanged: it also fires when
+    // refreshEmailVerification() forces a new token after the user verifies.
+    const unsub = onIdTokenChanged(
       auth,
       (user) => {
         setFirebaseUser(user);
+        setEmailVerified(!!user?.emailVerified);
         setError(null);
         setLoading(false);
       },
       (authError) => {
         setFirebaseUser(null);
+        setEmailVerified(false);
         setError(authError instanceof Error ? authError : new Error(String(authError)));
         setLoading(false);
       },
@@ -45,7 +56,7 @@ export function useAuthUser(): AuthUserState {
     return unsub;
   }, []);
 
-  return { firebaseUser, loading, error };
+  return { firebaseUser, emailVerified, loading, error };
 }
 
 /**

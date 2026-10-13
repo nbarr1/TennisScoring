@@ -3,12 +3,26 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---------- Helpers ----------
-    function isAuth() {
+    function isSignedIn() {
       return request.auth != null;
+    }
+
+    // Signed in with a verified email address. Sign-up is limited to the company
+    // domain, but a password sign-up does not prove the person owns the address,
+    // so anyone could register a colleague's address before they do. Every rule
+    // goes through this except the account's own users/{uid} document, which the
+    // apps read and write while showing the "verify your email" screen.
+    function isAuth() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
     function isUser(userId) {
       return isAuth() && request.auth.uid == userId;
+    }
+
+    // The account's own document, verified or not. Only for users/{uid}.
+    function isOwnAccount(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function getUserDataById(uid) {
@@ -191,12 +205,11 @@ service cloud.firestore {
           request.resource.data.get('blockedUserIds', []).size() <= 500;
       }
 
-      allow read: if isAuth() && (
-        isUser(userId) ||
+      allow read: if isOwnAccount(userId) || (isAuth() && (
         isAdmin() ||
         isLeader(resource.data.divisionId)
-      );
-      allow create: if isUser(userId) &&
+      ));
+      allow create: if isOwnAccount(userId) &&
         request.resource.data.keys().hasOnly(initialUserFields()) &&
         request.resource.data.id == request.auth.uid &&
         request.resource.data.role == 'player' &&
@@ -212,7 +225,7 @@ service cloud.firestore {
         request.resource.data.createdAt is number &&
         request.resource.data.updatedAt is number;
       allow update: if isAdmin() || (
-        isUser(userId) &&
+        isOwnAccount(userId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(editableUserFields()) &&
         request.resource.data.role == resource.data.role &&
         request.resource.data.divisionId == resource.data.divisionId &&

@@ -4,6 +4,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { createHash } from 'node:crypto';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -179,6 +180,7 @@ function buildIssueBody(body: string, metadata: unknown, uid?: string): string {
 }
 
 export const submitFeedback = onCall(callableOptions, async (request): Promise<SubmitFeedbackResult> => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'You must be signed in to submit feedback.');
   }
