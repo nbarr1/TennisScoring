@@ -21,6 +21,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 
 const rules = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
@@ -398,5 +399,31 @@ describe('accounts without a division', () => {
     const dm = (a, b) => ({ type: 'direct', participantIds: [a, b], createdAt: 1 });
     await assertSucceeds(setDoc(doc(as('p1'), 'channels', 'ok'), dm('p1', 'p2')));
     await assertFails(setDoc(doc(as('loner1'), 'channels', 'no'), dm('loner1', 'loner2')));
+  });
+});
+
+describe('finishing the tutorial', () => {
+  // Mirrors updateUserProfile(uid, { tutorialDone: true }): one batch that updates the
+  // private users doc and merges the flag into the public profile. Both web and mobile
+  // tutorials call it, and the web dashboard sends anyone without the flag back to the
+  // tutorial, so a rejected batch leaves a new player with no way past onboarding.
+  const finishTutorial = (uid, tutorialDone = true) => {
+    const db = as(uid);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'users', uid), { tutorialDone, updatedAt: 2 });
+    batch.set(doc(db, 'profiles', uid), { id: uid, tutorialDone, updatedAt: 2 }, { merge: true });
+    return batch.commit();
+  };
+
+  it('lets a player mark their own tutorial done', async () => {
+    await assertSucceeds(finishTutorial('p1'));
+  });
+
+  it('denies a tutorial flag that is not a boolean', async () => {
+    await assertFails(finishTutorial('p1', 'yes'));
+  });
+
+  it("denies setting another player's tutorial flag", async () => {
+    await assertFails(updateDoc(doc(as('p2'), 'users', 'p1'), { tutorialDone: true }));
   });
 });

@@ -62,7 +62,9 @@ export default function WebTutorialPage(): React.JSX.Element {
     setError(null);
     try {
       await updateUserProfile(firebaseUser.uid, { tutorialDone: true });
-      router.push('/onboarding/division');
+      // The dashboard only sends players here once they have a division, and offers
+      // division onboarding itself to anyone who reaches it without one.
+      router.replace('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not finish tutorial. Please try again.');
       setFinishing(false);
