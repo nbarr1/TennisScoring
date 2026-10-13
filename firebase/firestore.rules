@@ -443,8 +443,12 @@ service cloud.firestore {
     // remains the only party who can confirm.
     // The edit also clears reportUrl, so the PDF is rebuilt for the new score
     // once the opponent confirms it instead of keeping the original.
+    // Participants may only correct a result that is still awaiting confirmation.
+    // Allowing edits to 'completed' let either player, including the loser, pull a
+    // confirmed result out of the standings; leaders and admins keep that power
+    // through the unconditional leader branch of `allow update`.
     function isEditScoreUpdate(existing, incoming, changed) {
-      return existing.status in ['pending_report', 'completed'] &&
+      return existing.status == 'pending_report' &&
         incoming.status == 'pending_report' &&
         !('reportSubmission' in incoming) &&
         !('undoSnapshot' in incoming) &&

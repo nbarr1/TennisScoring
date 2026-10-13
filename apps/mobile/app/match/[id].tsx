@@ -832,9 +832,11 @@ export default function MatchScreen() {
   const p2Name = match.player2Name ?? "Player 2";
   const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
   const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
+  // Players may only correct a result awaiting confirmation; once confirmed,
+  // only a leader or admin can change it (the rules enforce the same split).
   const canEditScore =
-    canManage &&
-    (match.status === "pending_report" || match.status === "completed");
+    (canManage && match.status === "pending_report") ||
+    (isAdminOrLeader && match.status === "completed");
   const elapsedMs =
     match.matchDurationMs ??
     (match.startedAt && match.status === "in_progress"
