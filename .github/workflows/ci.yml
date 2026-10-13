@@ -3,10 +3,15 @@ name: CI
 # `Main` is this repository's default branch. `main` is kept alongside it so these
 # triggers keep firing if the default is ever renamed: a filter naming only a branch
 # that does not exist never matches, and the workflow then silently never runs.
+#
+# Pushes run only on the default branch. Pushes to `claude/**` used to run too, so
+# every pull request from one of those branches ran the whole workflow twice (once
+# for the push, once for the pull request) and listed every job twice. Pull
+# requests still target `claude/**` so stacked pull requests get checks.
 
 on:
   push:
-    branches: [Main, main, 'claude/**']
+    branches: [Main, main]
   pull_request:
     branches: [Main, main, 'claude/**']
 
@@ -285,6 +290,27 @@ jobs:
       - name: Assemble watch release (compile check)
         working-directory: apps/mobile/android
         run: ./gradlew :wear:assembleRelease --no-daemon --stacktrace
+      # The Kotlin unit tests (score engine, ranking engine, Wear protocol). They
+      # used to run in native-mobile.yml next to a full assembleDebug, which
+      # compiled every native module a second time. The release variant reuses
+      # the Kotlin that the assemble step below compiles anyway.
+      - name: Kotlin unit tests
+        working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ci-placeholder
+          EXPO_PUBLIC_FIREBASE_APP_ID: ci-placeholder
+        run: ./gradlew :app:testReleaseUnitTest --no-daemon --stacktrace
+      - name: Upload Kotlin test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-reports
+          path: apps/mobile/android/app/build/reports/tests/
+          retention-days: 7
       # Gradle bundles the JavaScript itself as part of assembleRelease, so it
       # needs the same placeholders mobile_bundle uses — app.config.js hard-fails
       # when CI=true and they are unset. They are deliberately not secrets, so this
