@@ -189,10 +189,21 @@ service cloud.firestore {
           'contactPreferences',
           'availability',
           'tipsEnabled',
+          'tutorialDone',
           'fcmTokens',
           'blockedUserIds',
           'updatedAt'
         ];
+      }
+
+      // Both tutorials finish with updateUserProfile({ tutorialDone: true }), and the web
+      // dashboard sends anyone without the flag back to the tutorial. Leaving the field out
+      // of editableUserFields() rejected that batch and trapped every new web player in
+      // onboarding. Only checked when written, so older docs carrying a non-boolean value
+      // can still save their other fields.
+      function validTutorialFlag() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tutorialDone']) ||
+          request.resource.data.tutorialDone is bool;
       }
 
       function validClientManagedLists() {
@@ -229,7 +240,8 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(editableUserFields()) &&
         request.resource.data.role == resource.data.role &&
         request.resource.data.divisionId == resource.data.divisionId &&
-        validClientManagedLists()
+        validClientManagedLists() &&
+        validTutorialFlag()
       );
       allow delete: if isAdmin();
     }

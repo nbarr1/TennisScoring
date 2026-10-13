@@ -225,6 +225,12 @@ export interface Match {
   reportUrl?: string;
   tipsEnabled: boolean;
   undoSnapshot?: UndoSnapshot;
+  /**
+   * The client-generated id of the last point `scoreMatchPoint` applied. Only
+   * the Admin SDK writes it; a retried call carrying the same id is ignored, so
+   * a request whose reply was lost cannot count its point twice.
+   */
+  lastPointId?: string;
   source?: 'live' | 'manual' | 'schedule';
   isDivisionMatch?: boolean;  // Whether this match counts toward division rankings
   createdBy: string;
