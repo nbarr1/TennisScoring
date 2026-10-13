@@ -8,3 +8,11 @@
 # [[IgnoredVulns]]
 # id = "GHSA-xxxx-xxxx-xxxx"
 # reason = "Why it does not apply, and when to revisit it."
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+reason = "braces <=3.0.3 stack exhaustion on deeply nested patterns; no patched release exists. It reaches the lockfile only through micromatch in build and test tooling (Jest, Metro, fast-glob), which expands patterns from config files, never user input, and it ships in neither app bundle nor the Cloud Functions bundle. Added October 13, 2026; revisit January 13, 2027, or as soon as a fixed braces is published."
+
+[[IgnoredVulns]]
+id = "GHSA-86w9-cpqp-85rv"
+reason = "node-forge <=1.4.0 PKCS#1 v1.5 signature forgery with low-exponent RSA keys; no patched release exists. It is only a dependency of @expo/cli and @expo/code-signing-certificates, which run on developer machines and EAS builders, not in the shipped app or Cloud Functions. Added October 13, 2026; revisit January 13, 2027, or as soon as a fixed node-forge or an @expo/cli without it is published."
