@@ -12,6 +12,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
+  sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
 import { auth, db } from "@tennis/firebase-client";
@@ -51,6 +52,40 @@ export default function LoginScreen() {
   };
   const validateOnBlur = (field: string) =>
     setErrors((current) => ({ ...current, [field]: validate(field) }));
+
+  async function handleForgotPassword() {
+    const emailError = validate("email");
+    setErrors({ email: emailError });
+    if (emailError) {
+      emailRef.current?.focus();
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "auth/invalid-email") {
+        Alert.alert("Invalid Email", "Please enter a valid email address.");
+        return;
+      }
+      if (code === "auth/too-many-requests") {
+        Alert.alert(
+          "Too Many Attempts",
+          "Wait a few minutes and try again.",
+        );
+        return;
+      }
+      // Any other failure, including an unknown address, gets the same neutral
+      // message, so the form never reveals which addresses have accounts.
+    } finally {
+      setLoading(false);
+    }
+    Alert.alert(
+      "Check Your Email",
+      "If an account exists for that address, we sent a password reset link.",
+    );
+  }
 
   async function handleSubmit() {
     const fields =
@@ -209,6 +244,20 @@ export default function LoginScreen() {
           onSubmitEditing={handleSubmit}
         />
 
+        {mode === "signin" && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Forgot password"
+            accessibilityHint="Sends a password reset link to the email address entered"
+            accessibilityState={{ disabled: loading }}
+            style={styles.forgotBtn}
+            onPress={handleForgotPassword}
+            disabled={loading}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+        )}
+
         <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
 
         <TouchableOpacity
@@ -304,6 +353,8 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  forgotBtn: { alignSelf: "flex-end", paddingVertical: 4 },
+  forgotText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
   toggleBtn: { alignItems: "center", paddingVertical: 12 },
   toggleText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
   privacyLink: { alignItems: "center", paddingVertical: 4 },
