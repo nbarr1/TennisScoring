@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
 import {
   divisionsCol,
@@ -28,6 +29,7 @@ import {
   previewRoundRobinSchedule,
   publishRoundRobinSchedule,
   useDivisionMessageReports,
+  useReportsAwaitingResolution,
   resolveMessageReport,
   readableUserDoc,
 } from "@tennis/firebase-client";
@@ -235,6 +237,7 @@ export default function AdminPage(): React.JSX.Element {
   );
   const [resolvingReportId, setResolvingReportId] = useState<string | null>(null);
   const { reports: messageReports } = useDivisionMessageReports(division?.id);
+  const { matches: reportsAwaitingResolution } = useReportsAwaitingResolution(division?.id);
   const REPORT_REASON_LABELS: Record<MessageReportReason, string> = {
     harassment: "Harassment",
     spam: "Spam",
@@ -2139,6 +2142,29 @@ export default function AdminPage(): React.JSX.Element {
                   </div>
 
                   <div style={styles.toolCard}>
+                    <h2 style={styles.toolTitle}>Results to resolve</h2>
+                    <p style={styles.toolDesc}>
+                      Disputed scores, and reports the opposing side has not answered. Open one to
+                      confirm the reported score or set the correct one.
+                    </p>
+                    {reportsAwaitingResolution.length === 0 ? (
+                      <p style={styles.toolDesc}>Nothing waiting.</p>
+                    ) : (
+                      <ul style={styles.resolveList}>
+                        {reportsAwaitingResolution.map((m) => (
+                          <li key={m.id}>
+                            <Link href={`/matches/${encodeURIComponent(m.id)}`} style={styles.resolveLink}>
+                              {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
+                            </Link>
+                            {" · "}
+                            {m.status === "disputed" ? "Disputed" : "Awaiting opponent"}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div style={styles.toolCard}>
                     <h2 style={styles.toolTitle}>Ranking repair</h2>
                     <p style={styles.toolDesc}>
                       Rebuild standings and head-to-heads from completed matches.
@@ -2876,6 +2902,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toolTitle: { fontSize: 17, fontWeight: 700, color: "var(--green-dark)", margin: 0 },
   toolDesc: { fontSize: 14, color: "var(--muted)", margin: 0, minHeight: 42 },
+  resolveList: { margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6, fontSize: 14, maxHeight: 180, overflowY: "auto" },
+  resolveLink: { color: "var(--green-dark)", fontWeight: 600 },
   toolActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
 
   bulkBar: {

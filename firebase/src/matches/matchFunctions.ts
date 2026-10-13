@@ -1665,8 +1665,14 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
 });
 
 /**
- * HTTPS callable: division leader resolves a disputed report.
- * Forces the match to 'completed' and triggers rankings + PDF.
+ * HTTPS callable: a division leader or admin settles a result the players
+ * could not. Applies to a disputed report, and to a submitted report the
+ * opposing side never answered.
+ *
+ * Without `sets` it confirms the reported score. With `sets` it records the
+ * corrected score instead, validated by the same rules as a hand-recorded
+ * match. Either way the match becomes 'completed', which triggers the
+ * rankings recalculation and the PDF report.
  */
 export const resolveDisputedReport = functions.https.onCall(async (request) => {
   if (!request.auth) {
@@ -1676,10 +1682,15 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
     );
   }
 
-  const { matchId } = (request.data ?? {}) as { matchId?: unknown };
+  const { matchId, sets } = (request.data ?? {}) as { matchId?: unknown; sets?: unknown };
   if (typeof matchId !== 'string' || !matchId.trim()) {
     throw new functions.https.HttpsError('invalid-argument', 'matchId is required');
   }
+  if (sets !== undefined && !Array.isArray(sets)) {
+    throw new functions.https.HttpsError('invalid-argument', 'sets must be a list of set scores');
+  }
+  // Validate before any read, so a bad score fails the same way for everyone.
+  const corrected = sets === undefined ? null : buildManualCompletedScore(sanitizeRecordedSets(sets));
   const db = getFirestore();
 
   const matchRef = db.collection('matches').doc(matchId.trim());
@@ -1699,24 +1710,38 @@ export const resolveDisputedReport = functions.https.onCall(async (request) => {
       'Only the division leader can resolve disputes',
     );
   }
-  // Resolving confirms the reported score. Anything not under dispute has no
-  // report to confirm, and forcing it to completed would skip the players.
-  if (match.status !== 'disputed') {
+  // Only a submitted report can be settled. Forcing anything else to
+  // completed would skip the players' own report step.
+  if (!isResolvableReport(match)) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'Only disputed matches can be resolved',
+      'Only disputed or unanswered match reports can be resolved',
     );
   }
 
+  const now = Date.now();
   await matchRef.update({
     status: 'completed',
     'reportSubmission.status': 'confirmed',
     'reportSubmission.confirmedBy': request.auth.uid,
-    'reportSubmission.confirmedAt': Date.now(),
+    'reportSubmission.confirmedAt': now,
+    ...(corrected && {
+      liveScore: corrected.score,
+      winner: corrected.winner,
+      completedAt: match.completedAt ?? now,
+      undoSnapshot: FieldValue.delete(),
+      // Built from the old score; the completion trigger makes a new one.
+      reportUrl: FieldValue.delete(),
+    }),
   });
 
-  return { success: true };
+  return { success: true, corrected: corrected !== null };
 });
+
+function isResolvableReport(match: Match): boolean {
+  if (match.status === 'disputed') return true;
+  return match.status === 'pending_report' && !!match.reportSubmission;
+}
 
 async function checkIsLeader(
   uid: string,

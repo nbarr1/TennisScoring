@@ -87,6 +87,14 @@ export const divisionMatchesUnorderedQuery = (divisionId: string) =>
 export const liveMatchesQuery = (divisionId: string) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'in_progress'));
 
+/** Disputed and pending-report matches, the candidates for a leader's resolution. */
+export const reportsAwaitingResolutionQuery = (divisionId: string) =>
+  query(
+    matchesCol(),
+    where('divisionId', '==', divisionId),
+    where('status', 'in', ['disputed', 'pending_report']),
+  );
+
 export const completedDivisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'completed'), ...extra);
 

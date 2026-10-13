@@ -8,6 +8,7 @@ import { StatusBadge } from '../../shared/StatusBadge';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
+  resolveDisputedReport, useUserProfile,
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
@@ -17,6 +18,10 @@ import {
   canRespondToReport,
   sidePlayerIds,
   isDoublesMatch,
+  isAdminRole,
+  parseRecordedScoreLine,
+  validateRecordedSets,
+  type RecordedSetInput,
 } from '@tennis/shared';
 import Link from 'next/link';
 import { getConfirmDialogCopy, type ConfirmAction } from './confirmDialogCopy';
@@ -62,6 +67,9 @@ export default function MatchPage(): React.JSX.Element {
   const router = useRouter();
   const { match, loading } = useMatch(id ?? null);
   const { firebaseUser } = useAuthUser();
+  const { profile } = useUserProfile(firebaseUser?.uid ?? null);
+  const [correctedScore, setCorrectedScore] = useState('');
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [showDisputeConfirm, setShowDisputeConfirm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [showManage, setShowManage] = useState(false);
@@ -100,6 +108,11 @@ export default function MatchPage(): React.JSX.Element {
   const p1Name = match.player1Name ?? 'Player 1';
   const p2Name = match.player2Name ?? 'Player 2';
   const isHistoric = match.source === 'manual';
+  // The resolveDisputedReport callable decides for real (leader of this
+  // division, or admin); this only decides whether to offer the panel.
+  const canResolveReport =
+    (profile?.role === 'division_leader' || isAdminRole(profile?.role)) &&
+    (match.status === 'disputed' || (match.status === 'pending_report' && !!submission));
 
   const scoreDisplay = formatScoreDisplay(match.liveScore);
   const gameDisplay = formatGameScore(match.liveScore);
@@ -135,6 +148,30 @@ export default function MatchPage(): React.JSX.Element {
     if (!uid) return;
     setShowDisputeConfirm(false);
     await withLoading(() => disputeMatchReport(id, uid));
+  }
+
+  async function handleResolve(withCorrectedScore: boolean) {
+    setResolveError(null);
+    let sets: RecordedSetInput[] | undefined;
+    if (withCorrectedScore) {
+      sets = parseRecordedScoreLine(correctedScore) ?? undefined;
+      if (!sets) {
+        setResolveError(`Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
+        return;
+      }
+      const invalid = validateRecordedSets(sets);
+      if (invalid) {
+        setResolveError(invalid);
+        return;
+      }
+    }
+    try {
+      await withLoading(() => resolveDisputedReport(id, sets));
+      setCorrectedScore('');
+    } catch (err) {
+      console.error('Failed to resolve match report:', err);
+      setResolveError((err as { message?: string }).message || 'Could not resolve this report. Please try again.');
+    }
   }
 
   function handleCancel() {
@@ -499,6 +536,42 @@ export default function MatchPage(): React.JSX.Element {
           </div>
         )}
 
+        {canResolveReport && (
+          <div style={styles.resolveSection}>
+            <h2 style={styles.liveControlTitle}>Resolve this result</h2>
+            <p style={styles.reportHint}>
+              {match.status === 'disputed'
+                ? 'The players disagree on this score. Confirm the reported score, or enter the correct one.'
+                : 'The opposing side has not answered this report. Confirm the reported score, or enter the correct one.'}
+              {' '}Either way, the result is final and counts in the standings.
+            </p>
+            <p style={styles.resolveReported}>Reported: {p1Name} {scoreDisplay} {p2Name}</p>
+            <button type="button" style={styles.confirmBtn} onClick={() => handleResolve(false)} disabled={actionLoading}>
+              {actionLoading ? 'Working…' : '✓ Confirm reported score'}
+            </button>
+            <label style={styles.resolveLabel} htmlFor="corrected-score">
+              Or set the correct score, with {p1Name}&apos;s games first
+            </label>
+            <div style={styles.resolveRow}>
+              <input
+                id="corrected-score"
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                placeholder="6-4, 3-6, [10-8]"
+                value={correctedScore}
+                onChange={(e) => setCorrectedScore(e.target.value)}
+                style={styles.resolveInput}
+                disabled={actionLoading}
+              />
+              <button type="button" style={styles.primaryBtn} onClick={() => handleResolve(true)} disabled={actionLoading || !correctedScore.trim()}>
+                Save correct score
+              </button>
+            </div>
+            {resolveError && <p role="alert" style={styles.resolveError}>{resolveError}</p>}
+          </div>
+        )}
+
         {match.status === 'completed' && (
           <div style={styles.reportSection}>
             <span style={styles.confirmedBadge}>
@@ -692,6 +765,12 @@ const styles: Record<string, React.CSSProperties> = {
   disputeBtn: { background: '#fff', color: '#c0392b', border: '2px solid #c0392b', borderRadius: 10, padding: '14px 24px', fontWeight: 700, fontSize: 15, cursor: 'pointer' },
   waitingBadge: { background: '#f0f0e8', color: '#666', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
   confirmedBadge: { background: '#e8f5e9', color: '#2d6a4f', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
+  resolveSection: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16, display: 'flex', flexDirection: 'column' as const, gap: 12, border: '1px solid #f0d9b5' },
+  resolveReported: { fontSize: 15, fontWeight: 600, color: '#1a1a1a', margin: 0 },
+  resolveLabel: { fontSize: 13, fontWeight: 600, color: '#444', marginTop: 8 },
+  resolveRow: { display: 'flex', gap: 8, flexWrap: 'wrap' as const },
+  resolveInput: { flex: '1 1 180px', border: '1px solid #ddd', borderRadius: 10, padding: '12px 14px', fontSize: 15, color: '#111' },
+  resolveError: { fontSize: 13, color: '#c0392b', margin: 0 },
   disputedBadge: { background: '#fff3e0', color: '#e65100', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
   modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { background: '#fff', color: '#1a1a1a', borderRadius: 16, padding: 32, maxWidth: 380, width: '90%' },

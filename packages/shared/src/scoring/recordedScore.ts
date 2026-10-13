@@ -148,3 +148,19 @@ export function parseRecordedSetToken(token: string): RecordedSetInput | null {
   if (!games) return null;
   return { p1: parseInt(games[1], 10), p2: parseInt(games[2], 10) };
 }
+
+const SET_TOKEN = /\[\s*\d{1,2}\s*[-:]\s*\d{1,2}\s*\]|\d{1,2}\s*[-:]\s*\d{1,2}/g;
+
+/**
+ * Parses a whole typed score line such as `6-4, 3-6, [10-8]` (commas,
+ * semicolons, or spaces between sets) into sets from player 1's side. Returns
+ * `null` when the line holds no set or anything other than set tokens.
+ * Whether the sets form a valid match is `validateRecordedSets()`'s job.
+ */
+export function parseRecordedScoreLine(line: string): RecordedSetInput[] | null {
+  const tokens = line.match(SET_TOKEN) ?? [];
+  if (tokens.length === 0) return null;
+  if (line.replace(SET_TOKEN, '').replace(/[\s,;]/g, '') !== '') return null;
+  const sets = tokens.map(parseRecordedSetToken);
+  return sets.every((set): set is RecordedSetInput => set !== null) ? sets : null;
+}
