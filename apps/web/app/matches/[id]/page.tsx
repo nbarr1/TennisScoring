@@ -128,7 +128,7 @@ export default function MatchPage(): React.JSX.Element {
   function handleDelete() {
     if (!match) return;
     const message = match.status === 'completed'
-      ? 'Deleting a completed match will not reverse its effect on rankings. Continue?'
+      ? 'Deleting a completed match removes it from the standings, and rankings are recalculated without it. Continue?'
       : 'This match and all its data will be permanently deleted.';
     setDeleteConfirmText('');
     setConfirmAction({ type: 'delete', message });
