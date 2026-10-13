@@ -129,6 +129,10 @@ jobs:
         run: pnpm check:firebase-rules
       - name: Firebase emulator rules smoke test
         run: pnpm --filter @tennis/firebase-functions test:rules
+      # Drives the built Cloud Functions bundle against the emulators. Tests for
+      # known, unfixed bugs are marked `todo` and report without failing the job.
+      - name: Firebase emulator functions tests
+        run: pnpm --filter @tennis/firebase-functions test:functions
       # Reproduces the intended `pnpm audit || osv-scanner` fallback, where the
       # scanner casts the deciding vote. osv-scanner is a Go binary published as a
       # container action, not an npm package, so the previous `npx --yes osv-scanner`

@@ -28,6 +28,28 @@ function lastName(name: string): string {
   return parts[parts.length - 1] || name;
 }
 
+function initialAndLastName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  return `${parts[0].charAt(0)}. ${parts[parts.length - 1]}`;
+}
+
+// A doubles side is named "Ann Smith / Bob Jones", so shorten each partner.
+function shortSideName(name: string, shorten: (part: string) => string): string {
+  return name.split(' / ').map(shorten).join(' / ');
+}
+
+// Short names for the live scoreboard's buttons. Last names alone are enough
+// until both sides share one, then an initial is added, then the full name.
+function liveButtonNames(p1Name: string, p2Name: string): [string, string] {
+  for (const shorten of [lastName, initialAndLastName]) {
+    const p1 = shortSideName(p1Name, shorten);
+    const p2 = shortSideName(p2Name, shorten);
+    if (p1.toLowerCase() !== p2.toLowerCase()) return [p1, p2];
+  }
+  return [p1Name, p2Name];
+}
+
 function formatMmSs(ms: number): string {
   const secs = Math.max(0, Math.floor(ms / 1000));
   const mm = Math.floor(secs / 60);
@@ -137,19 +159,24 @@ export default function MatchPage(): React.JSX.Element {
   async function handleConfirmAction() {
     if (!confirmAction) return;
     const action = confirmAction;
-    if (action.type === 'cancel') {
-      await withLoading(() => cancelMatch(id));
-      setShowManage(false);
-    } else if (action.type === 'postpone') {
-      await withLoading(() => postponeMatch(id, action.newTime));
-      setShowManage(false);
-      setShowPostponeOptions(false);
-    } else {
-      if (deleteConfirmText !== 'DELETE') return;
-      await withLoading(() => deleteMatch(id));
-      setDeleteConfirmText('');
-      router.push('/matches');
+    if (action.type === 'delete' && deleteConfirmText !== 'DELETE') return;
+    setLiveError(null);
+    try {
+      if (action.type === 'cancel') {
+        await withLoading(() => cancelMatch(id));
+      } else if (action.type === 'postpone') {
+        await withLoading(() => postponeMatch(id, action.newTime));
+      } else {
+        await withLoading(() => deleteMatch(id));
+        setDeleteConfirmText('');
+        router.push('/matches');
+      }
+    } catch (err) {
+      console.error(`Failed to ${action.type} match:`, err);
+      setLiveError(`Could not ${action.type} the match. Check your connection and try again.`);
     }
+    setShowManage(false);
+    setShowPostponeOptions(false);
     setConfirmAction(null);
   }
 
@@ -211,19 +238,120 @@ export default function MatchPage(): React.JSX.Element {
   const { confirmTitle, confirmBody, confirmLabel } = getConfirmDialogCopy(confirmAction);
 
 
-  const p1Last = lastName(p1Name);
-  const p2Last = lastName(p2Name);
+  const [p1Last, p2Last] = liveButtonNames(p1Name, p2Name);
   const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
   const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
   const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
   const blockScoring = liveActionLoading || tapLock || match.status !== 'in_progress';
 
+  function openManage() {
+    setShowManage(true);
+    setShowPostponeOptions(false);
+  }
+
+  const actionModals = (
+    <>
+      {showManage && (
+        <div style={styles.modalOverlay} onClick={() => setShowManage(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manage-match-title"
+            style={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="manage-match-title" style={styles.modalTitle}>{showPostponeOptions ? 'Postpone by…' : 'Manage Match'}</h3>
+            {actionLoading && <p style={styles.modalBody}>Working…</p>}
+            {!actionLoading && !showPostponeOptions && (
+              <div style={styles.manageOptions}>
+                {canPostpone && (
+                  <button type="button" style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
+                )}
+                {canCancel && (
+                  <button type="button" style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
+                )}
+                {canDelete && (
+                  <button type="button" style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
+                )}
+                {!canPostpone && !canCancel && !canDelete && (
+                  <p style={styles.modalBody}>No actions available for this match status.</p>
+                )}
+              </div>
+            )}
+            {!actionLoading && showPostponeOptions && (
+              <div style={styles.manageOptions}>
+                {[
+                  { label: '+30 minutes', ms: 30 * 60 * 1000 },
+                  { label: '+1 hour',     ms: 60 * 60 * 1000 },
+                  { label: '+2 hours',    ms: 2 * 60 * 60 * 1000 },
+                  { label: '+1 day',      ms: 24 * 60 * 60 * 1000 },
+                ].map(({ label, ms }) => (
+                  <button key={label} type="button" style={styles.manageOption} onClick={() => handlePostponeBy(ms)}>{label}</button>
+                ))}
+                <button type="button" style={styles.manageOptionGhost} onClick={() => setShowPostponeOptions(false)}>← Back</button>
+              </div>
+            )}
+            <button type="button" style={styles.manageOptionGhost} onClick={() => setShowManage(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {confirmAction && (
+        <div style={styles.modalOverlay}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-action-title"
+            style={styles.modal}
+          >
+            <h3 id="confirm-action-title" style={styles.modalTitle}>{confirmTitle}</h3>
+            <p style={styles.modalBody}>{confirmBody}</p>
+            {confirmAction.type === 'delete' && (
+              <label style={styles.confirmInputLabel}>
+                Type DELETE to confirm
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(event) => setDeleteConfirmText(event.target.value)}
+                  style={styles.confirmInput}
+                  disabled={actionLoading}
+                />
+              </label>
+            )}
+            <div style={styles.modalBtns}>
+              <button
+                type="button"
+                style={styles.modalCancel}
+                onClick={handleDismissConfirmAction}
+                disabled={actionLoading}
+              >
+                Keep Match
+              </button>
+              <button
+                type="button"
+                style={{
+                  ...styles.modalConfirm,
+                  ...(confirmAction.type !== 'delete' ? styles.modalConfirmNeutral : {}),
+                }}
+                onClick={handleConfirmAction}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Working…' : confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   if (isParticipant && (match.status === 'scheduled' || match.status === 'in_progress')) {
     return (
       <div style={styles.livePage}>
         <div style={styles.liveScoreboardRegion}>
+          <Link href="/matches" style={styles.liveBackLink}>← Matches</Link>
           <div style={styles.timerRow}><span>Set {match.liveScore.currentSet + 1} · {setClock}</span><span>Match · {matchClock}</span></div>
-          <button aria-label="Match actions" style={styles.actionsIconBtn} onClick={() => setShowManage(true)}>⋮</button>
+          <button type="button" aria-label="Match actions" style={styles.actionsIconBtn} onClick={openManage}>⋮</button>
           <table style={styles.scoreTable}><tbody>
             {[['player1', p1Last], ['player2', p2Last]].map(([key, name]) => {
               const pl = key as 'player1'|'player2';
@@ -232,8 +360,16 @@ export default function MatchPage(): React.JSX.Element {
             })}
           </tbody></table>
         </div>
-        <div style={styles.hintStrip}>{match.status === 'scheduled' ? 'Waiting for server selection' : liveError ?? ''}</div>
+        <div style={styles.hintStrip}>
+          <span role={liveError ? 'alert' : undefined}>{liveError ?? (match.status === 'scheduled' ? 'Waiting for server selection' : '')}</span>
+          {match.status === 'in_progress' && (
+            <button type="button" style={styles.liveUndoStripBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>
+              ↶ Undo
+            </button>
+          )}
+        </div>
         {match.status === 'scheduled' ? <div style={styles.serverSelectWrap}><button style={styles.liveHalfBtn} onClick={()=>handleStartLive('player1')}>{p1Last} serves</button><button style={styles.liveHalfBtn} onClick={()=>handleStartLive('player2')}>{p2Last} serves</button></div> : <div style={styles.scoreButtonsRegion}><button aria-label={`Add point for ${p1Last}`} style={styles.liveHalfBtn} disabled={blockScoring} onClick={()=>handlePoint('player1')}>+ {p1Last}</button><button aria-label={`Add point for ${p2Last}`} style={styles.liveHalfBtn} disabled={blockScoring} onClick={()=>handlePoint('player2')}>+ {p2Last}</button></div>}
+        {actionModals}
       </div>
     );
   }
@@ -292,7 +428,7 @@ export default function MatchPage(): React.JSX.Element {
 
         {canManage && (
           <div style={styles.manageWrap}>
-            <button type="button" style={styles.manageBtn} onClick={() => { setShowManage(true); setShowPostponeOptions(false); }}>
+            <button type="button" style={styles.manageBtn} onClick={openManage}>
               ⋯ Options
             </button>
           </div>
@@ -445,97 +581,7 @@ export default function MatchPage(): React.JSX.Element {
           </div>
         )}
 
-        {showManage && (
-          <div style={styles.modalOverlay} onClick={() => setShowManage(false)}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="manage-match-title"
-              style={styles.modal}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 id="manage-match-title" style={styles.modalTitle}>{showPostponeOptions ? 'Postpone by…' : 'Manage Match'}</h3>
-              {actionLoading && <p style={styles.modalBody}>Working…</p>}
-              {!actionLoading && !showPostponeOptions && (
-                <div style={styles.manageOptions}>
-                  {canPostpone && (
-                    <button type="button" style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
-                  )}
-                  {canCancel && (
-                    <button type="button" style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
-                  )}
-                  {canDelete && (
-                    <button type="button" style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
-                  )}
-                  {!canPostpone && !canCancel && !canDelete && (
-                    <p style={styles.modalBody}>No actions available for this match status.</p>
-                  )}
-                </div>
-              )}
-              {!actionLoading && showPostponeOptions && (
-                <div style={styles.manageOptions}>
-                  {[
-                    { label: '+30 minutes', ms: 30 * 60 * 1000 },
-                    { label: '+1 hour',     ms: 60 * 60 * 1000 },
-                    { label: '+2 hours',    ms: 2 * 60 * 60 * 1000 },
-                    { label: '+1 day',      ms: 24 * 60 * 60 * 1000 },
-                  ].map(({ label, ms }) => (
-                    <button key={label} type="button" style={styles.manageOption} onClick={() => handlePostponeBy(ms)}>{label}</button>
-                  ))}
-                  <button type="button" style={styles.manageOptionGhost} onClick={() => setShowPostponeOptions(false)}>← Back</button>
-                </div>
-              )}
-              <button type="button" style={styles.manageOptionGhost} onClick={() => setShowManage(false)}>Close</button>
-            </div>
-          </div>
-        )}
-
-        {confirmAction && (
-          <div style={styles.modalOverlay}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="confirm-action-title"
-              style={styles.modal}
-            >
-              <h3 id="confirm-action-title" style={styles.modalTitle}>{confirmTitle}</h3>
-              <p style={styles.modalBody}>{confirmBody}</p>
-              {confirmAction.type === 'delete' && (
-                <label style={styles.confirmInputLabel}>
-                  Type DELETE to confirm
-                  <input
-                    type="text"
-                    value={deleteConfirmText}
-                    onChange={(event) => setDeleteConfirmText(event.target.value)}
-                    style={styles.confirmInput}
-                    disabled={actionLoading}
-                  />
-                </label>
-              )}
-              <div style={styles.modalBtns}>
-                <button
-                  type="button"
-                  style={styles.modalCancel}
-                  onClick={handleDismissConfirmAction}
-                  disabled={actionLoading}
-                >
-                  Keep Match
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    ...styles.modalConfirm,
-                    ...(confirmAction.type !== 'delete' ? styles.modalConfirmNeutral : {}),
-                  }}
-                  onClick={handleConfirmAction}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? 'Working…' : confirmLabel}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {actionModals}
 
       </main>
     </div>
@@ -557,12 +603,14 @@ const styles: Record<string, React.CSSProperties> = {
   livePage: { height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#0E1418', color: '#fff' },
   liveScoreboardRegion: { position: 'relative', padding: '12px 10px 8px', flex: '0 0 auto' },
   timerRow: { display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8, color: '#d7e0e3' },
-  actionsIconBtn: { position: 'absolute', top: 8, right: 8, background: 'transparent', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer' },
+  actionsIconBtn: { position: 'absolute', top: 4, right: 8, minWidth: 44, minHeight: 44, background: 'transparent', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer' },
   scoreTable: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 14 },
   nameCell: { padding: '8px 4px', minWidth: 90, fontWeight: 700, fontSize: 14, borderBottom: '1px solid rgba(255,255,255,.14)' },
   scoreCell: { textAlign: 'center' as const, padding: '8px 4px', minWidth: 36, fontSize: 14, borderBottom: '1px solid rgba(255,255,255,.14)' },
   leadingCell: { color: '#FFB44A', fontWeight: 800 },
-  hintStrip: { flex: '0 0 56px', minHeight: 56, padding: '12px', borderTop: '1px solid rgba(255,255,255,.12)', borderBottom: '1px solid rgba(255,255,255,.12)', color: '#c9d1d4', fontSize: 13 },
+  hintStrip: { flex: '0 0 56px', minHeight: 56, padding: '12px', borderTop: '1px solid rgba(255,255,255,.12)', borderBottom: '1px solid rgba(255,255,255,.12)', color: '#c9d1d4', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  liveUndoStripBtn: { flex: '0 0 auto', minHeight: 40, padding: '8px 16px', borderRadius: 10, border: '1px solid rgba(255,255,255,.3)', background: 'transparent', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer' },
+  liveBackLink: { display: 'inline-block', marginBottom: 8, color: '#d7e0e3', fontSize: 13, textDecoration: 'none' },
   scoreButtonsRegion: { flex: 1, display: 'flex' },
   serverSelectWrap: { flex: 1, display: 'flex' },
   liveHalfBtn: { flex: 1, width: '50%', border: '1px solid rgba(255,255,255,.15)', background: '#1F525C', color: '#fff', fontSize: 24, fontWeight: 800 },
@@ -642,7 +690,7 @@ const styles: Record<string, React.CSSProperties> = {
   confirmedBadge: { background: '#e8f5e9', color: '#2d6a4f', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
   disputedBadge: { background: '#fff3e0', color: '#e65100', borderRadius: 8, padding: '10px 18px', fontWeight: 600, fontSize: 14 },
   modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  modal: { background: '#fff', borderRadius: 16, padding: 32, maxWidth: 380, width: '90%' },
+  modal: { background: '#fff', color: '#1a1a1a', borderRadius: 16, padding: 32, maxWidth: 380, width: '90%' },
   modalTitle: { fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 },
   modalBody: { fontSize: 14, color: '#555', marginBottom: 24, lineHeight: 1.5 },
   confirmInputLabel: { display: 'flex', flexDirection: 'column' as const, gap: 8, color: '#555', fontSize: 13, fontWeight: 700, marginBottom: 18 },
