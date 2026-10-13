@@ -144,10 +144,12 @@ function buildRankingsFromMatches(
     // division level onto ordinary two-player matches too, and skipping those
     // would drop them out of the singles table.
     if (isDoublesMatch(match)) continue;
+    // Self-confirmed guest results stay out of the standings, matching the
+    // server's recalculation.
+    if (match.player2IsGuest === true) continue;
     countedMatchCount += 1;
 
     const { player1Id, player2Id, winner, liveScore } = match;
-    const isGuestMatch = match.player2IsGuest === true;
     const player1Name = match.player1Name ?? player1Id;
     const player2Name = match.player2Name ?? player2Id;
     const resolvedPlayer1Id = resolveCanonicalId({ userId: player1Id, displayName: player1Name });
@@ -164,7 +166,7 @@ function buildRankingsFromMatches(
         displayName: player1Name,
       });
     }
-    if (!isGuestMatch && !statsMap.has(resolvedPlayer2Id)) {
+    if (!statsMap.has(resolvedPlayer2Id)) {
       statsMap.set(resolvedPlayer2Id, {
         matchesWon: 0,
         matchesLost: 0,
@@ -177,7 +179,7 @@ function buildRankingsFromMatches(
     }
 
     const p1Stats = statsMap.get(resolvedPlayer1Id)!;
-    const p2Stats = isGuestMatch ? null : statsMap.get(resolvedPlayer2Id)!;
+    const p2Stats = statsMap.get(resolvedPlayer2Id)!;
 
     const { p1Sets, p2Sets, p1Games, p2Games } = extractMatchTotals(
       liveScore.sets,
@@ -186,27 +188,21 @@ function buildRankingsFromMatches(
 
     if (p1Won) {
       p1Stats.matchesWon += 1;
-      if (p2Stats) p2Stats.matchesLost += 1;
+      p2Stats.matchesLost += 1;
     } else {
-      if (p2Stats) p2Stats.matchesWon += 1;
+      p2Stats.matchesWon += 1;
       p1Stats.matchesLost += 1;
     }
 
     p1Stats.setsWon += p1Sets;
     p1Stats.setsLost += p2Sets;
-    if (p2Stats) {
-      p2Stats.setsWon += p2Sets;
-      p2Stats.setsLost += p1Sets;
-    }
+    p2Stats.setsWon += p2Sets;
+    p2Stats.setsLost += p1Sets;
 
     p1Stats.gamesWon += p1Games;
     p1Stats.gamesLost += p2Games;
-    if (p2Stats) {
-      p2Stats.gamesWon += p2Games;
-      p2Stats.gamesLost += p1Games;
-    }
-
-    if (isGuestMatch) continue;
+    p2Stats.gamesWon += p2Games;
+    p2Stats.gamesLost += p1Games;
 
     const [h2hPlayer1Id, h2hPlayer2Id] = [resolvedPlayer1Id, resolvedPlayer2Id].sort();
     const h2hId = `${h2hPlayer1Id}_${h2hPlayer2Id}`;

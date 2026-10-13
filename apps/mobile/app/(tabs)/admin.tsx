@@ -465,7 +465,7 @@ export default function AdminScreen() {
       )) as {
         result?: {
           countedMatches?: number;
-          guestMatchesCounted?: number;
+          guestMatchesSkipped?: number;
           matchesNormalized?: number;
           rankingsWritten?: number;
           rankingsDeleted?: number;
@@ -474,7 +474,7 @@ export default function AdminScreen() {
       const result = response.result;
       setRepairMessage(
         result
-          ? `Rankings repaired. Counted ${result.countedMatches ?? 0} matches, including ${result.guestMatchesCounted ?? 0} guest matches. Updated ${result.rankingsWritten ?? 0} ranking rows and removed ${result.rankingsDeleted ?? 0} stale rows. Normalized ${result.matchesNormalized ?? 0} historic matches.`
+          ? `Rankings repaired. Counted ${result.countedMatches ?? 0} matches and left out ${result.guestMatchesSkipped ?? 0} guest matches. Updated ${result.rankingsWritten ?? 0} ranking rows and removed ${result.rankingsDeleted ?? 0} stale rows. Normalized ${result.matchesNormalized ?? 0} historic matches.`
           : "Rankings repaired.",
       );
     } catch (e) {

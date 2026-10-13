@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Security
+- Players can no longer edit the score of a confirmed match. Participants could rewrite a completed result, which sent it back to awaiting confirmation and out of the standings, so the loser could undo a confirmed loss. Edits by participants are allowed only while the match is `pending_report`; leaders and admins can still correct a confirmed result. **Deploy with `firebase deploy --only firestore,storage`.**
+- Removing a player from a division, or merging their record into another, now also removes them from the division chat. They previously kept reading, posting, and receiving its notifications.
 - The Realtime Database rules deny every read and write. No client uses the Realtime Database, but the old rules let any signed-in user write `liveMatches`, `typing`, and `presence` entries. If an instance exists, deploy the rules with `firebase deploy --only database`.
 - The mobile error screens show the error message, stack trace, and user id only in development builds. Release builds show a plain explanation, and the details are still logged.
 - Tightened the Firestore match rules so only the opposing side can settle a result. A new match can no longer carry fields that only exist once it has been played (`undoSnapshot`, `reportSubmission`, `winner`, `completedAt`, `reportUrl`, and the timing fields). An undo must restore and consume the server's snapshot and can only return a match to `scheduled` or `in_progress`. Linking a guest opponent to a completed result reopens it for the linked player to confirm. A guest match must name the `guest` placeholder as its opponent. **Deploy with `firebase deploy --only firestore,storage`; the functions workflow does not deploy rules.**

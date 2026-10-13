@@ -360,8 +360,8 @@ describe('other match updates', () => {
   });
 
   it('requires a score edit to clear the old report link', async () => {
-    const completed = baseMatch({
-      status: 'completed',
+    const reported = baseMatch({
+      status: 'pending_report',
       winner: 'player1',
       liveScore: finalScore,
       reportUrl: 'https://example.com/report.pdf',
@@ -372,11 +372,17 @@ describe('other match updates', () => {
       status: 'pending_report',
       completedAt: deleteField(),
     };
-    await seed((db) => setDoc(doc(db, 'matches', 'keep'), completed));
+    await seed((db) => setDoc(doc(db, 'matches', 'keep'), reported));
     await assertFails(updateDoc(doc(as('p2'), 'matches', 'keep'), edit));
-    await seed((db) => setDoc(doc(db, 'matches', 'clear'), completed));
+    await seed((db) => setDoc(doc(db, 'matches', 'clear'), reported));
     await assertSucceeds(
       updateDoc(doc(as('p2'), 'matches', 'clear'), { ...edit, reportUrl: deleteField() }),
+    );
+    await seed((db) =>
+      setDoc(doc(db, 'matches', 'confirmed'), { ...reported, status: 'completed' }),
+    );
+    await assertFails(
+      updateDoc(doc(as('p2'), 'matches', 'confirmed'), { ...edit, reportUrl: deleteField() }),
     );
   });
 
