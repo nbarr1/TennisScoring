@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, functions, useAuthUser } from '@tennis/firebase-client';
 
 type InvitePreview = {
@@ -37,9 +37,12 @@ function InviteLoadingState() {
 function AcceptInviteContent(): React.JSX.Element {
   const router = useRouter();
   const params = useSearchParams();
-  const { firebaseUser } = useAuthUser();
+  const { firebaseUser, emailVerified } = useAuthUser();
 
   const token = useMemo(() => params.get('token')?.trim() ?? '', [params]);
+  // Accepting needs a verified address, so an unverified account verifies
+  // first and comes back to this invite afterwards.
+  const verifyThenReturnHref = `/verify-email?next=${encodeURIComponent(`/invite/accept?token=${encodeURIComponent(token)}`)}`;
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [email, setEmail] = useState('');
@@ -71,6 +74,10 @@ function AcceptInviteContent(): React.JSX.Element {
 
   async function acceptAsCurrentUser() {
     if (!token) return;
+    if (!emailVerified) {
+      router.push(verifyThenReturnHref);
+      return;
+    }
     setAccepting(true);
     setError('');
     try {
@@ -101,9 +108,10 @@ function AcceptInviteContent(): React.JSX.Element {
     try {
       const credential = await createUserWithEmailAndPassword(auth, targetEmail, password);
       await updateProfile(credential.user, { displayName: preview.name });
-
-      const acceptCallable = httpsCallable(functions, 'acceptInvite');
-      await acceptCallable({ token });
+      // The verify-email page offers a resend, so a failed send is not fatal here.
+      await sendEmailVerification(credential.user).catch((sendError: unknown) => {
+        console.error('Failed to send verification email:', sendError);
+      });
 
       const idToken = await credential.user.getIdToken();
       await fetch('/api/auth/login', {
@@ -111,8 +119,10 @@ function AcceptInviteContent(): React.JSX.Element {
         headers: { Authorization: `Bearer ${idToken}` },
       });
 
-      setSuccess('Welcome! Redirecting you to complete your profile…');
-      setTimeout(() => router.replace('/profile'), 600);
+      // acceptInvite requires a verified address, so the invite is accepted
+      // when the player returns here from the verification page.
+      setSuccess('Account created. Verify your email address to join the division…');
+      setTimeout(() => router.replace(verifyThenReturnHref), 600);
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === 'auth/email-already-in-use') {

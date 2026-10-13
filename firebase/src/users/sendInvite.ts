@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { isAdminRole } from '@tennis/shared';
 import { publicProfileUpdate, transferPlaceholderRecords } from '../divisions/divisionFunctions';
 import { recalculateRankings } from '../matches/matchFunctions';
+import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
 
@@ -131,6 +132,7 @@ function inviteLinkForToken(token: string): string {
 }
 
 export const sendInvite = onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',
@@ -250,6 +252,7 @@ export const getInvitePreview = onCall(async (request) => {
 });
 
 export const acceptInvite = onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new HttpsError(
       'unauthenticated',

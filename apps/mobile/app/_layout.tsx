@@ -138,7 +138,7 @@ function GateOverlay({ children }: { children: ReactNode }) {
 const gateRenders = { count: 0, since: Date.now() };
 
 function AuthGate() {
-  const { firebaseUser, loading: authLoading, error: authError } = useAuthUser();
+  const { firebaseUser, emailVerified, loading: authLoading, error: authError } = useAuthUser();
   const [retryKey, setRetryKey] = useState(0);
   const { user: profile, loading: profileLoading, error: profileError } = usePrivateUser(firebaseUser?.uid ?? null, retryKey);
   const router = useRouter();
@@ -158,6 +158,10 @@ function AuthGate() {
   // signing in first (it's linked from the login/signup screen), so it's
   // exempt from the auth redirect like `(auth)` itself.
   const inPrivacyPolicy = segments[0] === 'privacy-policy';
+  const inVerifyEmail = inAuth && (segments as string[])[1] === 'verify-email';
+  // The security rules refuse an unverified account everything but its own
+  // users document, so it stays on the verify-email screen until it verifies.
+  const needsVerification = !!firebaseUser && !emailVerified;
   const hasDivision = !!profile?.divisionId;
 
   // True while the current route is not where the redirect effect wants it.
@@ -166,7 +170,9 @@ function AuthGate() {
   const routeMismatch = !dataLoading && (
     !firebaseUser
       ? !inAuth && !inPrivacyPolicy
-      : inAuth || (!hasDivision && !inOnboarding) || (hasDivision && inOnboarding && !inTutorial)
+      : needsVerification
+        ? !inVerifyEmail && !inPrivacyPolicy
+        : inAuth || (!hasDivision && !inOnboarding) || (hasDivision && inOnboarding && !inTutorial)
   );
   const gating = dataLoading || routeMismatch;
 
@@ -204,6 +210,11 @@ function AuthGate() {
 
     if (profile) setUser(profile);
 
+    if (needsVerification) {
+      if (!inVerifyEmail && !inPrivacyPolicy) router.replace('/(auth)/verify-email');
+      return;
+    }
+
     const tutorialDone = !!profile?.tutorialDone;
     const tabsDest = tutorialDone ? '/(tabs)' : '/(onboarding)/tutorial';
 
@@ -226,6 +237,8 @@ function AuthGate() {
     inOnboarding,
     inTutorial,
     inPrivacyPolicy,
+    inVerifyEmail,
+    needsVerification,
   ]);
 
   const error = authError ?? profileError;

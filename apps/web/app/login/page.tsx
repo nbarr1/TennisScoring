@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   sendPasswordResetEmail,
   updateProfile,
 } from 'firebase/auth';
@@ -65,6 +66,10 @@ export default function LoginPage(): React.JSX.Element {
         const credential = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(credential.user, { displayName: displayName.trim() });
         user = credential.user;
+        // The verify-email page offers a resend, so a failed send is not fatal here.
+        await sendEmailVerification(user).catch((sendError: unknown) => {
+          console.error('Failed to send verification email:', sendError);
+        });
       } else {
         const credential = await signInWithEmailAndPassword(auth, email, password);
         user = credential.user;
@@ -80,7 +85,7 @@ export default function LoginPage(): React.JSX.Element {
         throw new Error('Could not establish a web session.');
       }
 
-      router.replace('/dashboard');
+      router.replace(user.emailVerified ? '/dashboard' : '/verify-email');
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {

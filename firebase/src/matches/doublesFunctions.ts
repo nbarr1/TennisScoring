@@ -11,6 +11,7 @@ import {
   buildDoublesMatchFields,
   validateDoublesCompetition,
 } from "./doublesSides";
+import { assertVerifiedEmail } from "../auth/verifiedEmail";
 
 if (!getApps().length) initializeApp();
 
@@ -35,6 +36,7 @@ type CreateDoublesMatchInput = {
  * the two sides, so a player can only set up a match they are playing in.
  */
 export const createDoublesMatch = functions.https.onCall(async (request) => {
+  assertVerifiedEmail(request.auth);
   if (!request.auth) {
     throw new functions.https.HttpsError(
       "unauthenticated",

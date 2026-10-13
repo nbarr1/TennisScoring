@@ -90,7 +90,10 @@ async function seed(fn) {
   await env.withSecurityRulesDisabled(async (context) => fn(context.firestore()));
 }
 
-const as = (uid) => env.authenticatedContext(uid, { email: `${uid}@example.com` }).firestore();
+const as = (uid) =>
+  env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
+const asUnverified = (uid) =>
+  env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: false }).firestore();
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -411,6 +414,34 @@ describe('accounts without a division', () => {
     const dm = (a, b) => ({ type: 'direct', participantIds: [a, b], createdAt: 1 });
     await assertSucceeds(setDoc(doc(as('p1'), 'channels', 'ok'), dm('p1', 'p2')));
     await assertFails(setDoc(doc(as('loner1'), 'channels', 'no'), dm('loner1', 'loner2')));
+  });
+});
+
+describe('accounts with an unverified email address', () => {
+  it('can read and edit only their own users document', async () => {
+    await assertSucceeds(getDoc(doc(asUnverified('p1'), 'users', 'p1')));
+    await assertSucceeds(
+      updateDoc(doc(asUnverified('p1'), 'users', 'p1'), { displayName: 'Pat', updatedAt: 2 }),
+    );
+    await assertFails(getDoc(doc(asUnverified('p1'), 'users', 'p2')));
+  });
+
+  it('cannot read division data, profiles, or matches', async () => {
+    await seed((db) => setDoc(doc(db, 'matches', 'm1'), baseMatch()));
+    await assertFails(getDoc(doc(asUnverified('p1'), 'divisions', DIVISION)));
+    await assertFails(getDoc(doc(asUnverified('p1'), 'profiles', 'p2')));
+    await assertFails(getDoc(doc(asUnverified('p1'), 'matches', 'm1')));
+    await assertSucceeds(getDoc(doc(as('p1'), 'matches', 'm1')));
+  });
+
+  it('cannot open a direct message', async () => {
+    await assertFails(
+      setDoc(doc(asUnverified('p1'), 'channels', 'dm'), {
+        type: 'direct',
+        participantIds: ['p1', 'p2'],
+        createdAt: 1,
+      }),
+    );
   });
 });
 
