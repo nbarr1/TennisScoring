@@ -1,15 +1,17 @@
-name: Native mobile
+name: Native iOS
 
-# Covers the signals ci.yml does not: the Android module's Kotlin unit tests (the
-# domain and Wear protocol suites the native migration is being built on), the
-# Swift TennisKit package's tests, and a typecheck of the iOS and watchOS app
-# sources. ci.yml's mobile_native job owns the release compile, so this workflow
-# deliberately builds debug only.
+# The Swift TennisKit package's tests and a typecheck of the iOS and watchOS app
+# sources: the one native signal ci.yml cannot give, because it needs macOS.
+#
+# This file used to carry two more jobs. The Android one ran the Kotlin unit
+# tests next to a full assembleDebug, a second native compile of what ci.yml's
+# mobile_native already builds for release; the unit tests moved into that job.
+# A Linux job ran `swift test` in the swift:6.1-noble image, which the macOS job
+# below repeats, and macOS is the Foundation the app actually ships on.
 
 on:
   pull_request:
     paths:
-      - 'apps/mobile/android/**'
       - 'apps/mobile/ios/**'
       - 'scripts/ios-typecheck.sh'
       - 'fixtures/mobile-contract/**'
@@ -18,98 +20,16 @@ on:
     branches:
       - Main
       - main
+    paths:
+      - 'apps/mobile/ios/**'
+      - 'scripts/ios-typecheck.sh'
+      - 'fixtures/mobile-contract/**'
+      - '.github/workflows/native-mobile.yml'
 
 permissions:
   contents: read
 
 jobs:
-  android:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      NODE_ENV: production
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9.15.5
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
-
-      # android/settings.gradle resolves the react-native and expo Gradle plugins
-      # through `node --print require.resolve(...)`, so node_modules has to exist
-      # before Gradle can configure anything. Without this the build fails while
-      # evaluating the settings file, long before it reaches any Android code.
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build workspace dependencies
-        run: pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
-
-      # Android Gradle Plugin 8.12, pinned by react-native 0.86.2's version
-      # catalog, requires JDK 17 or newer.
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      # react-native 0.86.2 pins this exact NDK in gradle/libs.versions.toml, and
-      # AGP fails rather than substituting whichever NDK the runner image ships.
-      - name: Install Android NDK
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006" > /dev/null
-
-      # Gradle bundles the JavaScript itself, so it needs the same placeholders
-      # ci.yml uses: app.config.js hard-fails when CI=true and they are unset.
-      # They are deliberately not secrets, so this job still runs on fork and
-      # Dependabot pull requests.
-      - name: Run unit tests and assemble debug
-        working-directory: apps/mobile/android
-        env:
-          EXPO_PUBLIC_FIREBASE_API_KEY: ci-placeholder
-          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder
-          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
-          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder
-          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ci-placeholder
-          EXPO_PUBLIC_FIREBASE_APP_ID: ci-placeholder
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
-
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-unit-test-reports
-          path: apps/mobile/android/app/build/reports/tests/
-          retention-days: 7
-
-  # TennisKit (the Swift port of @tennis/shared plus the app's view models) has
-  # no Apple framework dependencies, so its tests run on Linux in the official
-  # Swift image: minutes faster to start than a macOS runner, and it is the
-  # toolchain the suite was written against. The macOS job runs them again,
-  # because Foundation differs between the platforms (string comparison in the
-  # ranking tiebreak, for one).
-  ios_kit_linux:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container: swift:6.1-noble
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Test TennisKit
-        run: swift test --package-path apps/mobile/ios/TennisKit
-
   ios:
     runs-on: macos-15
     timeout-minutes: 30

@@ -241,7 +241,7 @@ Because `:app` and `:wear` share an `applicationId` (see the comment in `apps/mo
 
 ### CI
 
-`.github/workflows/ci.yml` runs on pushes to `main`/`claude/**` and pull requests to `main`, on Node 22. A path-filter job decides which of these run:
+`.github/workflows/ci.yml` runs on pushes to `Main`/`main` and pull requests to `Main`/`main`/`claude/**`, on Node 22. A path-filter job decides which of these run:
 
 ```bash
 # lint_typecheck — always runs
@@ -259,7 +259,7 @@ pnpm --filter @tennis/firebase-functions test:rules
 pnpm audit --audit-level=high   # non-blocking; an OSV-scanner step decides the final verdict on failure
 ```
 
-Two more workflows run independently: `.github/workflows/codeql.yml` (weekly + push/PR CodeQL scan) and `.github/workflows/firebase-safety-guard.yml` (blocks dangerous `firebase/**/*.rules` patterns on PRs).
+The mobile jobs (`mobile_bundle`, `mobile_native`) run when `apps/mobile/**` or `packages/**` change; `mobile_native` also runs the Kotlin unit tests. `.github/workflows/native-mobile.yml` runs the Swift `TennisKit` tests and iOS typecheck on macOS when `apps/mobile/ios/**` changes. Code scanning runs through GitHub's CodeQL default setup, configured in the repository settings.
 
 ### Targeted Firebase Functions deploy
 
@@ -281,7 +281,7 @@ Optional/recommended GitHub Actions variables:
 
 ### EAS Android APK workflow
 
-`.github/workflows/eas-build.yml` is manually triggered and requires:
+`.github/workflows/eas-build.yml` runs on manual dispatch (preview and watch builds) and on pushes to `Main` that touch the app (production build). It does not run on pull requests. It requires:
 
 - `EXPO_TOKEN`
 - Firebase public config secrets mapped into `EXPO_PUBLIC_FIREBASE_*` environment variables.

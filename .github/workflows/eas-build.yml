@@ -1,5 +1,10 @@
 name: EAS Build (Android APKs)
 
+# No pull_request trigger. Every pull request touching the app used to start a
+# roughly 70-minute EAS preview build, which spent the account's monthly build
+# quota and kept the checks amber long after ci.yml finished. ci.yml's
+# mobile_bundle and mobile_native jobs already compile what an EAS build would
+# reject. A preview build is still one manual dispatch away.
 on:
   workflow_dispatch:
     inputs:
@@ -12,12 +17,6 @@ on:
           - mobile
           - wear
           - wear-production
-  pull_request:
-    branches: [Main, main]
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/shared/**'
-      - '.github/workflows/eas-build.yml'
   push:
     branches: [Main, main]
     paths:
@@ -30,7 +29,6 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
