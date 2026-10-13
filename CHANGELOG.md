@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Security
+- The Realtime Database rules deny every read and write. No client uses the Realtime Database, but the old rules let any signed-in user write `liveMatches`, `typing`, and `presence` entries. If an instance exists, deploy the rules with `firebase deploy --only database`.
+- The mobile error screens show the error message, stack trace, and user id only in development builds. Release builds show a plain explanation, and the details are still logged.
 - Tightened the Firestore match rules so only the opposing side can settle a result. A new match can no longer carry fields that only exist once it has been played (`undoSnapshot`, `reportSubmission`, `winner`, `completedAt`, `reportUrl`, and the timing fields). An undo must restore and consume the server's snapshot and can only return a match to `scheduled` or `in_progress`. Linking a guest opponent to a completed result reopens it for the linked player to confirm. A guest match must name the `guest` placeholder as its opponent. **Deploy with `firebase deploy --only firestore,storage`; the functions workflow does not deploy rules.**
 - Leader-side division callables no longer change a registered account's active division or its contact details. A leader can still add any account to their roster, but its `users/{uid}.divisionId` is set only when it has none or already names that division, and only unregistered placeholders have their email or phone edited.
 - `createDivision` no longer demotes an admin or app developer to `division_leader`, and stores the email from the sign-in token rather than the request.
