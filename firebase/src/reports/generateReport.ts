@@ -72,6 +72,7 @@ async function createAndStoreReport(matchId: string, match: Match) {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const { height } = page.getSize();
+  const encodable = new Set(font.getCharacterSet());
 
   let y = height - 60;
 
@@ -82,7 +83,13 @@ async function createAndStoreReport(matchId: string, match: Match) {
     bold = false,
     color = rgb(0, 0, 0),
   ) => {
-    page.drawText(text, { x, y, size, font: bold ? fontBold : font, color });
+    page.drawText(toEncodableText(text, encodable), {
+      x,
+      y,
+      size,
+      font: bold ? fontBold : font,
+      color,
+    });
   };
 
   // Header
@@ -195,4 +202,33 @@ async function createAndStoreReport(matchId: string, match: Match) {
     .collection('matches')
     .doc(matchId)
     .update({ reportUrl: signedUrl });
+}
+
+// Letters with no Unicode decomposition to a base letter.
+const LATIN_FALLBACKS: Record<string, string> = {
+  Ł: 'L', ł: 'l', Đ: 'D', đ: 'd', Ħ: 'H', ħ: 'h', ı: 'i', Ŧ: 'T', ŧ: 't',
+};
+
+/**
+ * The standard Helvetica fonts only encode Windows-1252, and pdf-lib throws
+ * on any other character, which left the report for a player named "Łukasz"
+ * (or one with a non-Latin name or an emoji) never generated. Characters the
+ * font can't encode are reduced to their base letter where one exists and
+ * replaced with "?" otherwise.
+ */
+export function toEncodableText(text: string, encodable: Set<number>): string {
+  let result = '';
+  for (const char of text) {
+    if (encodable.has(char.codePointAt(0)!)) {
+      result += char;
+      continue;
+    }
+    const base = (LATIN_FALLBACKS[char] ?? char.normalize('NFKD')).replace(/\p{M}/gu, '');
+    const baseChars = [...base];
+    result +=
+      baseChars.length > 0 && baseChars.every((c) => encodable.has(c.codePointAt(0)!))
+        ? base
+        : '?';
+  }
+  return result;
 }

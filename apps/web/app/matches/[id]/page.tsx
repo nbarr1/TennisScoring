@@ -501,7 +501,11 @@ export default function MatchPage(): React.JSX.Element {
 
         {match.status === 'completed' && (
           <div style={styles.reportSection}>
-            <span style={styles.confirmedBadge}>✓ Score confirmed · Rankings updated</span>
+            <span style={styles.confirmedBadge}>
+              {match.player2IsGuest
+                ? '✓ Score recorded · Not in the standings until your opponent\'s account is linked and they confirm'
+                : '✓ Score confirmed · Rankings updated'}
+            </span>
           </div>
         )}
 

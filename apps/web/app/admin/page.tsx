@@ -913,7 +913,7 @@ export default function AdminPage(): React.JSX.Element {
       )) as {
         result?: {
           countedMatches?: number;
-          guestMatchesCounted?: number;
+          guestMatchesSkipped?: number;
           matchesNormalized?: number;
           rankingsWritten?: number;
           rankingsDeleted?: number;
@@ -924,8 +924,8 @@ export default function AdminPage(): React.JSX.Element {
         result
           ? `Rankings repaired. Counted ${result.countedMatches ?? 0} match${
               result.countedMatches === 1 ? "" : "es"
-            }, including ${result.guestMatchesCounted ?? 0} guest match${
-              result.guestMatchesCounted === 1 ? "" : "es"
+            } and left out ${result.guestMatchesSkipped ?? 0} guest match${
+              result.guestMatchesSkipped === 1 ? "" : "es"
             }. Updated ${result.rankingsWritten ?? 0} ranking row${
               result.rankingsWritten === 1 ? "" : "s"
             } and removed ${result.rankingsDeleted ?? 0} stale row${

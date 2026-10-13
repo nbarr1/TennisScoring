@@ -176,7 +176,6 @@ describe('ranking recalculation', () => {
 
   it(
     'keeps both results when two matches are confirmed back to back',
-    knownBug('a slower recalculation overwrites a faster one with a stale read'),
     async () => {
       await seedPlayers(['p1', 'p2', 'p3', 'p4']);
       const m1 = match('p1', 'p2');
@@ -236,7 +235,6 @@ describe('match report PDF', () => {
 
   it(
     'stores a report for names outside Latin-1',
-    knownBug("pdf-lib's built-in Helvetica throws on characters outside WinAnsi"),
     async () => {
       const { exists, error } = await generateFor('unicode', ['Łukasz Wójcik', '李娜']);
       assert.ok(exists, `the PDF was not stored: ${error?.message}`);
@@ -267,7 +265,6 @@ describe('record match on behalf', () => {
 
   it(
     'succeeds with one match when the push send fails',
-    knownBug('a notification error is returned as a failure after the match is saved, so a retry records it twice'),
     async () => {
       await seedPlayers(['p1', 'p2'], { p1: { fcmTokens: ['token-1'] } });
       const original = Messaging.prototype.sendEachForMulticast;
@@ -286,7 +283,6 @@ describe('record match on behalf', () => {
 
   it(
     'succeeds with one match when the email link cannot be built',
-    knownBug('APP_BASE_URL missing in production throws after the match is saved'),
     async () => {
       await seedPlayers(['p1', 'p2']);
       const saved = { NODE_ENV: process.env.NODE_ENV, APP_BASE_URL: process.env.APP_BASE_URL };

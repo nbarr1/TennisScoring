@@ -60,7 +60,7 @@ type RecalculateRankingsResult = {
   skippedMissingWinner: number;
   skippedMissingScore: number;
   skippedNonDivisionMatches: number;
-  guestMatchesCounted: number;
+  guestMatchesSkipped: number;
   matchesNormalized: number;
   rankingsWritten: number;
   rankingsDeleted: number;
@@ -682,10 +682,73 @@ function accumulateDoublesMatch(
   return true;
 }
 
+// Each pass reads every completed match and rewrites the whole table, pruning
+// rows it did not produce, and nothing serializes passes for one division. When
+// two results are confirmed seconds apart, a pass whose read missed the other
+// match can finish last and overwrite the correct table. So after writing, a
+// pass re-reads the completed matches and runs again if they changed since its
+// read: whichever pass writes last has then verified its input was current.
+const MAX_RECALCULATION_PASSES = 4;
+
 export async function recalculateRankings(
   divisionId: string,
   options: RecalculateRankingsOptions = {},
 ): Promise<RecalculateRankingsResult> {
+  let pass = await recalculateRankingsPass(divisionId, options);
+  // Writes an earlier pass made (normalized matches, pruned rows) are not
+  // repeated by the next one, so they are summed rather than taken from the
+  // final pass alone.
+  const mutations = mutationCounts(pass.result);
+  for (let attempt = 1; attempt < MAX_RECALCULATION_PASSES; attempt += 1) {
+    const current = completedMatchesFingerprint(await completedDivisionMatches(divisionId).get());
+    if (current === pass.fingerprint) break;
+    functions.logger.info('Completed matches changed during ranking recalculation; recomputing', {
+      divisionId,
+      attempt,
+    });
+    pass = await recalculateRankingsPass(divisionId, options);
+    const next = mutationCounts(pass.result);
+    for (const key of MUTATION_COUNT_KEYS) mutations[key] += next[key];
+  }
+  return { ...pass.result, ...mutations };
+}
+
+const MUTATION_COUNT_KEYS = [
+  'matchesNormalized',
+  'rankingsDeleted',
+  'doublesRankingsDeleted',
+  'headToHeadsDeleted',
+] as const;
+
+function mutationCounts(
+  result: RecalculateRankingsResult,
+): Record<(typeof MUTATION_COUNT_KEYS)[number], number> {
+  return {
+    matchesNormalized: result.matchesNormalized,
+    rankingsDeleted: result.rankingsDeleted,
+    doublesRankingsDeleted: result.doublesRankingsDeleted,
+    headToHeadsDeleted: result.headToHeadsDeleted,
+  };
+}
+
+function completedDivisionMatches(divisionId: string) {
+  return getFirestore()
+    .collection('matches')
+    .where('divisionId', '==', divisionId)
+    .where('status', '==', 'completed');
+}
+
+function completedMatchesFingerprint(snap: FirebaseFirestore.QuerySnapshot): string {
+  return snap.docs
+    .map((doc) => `${doc.id}@${doc.updateTime.toMillis()}`)
+    .sort()
+    .join(',');
+}
+
+async function recalculateRankingsPass(
+  divisionId: string,
+  options: RecalculateRankingsOptions,
+): Promise<{ result: RecalculateRankingsResult; fingerprint: string }> {
   const db = getFirestore();
   const result: RecalculateRankingsResult = {
     divisionId,
@@ -694,7 +757,7 @@ export async function recalculateRankings(
     skippedMissingWinner: 0,
     skippedMissingScore: 0,
     skippedNonDivisionMatches: 0,
-    guestMatchesCounted: 0,
+    guestMatchesSkipped: 0,
     matchesNormalized: 0,
     rankingsWritten: 0,
     rankingsDeleted: 0,
@@ -706,11 +769,7 @@ export async function recalculateRankings(
 
   const [divisionSnap, matchesSnap] = await Promise.all([
     db.collection('divisions').doc(divisionId).get(),
-    db
-      .collection('matches')
-      .where('divisionId', '==', divisionId)
-      .where('status', '==', 'completed')
-      .get(),
+    completedDivisionMatches(divisionId).get(),
   ]);
   const division = divisionSnap.data();
   const baseDivisionPlayerIds: string[] = Array.isArray(division?.playerIds)
@@ -819,20 +878,25 @@ export async function recalculateRankings(
     // name, so renaming an account (or deleting it, which renames it to
     // "Deleted User") silently erased their matches from both players' rows.
     const { player1Id, player2Id, liveScore, winner } = match;
-    const isGuestMatch = match.player2IsGuest === true;
+    // A guest result is confirmed by the player who recorded it alone, with no
+    // opponent to dispute it, so it stays on the match history but out of the
+    // standings. Linking the guest to a real account reopens it for that
+    // player to confirm, after which it counts.
+    if (match.player2IsGuest === true) {
+      result.guestMatchesSkipped += 1;
+      continue;
+    }
     const seasonId = match.seasonId?.trim() || activeSeasonId;
     const divisionLevelId = match.divisionLevelId?.trim() || undefined;
 
     const player1Included =
       !hasDivisionRoster || divisionPlayerIdSet.has(player1Id);
     const player2Included =
-      !isGuestMatch &&
-      (!hasDivisionRoster || divisionPlayerIdSet.has(player2Id));
+      !hasDivisionRoster || divisionPlayerIdSet.has(player2Id);
 
     if (!player1Included && !player2Included) continue;
 
     result.countedMatches += 1;
-    if (isGuestMatch) result.guestMatchesCounted += 1;
 
     const totalsFor = (userId: string): SinglesTotals => {
       const key = singlesRankingDocId(seasonId, userId, divisionLevelId);
@@ -1095,7 +1159,7 @@ export async function recalculateRankings(
     result.headToHeadsWritten += 1;
   }
   await writer.close();
-  return result;
+  return { result, fingerprint: completedMatchesFingerprint(matchesSnap) };
 }
 
 
@@ -1174,6 +1238,22 @@ function sanitizeRecordedSets(sets: unknown): RecordedSetInput[] {
     p2: Number(set?.p2),
     ...(set?.matchTiebreak === true ? { matchTiebreak: true } : {}),
   }));
+}
+
+// The match is already saved when this runs. Letting a notification error
+// reach the caller told the leader the save failed, and their retry created a
+// second completed match that counted twice in the standings.
+async function notifyPlayersMatchRecordedSafely(
+  db: ReturnType<typeof getFirestore>,
+  match: Match,
+  matchId: string,
+  recorderName: string,
+): Promise<void> {
+  try {
+    await notifyPlayersMatchRecorded(db, match, matchId, recorderName);
+  } catch (error) {
+    console.error(`Failed to notify players about recorded match ${matchId}`, error);
+  }
 }
 
 async function notifyPlayersMatchRecorded(
@@ -1519,7 +1599,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
     };
     const doublesRef = await db.collection('matches').add(doublesMatchData);
     if (notifyPlayers !== false) {
-      await notifyPlayersMatchRecorded(
+      await notifyPlayersMatchRecordedSafely(
         db,
         { id: doublesRef.id, ...doublesMatchData },
         doublesRef.id,
@@ -1582,7 +1662,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
 
   const matchRef = await db.collection('matches').add(matchData);
   if (notifyPlayers !== false) {
-    await notifyPlayersMatchRecorded(db, { id: matchRef.id, ...matchData }, matchRef.id, actorName);
+    await notifyPlayersMatchRecordedSafely(db, { id: matchRef.id, ...matchData }, matchRef.id, actorName);
   }
 
   return { success: true, matchId: matchRef.id };
@@ -1740,8 +1820,8 @@ export const repairAllDivisionRankings = functions.https.onCall(
         completedMatchesScanned:
           acc.completedMatchesScanned + result.completedMatchesScanned,
         countedMatches: acc.countedMatches + result.countedMatches,
-        guestMatchesCounted:
-          acc.guestMatchesCounted + result.guestMatchesCounted,
+        guestMatchesSkipped:
+          acc.guestMatchesSkipped + result.guestMatchesSkipped,
         matchesNormalized: acc.matchesNormalized + result.matchesNormalized,
         rankingsWritten: acc.rankingsWritten + result.rankingsWritten,
         rankingsDeleted: acc.rankingsDeleted + result.rankingsDeleted,
@@ -1758,7 +1838,7 @@ export const repairAllDivisionRankings = functions.https.onCall(
         divisionsProcessed: 0,
         completedMatchesScanned: 0,
         countedMatches: 0,
-        guestMatchesCounted: 0,
+        guestMatchesSkipped: 0,
         matchesNormalized: 0,
         rankingsWritten: 0,
         rankingsDeleted: 0,

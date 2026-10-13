@@ -48,6 +48,7 @@ import {
   isMatchParticipant,
   canRespondToReport,
   getMatchStatusMetadata,
+  isAdminRole,
   recordedSetsFromScore,
   validateRecordedSets,
 } from "@tennis/shared";
@@ -727,7 +728,7 @@ export default function MatchScreen() {
     if (!match || !id || !user) return;
     Alert.alert(
       "Finalize Match Result?",
-      `Save the final score (${formatScoreDisplay(match.liveScore)})? Rankings will update immediately.`,
+      `Save the final score (${formatScoreDisplay(match.liveScore)})? Guest matches don't count in the standings until you link your opponent's account and they confirm the score.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -906,9 +907,12 @@ export default function MatchScreen() {
   const p2Name = match.player2Name ?? "Player 2";
   const p1Stats = { ...EMPTY_STATS, ...match.stats.player1 };
   const p2Stats = { ...EMPTY_STATS, ...match.stats.player2 };
+  // Players may only correct a result awaiting confirmation; once confirmed,
+  // only a leader or admin can change it (the rules enforce the same split).
   const canEditScore =
-    canManage &&
-    (match.status === "pending_report" || match.status === "completed");
+    (canManage && match.status === "pending_report") ||
+    ((isAdminOrLeader || isAdminRole(user?.role)) &&
+      match.status === "completed");
   const elapsedMs =
     match.matchDurationMs ??
     (match.startedAt && match.status === "in_progress"
@@ -1233,7 +1237,9 @@ export default function MatchScreen() {
                       color="#a8d5a2"
                       textStyle={styles.confirmedText}
                     >
-                      Score confirmed · Rankings updated
+                      {match.player2IsGuest
+                        ? "Score recorded · Not in the standings until your opponent's account is linked and they confirm"
+                        : "Score confirmed · Rankings updated"}
                     </IconLabel>
                   </View>
                   <TouchableOpacity
