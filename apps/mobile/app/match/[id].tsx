@@ -34,6 +34,7 @@ import {
   submitMatchReport,
   confirmMatchReport,
   disputeMatchReport,
+  resolveDisputedReport,
   submitGuestReport,
   linkGuestOpponent,
   setMatchTipsEnabled,
@@ -48,6 +49,7 @@ import {
   isMatchParticipant,
   canRespondToReport,
   getMatchStatusMetadata,
+  isAdminRole,
   recordedSetsFromScore,
   validateRecordedSets,
 } from "@tennis/shared";
@@ -216,6 +218,7 @@ function EditScoreModal({
   isCompleted,
   p1Name,
   p2Name,
+  resolving = false,
 }: {
   visible: boolean;
   sets: SetDraft[];
@@ -226,6 +229,8 @@ function EditScoreModal({
   isCompleted: boolean;
   p1Name: string;
   p2Name: string;
+  /** A leader entering the correct score for a disputed or unanswered report. */
+  resolving?: boolean;
 }) {
   function updateSet(i: number, side: "p1" | "p2", val: string) {
     onChangeSets(
@@ -240,8 +245,16 @@ function EditScoreModal({
         keyboardViewStyle={styles.linkModalOverlay}
         contentContainerStyle={styles.linkModalCard}
       >
-        <Text style={styles.linkModalTitle}>Edit Score</Text>
-        {isCompleted && (
+        <Text style={styles.linkModalTitle}>
+          {resolving ? "Set Correct Score" : "Edit Score"}
+        </Text>
+        {resolving && (
+          <Text style={[styles.linkModalHint, { marginBottom: 12 }]}>
+            This score is final. It counts in the standings without another
+            confirmation from the players.
+          </Text>
+        )}
+        {!resolving && isCompleted && (
           <Text
             style={[
               styles.linkModalHint,
@@ -319,7 +332,9 @@ function EditScoreModal({
           {saving ? (
             <ActivityIndicator color={colors.surface} />
           ) : (
-            <Text style={styles.confirmBtnText}>Save Score</Text>
+            <Text style={styles.confirmBtnText}>
+              {resolving ? "Save Final Score" : "Save Score"}
+            </Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity style={styles.linkCancelBtn} onPress={onCancel}>
@@ -358,6 +373,9 @@ export default function MatchScreen() {
   const [showEditScore, setShowEditScore] = useState(false);
   const [editSets, setEditSets] = useState<SetDraft[]>([]);
   const [editSaving, setEditSaving] = useState(false);
+  // True while the score sheet is open for a leader's resolution rather than
+  // a player's edit.
+  const [resolvingScore, setResolvingScore] = useState(false);
   const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
   const [watchAppInstalled, setWatchAppInstalled] = useState(false);
   const [launchingWatch, setLaunchingWatch] = useState(false);
@@ -373,6 +391,13 @@ export default function MatchScreen() {
   const isAdminOrLeader =
     user?.role === "division_leader" || user?.role === "admin";
   const canManage = isParticipant || isAdminOrLeader;
+  // resolveDisputedReport decides for real (leader of this division, or
+  // admin); this only decides whether to offer the controls.
+  const canResolveReport =
+    (user?.role === "division_leader" || isAdminRole(user?.role)) &&
+    !!match &&
+    (match.status === "disputed" ||
+      (match.status === "pending_report" && !!match.reportSubmission));
 
   // Derived report-submission state
   const submission = match?.reportSubmission;
@@ -566,8 +591,42 @@ export default function MatchScreen() {
         }))
       : [];
     setEditSets(existing.length > 0 ? existing : [{ p1: "", p2: "" }]);
+    setResolvingScore(false);
     setShowManage(false);
     setShowEditScore(true);
+  }
+
+  function handleOpenResolveScore() {
+    handleOpenEditScore();
+    setResolvingScore(true);
+  }
+
+  function handleConfirmReportedScore() {
+    if (!match || !id) return;
+    Alert.alert(
+      "Confirm Reported Score?",
+      `Make ${formatScoreDisplay(match.liveScore)} the final result? It counts in the standings right away.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await resolveDisputedReport(id);
+            } catch (err) {
+              console.error("Failed to resolve match report:", err);
+              Alert.alert(
+                "Error",
+                "Could not resolve this report. Check your connection and try again.",
+              );
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function handleSaveEditScore() {
@@ -584,7 +643,11 @@ export default function MatchScreen() {
     if (!id) return;
     setEditSaving(true);
     try {
-      await editMatchScore(id, parsed);
+      if (resolvingScore) {
+        await resolveDisputedReport(id, parsed);
+      } else {
+        await editMatchScore(id, parsed);
+      }
       setShowEditScore(false);
     } catch {
       Alert.alert("Error", "Could not save score. Please try again.");
@@ -1146,6 +1209,47 @@ export default function MatchScreen() {
                 </View>
               )}
 
+              {/* Leader or admin settles a disputed or unanswered report */}
+              {canResolveReport && (
+                <View style={styles.resolveSection}>
+                  <Text style={styles.resolveTitle}>Resolve This Result</Text>
+                  <Text style={styles.disputedBody}>
+                    {match.status === "disputed"
+                      ? "The players disagree on this score."
+                      : "The opposing side has not answered this report."}{" "}
+                    Confirm the reported score ({scoreDisplay}) or set the
+                    correct one. Either way, the result is final.
+                  </Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    style={[
+                      styles.confirmBtn,
+                      submitting && styles.btnDisabled,
+                    ]}
+                    onPress={handleConfirmReportedScore}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color={colors.surface} />
+                    ) : (
+                      <Text style={styles.confirmBtnText}>
+                        Confirm Reported Score
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    style={styles.disputeReportBtn}
+                    onPress={handleOpenResolveScore}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.resolveSecondaryText}>
+                      Set Correct Score
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Confirmed / completed */}
               {match.status === "completed" && (
                 <View style={styles.reportSection}>
@@ -1464,6 +1568,7 @@ export default function MatchScreen() {
         isCompleted={match.status === "completed"}
         p1Name={p1Name}
         p2Name={p2Name}
+        resolving={resolvingScore}
       />
 
       <DisputeModal
@@ -1660,6 +1765,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
+  resolveSection: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 16,
+    padding: 24,
+    gap: 12,
+    alignItems: "center",
+  },
+  resolveTitle: {
+    color: colors.surface,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  resolveSecondaryText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
 
   // Player names row
 

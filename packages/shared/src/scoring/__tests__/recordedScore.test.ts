@@ -2,6 +2,7 @@ import {
   buildRecordedMatchScore,
   canBeMatchTiebreak,
   isValidMatchTiebreakScore,
+  parseRecordedScoreLine,
   parseRecordedSetToken,
   recordedSetsFromScore,
   validateRecordedSets,
@@ -160,5 +161,28 @@ describe('parseRecordedSetToken', () => {
     expect(parseRecordedSetToken('[ 12 - 10 ]')).toEqual({ p1: 12, p2: 10, matchTiebreak: true });
     expect(parseRecordedSetToken('six-four')).toBeNull();
     expect(parseRecordedSetToken('[10-8')).toBeNull();
+  });
+});
+
+describe('parseRecordedScoreLine', () => {
+  it('reads sets separated by commas, semicolons, or spaces', () => {
+    expect(parseRecordedScoreLine('6-4, 3-6, [10-8]')).toEqual([
+      { p1: 6, p2: 4 },
+      { p1: 3, p2: 6 },
+      { p1: 10, p2: 8, matchTiebreak: true },
+    ]);
+    expect(parseRecordedScoreLine('6-4 7:5')).toEqual([{ p1: 6, p2: 4 }, { p1: 7, p2: 5 }]);
+    expect(parseRecordedScoreLine(' 6 - 4 ; [ 12 - 10 ] ')).toEqual([
+      { p1: 6, p2: 4 },
+      { p1: 12, p2: 10, matchTiebreak: true },
+    ]);
+  });
+
+  it('rejects empty lines and anything that is not a set', () => {
+    expect(parseRecordedScoreLine('')).toBeNull();
+    expect(parseRecordedScoreLine('  ,  ')).toBeNull();
+    expect(parseRecordedScoreLine('6-4, six-three')).toBeNull();
+    expect(parseRecordedScoreLine('6-4, [10-8')).toBeNull();
+    expect(parseRecordedScoreLine('6-4-3')).toBeNull();
   });
 });

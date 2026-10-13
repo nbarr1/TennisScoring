@@ -7,7 +7,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { matchDoc, matchesCol, liveMatchesQuery } from '../collections';
+import { matchDoc, matchesCol, liveMatchesQuery, reportsAwaitingResolutionQuery } from '../collections';
 import { functions } from '../config';
 import type {
   Match,
@@ -474,12 +474,17 @@ export async function disputeMatchReport(
 }
 
 /**
- * Division leader resolves a disputed report via a server-side callable
- * that enforces the leader authorization check.
+ * A division leader or admin settles a disputed report, or one the opposing
+ * side never answered, via a server-side callable that enforces the leader
+ * check. Without `sets` it confirms the reported score; with `sets` it records
+ * that corrected score instead. Either way the result counts in the standings.
  */
-export async function resolveDisputedReport(matchId: string): Promise<void> {
+export async function resolveDisputedReport(
+  matchId: string,
+  sets?: RecordedSetInput[],
+): Promise<void> {
   const callable = httpsCallable(functions, 'resolveDisputedReport');
-  await callable({ matchId });
+  await callable({ matchId, ...(sets && { sets }) });
 }
 
 export async function editMatchScore(
@@ -538,6 +543,48 @@ export function useLiveMatches(divisionId: string | null) {
       );
       setLoading(false);
     });
+    return unsub;
+  }, [divisionId]);
+
+  return { matches, loading };
+}
+
+/**
+ * Subscribes to a division's results a leader can settle with
+ * `resolveDisputedReport()`: disputed reports, and submitted reports the
+ * opposing side has not answered. Oldest first, so the longest wait leads.
+ */
+export function useReportsAwaitingResolution(divisionId: string | null | undefined) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId) {
+      setMatches([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const unsub = onSnapshot(
+      reportsAwaitingResolutionQuery(divisionId),
+      (snap) => {
+        const awaiting = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+          .filter((m) => m.status === 'disputed' || !!m.reportSubmission)
+          .sort(
+            (a, b) =>
+              (a.reportSubmission?.submittedAt ?? a.completedAt ?? 0) -
+              (b.reportSubmission?.submittedAt ?? b.completedAt ?? 0),
+          );
+        setMatches(awaiting);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Failed to load reports awaiting resolution:', err);
+        setMatches([]);
+        setLoading(false);
+      },
+    );
     return unsub;
   }, [divisionId]);
 
