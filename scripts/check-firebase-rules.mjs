@@ -36,7 +36,7 @@ const firestoreRules = readFileSync('firebase/firestore.rules', 'utf8');
 const requiredFirestoreGuards = [
   {
     description: 'new user documents restrict their writable field set',
-    pattern: /allow create: if isUser\(userId\) &&\s*request\.resource\.data\.keys\(\)\.hasOnly\(initialUserFields\(\)\)/,
+    pattern: /allow create: if (?:isUser|isOwnAccount)\(userId\) &&\s*request\.resource\.data\.keys\(\)\.hasOnly\(initialUserFields\(\)\)/,
   },
   {
     description: 'guest linking pins the replacement roster to two players',
@@ -72,7 +72,7 @@ if (!messageReportCreateRule || /messageContent\.size\(\)/.test(messageReportCre
 }
 
 const storageRules = readFileSync('firebase/storage.rules', 'utf8');
-if (!/allow delete: if request\.auth != null && request\.auth\.uid == userId;/.test(storageRules)) {
+if (!/allow delete: if (?:request\.auth != null|isAuth\(\)) && request\.auth\.uid == userId;/.test(storageRules)) {
   console.error('❌ firebase/storage.rules: avatar owners cannot explicitly delete their files');
   failed = true;
 }
