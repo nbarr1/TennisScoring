@@ -266,8 +266,17 @@ service cloud.firestore {
         request.resource.data.inviteCode.matches('^[A-Z2-9]{8}$') &&
         request.resource.data.leaderIds is list &&
         request.resource.data.playerIds is list;
-      allow update: if (isLeader(divisionId) || isAdmin()) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'leaderIds', 'playerIds', 'updatedAt']);
+      // Leaders and the roster change only through the division callables, which
+      // archive memberships and never move a registered account. Letting a leader
+      // write leaderIds or playerIds here bypassed both, and any account can lead
+      // a division of its own by calling createDivision.
+      allow update: if (
+        isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'leaderIds', 'playerIds', 'updatedAt'])
+      ) || (
+        isLeader(divisionId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
+      );
       allow delete: if isAdmin();
 
       // Division levels/flights are managed by Cloud Functions.
@@ -570,7 +579,26 @@ service cloud.firestore {
             )
           )
         );
-      allow update: if isAdmin() || isLeader(resource.data.divisionId) || canUpdateMatch(resource.data, request.resource.data);
+      // A leader may edit any match in their division (correct a score, settle a
+      // result), but not move it out of the division or change who played it.
+      // The leader check reads only the existing divisionId, and any account can
+      // lead a division of its own, so without these pins a leader could move a
+      // fabricated completed result into another division's standings, or credit
+      // a confirmed result to other players. A leader who played the match still
+      // links a guest opponent through the participant rules in canUpdateMatch.
+      // Admins (and the Admin SDK) are not limited.
+      function isLeaderMatchUpdate(existing, incoming) {
+        return isLeader(existing.divisionId) &&
+          incoming.divisionId == existing.divisionId &&
+          !incoming.diff(existing).affectedKeys().hasAny([
+            'seasonId', 'divisionLevelId', 'side1', 'side2',
+            'player1Id', 'player2Id', 'playerIds', 'player2IsGuest'
+          ]);
+      }
+
+      allow update: if isAdmin() ||
+        isLeaderMatchUpdate(resource.data, request.resource.data) ||
+        canUpdateMatch(resource.data, request.resource.data);
       allow delete: if isAdmin() || isLeader(resource.data.divisionId) || (
         isMatchParticipant(resource.data) &&
         resource.data.createdBy == request.auth.uid &&

@@ -19,9 +19,14 @@ on:
       - "packages/shared/**"
       - ".github/workflows/deploy-firebase-function.yml"
 
+# One group for every run, whatever its ref, because they all deploy to the same
+# project: a dispatch from a branch must wait for a push deploy from Main, not
+# interleave with it. Never cancel a run in progress. Cancelling a
+# `firebase deploy` part-way can leave some functions on the new commit and
+# others on the old one.
 concurrency:
-  group: deploy-firebase-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-firebase-functions
+  cancel-in-progress: false
 
 permissions:
   contents: read

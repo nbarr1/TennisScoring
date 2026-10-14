@@ -119,6 +119,9 @@ export default function MessagesPage(): React.JSX.Element {
         <main style={styles.chatArea}>
           {active ? (
             <ChatPane
+              // A new pane per channel, so a draft or a failed send's restored
+              // text can never land in another conversation's composer.
+              key={active.id}
               channel={active}
               currentUserId={firebaseUser?.uid ?? ""}
               currentUserName={
@@ -358,12 +361,20 @@ function ChatPane({
     if (!text.trim()) return;
     const content = text.trim();
     setText("");
-    await sendMessage({
-      channelId: channel.id,
-      senderId: currentUserId,
-      senderName: currentUserName,
-      content,
-    });
+    setActionError("");
+    try {
+      await sendMessage({
+        channelId: channel.id,
+        senderId: currentUserId,
+        senderName: currentUserName,
+        content,
+      });
+    } catch {
+      // Put the message back so a failed send doesn't lose it, unless the
+      // user has already started typing something else.
+      setText((current) => current || content);
+      setActionError("Could not send your message. Please try again.");
+    }
   }
 
 

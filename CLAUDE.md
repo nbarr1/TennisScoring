@@ -471,14 +471,13 @@ The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIRE
 
 There is no separate Firebase rules guard workflow. `pnpm check:firebase-rules` in `firebase_rules_tests` scans the whole rules files for the same open-access patterns and more, so the old diff-only `firebase-safety-guard.yml`, which also re-ran the same emulator smoke test, was removed as a duplicate.
 
-`.github/workflows/eas-build.yml` — Android builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets. It runs on two events, and the profile it picks differs by event:
+`.github/workflows/eas-build.yml` — Android builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets. **Every build is a manual `workflow_dispatch`**, with a `target` of `mobile`, `production`, `wear`, or `wear-production` → `preview`, `production`, `wear-preview`, or `wear-production`. `production` does not set `buildType: apk` the way `preview` does. **This is the only way to build the watch APK**, so testing anything that needs both artifacts on real hardware means dispatching `wear` by hand alongside whatever built the phone.
 
-- **`workflow_dispatch`** with a `target` of `mobile`, `wear`, or `wear-production` → `preview`, `wear-preview`, or `wear-production`. **This is the only way to build the watch APK**, so testing anything that needs both artifacts on real hardware means dispatching `wear` by hand alongside whatever built the phone.
-- **`push`** to `Main`/`main` → `production`, which does not set `buildType: apk` the way `preview` does.
+- **`production` and `wear-production` run only from the default branch** (read from `github.event.repository.default_branch`). The profile step fails on any other ref, so a release build cannot come from an unmerged branch.
+- **There is no push trigger.** Every merge to `Main` touching the app used to start an unattended production build, which spent the Expo account's monthly Android build quota with no release decision behind it. Dispatch `production` to cut a release.
+- **A running build is never cancelled** (`concurrency` per target, `cancel-in-progress: false`), so two dispatches cannot race the `versionCode` stamp. GitHub keeps at most one pending run per group, so a third dispatch of the same target replaces the pending second.
 
-That last branch was dead until recently: it compared `github.ref` against `refs/heads/main` alone, and the comparison is case-sensitive, so after the rename to `Main` no push ever selected `production` — every merge quietly built `preview`. It now matches both spellings, which means **merging to `Main` starts a production build**.
-
-**There is no pull request trigger.** Every pull request touching the app used to start a roughly 70-minute EAS `preview` build, which used up the Expo account's monthly Android build quota and failed every app pull request once it ran out. `mobile_bundle` and `mobile_native` in `ci.yml` compile what an EAS build would reject; dispatch the workflow by hand to get an installable preview. The APK or AAB lands in the Expo dashboard, never as a GitHub artifact.
+**There is no pull request trigger either.** Every pull request touching the app used to start a roughly 70-minute EAS `preview` build, which used up the Expo account's monthly Android build quota and failed every app pull request once it ran out. `mobile_bundle` and `mobile_native` in `ci.yml` compile what an EAS build would reject; dispatch the workflow by hand to get an installable preview. The APK or AAB lands in the Expo dashboard, never as a GitHub artifact.
 
 **Release `versionCode` comes from the workflow's run number.** For the `production` and `wear-production` profiles, a step runs `scripts/stamp-android-version-code.mjs`, which sets `expo.android.versionCode` in the runner's `app.json` to `VERSION_CODE_OFFSET + github.run_number` before `eas build` uploads the project (`:wear` ships `1000000 +` that value). The Android profiles no longer use `autoIncrement`: it bumped the runner's copy of `app.json`, which nothing committed back, so every production build reused one `versionCode` and Google Play rejects a repeat upload. Three things follow:
 
@@ -488,8 +487,9 @@ That last branch was dead until recently: it compared `github.ref` against `refs
 
 `.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
 
-Four things to know before relying on it:
+Five things to know before relying on it:
 
+- **Deploys share one concurrency group across all refs and are never cancelled mid-run** (`cancel-in-progress: false`). Every run targets the same project, so a branch dispatch waits for a `Main` deploy instead of interleaving with it, and cancelling a `firebase deploy` part-way can leave some functions on the new commit and others on the old one.
 - **It deploys to the `staging` GitHub environment only.** There is no production job. It previously carried a `deploy_production` job whose only step echoed a message, so a run that "succeeded" had deployed nothing to production.
 - **Firestore and Storage rules are not deployed by it.** They go out through `deploy-firebase-rules.yml`, described next.
 - **A function must be named in three places or it is silently not deployed**: exported from `firebase/src/targetedDeployIndex.ts` (which `build:targeted-deploy` bundles to `lib/index.js`), and listed in *both* the `FILTERS` and `DEPLOY_FUNCTIONS` strings in this workflow. The "Verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from those lists passes CI and then fails at the call site with `functions/not-found`.
