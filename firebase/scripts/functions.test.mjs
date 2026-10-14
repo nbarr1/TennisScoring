@@ -5,7 +5,8 @@
 // `run()`, with the Admin SDK pointed at the emulators, so they exercise the
 // same code that deploys. They cover the gaps the pre-release review listed:
 // concurrent ranking recalculation, report PDFs for names outside Latin-1, and
-// "record match on behalf" when sending notifications fails.
+// "record match on behalf" when sending notifications fails. They also cover the
+// roster callables leaders use to assign, move, and remove players.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -300,4 +301,225 @@ describe('record match on behalf', () => {
       assert.equal(await recordedMatchCount(), 1);
     },
   );
+});
+
+describe('division roster callables', () => {
+  const leaderAuth = { uid: 'leader', token: { email: 'leader@example.com', email_verified: true } };
+  const call = (fn, data, auth = leaderAuth) => functions[fn].run({ auth, data, rawRequest: {} });
+  const membershipsCol = () => db.collection('divisions').doc(DIVISION).collection('memberships');
+  const membershipId = (seasonId, levelId, userId) => `${seasonId}_${levelId}_${userId}`;
+
+  async function seedRoster() {
+    await seedPlayers(['p1', 'p2']);
+    const batch = db.batch();
+    for (const [seasonId, levelId] of [[SEASON, 'L1'], [SEASON, 'L2'], ['2027-H1', 'L3']]) {
+      batch.set(db.collection('divisions').doc(DIVISION).collection('levels').doc(levelId), {
+        id: levelId,
+        divisionId: DIVISION,
+        seasonId,
+        name: levelId,
+        matchType: 'singles',
+      });
+    }
+    batch.set(db.collection('channels').doc('chat'), {
+      type: 'division',
+      divisionId: DIVISION,
+      participantIds: ['leader', 'p1', 'p2'],
+    });
+    await batch.commit();
+  }
+
+  async function seedMembership(userId, levelId, status = 'active', seasonId = SEASON) {
+    const id = membershipId(seasonId, levelId, userId);
+    await membershipsCol().doc(id).set({
+      id,
+      divisionId: DIVISION,
+      seasonId,
+      divisionLevelId: levelId,
+      userId,
+      role: 'player',
+      status,
+      source: 'registered_user',
+      assignedBy: 'leader',
+    });
+  }
+
+  async function rosteredLevels(userId, seasonId = SEASON) {
+    const snap = await membershipsCol()
+      .where('userId', '==', userId)
+      .where('seasonId', '==', seasonId)
+      .where('status', 'in', ['active', 'waitlisted'])
+      .get();
+    return snap.docs.map((d) => d.data().divisionLevelId).sort();
+  }
+
+  const userDoc = async (uid) => (await db.collection('users').doc(uid).get()).data();
+  const divisionDoc = async () => (await db.collection('divisions').doc(DIVISION).get()).data();
+  const chatParticipants = async () => (await db.collection('channels').doc('chat').get()).data().participantIds;
+
+  it('moves a player between levels without leaving two rostered memberships', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'L1');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L2', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['L2']);
+    const old = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
+    assert.equal(old.status, 'removed', 'the earlier membership is archived, not deleted');
+  });
+
+  it('archives a waitlisted membership when the player is moved', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'L1', 'waitlisted');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L2', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['L2']);
+    const old = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
+    assert.equal(old?.status, 'removed', 'the waitlisted membership is archived, not deleted');
+  });
+
+  it('rejects a level that belongs to another season', async () => {
+    await seedRoster();
+    await assert.rejects(
+      call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L3', userId: 'p1' }),
+      { code: 'failed-precondition' },
+    );
+  });
+
+  it('refuses callers who do not lead the division', async () => {
+    await seedRoster();
+    const p2Auth = { uid: 'p2', token: { email: 'p2@example.com', email_verified: true } };
+    await assert.rejects(
+      call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L1', userId: 'p1' }, p2Auth),
+      { code: 'permission-denied' },
+    );
+    await assert.rejects(
+      call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' }, p2Auth),
+      { code: 'permission-denied' },
+    );
+    await assert.rejects(
+      call('addPlayerToDivisionByEmail', { divisionId: DIVISION, email: 'p1@example.com' }, p2Auth),
+      { code: 'permission-denied' },
+    );
+  });
+
+  describe('a registered account that belongs to another division', () => {
+    async function seedOutsider() {
+      await seedRoster();
+      await db.collection('users').doc('outsider').set({
+        id: 'outsider',
+        displayName: 'Outsider',
+        email: 'outsider@example.com',
+        phone: '555-0100',
+        role: 'player',
+        divisionId: 'divB',
+        isRegistered: true,
+        fcmTokens: ['outsider-token'],
+      });
+    }
+
+    it('keeps its active division when added by email', async () => {
+      await seedOutsider();
+      await call('addPlayerToDivisionByEmail', { divisionId: DIVISION, email: 'Outsider@Example.com' });
+      assert.equal((await userDoc('outsider')).divisionId, 'divB');
+      assert.ok((await divisionDoc()).playerIds.includes('outsider'), 'it is still put on the roster');
+    });
+
+    it('keeps its division and contact details when given a membership', async () => {
+      await seedOutsider();
+      await call('upsertDivisionMembership', {
+        divisionId: DIVISION,
+        seasonId: SEASON,
+        divisionLevelId: 'L1',
+        userId: 'outsider',
+        email: 'changed@example.com',
+        phone: '555-0199',
+      });
+      const user = await userDoc('outsider');
+      assert.equal(user.divisionId, 'divB');
+      assert.equal(user.email, 'outsider@example.com');
+      assert.equal(user.phone, '555-0100');
+      assert.deepEqual(await rosteredLevels('outsider'), ['L1']);
+    });
+  });
+
+  it('adopts the division for an account that has none', async () => {
+    await seedRoster();
+    await db.collection('users').doc('newcomer').set({
+      id: 'newcomer',
+      displayName: 'Newcomer',
+      email: 'newcomer@example.com',
+      role: 'player',
+      divisionId: null,
+    });
+    await call('addPlayerToDivisionByEmail', { divisionId: DIVISION, email: 'newcomer@example.com' });
+    assert.equal((await userDoc('newcomer')).divisionId, DIVISION);
+  });
+
+  describe('removeDivisionMembership', () => {
+    it('archives a waitlisted membership and detaches the player', async () => {
+      await seedRoster();
+      await seedMembership('p1', 'L1', 'waitlisted');
+      const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' });
+      assert.deepEqual(result, { removed: 1, detachedFromDivision: true });
+      assert.deepEqual(await rosteredLevels('p1'), []);
+      const membership = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
+      assert.equal(membership.status, 'removed');
+      assert.equal(membership.assignedBy, 'leader', 'the audit trail keeps who assigned the player');
+      assert.equal(membership.removedBy, 'leader');
+      assert.ok(!(await divisionDoc()).playerIds.includes('p1'));
+      assert.equal((await userDoc('p1')).divisionId, null);
+      assert.ok(!(await chatParticipants()).includes('p1'), 'the player leaves the division chat');
+    });
+
+    it('keeps the player in the division while another season still rosters them', async () => {
+      await seedRoster();
+      await seedMembership('p1', 'L1');
+      // Waitlisted, so the check for a remaining membership must count waitlisted ones.
+      await seedMembership('p1', 'L3', 'waitlisted', '2027-H1');
+      const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' });
+      assert.deepEqual(result, { removed: 1, detachedFromDivision: false });
+      assert.ok((await divisionDoc()).playerIds.includes('p1'));
+      assert.equal((await userDoc('p1')).divisionId, DIVISION);
+      assert.ok((await chatParticipants()).includes('p1'), 'the player stays in the division chat');
+    });
+
+    it('removes only the named level when one is given', async () => {
+      await seedRoster();
+      // Written directly: every callable path would archive one of the two.
+      await seedMembership('p1', 'L1');
+      await seedMembership('p1', 'L2');
+      const result = await call('removeDivisionMembership', {
+        divisionId: DIVISION,
+        seasonId: SEASON,
+        userId: 'p1',
+        divisionLevelId: 'L1',
+      });
+      assert.deepEqual(result, { removed: 1, detachedFromDivision: false });
+      assert.deepEqual(await rosteredLevels('p1'), ['L2']);
+    });
+
+    it('reports nothing removed for a player already off the roster', async () => {
+      await seedRoster();
+      const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p2' });
+      assert.deepEqual(result, { removed: 0, detachedFromDivision: false });
+      assert.ok((await divisionDoc()).playerIds.includes('p2'), 'a player never removed through this flow is left alone');
+    });
+
+    it('finishes a detach that an earlier call left undone', async () => {
+      await seedRoster();
+      await seedMembership('p1', 'L1', 'removed');
+      const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' });
+      assert.deepEqual(result, { removed: 0, detachedFromDivision: false });
+      assert.ok(!(await divisionDoc()).playerIds.includes('p1'));
+      assert.equal((await userDoc('p1')).divisionId, null);
+      assert.ok(!(await chatParticipants()).includes('p1'));
+    });
+
+    it('leaves the active division alone when it names another division', async () => {
+      await seedRoster();
+      await seedMembership('p1', 'L1');
+      await db.collection('users').doc('p1').set({ divisionId: 'divB' }, { merge: true });
+      const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' });
+      assert.equal(result.detachedFromDivision, true);
+      assert.equal((await userDoc('p1')).divisionId, 'divB');
+    });
+  });
 });
