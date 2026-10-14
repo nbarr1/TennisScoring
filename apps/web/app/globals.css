@@ -30,3 +30,80 @@ button {
   outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Short fade-and-rise when a page opens (applied by app/template.tsx).
+   `backwards` leaves no transform behind once it finishes, so fixed-position
+   dialogs inside the page are positioned against the viewport as before. */
+.page-enter {
+  animation: page-enter 220ms ease-out backwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* Hover and press feedback. :where() keeps specificity at zero, and inline
+   styles set no filter or transform, so neither overrides these. */
+:where(button, a) {
+  transition:
+    filter 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+:where(button:not(:disabled)):hover {
+  filter: brightness(1.1);
+}
+
+:where(button:not(:disabled)):active {
+  transform: translateY(1px);
+}
+
+/* Cards that open something rise slightly under the pointer. */
+.lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Ring that spreads from the live-match dot on the matches page. */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(39, 174, 96, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(39, 174, 96, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .lift:hover,
+  :where(button:not(:disabled)):active {
+    transform: none;
+  }
+}

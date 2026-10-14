@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import 'react-loading-skeleton/dist/skeleton.css';
 import './globals.css';
 import { FcmProvider } from './FcmProvider';
 import { ViewModeProvider } from './shared/viewMode';

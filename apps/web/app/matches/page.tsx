@@ -38,6 +38,7 @@ import {
 } from "@tennis/shared";
 import type { Match, PublicProfile, RecordedSetInput } from "@tennis/shared";
 import { PlayerSlotPicker } from "../shared/PlayerSlotPicker";
+import { AnimatedDiv, LoadingBlock } from "../shared/motion";
 
 type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
 
@@ -85,6 +86,7 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
     <Link
       key={m.id}
       href={`/matches/${m.id}`}
+      className="lift"
       style={{ ...styles.card, ...(isLive ? styles.cardLive : {}) }}
     >
       <div style={styles.cardTop}>
@@ -328,7 +330,7 @@ export default function MatchesPage(): React.JSX.Element {
             Join or create a division to see and record matches.
           </div>
         ) : loading || divisionLoading ? (
-          <div style={styles.placeholder}>Loading matches…</div>
+          <LoadingBlock label="Loading matches…" rows={3} rowHeight={110} style={styles.placeholder} />
         ) : matches.length === 0 ? (
           <div style={styles.emptyCard}>
             No matches yet. Create one from the mobile app, or record a past
@@ -342,18 +344,18 @@ export default function MatchesPage(): React.JSX.Element {
                   <span style={styles.livePulse} />
                   <h2 style={styles.liveSectionTitle}>Now Live</h2>
                 </div>
-                <div style={styles.grid}>
+                <AnimatedDiv style={styles.grid}>
                   {liveMatches.map((m) => (
                     <MatchCard key={m.id} m={m} />
                   ))}
-                </div>
+                </AnimatedDiv>
               </section>
             )}
 
             {pendingInvites.length > 0 && (
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>Pending Invitations</h2>
-                <div style={styles.grid}>
+                <AnimatedDiv style={styles.grid}>
                   {pendingInvites.map((m) => (
                     <MatchCard
                       key={m.id}
@@ -376,14 +378,14 @@ export default function MatchesPage(): React.JSX.Element {
                       }
                     />
                   ))}
-                </div>
+                </AnimatedDiv>
               </section>
             )}
 
             {awaitingOpponent.length > 0 && (
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>Awaiting Opponent</h2>
-                <div style={styles.grid}>
+                <AnimatedDiv style={styles.grid}>
                   {awaitingOpponent.map((m) => (
                     <MatchCard
                       key={m.id}
@@ -398,29 +400,29 @@ export default function MatchesPage(): React.JSX.Element {
                       }
                     />
                   ))}
-                </div>
+                </AnimatedDiv>
               </section>
             )}
 
             {upcomingMatches.length > 0 && (
               <section style={styles.section}>
                 <h2 style={styles.sectionTitle}>Upcoming</h2>
-                <div style={styles.grid}>
+                <AnimatedDiv style={styles.grid}>
                   {upcomingMatches.map((m) => (
                     <MatchCard key={m.id} m={m} />
                   ))}
-                </div>
+                </AnimatedDiv>
               </section>
             )}
 
             {otherMatches.length > 0 && (
               <section>
                 <h2 style={styles.sectionTitle}>All Matches</h2>
-                <div style={styles.grid}>
+                <AnimatedDiv style={styles.grid}>
                   {otherMatches.map((m) => (
                     <MatchCard key={m.id} m={m} />
                   ))}
-                </div>
+                </AnimatedDiv>
               </section>
             )}
 
@@ -1737,11 +1739,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 8px",
     borderRadius: 12,
   },
-  placeholder: {
-    color: "var(--muted)",
-    padding: 40,
-    textAlign: "center" as const,
-  },
+  placeholder: { padding: "8px 0" },
   emptyCard: {
     background: "#fff",
     borderRadius: 14,

@@ -278,7 +278,8 @@ api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker ro
 robots.ts              # Generated /robots.txt
 sitemap.ts             # Generated /sitemap.xml
 FcmProvider.tsx        # Web FCM setup/token registration (mounted from the root layout)
-shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker
+shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker, motion.tsx (AnimatedDiv, LoadingBlock)
+template.tsx           # Wraps every page in the `page-enter` fade (keyframes in globals.css)
 ```
 
 ### Mobile routes (`apps/mobile/app/`)

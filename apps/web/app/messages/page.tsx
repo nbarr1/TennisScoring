@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { AnimatedDiv, LoadingBlock } from "../shared/motion";
 import { useState, useRef, useEffect } from "react";
 import {
   useAuthUser,
@@ -30,7 +31,7 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const { user: profile } = usePrivateUser(firebaseUser?.uid ?? null);
-  const { channels } = useChannels(firebaseUser?.uid ?? null);
+  const { channels, loading: channelsLoading } = useChannels(firebaseUser?.uid ?? null);
   const [active, setActive] = useState<Channel | null>(null);
   const [showNewDm, setShowNewDm] = useState(false);
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
@@ -108,7 +109,10 @@ export default function MessagesPage(): React.JSX.Element {
               )}
             </button>
           ))}
-          {channels.length === 0 && (
+          {channelsLoading && channels.length === 0 && (
+            <LoadingBlock label="Loading conversations…" rows={4} rowHeight={44} style={styles.channelsLoading} />
+          )}
+          {!channelsLoading && channels.length === 0 && (
             <p style={styles.empty}>
               No channels yet. Join a division to start chatting.
             </p>
@@ -414,7 +418,7 @@ function ChatPane({
       {deleteMessage && <div role="alert" style={styles.threadError}>{deleteMessage}</div>}
       {actionError && <div role="alert" style={styles.threadError}>{actionError}</div>}
 
-      <div style={styles.messageList}>
+      <AnimatedDiv style={styles.messageList}>
         {messages.map((m) => (
           <MessageBubble
             key={m.id}
@@ -424,7 +428,7 @@ function ChatPane({
           />
         ))}
         <div ref={bottomRef} />
-      </div>
+      </AnimatedDiv>
 
       <form style={styles.inputRow} onSubmit={handleSend}>
         <label htmlFor="message-composer" style={styles.srOnly}>
@@ -587,6 +591,7 @@ function MessageBubble({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  channelsLoading: { padding: "4px 16px" },
   page: {
     ...appNavStyles.page,
     display: "flex",

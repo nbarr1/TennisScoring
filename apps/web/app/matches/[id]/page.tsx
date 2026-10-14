@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
+import { LoadingBlock } from '../../shared/motion';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
@@ -90,7 +91,7 @@ export default function MatchPage(): React.JSX.Element {
   }, [match?.status]);
 
   if (loading) {
-    return <div style={styles.center}>Loading match…</div>;
+    return <LoadingBlock label="Loading match…" rows={4} rowHeight={48} style={styles.loadingPage} />;
   }
 
   if (!id) {
@@ -676,6 +677,7 @@ function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: str
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  loadingPage: { maxWidth: 720, margin: '48px auto', padding: '0 24px' },
 
   livePage: { height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#0E1418', color: '#fff' },
   liveScoreboardRegion: { position: 'relative', padding: '12px 10px 8px', flex: '0 0 auto' },
