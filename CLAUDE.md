@@ -473,9 +473,9 @@ There is no separate Firebase rules guard workflow. `pnpm check:firebase-rules` 
 
 `.github/workflows/eas-build.yml` — Android builds via EAS. EAS profiles pre-build `@tennis/shared` and `@tennis/firebase-client`. Firebase env vars come from GitHub secrets. **Every build is a manual `workflow_dispatch`**, with a `target` of `mobile`, `production`, `wear`, or `wear-production` → `preview`, `production`, `wear-preview`, or `wear-production`. `production` does not set `buildType: apk` the way `preview` does. **This is the only way to build the watch APK**, so testing anything that needs both artifacts on real hardware means dispatching `wear` by hand alongside whatever built the phone.
 
-- **`production` and `wear-production` run only from `Main`/`main`.** The profile step fails on any other ref, so a release build cannot come from an unmerged branch.
+- **`production` and `wear-production` run only from the default branch** (read from `github.event.repository.default_branch`). The profile step fails on any other ref, so a release build cannot come from an unmerged branch.
 - **There is no push trigger.** Every merge to `Main` touching the app used to start an unattended production build, which spent the Expo account's monthly Android build quota with no release decision behind it. Dispatch `production` to cut a release.
-- **Builds queue, per target, and are never cancelled** (`concurrency` with `cancel-in-progress: false`), so two dispatches cannot race the `versionCode` stamp.
+- **A running build is never cancelled** (`concurrency` per target, `cancel-in-progress: false`), so two dispatches cannot race the `versionCode` stamp. GitHub keeps at most one pending run per group, so a third dispatch of the same target replaces the pending second.
 
 **There is no pull request trigger either.** Every pull request touching the app used to start a roughly 70-minute EAS `preview` build, which used up the Expo account's monthly Android build quota and failed every app pull request once it ran out. `mobile_bundle` and `mobile_native` in `ci.yml` compile what an EAS build would reject; dispatch the workflow by hand to get an installable preview. The APK or AAB lands in the Expo dashboard, never as a GitHub artifact.
 
@@ -489,7 +489,7 @@ There is no separate Firebase rules guard workflow. `pnpm check:firebase-rules` 
 
 Five things to know before relying on it:
 
-- **Deploys queue and are never cancelled** (`cancel-in-progress: false`). Cancelling a `firebase deploy` part-way can leave some functions on the new commit and others on the old one.
+- **Deploys share one concurrency group across all refs and are never cancelled mid-run** (`cancel-in-progress: false`). Every run targets the same project, so a branch dispatch waits for a `Main` deploy instead of interleaving with it, and cancelling a `firebase deploy` part-way can leave some functions on the new commit and others on the old one.
 - **It deploys to the `staging` GitHub environment only.** There is no production job. It previously carried a `deploy_production` job whose only step echoed a message, so a run that "succeeded" had deployed nothing to production.
 - **Firestore and Storage rules are not deployed by it.** They go out through `deploy-firebase-rules.yml`, described next.
 - **A function must be named in three places or it is silently not deployed**: exported from `firebase/src/targetedDeployIndex.ts` (which `build:targeted-deploy` bundles to `lib/index.js`), and listed in *both* the `FILTERS` and `DEPLOY_FUNCTIONS` strings in this workflow. The "Verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from those lists passes CI and then fails at the call site with `functions/not-found`.

@@ -119,6 +119,9 @@ export default function MessagesPage(): React.JSX.Element {
         <main style={styles.chatArea}>
           {active ? (
             <ChatPane
+              // A new pane per channel, so a draft or a failed send's restored
+              // text can never land in another conversation's composer.
+              key={active.id}
               channel={active}
               currentUserId={firebaseUser?.uid ?? ""}
               currentUserName={

@@ -537,12 +537,15 @@ describe('leader authority', () => {
     );
   });
 
-  it('stops a leader from re-attributing a match to another season, level, or side', async () => {
+  it('stops a leader from re-attributing a match to another season, level, side, or player', async () => {
     await seed((db) => setDoc(doc(db, 'matches', 'm'), baseMatch({ seasonId: 's1' })));
     const leader = doc(as('leader'), 'matches', 'm');
     await assertFails(updateDoc(leader, { seasonId: 's2' }));
     await assertFails(updateDoc(leader, { divisionLevelId: 'lvl' }));
     await assertFails(updateDoc(leader, { side1: { playerIds: ['p1', 'p2'] } }));
+    await assertFails(
+      updateDoc(leader, { ...completed, player2Id: 'leader', playerIds: ['p1', 'leader'] }),
+    );
     await assertSucceeds(updateDoc(leader, completed));
   });
 

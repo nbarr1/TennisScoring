@@ -23,8 +23,9 @@ on:
           - wear
           - wear-production
 
-# Two production builds started back to back would each spend quota and stamp
-# a versionCode. Queue them instead, and never cancel one that has started.
+# Never cancel a build that has started. GitHub keeps at most one pending run
+# per group, so a further dispatch of the same target while one is pending
+# replaces the pending one; dispatch again once the queue clears.
 concurrency:
   group: eas-build-${{ inputs.target }}
   cancel-in-progress: false
@@ -51,14 +52,13 @@ jobs:
         env:
           TARGET: ${{ inputs.target }}
           REF: ${{ github.ref }}
+          DEFAULT_REF: refs/heads/${{ github.event.repository.default_branch }}
         run: |
-          # Release builds come from the default branch only. Main and main are
-          # both named for the same reason every workflow's branch filter names
-          # both: the comparison is case-sensitive, and a rename must not
-          # silently change which builds are allowed.
+          # Release builds come from the default branch only, read from the
+          # event rather than hard-coded, so a rename cannot disable the gate.
           target="$TARGET"
           if [ "$target" = "production" ] || [ "$target" = "wear-production" ]; then
-            if [ "$REF" != "refs/heads/Main" ] && [ "$REF" != "refs/heads/main" ]; then
+            if [ "$REF" != "$DEFAULT_REF" ]; then
               echo "::error::$target builds run only from the default branch, not $REF."
               exit 1
             fi

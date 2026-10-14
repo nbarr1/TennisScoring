@@ -579,15 +579,21 @@ service cloud.firestore {
             )
           )
         );
-      // A leader may edit any match in their division, but not move it out of it
-      // or re-attribute it. The leader check reads only the existing divisionId,
-      // and any account can lead a division of its own, so without these pins a
-      // leader could move a fabricated completed result into another division's
-      // standings. Admins (and the Admin SDK) are not limited.
+      // A leader may edit any match in their division (correct a score, settle a
+      // result), but not move it out of the division or change who played it.
+      // The leader check reads only the existing divisionId, and any account can
+      // lead a division of its own, so without these pins a leader could move a
+      // fabricated completed result into another division's standings, or credit
+      // a confirmed result to other players. A leader who played the match still
+      // links a guest opponent through the participant rules in canUpdateMatch.
+      // Admins (and the Admin SDK) are not limited.
       function isLeaderMatchUpdate(existing, incoming) {
         return isLeader(existing.divisionId) &&
           incoming.divisionId == existing.divisionId &&
-          !incoming.diff(existing).affectedKeys().hasAny(['seasonId', 'divisionLevelId', 'side1', 'side2']);
+          !incoming.diff(existing).affectedKeys().hasAny([
+            'seasonId', 'divisionLevelId', 'side1', 'side2',
+            'player1Id', 'player2Id', 'playerIds', 'player2IsGuest'
+          ]);
       }
 
       allow update: if isAdmin() ||
