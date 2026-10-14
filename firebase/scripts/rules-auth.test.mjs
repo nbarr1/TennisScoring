@@ -513,3 +513,43 @@ describe('editing a score', () => {
     await assertSucceeds(updateDoc(doc(as('leader'), 'matches', 'm'), edit));
   });
 });
+
+describe('leader authority', () => {
+  const completed = {
+    status: 'completed',
+    winner: 'player1',
+    liveScore: finalScore,
+    completedAt: 5,
+  };
+
+  it('stops a leader from moving a match into another division', async () => {
+    await seed(async (db) => {
+      await setDoc(doc(db, 'divisions', 'divB'), {
+        name: 'B',
+        inviteCode: 'BCDEFGHJ',
+        leaderIds: ['outsider'],
+        playerIds: ['outsider'],
+      });
+      await setDoc(doc(db, 'matches', 'm'), baseMatch());
+    });
+    await assertFails(
+      updateDoc(doc(as('leader'), 'matches', 'm'), { ...completed, divisionId: 'divB' }),
+    );
+  });
+
+  it('stops a leader from re-attributing a match to another season, level, or side', async () => {
+    await seed((db) => setDoc(doc(db, 'matches', 'm'), baseMatch({ seasonId: 's1' })));
+    const leader = doc(as('leader'), 'matches', 'm');
+    await assertFails(updateDoc(leader, { seasonId: 's2' }));
+    await assertFails(updateDoc(leader, { divisionLevelId: 'lvl' }));
+    await assertFails(updateDoc(leader, { side1: { playerIds: ['p1', 'p2'] } }));
+    await assertSucceeds(updateDoc(leader, completed));
+  });
+
+  it('lets a leader rename their division but not change its leaders or roster', async () => {
+    const division = doc(as('leader'), 'divisions', DIVISION);
+    await assertSucceeds(updateDoc(division, { name: 'Renamed', updatedAt: 2 }));
+    await assertFails(updateDoc(division, { leaderIds: ['leader', 'outsider'] }));
+    await assertFails(updateDoc(division, { playerIds: ['p1', 'p2', 'leader', 'outsider'] }));
+  });
+});

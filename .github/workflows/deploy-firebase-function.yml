@@ -19,9 +19,12 @@ on:
       - "packages/shared/**"
       - ".github/workflows/deploy-firebase-function.yml"
 
+# Queue deploys rather than cancel them. Cancelling a `firebase deploy` part-way
+# can leave some functions on the new commit and others on the old one; the next
+# run deploys the newer commit anyway once this one finishes.
 concurrency:
   group: deploy-firebase-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read

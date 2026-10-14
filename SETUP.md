@@ -285,7 +285,7 @@ Optional/recommended GitHub Actions variables:
 
 ### EAS Android APK workflow
 
-`.github/workflows/eas-build.yml` runs on manual dispatch (preview and watch builds) and on pushes to `Main` that touch the app (production build). It does not run on pull requests. It requires:
+`.github/workflows/eas-build.yml` runs only on manual dispatch: choose `mobile` (preview APK), `production` (release AAB, default branch only), `wear`, or `wear-production`. Merges and pull requests do not start a build. It requires:
 
 - `EXPO_TOKEN`
 - Firebase public config secrets mapped into `EXPO_PUBLIC_FIREBASE_*` environment variables.

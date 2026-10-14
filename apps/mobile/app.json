@@ -27,7 +27,8 @@
       },
       "package": "com.companytennisleague.app",
       "versionCode": 6,
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "plugins": [
       "expo-router",

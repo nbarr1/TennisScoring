@@ -1,28 +1,33 @@
 name: EAS Build (Android APKs)
 
-# No pull_request trigger. Every pull request touching the app used to start a
-# roughly 70-minute EAS preview build, which spent the account's monthly build
-# quota and kept the checks amber long after ci.yml finished. ci.yml's
-# mobile_bundle and mobile_native jobs already compile what an EAS build would
-# reject. A preview build is still one manual dispatch away.
+# No pull_request or push trigger: every build is a manual dispatch.
+#
+# Every pull request touching the app used to start a roughly 70-minute EAS
+# preview build, which spent the account's monthly build quota and kept the
+# checks amber long after ci.yml finished. Later, every merge to Main that
+# touched the app started an unattended production build, which spent the same
+# quota with no release decision behind it. ci.yml's mobile_bundle and
+# mobile_native jobs already compile what an EAS build would reject, so a
+# build only needs to run when someone wants an installable artifact.
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: Which Android APK to build
+        description: Which Android build to run
         required: true
         default: mobile
         type: choice
         options:
           - mobile
+          - production
           - wear
           - wear-production
-  push:
-    branches: [Main, main]
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/shared/**'
-      - '.github/workflows/eas-build.yml'
+
+# Two production builds started back to back would each spend quota and stamp
+# a versionCode. Queue them instead, and never cancel one that has started.
+concurrency:
+  group: eas-build-${{ inputs.target }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -43,18 +48,26 @@ jobs:
       - run: npm install -g pnpm@9.15.5 && pnpm install
       - name: Select EAS profile
         id: profile
+        env:
+          TARGET: ${{ inputs.target }}
+          REF: ${{ github.ref }}
         run: |
-          # The default branch is Main and this comparison is case-sensitive, so
-          # refs/heads/main alone matched nothing: every push selected preview and
-          # the production profile had never been built. Both spellings are named
-          # here for the same reason every workflow's branch filter names both, so
-          # a rename cannot silently disable it again.
-          if [ "${{ github.event_name }}" = "push" ] &&
-             { [ "${{ github.ref }}" = "refs/heads/Main" ] || [ "${{ github.ref }}" = "refs/heads/main" ]; }; then
+          # Release builds come from the default branch only. Main and main are
+          # both named for the same reason every workflow's branch filter names
+          # both: the comparison is case-sensitive, and a rename must not
+          # silently change which builds are allowed.
+          target="$TARGET"
+          if [ "$target" = "production" ] || [ "$target" = "wear-production" ]; then
+            if [ "$REF" != "refs/heads/Main" ] && [ "$REF" != "refs/heads/main" ]; then
+              echo "::error::$target builds run only from the default branch, not $REF."
+              exit 1
+            fi
+          fi
+          if [ "$target" = "production" ]; then
             echo "name=production" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.target }}" = "wear-production" ]; then
+          elif [ "$target" = "wear-production" ]; then
             echo "name=wear-production" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.inputs.target }}" = "wear" ]; then
+          elif [ "$target" = "wear" ]; then
             echo "name=wear-preview" >> "$GITHUB_OUTPUT"
           else
             echo "name=preview" >> "$GITHUB_OUTPUT"
