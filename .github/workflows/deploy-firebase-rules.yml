@@ -92,7 +92,9 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$DEFAULT_BRANCH" "$REF"
+          # The full-history checkout already has every commit and tag. Fetching "$REF" would
+          # fail for an abbreviated SHA, which a remote cannot resolve.
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
           sha="$(git rev-parse "$REF^{commit}")"
           if ! git merge-base --is-ancestor "$sha" "origin/$DEFAULT_BRANCH"; then
             echo "::error::$REF ($sha) is not on $DEFAULT_BRANCH. Only merged rules can be deployed."
@@ -100,6 +102,15 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Deploying rules from $sha ($(git log -1 --format='%s' "$sha"))"
+
+      # The guard and the emulator tests must run on the rules being deployed, not on the
+      # tip of the default branch: a rollback deploys older rules than the tip carries.
+      # Switching only after the check above means the job never runs code that is not
+      # already merged.
+      - name: Switch to the commit being deployed
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: git checkout --detach "$SHA"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
