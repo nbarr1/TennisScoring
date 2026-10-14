@@ -458,7 +458,6 @@ describe('onboarding', () => {
 
   it(
     'lets a new player finish the tutorial',
-    knownBug('tutorialDone is missing from editableUserFields(), so new web players cannot leave the tutorial'),
     async () => {
       await assertSucceeds(finishTutorial('p1'));
     },
@@ -503,7 +502,6 @@ describe('editing a score', () => {
 
   it(
     "denies a participant rewriting a confirmed result",
-    knownBug('either player can flip a completed match and pull it out of the standings'),
     async () => {
       await seedMatch('completed');
       await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), edit));
