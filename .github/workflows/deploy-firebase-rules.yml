@@ -1,0 +1,237 @@
+name: Deploy Firebase rules
+
+# Deploys Firestore rules, Storage rules, or Firestore indexes from one chosen commit to the
+# Firebase project configured for the GitHub `staging` environment (the same project and
+# credentials the functions workflow uses).
+#
+# Manual only. Rules decide what every installed client may do, and the clients do not update
+# together with them: a rule that tightens access breaks every web session and mobile install
+# still running the build that predates it. The safe order for a release is:
+#
+#   1. Rules that only *allow* something new (a field, a collection, a transition the new
+#      clients need) go out first, so the new clients work the moment they ship.
+#   2. Release the web and mobile clients, and wait until the mobile builds are live in the
+#      stores.
+#   3. Rules that *restrict* something (requiring `email_verified`, removing a field from an
+#      allow-list) go out last, once no supported client depends on the old behaviour.
+#
+# A release that does both needs two runs from two commits. Run in `dry-run` mode first: it
+# compiles the rules against the project, writes a diff against the live rules to the run
+# summary, and changes nothing.
+#
+# To roll back, run this workflow again in `deploy` mode with `ref` set to the last commit
+# whose rules were known good. The run summary of every deploy records the commit it shipped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or tag to deploy rules from. It must already be on the default branch."
+        required: true
+        type: string
+      targets:
+        description: "What to deploy"
+        required: true
+        type: choice
+        default: "firestore:rules,storage"
+        options:
+          - "firestore:rules,storage"
+          - "firestore:rules"
+          - "storage"
+          - "firestore:indexes"
+      mode:
+        description: "dry-run validates and diffs only; deploy changes the live project"
+        required: true
+        type: choice
+        default: "dry-run"
+        options:
+          - "dry-run"
+          - "deploy"
+      clients_released:
+        description: "Deploy mode only: I checked the ordering in this workflow's header, and the web and mobile builds these rules need are already live"
+        required: true
+        type: boolean
+        default: false
+
+# One rules deploy at a time, and never cancel one that is already running: a cancelled
+# deploy can leave Firestore and Storage on rules from different commits.
+concurrency:
+  group: deploy-firebase-rules
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FIREBASE_TOOLS_VERSION: "15.33.0"
+
+jobs:
+  # Runs without secrets: the same static guard and emulator suite CI runs, against the exact
+  # commit that will be deployed.
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Check the confirmation
+        if: inputs.mode == 'deploy' && !inputs.clients_released
+        run: |
+          echo "::error::Deploy mode needs clients_released. Rules that tighten access break clients that predate them; read the ordering in this workflow's header first."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Resolve the commit and require it on the default branch
+        id: resolve
+        env:
+          REF: ${{ inputs.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor "$sha" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::$REF ($sha) is not on $DEFAULT_BRANCH. Only merged rules can be deployed."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying rules from $sha ($(git log -1 --format='%s' "$sha"))"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # firebase-tools 15 refuses to start the emulators on a JDK older than 21.
+      - name: Set up Java for the Firebase emulators
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Firebase rules guard
+        run: pnpm check:firebase-rules
+
+      - name: Firebase emulator rules tests
+        run: pnpm --filter @tennis/firebase-functions test:rules
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: firebase
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      # Writes what is live and what this commit would change into the run summary, so a
+      # dry run shows the effect and a deploy records what it replaced. Indexes have no
+      # ruleset, so they are skipped here.
+      - name: Diff against the live rules
+        if: inputs.targets != 'firestore:indexes'
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          TARGETS: ${{ inputs.targets }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          : "${FIREBASE_PROJECT_ID:?FIREBASE_PROJECT_ID is required}"
+
+          api="https://firebaserules.googleapis.com/v1"
+          token="$(gcloud auth print-access-token)"
+          releases="$(curl --silent --show-error --fail \
+            --header "Authorization: Bearer $token" \
+            "$api/projects/$FIREBASE_PROJECT_ID/releases?pageSize=100")"
+
+          {
+            echo "## Firebase rules ($MODE)"
+            echo
+            echo "Commit: \`$SHA\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          compare() {
+            local label="$1" release_filter="$2" local_file="$3"
+            local release ruleset live
+            release="$(jq -r --arg f "$release_filter" \
+              '[.releases[]? | select(.name | test($f))][0] // empty | .rulesetName' <<<"$releases")"
+            live="$(mktemp)"
+            if [ -n "$release" ]; then
+              curl --silent --show-error --fail \
+                --header "Authorization: Bearer $token" \
+                "$api/$release" | jq -j '.source.files[0].content' > "$live"
+            fi
+            {
+              echo "### $label"
+              echo
+              echo "Live ruleset before this run: \`${release:-none}\`"
+              echo
+              if diff -q "$live" "$local_file" > /dev/null; then
+                echo "No change: the live rules already match this commit."
+              else
+                echo '```diff'
+                diff -u --label live --label "$SHA" "$live" "$local_file" || true
+                echo '```'
+              fi
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          case ",$TARGETS," in *,firestore:rules,*)
+            compare "Firestore" '/releases/cloud\.firestore$' firestore.rules ;;
+          esac
+          case ",$TARGETS," in *,storage,*)
+            compare "Storage" '/releases/firebase\.storage/' storage.rules ;;
+          esac
+
+      - name: Deploy (${{ inputs.mode }})
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          TARGETS: ${{ inputs.targets }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          args=(deploy --only "$TARGETS" --project "$FIREBASE_PROJECT_ID" --non-interactive)
+          if [ "$MODE" = "dry-run" ]; then
+            args+=(--dry-run)
+          fi
+          npx --yes "firebase-tools@$FIREBASE_TOOLS_VERSION" "${args[@]}"
+
+          if [ "$MODE" = "deploy" ]; then
+            echo "Deployed \`$TARGETS\` from \`$SHA\`. To roll back, run this workflow in deploy mode with the previous known-good commit." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Dry run only: nothing was deployed." >> "$GITHUB_STEP_SUMMARY"
+          fi

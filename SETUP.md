@@ -163,7 +163,11 @@ If you want web/mobile to point to emulators, add emulator connection code or en
 
 ## 5. Firebase Rules, Indexes, and Functions
 
-Deploy Firestore rules/indexes and Storage rules from the `firebase` directory or repository root with Firebase CLI:
+Deploy Firestore rules, Storage rules, and Firestore indexes with the **Deploy Firebase rules** GitHub Actions workflow (`.github/workflows/deploy-firebase-rules.yml`). Run it by hand from the Actions tab: pick the commit, the targets, and `dry-run` first to see the diff against the live rules, then run again in `deploy` mode. Rules that tighten access go out only after the web and mobile clients that handle them are live; the workflow header describes the full ordering.
+
+The workflow uses the `staging` GitHub environment's `FIREBASE_SERVICE_ACCOUNT_JSON` and `FIREBASE_PROJECT_ID` secrets, the same ones the functions workflow uses. The service account needs the Firebase Rules Admin role, plus Cloud Datastore Index Admin to deploy indexes.
+
+The same deploy from a local checkout, from the `firebase` directory:
 
 ```bash
 firebase deploy --only firestore

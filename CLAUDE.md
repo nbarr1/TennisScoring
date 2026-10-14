@@ -79,7 +79,7 @@ cd firebase && pnpm test:functions          # Builds lib/index.js, then drives C
 ### Firebase deployment
 
 ```bash
-firebase deploy --only firestore,storage
+firebase deploy --only firestore,storage          # Prefer the "Deploy Firebase rules" workflow (see CI)
 pnpm --filter @tennis/firebase-functions deploy   # Functions only
 pnpm --filter @tennis/firebase-functions build:targeted-deploy
 ```
@@ -491,9 +491,17 @@ That last branch was dead until recently: it compared `github.ref` against `refs
 Four things to know before relying on it:
 
 - **It deploys to the `staging` GitHub environment only.** There is no production job. It previously carried a `deploy_production` job whose only step echoed a message, so a run that "succeeded" had deployed nothing to production.
-- **Firestore and Storage rules are not deployed by it.** After a rules change, run `firebase deploy --only firestore,storage` from `firebase/`.
+- **Firestore and Storage rules are not deployed by it.** They go out through `deploy-firebase-rules.yml`, described next.
 - **A function must be named in three places or it is silently not deployed**: exported from `firebase/src/targetedDeployIndex.ts` (which `build:targeted-deploy` bundles to `lib/index.js`), and listed in *both* the `FILTERS` and `DEPLOY_FUNCTIONS` strings in this workflow. The "Verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from those lists passes CI and then fails at the call site with `functions/not-found`.
 - **The feedback-token check gates every deploy.** The workflow reads `GITHUB_TOKEN` from Secret Manager and requires exactly HTTP 422 from the GitHub issues endpoint. A missing or expired token fails the whole run, including deploys of functions unrelated to feedback.
+
+`.github/workflows/deploy-firebase-rules.yml` — manual (`workflow_dispatch`) deploy of Firestore rules, Storage rules, or Firestore indexes from one chosen commit, to the same `staging` environment and secrets as the functions workflow. It exists because a hand-run `firebase deploy --only firestore,storage` from `Main` once put the email-verification rules live before the clients that handle them shipped, and the rules had to be rolled back by hand.
+
+- **Ordering is the operator's call, and the header of the workflow spells it out.** Rules that only allow something new go out before the clients that need it; rules that restrict something go out after the web and mobile clients are live in the stores. A release that does both is two runs from two commits. Deploy mode refuses to start unless `clients_released` is ticked.
+- **`ref` must be on the default branch.** The `verify` job checks that, then runs `pnpm check:firebase-rules` and the emulator rules suite at that exact commit, with no secrets.
+- **`dry-run` is the default.** It runs `firebase deploy --dry-run` and writes a diff of the commit's rules against the live ruleset (read through the Firebase Rules API) to the run summary. A deploy writes the same diff, so the summary records what it replaced.
+- **Rollback is another run** in deploy mode with `ref` set to the last known-good commit.
+- The service account in `FIREBASE_SERVICE_ACCOUNT_JSON` needs permission to read and release rulesets (Firebase Rules Admin), and Cloud Datastore Index Admin for the indexes target. It is never cancelled mid-run (`cancel-in-progress: false`), so Firestore and Storage cannot be left on rules from different commits by a second dispatch.
 
 ### Dependency constraints
 
