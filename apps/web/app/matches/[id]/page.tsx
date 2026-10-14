@@ -2,10 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { StatusBadge } from '../../shared/StatusBadge';
 import { LoadingBlock } from '../../shared/motion';
+import { celebrateConfirmedScore } from '../../shared/celebrate';
+import {
+  IconAlertTriangle, IconBallTennis, IconCalendarTime, IconCheck, IconClipboardList, IconFileTypePdf, IconTrash, IconX,
+} from '@tabler/icons-react';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
@@ -89,6 +93,17 @@ export default function MatchPage(): React.JSX.Element {
     const t = setInterval(() => setClockTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, [match?.status]);
+
+  // Celebrate a confirmation that happens while the page is open, not every
+  // later visit to a completed match. Guest results are not in the standings.
+  const previousStatus = useRef(match?.status);
+  useEffect(() => {
+    const before = previousStatus.current;
+    previousStatus.current = match?.status;
+    if (before && before !== 'completed' && match?.status === 'completed' && !match.player2IsGuest) {
+      celebrateConfirmedScore();
+    }
+  }, [match?.status, match?.player2IsGuest]);
 
   if (loading) {
     return <LoadingBlock label="Loading match…" rows={4} rowHeight={48} style={styles.loadingPage} />;
@@ -303,13 +318,13 @@ export default function MatchPage(): React.JSX.Element {
             {!actionLoading && !showPostponeOptions && (
               <div style={styles.manageOptions}>
                 {canPostpone && (
-                  <button type="button" style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}>📅  Postpone</button>
+                  <button type="button" style={styles.manageOption} onClick={() => setShowPostponeOptions(true)}><IconCalendarTime size={16} aria-hidden="true" /> Postpone</button>
                 )}
                 {canCancel && (
-                  <button type="button" style={styles.manageOption} onClick={handleCancel}>✕  Cancel Match</button>
+                  <button type="button" style={styles.manageOption} onClick={handleCancel}><IconX size={16} aria-hidden="true" /> Cancel Match</button>
                 )}
                 {canDelete && (
-                  <button type="button" style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}>🗑  Delete Match</button>
+                  <button type="button" style={{ ...styles.manageOption, ...styles.manageOptionDanger }} onClick={handleDelete}><IconTrash size={16} aria-hidden="true" /> Delete Match</button>
                 )}
                 {!canPostpone && !canCancel && !canDelete && (
                   <p style={styles.modalBody}>No actions available for this match status.</p>
@@ -424,14 +439,14 @@ export default function MatchPage(): React.JSX.Element {
     <div style={containerStyles.page}>
       <nav style={containerStyles.nav}>
         <Link href="/matches" style={styles.back}>← Back to Matches</Link>
-        <span style={styles.navBrand}>🎾 Tennis League</span>
+        <span style={styles.navBrand}><IconBallTennis size={20} aria-hidden="true" color="var(--gold)" /> Tennis League</span>
       </nav>
 
       <main style={containerStyles.main}>
         <div style={containerStyles.scoreboard}>
           <div style={styles.badgeRow}>
             <StatusBadge status={match.status} />
-            {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
+            {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={12} aria-hidden="true" /> Historic</span>}
           </div>
           <div style={styles.setsRow}>
             <span style={styles.setsLabel}>Sets</span>
@@ -522,10 +537,10 @@ export default function MatchPage(): React.JSX.Element {
             <p style={styles.reportHint}>The opposing side has submitted the match report. Review the score above and confirm or dispute.</p>
             <div style={styles.reportBtns}>
               <button style={styles.confirmBtn} onClick={handleConfirm} disabled={actionLoading}>
-                {actionLoading ? '…' : '✓ Confirm Score'}
+                {actionLoading ? '…' : <><IconCheck size={16} aria-hidden="true" /> Confirm Score</>}
               </button>
               <button style={styles.disputeBtn} onClick={() => setShowDisputeConfirm(true)} disabled={actionLoading}>
-                ⚠ Dispute Score
+                <IconAlertTriangle size={16} aria-hidden="true" /> Dispute Score
               </button>
             </div>
           </div>
@@ -533,7 +548,7 @@ export default function MatchPage(): React.JSX.Element {
 
         {match.status === 'disputed' && (
           <div style={styles.reportSection}>
-            <span style={styles.disputedBadge}>⚠ Score disputed — awaiting division leader resolution</span>
+            <span style={styles.disputedBadge}><IconAlertTriangle size={14} aria-hidden="true" /> Score disputed — awaiting division leader resolution</span>
           </div>
         )}
 
@@ -548,7 +563,7 @@ export default function MatchPage(): React.JSX.Element {
             </p>
             <p style={styles.resolveReported}>Reported: {p1Name} {scoreDisplay} {p2Name}</p>
             <button type="button" style={styles.confirmBtn} onClick={() => handleResolve(false)} disabled={actionLoading}>
-              {actionLoading ? 'Working…' : '✓ Confirm reported score'}
+              {actionLoading ? 'Working…' : <><IconCheck size={16} aria-hidden="true" /> Confirm reported score</>}
             </button>
             <label style={styles.resolveLabel} htmlFor="corrected-score">
               Or set the correct score, with {p1Name}&apos;s games first
@@ -576,9 +591,10 @@ export default function MatchPage(): React.JSX.Element {
         {match.status === 'completed' && (
           <div style={styles.reportSection}>
             <span style={styles.confirmedBadge}>
+              <IconCheck size={14} aria-hidden="true" />{' '}
               {match.player2IsGuest
-                ? '✓ Score recorded · Not in the standings until your opponent\'s account is linked and they confirm'
-                : '✓ Score confirmed · Rankings updated'}
+                ? 'Score recorded · Not in the standings until your opponent\'s account is linked and they confirm'
+                : 'Score confirmed · Rankings updated'}
             </span>
           </div>
         )}
@@ -618,7 +634,7 @@ export default function MatchPage(): React.JSX.Element {
                   ({s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points})
                 </span>
               )}
-              {s.winner && <span style={styles.setWinner}>{s.winner === 'player1' ? 'P1 ✓' : 'P2 ✓'}</span>}
+              {s.winner && <span style={styles.setWinner}>{s.winner === 'player1' ? 'P1' : 'P2'} <IconCheck size={12} aria-hidden="true" /></span>}
             </div>
           ))}
         </div>
@@ -654,7 +670,7 @@ export default function MatchPage(): React.JSX.Element {
         {match.status === 'completed' && match.reportUrl?.startsWith('https://') && (
           <div style={containerStyles.section}>
             <a href={match.reportUrl} target="_blank" rel="noreferrer" style={styles.reportBtn}>
-              📊 Download Match Report (PDF)
+              <IconFileTypePdf size={18} aria-hidden="true" /> Download Match Report (PDF)
             </a>
           </div>
         )}
@@ -700,7 +716,7 @@ const styles: Record<string, React.CSSProperties> = {
   nav: { padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   iosNav: { position: 'sticky', top: 0, zIndex: 5, background: '#1a472a', paddingTop: 'max(12px, env(safe-area-inset-top))', paddingLeft: 16, paddingRight: 16 },
   back: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  navBrand: { color: '#fff', fontWeight: 700, fontSize: 18 },
+  navBrand: { fontFamily: 'var(--font-display)', color: '#fff', fontWeight: 700, fontSize: 20 },
   main: { maxWidth: 700, margin: '0 auto', padding: '24px' },
   iosMain: { padding: '16px 12px 24px' },
   scoreboard: { textAlign: 'center', padding: '32px 0 40px' },
@@ -732,9 +748,9 @@ const styles: Record<string, React.CSSProperties> = {
   manageOptionGhost: { background: 'transparent', border: 'none', color: '#888', padding: '12px 0', fontSize: 14, cursor: 'pointer', textAlign: 'center' as const },
   setsRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8 },
   setsLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 16 },
-  setsScore: { color: '#fff', fontSize: 28, fontWeight: 700 },
-  score: { color: '#fff', fontSize: 48, fontWeight: 800, letterSpacing: 4, marginBottom: 8 },
-  gameScore: { color: '#a8d5a2', fontSize: 28, fontWeight: 600, marginBottom: 16 },
+  setsScore: { fontFamily: 'var(--font-display)', color: '#fff', fontSize: 28, fontWeight: 700 },
+  score: { fontFamily: 'var(--font-display)', color: '#fff', fontSize: 56, fontWeight: 800, letterSpacing: 4, marginBottom: 8 },
+  gameScore: { fontFamily: 'var(--font-display)', color: '#a8d5a2', fontSize: 28, fontWeight: 600, marginBottom: 16 },
   server: { color: '#ffdc60', fontSize: 13, fontWeight: 600 },
   section: { background: '#fff', borderRadius: 14, padding: 24, marginBottom: 16 },
   iosSection: { padding: 16, borderRadius: 12 },

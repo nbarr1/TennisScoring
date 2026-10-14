@@ -10,10 +10,12 @@
   --muted: #666;
   --card: #fff;
   --radius: 12px;
+  --font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Barlow Condensed', 'Arial Narrow', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -21,8 +23,31 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
+/* Headings use the condensed face the mobile scoreboard ships. Barlow
+   Condensed is loaded at 600 and 700; heavier inline weights resolve to 700. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+/* Tabler icons sit on the text baseline next to their label. */
+.tabler-icon {
+  display: inline-block;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+
 button {
   cursor: pointer;
+}
+
+button,
+input,
+select,
+textarea {
   font-family: inherit;
 }
 

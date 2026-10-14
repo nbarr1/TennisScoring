@@ -54,6 +54,7 @@ import {
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 import { AnimatedDiv, LoadingBlock } from "../shared/motion";
+import { IconCheck } from "@tabler/icons-react";
 
 const DIVISION_ACCESS_HINTS = [
   "You are signed in to Firebase Auth with the expected account.",
@@ -2268,7 +2269,7 @@ export default function AdminPage(): React.JSX.Element {
                               }}
                               onClick={() => toggleRrPlayer(m.userId)}
                             >
-                              {selected ? "✓ " : ""}
+                              {selected ? <><IconCheck size={14} aria-hidden="true" /> </> : null}
                               {m.displayNameSnapshot}
                             </button>
                           );

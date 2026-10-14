@@ -39,6 +39,7 @@ import {
 import type { Match, PublicProfile, RecordedSetInput } from "@tennis/shared";
 import { PlayerSlotPicker } from "../shared/PlayerSlotPicker";
 import { AnimatedDiv, LoadingBlock } from "../shared/motion";
+import { IconCalendarEvent, IconCalendarPlus, IconCheck, IconClipboardList, IconX } from "@tabler/icons-react";
 
 type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
 
@@ -92,7 +93,7 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
       <div style={styles.cardTop}>
         <StatusBadge status={m.status} />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {isHistoric && <span style={styles.historicBadge}>📋 Historic</span>}
+          {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={12} aria-hidden="true" /> Historic</span>}
           {m.status === "completed" && m.winner && (
             <span style={styles.winnerBadge}>
               {m.winner === "player1" ? p1 : p2} wins
@@ -103,7 +104,7 @@ function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
 
       {isUpcoming && (
         <div style={styles.scheduledLine}>
-          🗓 {formatScheduledAt(m.scheduledAt)}
+          <IconCalendarEvent size={14} aria-hidden="true" /> {formatScheduledAt(m.scheduledAt)}
         </div>
       )}
 
@@ -278,13 +279,13 @@ export default function MatchesPage(): React.JSX.Element {
                 style={styles.proposeBtn}
                 onClick={() => setShowPropose(true)}
               >
-                📅 Propose Match
+                <IconCalendarPlus size={18} aria-hidden="true" /> Propose Match
               </button>
               <button
                 style={styles.recordBtn}
                 onClick={() => setShowRecord(true)}
               >
-                📋 Record Past Match
+                <IconClipboardList size={18} aria-hidden="true" /> Record Past Match
               </button>
             </div>
           )}
@@ -366,13 +367,13 @@ export default function MatchesPage(): React.JSX.Element {
                             style={styles.acceptBtn}
                             onClick={stop(() => acceptMatchProposal(m.id))}
                           >
-                            ✓ Accept
+                            <IconCheck size={16} aria-hidden="true" /> Accept
                           </button>
                           <button
                             style={styles.declineBtn}
                             onClick={stop(() => declineMatchProposal(m.id))}
                           >
-                            ✕ Decline
+                            <IconX size={16} aria-hidden="true" /> Decline
                           </button>
                         </>
                       }
@@ -1116,7 +1117,7 @@ function RecordPastMatchModal({
                             setSets(withEligibleTiebreaks(sets.filter((_, j) => j !== i)))
                           }
                         >
-                          ✕
+                          <IconX size={16} aria-hidden="true" />
                         </button>
                       )}
                     </div>
@@ -1808,7 +1809,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 20,
   },
   scoreBlock: { marginBottom: 8 },
-  setScore: { fontSize: 22, fontWeight: 700, color: "#222", letterSpacing: 1 },
+  setScore: { fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 700, color: "#222", letterSpacing: 1 },
   gameScore: {
     fontSize: 15,
     fontWeight: 600,

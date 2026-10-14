@@ -5,40 +5,43 @@ export const dynamic = 'force-dynamic';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthUser, updateUserProfile } from '@tennis/firebase-client';
+import {
+  IconBallTennis, IconCircleCheck, IconClipboardList, IconMessageCircle, IconTarget, IconTrophy,
+} from '@tabler/icons-react';
 
 const SLIDES = [
   {
-    icon: '🎾',
+    Icon: IconBallTennis,
     title: 'Welcome to Tennis League',
     body: 'Track every match, climb the rankings, and stay connected with your division — all in one place.',
     bg: '#1a472a',
   },
   {
-    icon: '🎯',
+    Icon: IconTarget,
     title: 'Score Live Matches',
     body: 'Players score live matches in the mobile app — tap to record each point. Web shows the live score in real time.',
     bg: '#2d6a4f',
   },
   {
-    icon: '📋',
+    Icon: IconClipboardList,
     title: 'Record Past Matches',
     body: 'Already played? Log the set scores after the fact. Your opponent confirms, and rankings update instantly.',
     bg: '#1b4332',
   },
   {
-    icon: '✅',
+    Icon: IconCircleCheck,
     title: 'Confirm Match Reports',
     body: 'After a match ends, one player submits the score. The other confirms or disputes — keeping everything fair.',
     bg: '#134a22',
   },
   {
-    icon: '💬',
+    Icon: IconMessageCircle,
     title: 'Message Teammates',
     body: 'Chat in the division channel or start a direct message. Share your contact info with a single tap.',
     bg: '#0d3b1e',
   },
   {
-    icon: '🏆',
+    Icon: IconTrophy,
     title: "You're All Set!",
     body: 'Win matches, earn ranking points, and claim the top spot. Good luck on the court!',
     bg: '#1a472a',
@@ -82,7 +85,9 @@ export default function WebTutorialPage(): React.JSX.Element {
   return (
     <div style={{ ...styles.root, background: slide.bg }}>
       <div style={styles.content}>
-        <div style={styles.icon}>{slide.icon}</div>
+        <div style={styles.icon}>
+          <slide.Icon size={80} stroke={1.5} color="var(--gold)" aria-hidden="true" />
+        </div>
         <h1 style={styles.title}>{slide.title}</h1>
         <p style={styles.body}>{slide.body}</p>
         {error ? <p style={styles.error}>{error}</p> : null}

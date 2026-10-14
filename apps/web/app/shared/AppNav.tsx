@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { FormEvent } from "react";
 import { signOutReleasingPushToken } from "@tennis/firebase-client";
 import { ViewModeToggle } from "./ViewModeToggle";
+import { IconBallTennis } from "@tabler/icons-react";
 
 export type AppNavSection =
   | "dashboard"
@@ -51,7 +52,7 @@ export function AppNav({
 }): React.JSX.Element {
   return (
     <nav aria-label="Primary" style={styles.nav}>
-      <span style={styles.navBrand}>🎾 Tennis League</span>
+      <span style={styles.navBrand}><IconBallTennis size={22} aria-hidden="true" color="var(--gold)" /> Tennis League</span>
       <div style={styles.navLinks}>
         {NAV_ITEMS.map((item) => (
           <Link
@@ -93,7 +94,7 @@ export const appNavStyles = {
     gap: 16,
     flexWrap: "wrap",
   },
-  navBrand: { color: "#fff", fontWeight: 700, fontSize: 20 },
+  navBrand: { fontFamily: "var(--font-display)", color: "#fff", fontWeight: 700, fontSize: 22 },
   navLinks: { display: "flex", gap: 24, flexWrap: "wrap" },
   navLink: { color: "rgba(255,255,255,0.75)", fontWeight: 500, fontSize: 15 },
   navLinkActive: {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { IconBallTennis } from "@tabler/icons-react";
 import {
   PRIVACY_POLICY_INTRO,
   PRIVACY_POLICY_LAST_UPDATED,
@@ -12,7 +13,7 @@ export default function PrivacyPolicyPage(): React.JSX.Element {
     <div style={styles.page}>
       <header style={styles.header}>
         <Link href="/login" style={styles.brand}>
-          🎾 Tennis League
+          <IconBallTennis size={22} aria-hidden="true" color="var(--green-mid)" /> Tennis League
         </Link>
       </header>
 
@@ -50,8 +51,9 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#fff",
   },
   brand: {
+    fontFamily: "var(--font-display)",
     fontWeight: 700,
-    fontSize: 16,
+    fontSize: 20,
     color: "var(--green-dark, #1a472a)",
     textDecoration: "none",
   },
