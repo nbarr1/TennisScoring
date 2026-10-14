@@ -371,6 +371,8 @@ describe('division roster callables', () => {
     await seedMembership('p1', 'L1', 'waitlisted');
     await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L2', userId: 'p1' });
     assert.deepEqual(await rosteredLevels('p1'), ['L2']);
+    const old = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
+    assert.equal(old?.status, 'removed', 'the waitlisted membership is archived, not deleted');
   });
 
   it('rejects a level that belongs to another season', async () => {
@@ -390,6 +392,10 @@ describe('division roster callables', () => {
     );
     await assert.rejects(
       call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' }, p2Auth),
+      { code: 'permission-denied' },
+    );
+    await assert.rejects(
+      call('addPlayerToDivisionByEmail', { divisionId: DIVISION, email: 'p1@example.com' }, p2Auth),
       { code: 'permission-denied' },
     );
   });
@@ -466,11 +472,13 @@ describe('division roster callables', () => {
     it('keeps the player in the division while another season still rosters them', async () => {
       await seedRoster();
       await seedMembership('p1', 'L1');
-      await seedMembership('p1', 'L3', 'active', '2027-H1');
+      // Waitlisted, so the check for a remaining membership must count waitlisted ones.
+      await seedMembership('p1', 'L3', 'waitlisted', '2027-H1');
       const result = await call('removeDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, userId: 'p1' });
       assert.deepEqual(result, { removed: 1, detachedFromDivision: false });
       assert.ok((await divisionDoc()).playerIds.includes('p1'));
       assert.equal((await userDoc('p1')).divisionId, DIVISION);
+      assert.ok((await chatParticipants()).includes('p1'), 'the player stays in the division chat');
     });
 
     it('removes only the named level when one is given', async () => {
@@ -502,6 +510,7 @@ describe('division roster callables', () => {
       assert.deepEqual(result, { removed: 0, detachedFromDivision: false });
       assert.ok(!(await divisionDoc()).playerIds.includes('p1'));
       assert.equal((await userDoc('p1')).divisionId, null);
+      assert.ok(!(await chatParticipants()).includes('p1'));
     });
 
     it('leaves the active division alone when it names another division', async () => {
