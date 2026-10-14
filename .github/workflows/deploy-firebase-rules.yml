@@ -114,7 +114,7 @@ jobs:
           node-version-file: '.nvmrc'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # firebase-tools 15 refuses to start the emulators on a JDK older than 21.
       - name: Set up Java for the Firebase emulators
