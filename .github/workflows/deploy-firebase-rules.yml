@@ -106,11 +106,12 @@ jobs:
         with:
           version: 9.15.5
 
+      # No dependency cache here. This job runs code from a dispatched ref in the default
+      # branch's cache scope, so a cache it saved could be restored by other workflows.
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
