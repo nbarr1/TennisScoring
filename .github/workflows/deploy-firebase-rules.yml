@@ -82,7 +82,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
       - name: Resolve the commit and require it on the default branch
@@ -92,8 +92,8 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          sha="$(git rev-parse HEAD)"
-          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          git fetch --no-tags origin "$DEFAULT_BRANCH" "$REF"
+          sha="$(git rev-parse "$REF^{commit}")"
           if ! git merge-base --is-ancestor "$sha" "origin/$DEFAULT_BRANCH"; then
             echo "::error::$REF ($sha) is not on $DEFAULT_BRANCH. Only merged rules can be deployed."
             exit 1
