@@ -53,6 +53,8 @@ import {
   parseRosterPaste,
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
+import { AnimatedDiv, LoadingBlock } from "../shared/motion";
+import { IconCheck } from "@tabler/icons-react";
 
 const DIVISION_ACCESS_HINTS = [
   "You are signed in to Firebase Auth with the expected account.",
@@ -1425,7 +1427,7 @@ export default function AdminPage(): React.JSX.Element {
         ) : null}
 
         {loading ? (
-          <div style={styles.placeholder}>Loading…</div>
+          <LoadingBlock label="Loading division…" rows={6} rowHeight={28} style={styles.placeholder} />
         ) : !division ? (
           <div style={styles.card}>
             <h2 style={styles.sectionTitle}>Create your division</h2>
@@ -1641,7 +1643,7 @@ export default function AdminPage(): React.JSX.Element {
                     </div>
                   ) : null}
 
-                  <div style={styles.gridWrap}>
+                  <AnimatedDiv style={styles.gridWrap}>
                     <div style={{ ...styles.gridRow, ...styles.gridHead }}>
                       <div style={styles.cellCheck}>
                         <input
@@ -1950,7 +1952,7 @@ export default function AdminPage(): React.JSX.Element {
                         );
                       })
                     )}
-                  </div>
+                  </AnimatedDiv>
 
                   <p style={styles.tableFooter}>
                     {isFiltered
@@ -2267,7 +2269,7 @@ export default function AdminPage(): React.JSX.Element {
                               }}
                               onClick={() => toggleRrPlayer(m.userId)}
                             >
-                              {selected ? "✓ " : ""}
+                              {selected ? <><IconCheck size={14} aria-hidden="true" /> </> : null}
                               {m.displayNameSnapshot}
                             </button>
                           );
@@ -2599,11 +2601,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--green-dark)",
     borderBottom: "2px solid var(--green-dark)",
   },
-  placeholder: {
-    color: "var(--muted)",
-    padding: 40,
-    textAlign: "center" as const,
-  },
+  placeholder: { padding: "24px 0" },
   card: {
     background: "#fff",
     borderRadius: 14,

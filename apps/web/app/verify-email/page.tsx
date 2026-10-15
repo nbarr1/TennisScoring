@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense, useState } from 'react';
+import { IconMailCheck } from '@tabler/icons-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   refreshEmailVerification,
@@ -87,7 +88,7 @@ function VerifyEmailContent(): React.JSX.Element {
   return (
     <main style={styles.main}>
       <div style={styles.card}>
-        <div style={styles.logo} aria-hidden="true">✉️</div>
+        <div style={styles.logo}><IconMailCheck size={48} aria-hidden="true" stroke={1.5} color="var(--green-mid)" /></div>
         <h1 style={styles.title}>Verify your email address</h1>
         <p style={styles.body}>
           We sent a verification link to <strong>{firebaseUser?.email ?? 'your email address'}</strong>.

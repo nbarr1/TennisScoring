@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { IconBallTennis } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import {
   signInWithEmailAndPassword,
@@ -107,7 +108,7 @@ export default function LoginPage(): React.JSX.Element {
   return (
     <main style={styles.main}>
       <div style={styles.card}>
-        <div style={styles.logo}>🎾</div>
+        <div style={styles.logo}><IconBallTennis size={56} aria-hidden="true" stroke={1.5} color="var(--green-mid)" /></div>
         <h1 style={styles.title}>Tennis League</h1>
         <p style={styles.subtitle}>Work Tennis Scoring & Rankings</p>
 

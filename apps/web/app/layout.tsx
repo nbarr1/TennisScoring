@@ -1,4 +1,8 @@
 import type { Metadata } from 'next';
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource/barlow-condensed/600.css';
+import '@fontsource/barlow-condensed/700.css';
+import 'react-loading-skeleton/dist/skeleton.css';
 import './globals.css';
 import { FcmProvider } from './FcmProvider';
 import { ViewModeProvider } from './shared/viewMode';

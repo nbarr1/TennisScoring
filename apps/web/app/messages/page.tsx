@@ -3,6 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { AnimatedDiv, LoadingBlock } from "../shared/motion";
+import { IconBan, IconFlag, IconMail, IconMessageCircle, IconPhone, IconUsers } from "@tabler/icons-react";
 import { useState, useRef, useEffect } from "react";
 import {
   useAuthUser,
@@ -30,7 +32,7 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const { user: profile } = usePrivateUser(firebaseUser?.uid ?? null);
-  const { channels } = useChannels(firebaseUser?.uid ?? null);
+  const { channels, loading: channelsLoading } = useChannels(firebaseUser?.uid ?? null);
   const [active, setActive] = useState<Channel | null>(null);
   const [showNewDm, setShowNewDm] = useState(false);
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
@@ -60,12 +62,12 @@ export default function MessagesPage(): React.JSX.Element {
 
   function channelLabel(ch: Channel): string {
     if (ch.name) return ch.name;
-    if (ch.type === "division") return "🎾 Division Chat";
+    if (ch.type === "division") return "Division Chat";
     if (ch.type === "direct") {
       const otherId = ch.participantIds.find((id) => id !== firebaseUser?.uid);
       return otherId
-        ? `💬 ${participantNames[otherId] ?? "Direct Message"}`
-        : "💬 Direct Message";
+        ? participantNames[otherId] ?? "Direct Message"
+        : "Direct Message";
     }
     return ch.type;
   }
@@ -100,7 +102,10 @@ export default function MessagesPage(): React.JSX.Element {
               }}
               onClick={() => setActive(ch)}
             >
-              <span style={styles.channelName}>{channelLabel(ch)}</span>
+              <span style={styles.channelName}>
+                {ch.type === "division" ? <IconUsers size={16} aria-hidden="true" /> : <IconMessageCircle size={16} aria-hidden="true" />}{" "}
+                {channelLabel(ch)}
+              </span>
               {ch.lastMessage && (
                 <span style={styles.preview} title={ch.lastMessage.content}>
                   {ch.lastMessage.content.slice(0, 40)}
@@ -108,7 +113,10 @@ export default function MessagesPage(): React.JSX.Element {
               )}
             </button>
           ))}
-          {channels.length === 0 && (
+          {channelsLoading && channels.length === 0 && (
+            <LoadingBlock label="Loading conversations…" rows={4} rowHeight={44} style={styles.channelsLoading} />
+          )}
+          {!channelsLoading && channels.length === 0 && (
             <p style={styles.empty}>
               No channels yet. Join a division to start chatting.
             </p>
@@ -201,7 +209,7 @@ function NewDmModal({
     setError("");
     try {
       const channel = await getOrCreateDM(currentUserId, user.id);
-      onCreated({ ...channel, name: channel.name ?? `💬 ${user.displayName}` });
+      onCreated({ ...channel, name: channel.name ?? user.displayName });
     } catch (e) {
       setError(
         e instanceof Error
@@ -414,7 +422,7 @@ function ChatPane({
       {deleteMessage && <div role="alert" style={styles.threadError}>{deleteMessage}</div>}
       {actionError && <div role="alert" style={styles.threadError}>{actionError}</div>}
 
-      <div style={styles.messageList}>
+      <AnimatedDiv style={styles.messageList}>
         {messages.map((m) => (
           <MessageBubble
             key={m.id}
@@ -424,7 +432,7 @@ function ChatPane({
           />
         ))}
         <div ref={bottomRef} />
-      </div>
+      </AnimatedDiv>
 
       <form style={styles.inputRow} onSubmit={handleSend}>
         <label htmlFor="message-composer" style={styles.srOnly}>
@@ -453,14 +461,14 @@ function ChatPane({
           <div style={styles.actionSheetCard} onClick={(e) => e.stopPropagation()}>
             <h3 style={styles.modalTitle}>{actionMessage.senderName}</h3>
             <button type="button" style={styles.actionSheetOption} onClick={handleOpenReport}>
-              🚩 Report message
+              <IconFlag size={16} aria-hidden="true" /> Report message
             </button>
             <button
               type="button"
               style={{ ...styles.actionSheetOption, color: "#c0392b" }}
               onClick={handleBlockSender}
             >
-              🚫 Block {actionMessage.senderName}
+              <IconBan size={16} aria-hidden="true" /> Block {actionMessage.senderName}
             </button>
             <button
               type="button"
@@ -569,7 +577,7 @@ function MessageBubble({
               href={`tel:${message.sharedContact.phone}`}
               style={styles.contactLink}
             >
-              📞 Call
+              <IconPhone size={14} aria-hidden="true" /> Call
             </a>
           )}
           {message.sharedContact.email && (
@@ -577,7 +585,7 @@ function MessageBubble({
               href={`mailto:${message.sharedContact.email}`}
               style={styles.contactLink}
             >
-              ✉️ Email
+              <IconMail size={14} aria-hidden="true" /> Email
             </a>
           )}
         </div>
@@ -587,6 +595,7 @@ function MessageBubble({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  channelsLoading: { padding: "4px 16px" },
   page: {
     ...appNavStyles.page,
     display: "flex",

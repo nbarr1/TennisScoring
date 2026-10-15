@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { AnimatedDiv, LoadingBlock } from "../shared/motion";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -145,7 +146,7 @@ export default function DashboardPage(): React.JSX.Element {
             Join or create a division to see standings. <button style={styles.emptyLinkBtn} onClick={() => router.push('/onboarding/division')}>Open division onboarding</button>
           </div>
         ) : loading || divisionLoading ? (
-          <div style={styles.loading}>Loading rankings…</div>
+          <LoadingBlock label="Loading rankings…" rows={6} rowHeight={24} style={styles.loading} />
         ) : rows.length === 0 ? (
           <div style={styles.empty}>
             {isDoubles
@@ -153,7 +154,7 @@ export default function DashboardPage(): React.JSX.Element {
               : "No matches completed yet. Rankings appear after the first match."}
           </div>
         ) : (
-          <div style={styles.table}>
+          <AnimatedDiv style={styles.table}>
             <div style={styles.tableHeader}>
               <span style={styles.thRank}>#</span>
               <span style={styles.thName}>{isDoubles ? "Team" : "Player"}</span>
@@ -166,7 +167,7 @@ export default function DashboardPage(): React.JSX.Element {
             {rows.map((r, i) => (
               <RankingRow key={r.key} ranking={r} index={i} />
             ))}
-          </div>
+          </AnimatedDiv>
         )}
       </main>
     </div>
@@ -255,7 +256,7 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "none" as const,
     letterSpacing: 0,
   },
-  loading: { textAlign: "center", color: "var(--muted)", padding: 40 },
+  loading: { background: "#fff", borderRadius: 14, padding: "20px 20px 8px" },
   empty: {
     textAlign: "center",
     color: "var(--muted)",

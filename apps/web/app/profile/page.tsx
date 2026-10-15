@@ -3,6 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { LoadingBlock } from "../shared/motion";
+import { IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getDoc } from "firebase/firestore";
@@ -213,7 +215,7 @@ export default function ProfilePage(): React.JSX.Element {
   }
 
   if (authLoading || userLoading) {
-    return <div style={styles.placeholder}>Loading profile…</div>;
+    return <LoadingBlock label="Loading profile…" rows={5} rowHeight={36} style={styles.loadingPage} />;
   }
 
   if (!user) {
@@ -344,7 +346,7 @@ export default function ProfilePage(): React.JSX.Element {
                 aria-label={`Remove availability slot ${idx + 1}`}
                 onClick={() => removeSlot(idx)}
               >
-                ✕
+                <IconX size={16} aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -517,6 +519,7 @@ function CheckboxRow({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  loadingPage: { maxWidth: 720, margin: "48px auto", padding: "0 24px" },
   page: appNavStyles.page,
   main: { maxWidth: 720, margin: "0 auto", padding: "40px 24px" },
   pageTitle: {

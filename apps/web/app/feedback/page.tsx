@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { AppNav, appNavStyles } from "../shared/AppNav";
+import { LoadingBlock } from "../shared/motion";
 import {
   submitFeedback,
   useAuthUser,
@@ -96,7 +97,7 @@ export default function FeedbackPage(): React.JSX.Element {
   }
 
   if (authLoading || (firebaseUser && profileLoading)) {
-    return <div style={styles.placeholder}>Loading feedback form…</div>;
+    return <LoadingBlock label="Loading feedback form…" rows={4} rowHeight={36} style={styles.loadingPage} />;
   }
 
   return (
@@ -223,6 +224,7 @@ function Field({
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  loadingPage: { maxWidth: 720, margin: "48px auto", padding: "0 24px" },
   page: appNavStyles.page,
   main: { maxWidth: 720, margin: "0 auto", padding: "40px 24px" },
   pageTitle: {
@@ -328,13 +330,5 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     padding: "12px 16px",
     fontWeight: 700,
-  },
-  placeholder: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "var(--muted)",
-    background: "var(--bg)",
   },
 };
