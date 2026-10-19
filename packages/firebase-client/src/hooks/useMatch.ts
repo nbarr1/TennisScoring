@@ -7,7 +7,13 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { matchDoc, matchesCol, liveMatchesQuery, reportsAwaitingResolutionQuery } from '../collections';
+import {
+  matchDoc,
+  matchesCol,
+  liveMatchesQuery,
+  playerMatchesQuery,
+  reportsAwaitingResolutionQuery,
+} from '../collections';
 import { functions } from '../config';
 import type {
   Match,
@@ -48,6 +54,39 @@ export function useMatch(matchId: string | null) {
   }, [matchId]);
 
   return { match, loading, error };
+}
+
+/**
+ * A player's own matches, newest first. Changing `reloadKey` resubscribes,
+ * which is how a page offers "Try again" after `error` is set.
+ */
+export function usePlayerMatches(uid: string | null, reloadKey = 0) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!uid) {
+      setMatches([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    return onSnapshot(
+      playerMatchesQuery(uid),
+      (snap) => {
+        setMatches(snap.docs.map((d) => ({ ...(d.data() as Omit<Match, 'id'>), id: d.id })));
+        setLoading(false);
+      },
+      (err) => {
+        setError(err);
+        setLoading(false);
+      },
+    );
+  }, [uid, reloadKey]);
+
+  return { matches, loading, error };
 }
 
 export async function createMatch(params: {

@@ -6,7 +6,6 @@ import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { onSnapshot } from "firebase/firestore";
 import {
   IconCalendarEvent,
   IconChevronRight,
@@ -22,7 +21,7 @@ import {
   useUserProfile,
   useActiveDivisionId,
   useDivisionLevels,
-  playerMatchesQuery,
+  usePlayerMatches,
 } from "@tennis/firebase-client";
 import {
   canRespondToReport,
@@ -84,39 +83,6 @@ function formatWhen(timestamp: number | undefined): string {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-/**
- * This player's own matches, newest first, read through the shared
- * `playerMatchesQuery` (the same participant query the rules allow).
- */
-function usePlayerMatches(uid: string | null, reloadKey: number) {
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<unknown>(null);
-
-  useEffect(() => {
-    if (!uid) {
-      setMatches([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    return onSnapshot(
-      playerMatchesQuery(uid),
-      (snap) => {
-        setMatches(snap.docs.map((d) => ({ ...(d.data() as Omit<Match, "id">), id: d.id })));
-        setLoading(false);
-      },
-      (err) => {
-        setError(err);
-        setLoading(false);
-      },
-    );
-  }, [uid, reloadKey]);
-
-  return { matches, loading, error };
 }
 
 export default function DashboardPage(): React.JSX.Element {
