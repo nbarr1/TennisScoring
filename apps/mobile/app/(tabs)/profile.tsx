@@ -1,15 +1,13 @@
-import React, { useRef, useState, useEffect } from "react";
-import { colors } from "../../theme";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   Switch,
-  Alert,
   Modal,
-  ActivityIndicator,
+  Platform,
 } from "react-native";
 import {
   EmailAuthProvider,
@@ -27,26 +25,139 @@ import {
   profileDoc,
   signOutReleasingPushToken,
 } from "@tennis/firebase-client";
-import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import {
   DAY_LABELS,
+  DAYS_OF_WEEK,
   addAvailabilitySlot,
   buildUserProfileUpdates,
-  cycleAvailabilitySlotDay,
   removeAvailabilitySlot,
   updateAvailabilitySlot,
   validateAvailabilitySlots,
   type AvailabilitySlot,
+  type DayOfWeek,
   type PublicProfile,
+  type User,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
-import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
+import {
+  KeyboardAwareScrollView,
+  KeyboardSafeView,
+} from "../../components/KeyboardSafeView";
 import { FormErrorSummary, FormField } from "../../components/FormField";
+import {
+  Button,
+  Chip,
+  ErrorState,
+  IconButton,
+  InlineAlert,
+  LoadingState,
+  MIN_TOUCH_TARGET,
+  announce,
+  colors,
+  confirmAction,
+  confirmDestructive,
+  describeError,
+  elevations,
+  radii,
+  spacing,
+  typography,
+  useAsyncAction,
+} from "../../theme";
+
+const DAY_NAMES: Record<DayOfWeek, string> = {
+  sun: "Sunday",
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+};
+
+const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
+
+type BlockedEntry = { id: string; displayName: string | null };
+
+function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={styles.sectionHead}>
+      <Text style={styles.sectionTitle} accessibilityRole="header">
+        {title}
+      </Text>
+      {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+    </View>
+  );
+}
+
+function ToggleRow({
+  label,
+  description,
+  value,
+  onValueChange,
+  disabled,
+  last,
+}: {
+  label: string;
+  description?: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  disabled: boolean;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityHint={
+        disabled ? "Tap Edit profile to change this setting" : description
+      }
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={() => onValueChange(!value)}
+      style={[styles.toggleRow, last && styles.toggleRowLast]}
+    >
+      <View style={styles.toggleText}>
+        <Text style={[styles.toggleLabel, disabled && styles.toggleLabelOff]}>
+          {label}
+        </Text>
+        {description ? (
+          <Text style={styles.toggleDescription}>{description}</Text>
+        ) : null}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        trackColor={{ true: colors.primary, false: colors.disabled }}
+        thumbColor={
+          Platform.OS === "android"
+            ? value
+              ? colors.primarySoft
+              : colors.surface
+            : undefined
+        }
+        ios_backgroundColor={colors.disabled}
+      />
+    </Pressable>
+  );
+}
 
 export default function ProfileScreen() {
   const { firebaseUser } = useAuthUser();
-  const { user, loading } = usePrivateUser(firebaseUser?.uid ?? null);
-  const { setUser } = useAppStore();
+  const [reloadKey, setReloadKey] = useState(0);
+  const { user, loading, error } = usePrivateUser(
+    firebaseUser?.uid ?? null,
+    reloadKey,
+  );
+  const setUser = useAppStore((state) => state.setUser);
   const router = useRouter();
 
   const [editing, setEditing] = useState(false);
@@ -66,85 +177,159 @@ export default function ProfileScreen() {
     user?.divisionId,
   );
   const [selectedDivisionId, setSelectedDivisionId] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [blockedProfiles, setBlockedProfiles] = useState<PublicProfile[]>([]);
+  const [blocked, setBlocked] = useState<BlockedEntry[]>([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
+  const [unblockError, setUnblockError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const displayNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+
+  const loadDraft = useCallback((source: User) => {
+    setDisplayName(source.displayName ?? "");
+    setEmail(source.email ?? "");
+    setPhone(source.phone ?? "");
+    setAllowEmail(source.contactPreferences?.allowEmail ?? true);
+    setAllowSMS(source.contactPreferences?.allowSMS ?? false);
+    setAllowInApp(source.contactPreferences?.allowInApp ?? true);
+    setTipsEnabled(source.tipsEnabled ?? true);
+    setAvailabilitySlots(source.availability?.slots ?? []);
+    setAvailabilityNote(source.availability?.note ?? "");
+    setSelectedDivisionId(source.divisionId ?? "");
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-    setDisplayName(user.displayName ?? "");
-    setEmail(user.email ?? "");
-    setPhone(user.phone ?? "");
-    setAllowEmail(user.contactPreferences?.allowEmail ?? true);
-    setAllowSMS(user.contactPreferences?.allowSMS ?? false);
-    setAllowInApp(user.contactPreferences?.allowInApp ?? true);
-    setTipsEnabled(user.tipsEnabled ?? true);
-    setAvailabilitySlots(user.availability?.slots ?? []);
-    setAvailabilityNote(user.availability?.note ?? "");
-    setSelectedDivisionId(user.divisionId ?? "");
-  }, [user]);
+    loadDraft(user);
+  }, [user, loadDraft]);
 
   useEffect(() => {
     const ids = user?.blockedUserIds ?? [];
     if (ids.length === 0) {
-      setBlockedProfiles([]);
+      setBlocked([]);
+      setBlockedLoading(false);
       return;
     }
     let cancelled = false;
-    Promise.all(ids.map((id) => getDoc(profileDoc(id)).catch(() => null))).then(
-      (snaps) => {
-        if (cancelled) return;
-        setBlockedProfiles(
-          snaps
-            .filter(
-              (snap): snap is NonNullable<typeof snap> => !!snap?.exists(),
-            )
-            .map((snap) => ({
-              ...(snap.data() as Omit<PublicProfile, "id">),
-              id: snap.id,
-            })),
-        );
-      },
-    );
+    setBlockedLoading(true);
+    Promise.all(
+      ids.map((id) => getDoc(profileDoc(id)).catch(() => null)),
+    ).then((snaps) => {
+      if (cancelled) return;
+      // Keep ids whose profile could not be read, so they can still be
+      // unblocked.
+      setBlocked(
+        ids.map((id, i) => {
+          const snap = snaps[i];
+          const data = snap?.exists()
+            ? (snap.data() as Omit<PublicProfile, "id">)
+            : null;
+          return { id, displayName: data?.displayName ?? null };
+        }),
+      );
+      setBlockedLoading(false);
+    });
     return () => {
       cancelled = true;
     };
   }, [user?.blockedUserIds]);
 
-  async function handleUnblock(blockedUserId: string) {
-    if (!firebaseUser) return;
+  async function handleUnblock(entry: BlockedEntry) {
+    if (!firebaseUser || unblockingId) return;
+    setUnblockingId(entry.id);
+    setUnblockError(null);
     try {
-      await unblockUser(firebaseUser.uid, blockedUserId);
-    } catch {
-      Alert.alert("Could not unblock user", "Please try again.");
+      await unblockUser(firebaseUser.uid, entry.id);
+      announce(
+        `${entry.displayName ?? "Player"} unblocked. Their messages will show again.`,
+      );
+    } catch (err) {
+      const text = describeError(
+        err,
+        "Couldn't unblock this player. Check your connection and try again.",
+      );
+      setUnblockError(text);
+      announce(text);
+    } finally {
+      setUnblockingId(null);
     }
   }
 
   function addSlot() {
     setAvailabilitySlots(addAvailabilitySlot);
+    if (formErrors.availability)
+      setFormErrors((e) => ({ ...e, availability: "" }));
   }
   function updateSlot(idx: number, patch: Partial<AvailabilitySlot>) {
     setAvailabilitySlots((slots) => updateAvailabilitySlot(slots, idx, patch));
+    if (formErrors.availability)
+      setFormErrors((e) => ({ ...e, availability: "" }));
   }
   function removeSlot(idx: number) {
     setAvailabilitySlots((slots) => removeAvailabilitySlot(slots, idx));
-  }
-  function cycleDay(idx: number) {
-    setAvailabilitySlots((slots) => cycleAvailabilitySlotDay(slots, idx));
+    announce("Time removed");
   }
 
-  async function handleSave() {
+  const save = useAsyncAction(
+    async (uid: string) => {
+      await updateUserProfile(
+        uid,
+        buildUserProfileUpdates({
+          displayName,
+          email,
+          phone,
+          allowEmail,
+          allowSMS,
+          allowInApp,
+          tipsEnabled,
+          availabilitySlots,
+          availabilityNote,
+          selectedDivisionId,
+        }),
+      );
+    },
+    {
+      successMessage: "Profile saved",
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't save your profile. Check your connection and try again. Your changes are still here.",
+        ),
+      onSuccess: () => {
+        setEditing(false);
+        setSavedNotice(true);
+      },
+    },
+  );
+
+  function startEditing() {
+    setSavedNotice(false);
+    save.reset();
+    setFormErrors({});
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    // Put back what is saved, so a cancelled edit never lingers on screen.
+    if (user) loadDraft(user);
+    setFormErrors({});
+    save.reset();
+    setEditing(false);
+  }
+
+  function handleSave() {
     if (!firebaseUser) return;
     const contactErrors = {
-      displayName: displayName.trim() ? "" : "Enter a display name.",
-      email: /^\S+@\S+\.\S+$/.test(email.trim())
+      displayName: displayName.trim()
         ? ""
-        : "Enter a valid email address.",
+        : "Enter your name. Other players see it in standings and messages.",
+      email: EMAIL_PATTERN.test(email.trim())
+        ? ""
+        : "Enter an email address like name@example.com.",
     };
     const validation = validateAvailabilitySlots(availabilitySlots);
     const nextErrors = {
@@ -161,156 +346,175 @@ export default function ProfileScreen() {
       )?.current?.focus();
       return;
     }
-    setSaving(true);
-    try {
-      await updateUserProfile(
-        firebaseUser.uid,
-        buildUserProfileUpdates({
-          displayName,
-          email,
-          phone,
-          allowEmail,
-          allowSMS,
-          allowInApp,
-          tipsEnabled,
-          availabilitySlots,
-          availabilityNote,
-          selectedDivisionId,
-        }),
-      );
-      setEditing(false);
-    } catch (e) {
-      Alert.alert(
-        "Could not save profile",
-        (e as { message?: string }).message || "Please try again.",
-      );
-    } finally {
-      setSaving(false);
-    }
+    void save.run(firebaseUser.uid);
   }
 
   function handleFeedback() {
     router.push({ pathname: "/feedback", params: { from: "/(tabs)/profile" } });
   }
 
-  async function handleSignOut() {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await signOutReleasingPushToken();
-          setUser(null);
-        },
-      },
-    ]);
-  }
-
-  function handleDeleteAccountPress() {
-    Alert.alert(
-      "Delete Account",
-      "This permanently deletes your account and removes your personal data. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          style: "destructive",
-          onPress: () => setShowDeleteModal(true),
-        },
-      ],
-    );
-  }
-
-  async function confirmDeleteAccount() {
-    if (!firebaseUser?.email || !deletePassword) return;
-    setDeleting(true);
+  const signOut = useAsyncAction(async () => {
     try {
+      await signOutReleasingPushToken();
+    } finally {
+      setUser(null);
+    }
+  });
+
+  async function handleSignOut() {
+    const ok = await confirmAction({
+      title: "Sign out?",
+      message:
+        "You'll stop getting match and message notifications on this device until you sign back in.",
+      confirmLabel: "Sign out",
+    });
+    if (ok) void signOut.run();
+  }
+
+  const deleteAccount = useAsyncAction(
+    async (password: string) => {
+      if (!firebaseUser?.email) throw new Error("No email on this account.");
       const credential = EmailAuthProvider.credential(
         firebaseUser.email,
-        deletePassword,
+        password,
       );
       await reauthenticateWithCredential(firebaseUser, credential);
       await deleteAccountCallable();
-      setShowDeleteModal(false);
-      setDeletePassword("");
-      setUser(null);
-      router.replace("/(auth)/login");
-    } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (
-        code === "auth/wrong-password" ||
-        code === "auth/invalid-credential"
-      ) {
-        Alert.alert(
-          "Incorrect password",
-          "Please re-enter your password to confirm.",
+    },
+    {
+      errorMessage: (e) => {
+        const code = (e as { code?: string })?.code;
+        if (
+          code === "auth/wrong-password" ||
+          code === "auth/invalid-credential"
+        )
+          return "That password is incorrect. Enter the password you sign in with.";
+        if (code === "auth/too-many-requests")
+          return "Too many attempts. Wait a few minutes, then try again.";
+        if (code === "functions/failed-precondition")
+          return "You lead a division. Hand leadership to another player before deleting your account.";
+        return describeError(
+          e,
+          "Couldn't delete your account. Check your connection and try again.",
         );
-      } else if (code === "functions/failed-precondition") {
-        Alert.alert(
-          "Can't delete account",
-          "Transfer division leadership to another player before deleting your account.",
-        );
-      } else {
-        Alert.alert(
-          "Could not delete account",
-          (e as { message?: string }).message || "Please try again.",
-        );
-      }
-    } finally {
-      setDeleting(false);
+      },
+      successMessage: "Account deleted",
+      onSuccess: () => {
+        setShowDeleteModal(false);
+        setDeletePassword("");
+        // The server already removed this account; sign the device out too.
+        void signOutReleasingPushToken().catch(() => undefined);
+        setUser(null);
+        router.replace("/(auth)/login");
+      },
+    },
+  );
+
+  async function handleDeleteAccountPress() {
+    const ok = await confirmDestructive({
+      title: "Delete your account?",
+      message:
+        "This can't be undone. Your name becomes \"Deleted User\" on past matches and standings. Your email, phone, availability, and notifications are removed, and you leave every division and its group chats. If you lead a division, hand over leadership first.",
+      confirmLabel: "Continue",
+      cancelLabel: "Keep account",
+    });
+    if (ok) {
+      deleteAccount.reset();
+      setShowDeleteModal(true);
     }
   }
 
-  if (loading || !user) {
+  function closeDeleteModal() {
+    if (deleteAccount.pending) return;
+    setShowDeleteModal(false);
+    setDeletePassword("");
+    deleteAccount.reset();
+  }
+
+  // No signed-in user means sign-out is in progress; the auth gate takes over.
+  if (loading || !firebaseUser) {
+    return <LoadingState label="Loading your profile" />;
+  }
+  if (error || !user) {
     return (
-      <View style={styles.center}>
-        <Text>Loading profile…</Text>
-      </View>
+      <ErrorState
+        title="Couldn't load your profile"
+        message="Check your connection, then try again."
+        onRetry={() => setReloadKey((key) => key + 1)}
+      />
     );
   }
+
+  const shownName = user.displayName || firebaseUser?.displayName || "";
+  const activeDivisionName =
+    divisionOptions.find((division) => division.id === user.divisionId)
+      ?.name ?? (user.divisionId ? "Your division" : "No division selected");
 
   return (
     <KeyboardAwareScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
     >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>
-          {(user.displayName ||
-            firebaseUser?.displayName ||
-            "?")[0].toUpperCase()}
+      <View style={styles.identity}>
+        <View style={styles.avatar} accessible={false}>
+          <Text style={styles.avatarText}>
+            {(shownName || "?")[0].toUpperCase()}
+          </Text>
+        </View>
+        <Text style={styles.name} accessibilityRole="header">
+          {shownName || "Name not set"}
+        </Text>
+        <Text style={styles.email}>
+          {user.email || firebaseUser?.email || ""}
         </Text>
       </View>
-      <Text style={styles.name}>
-        {user.displayName || firebaseUser?.displayName || "Unknown"}
-      </Text>
-      <Text style={styles.email}>
-        {user.email || firebaseUser?.email || ""}
-      </Text>
+
+      {savedNotice && !editing && (
+        <InlineAlert
+          tone="success"
+          message="Profile saved."
+          style={styles.alertGap}
+        />
+      )}
+      {editing && (
+        <InlineAlert
+          tone="info"
+          message="You're editing your profile. Save or cancel at the bottom of the page."
+          style={styles.alertGap}
+          announce
+        />
+      )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Contact Information</Text>
+        <SectionTitle title="Contact information" />
 
         {editing ? (
-          <>
+          <View style={styles.fields}>
             <FormField
               ref={displayNameRef}
-              label="Display name"
+              label="Your name"
               required
               error={formErrors.displayName}
               value={displayName}
-              onChangeText={setDisplayName}
+              onChangeText={(value) => {
+                setDisplayName(value);
+                if (formErrors.displayName)
+                  setFormErrors((e) => ({ ...e, displayName: "" }));
+              }}
               onBlur={() =>
                 setFormErrors((e) => ({
                   ...e,
                   displayName: displayName.trim()
                     ? ""
-                    : "Enter a display name.",
+                    : "Enter your name. Other players see it in standings and messages.",
                 }))
               }
-              placeholder="Display name"
               autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => emailRef.current?.focus()}
             />
             <FormField
               ref={emailRef}
@@ -318,210 +522,249 @@ export default function ProfileScreen() {
               required
               error={formErrors.email}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(value) => {
+                setEmail(value);
+                if (formErrors.email)
+                  setFormErrors((e) => ({ ...e, email: "" }));
+              }}
               onBlur={() =>
                 setFormErrors((e) => ({
                   ...e,
-                  email: /^\S+@\S+\.\S+$/.test(email.trim())
+                  email: EMAIL_PATTERN.test(email.trim())
                     ? ""
-                    : "Enter a valid email address.",
+                    : "Enter an email address like name@example.com.",
                 }))
               }
-              placeholder="Email address"
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => phoneRef.current?.focus()}
             />
             <FormField
-              label="Phone"
-              helperText="Optional"
+              ref={phoneRef}
+              label="Phone (optional)"
               value={phone}
               onChangeText={setPhone}
-              placeholder="Phone number (optional)"
               keyboardType="phone-pad"
+              autoComplete="tel"
+              textContentType="telephoneNumber"
             />
-            <FormErrorSummary
-              errors={Object.values(formErrors).filter(Boolean)}
-            />
-          </>
+          </View>
         ) : (
           <>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Display name</Text>
+              <Text style={styles.rowLabel}>Name</Text>
               <Text style={styles.rowValue}>
-                {user.displayName ?? "Not set"}
+                {user.displayName || "Not set"}
               </Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Email</Text>
-              <Text style={styles.rowValue}>{user.email ?? "Not set"}</Text>
+              <Text style={styles.rowValue}>{user.email || "Not set"}</Text>
             </View>
-            <View style={styles.row}>
+            <View style={[styles.row, styles.rowLast]}>
               <Text style={styles.rowLabel}>Phone</Text>
-              <Text style={styles.rowValue}>{user.phone ?? "Not set"}</Text>
+              <Text style={styles.rowValue}>{user.phone || "Not set"}</Text>
             </View>
           </>
         )}
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Division</Text>
-        <Text style={styles.sectionSubtitle}>
-          Choose the division to use across rankings, matches, and admin tools
-        </Text>
+        <SectionTitle
+          title="Active division"
+          subtitle="Standings, matches, and messages show this division."
+        />
         {editing ? (
-          <View style={styles.divisionList}>
-            <TouchableOpacity
-              style={[
-                styles.divisionOption,
-                selectedDivisionId === "" && styles.divisionOptionActive,
-              ]}
-              onPress={() => setSelectedDivisionId("")}
-            >
-              <Text
-                style={[
-                  styles.divisionOptionText,
-                  selectedDivisionId === "" && styles.divisionOptionTextActive,
-                ]}
-              >
-                No division
-              </Text>
-            </TouchableOpacity>
-            {divisionOptions.map((division) => (
-              <TouchableOpacity
-                key={division.id}
-                style={[
-                  styles.divisionOption,
-                  selectedDivisionId === division.id &&
-                    styles.divisionOptionActive,
-                ]}
-                onPress={() => setSelectedDivisionId(division.id)}
-              >
-                <Text
-                  style={[
-                    styles.divisionOptionText,
-                    selectedDivisionId === division.id &&
-                      styles.divisionOptionTextActive,
-                  ]}
-                >
-                  {division.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <Text style={styles.rowValue}>
-            {divisionOptions.find((division) => division.id === user.divisionId)
-              ?.name ??
-              user.divisionId ??
-              "No division"}
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Contact Preferences</Text>
-        <Text style={styles.sectionSubtitle}>
-          Choose how others can contact you
-        </Text>
-
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Share email with teammates</Text>
-          <Switch
-            value={allowEmail}
-            onValueChange={setAllowEmail}
-            disabled={!editing}
-            trackColor={{ true: colors.primary, false: "#ccc" }}
-          />
-        </View>
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Share phone for SMS</Text>
-          <Switch
-            value={allowSMS}
-            onValueChange={setAllowSMS}
-            disabled={!editing}
-            trackColor={{ true: colors.primary, false: "#ccc" }}
-          />
-        </View>
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Allow in-app messages</Text>
-          <Switch
-            value={allowInApp}
-            onValueChange={setAllowInApp}
-            disabled={!editing}
-            trackColor={{ true: colors.primary, false: "#ccc" }}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferred Play Times</Text>
-        <Text style={styles.sectionSubtitle}>
-          Weekly windows when you&apos;re typically free
-        </Text>
-
-        {availabilitySlots.length === 0 && !editing && (
-          <Text style={styles.emptyHint}>No availability set yet.</Text>
-        )}
-        {availabilitySlots.map((slot, idx) => (
-          <View key={idx} style={styles.slotRow}>
-            <TouchableOpacity
-              style={[styles.slotDay, !editing && styles.slotDisabled]}
-              disabled={!editing}
-              onPress={() => cycleDay(idx)}
-            >
-              <Text style={styles.slotDayText}>{DAY_LABELS[slot.day]}</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={[styles.slotTime, !editing && styles.slotDisabled]}
-              value={slot.from}
-              onChangeText={(t) => updateSlot(idx, { from: t })}
-              editable={editing}
-              placeholder="HH:MM"
-              maxLength={5}
-            />
-            <Text style={styles.slotDash}>–</Text>
-            <TextInput
-              style={[styles.slotTime, !editing && styles.slotDisabled]}
-              value={slot.to}
-              onChangeText={(t) => updateSlot(idx, { to: t })}
-              editable={editing}
-              placeholder="HH:MM"
-              maxLength={5}
-            />
-            {editing && (
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel={`Remove availability slot ${idx + 1}`}
-                onPress={() => removeSlot(idx)}
-                style={styles.slotRemove}
-              >
-                <AppIcon
-                  name="xmark.circle.fill"
-                  size={ICON_SIZE.action}
-                  color={ICON_COLOR.destructive}
-                />
-              </TouchableOpacity>
+          <View
+            style={styles.divisionList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Active division"
+          >
+            {[{ id: "", name: "No division" }, ...divisionOptions].map(
+              (division) => {
+                const selected = selectedDivisionId === division.id;
+                return (
+                  <Pressable
+                    key={division.id || "none"}
+                    accessibilityRole="radio"
+                    accessibilityLabel={division.name}
+                    accessibilityState={{ checked: selected }}
+                    android_ripple={{
+                      color: colors.primarySoft,
+                      foreground: true,
+                    }}
+                    style={[
+                      styles.divisionOption,
+                      selected && styles.divisionOptionActive,
+                    ]}
+                    onPress={() => setSelectedDivisionId(division.id)}
+                  >
+                    <View
+                      style={[styles.radio, selected && styles.radioActive]}
+                    >
+                      {selected ? <View style={styles.radioDot} /> : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.divisionOptionText,
+                        selected && styles.divisionOptionTextActive,
+                      ]}
+                    >
+                      {division.name}
+                    </Text>
+                  </Pressable>
+                );
+              },
             )}
           </View>
-        ))}
+        ) : (
+          <Text style={styles.valueText}>{activeDivisionName}</Text>
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle
+          title="Contact preferences"
+          subtitle="Choose how other players in your division can reach you."
+        />
+        <ToggleRow
+          label="Share my email with players"
+          value={allowEmail}
+          onValueChange={setAllowEmail}
+          disabled={!editing}
+        />
+        <ToggleRow
+          label="Share my phone for texts"
+          value={allowSMS}
+          onValueChange={setAllowSMS}
+          disabled={!editing}
+        />
+        <ToggleRow
+          label="Allow in-app messages"
+          value={allowInApp}
+          onValueChange={setAllowInApp}
+          disabled={!editing}
+          last
+        />
+      </View>
+
+      <View style={styles.section}>
+        <SectionTitle
+          title="Preferred play times"
+          subtitle="Weekly times you're usually free. Opponents see these when they propose a match."
+        />
+
+        {availabilitySlots.length === 0 && !editing && (
+          <Text style={styles.emptyHint}>
+            No times set yet. Tap Edit profile to add when you can play.
+          </Text>
+        )}
+
+        {!editing &&
+          availabilitySlots.map((slot, idx) => (
+            <Text key={idx} style={styles.slotSummary}>
+              {DAY_NAMES[slot.day]}, {slot.from}–{slot.to}
+            </Text>
+          ))}
+
+        {editing &&
+          availabilitySlots.map((slot, idx) => (
+            <View
+              key={idx}
+              style={styles.slotCard}
+              accessibilityLabel={`Time ${idx + 1}`}
+            >
+              <View style={styles.slotHeader}>
+                <Text style={styles.slotHeading}>Time {idx + 1}</Text>
+                <IconButton
+                  label={`Remove time ${idx + 1}, ${DAY_NAMES[slot.day]} ${slot.from} to ${slot.to}`}
+                  icon="trash"
+                  variant="quiet"
+                  onPress={() => removeSlot(idx)}
+                />
+              </View>
+              <View
+                style={styles.dayChips}
+                accessibilityRole="radiogroup"
+                accessibilityLabel={`Day for time ${idx + 1}`}
+              >
+                {DAYS_OF_WEEK.map((day) => (
+                  <Chip
+                    key={day}
+                    label={DAY_LABELS[day]}
+                    accessibilityLabel={DAY_NAMES[day]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: slot.day === day }}
+                    selected={slot.day === day}
+                    style={styles.dayChip}
+                    onPress={() => updateSlot(idx, { day })}
+                  />
+                ))}
+              </View>
+              <View style={styles.timeRow}>
+                <FormField
+                  label="From"
+                  accessibilityLabel={`Time ${idx + 1} start, 24-hour`}
+                  containerStyle={styles.timeField}
+                  inputStyle={styles.timeInput}
+                  value={slot.from}
+                  onChangeText={(t) => updateSlot(idx, { from: t })}
+                  placeholder="18:00"
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                />
+                <Text style={styles.slotDash} accessible={false}>
+                  –
+                </Text>
+                <FormField
+                  label="To"
+                  accessibilityLabel={`Time ${idx + 1} end, 24-hour`}
+                  containerStyle={styles.timeField}
+                  inputStyle={styles.timeInput}
+                  value={slot.to}
+                  onChangeText={(t) => updateSlot(idx, { to: t })}
+                  placeholder="20:00"
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={5}
+                />
+              </View>
+            </View>
+          ))}
+
         {editing && (
-          <TouchableOpacity style={styles.addSlotBtn} onPress={addSlot}>
-            <Text style={styles.addSlotBtnText}>+ Add slot</Text>
-          </TouchableOpacity>
+          <>
+            <Text style={styles.helper}>
+              Use 24-hour time, like 07:30 or 18:00.
+            </Text>
+            {formErrors.availability ? (
+              <Text style={styles.fieldError} accessibilityLiveRegion="polite">
+                {formErrors.availability}
+              </Text>
+            ) : null}
+            <Button
+              label="Add a time"
+              icon="plus"
+              variant="secondary"
+              onPress={addSlot}
+            />
+          </>
         )}
 
         {editing ? (
           <FormField
-            label="Availability note"
-            helperText="Optional"
+            label="Note (optional)"
             showCharacterCount
             maxLength={300}
-            containerStyle={{ marginTop: 12 }}
-            inputStyle={{ minHeight: 56 }}
+            containerStyle={styles.noteField}
+            inputStyle={styles.noteInput}
             value={availabilityNote}
             onChangeText={setAvailabilityNote}
-            placeholder="Optional note, e.g. Flexible weekends"
+            placeholder="e.g. Flexible on weekends"
             multiline
           />
         ) : availabilityNote ? (
@@ -530,124 +773,212 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Match Settings</Text>
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Live tips during matches</Text>
-          <Switch
-            value={tipsEnabled}
-            onValueChange={setTipsEnabled}
-            disabled={!editing}
-            trackColor={{ true: colors.primary, false: "#ccc" }}
-          />
-        </View>
+        <SectionTitle title="Match settings" />
+        <ToggleRow
+          label="Live tips during matches"
+          description="Short tips on the scoring screen, like deuce or set point."
+          value={tipsEnabled}
+          onValueChange={setTipsEnabled}
+          disabled={!editing}
+          last
+        />
       </View>
 
-      {blockedProfiles.length > 0 && (
+      <View style={styles.actions}>
+        {editing ? (
+          <>
+            <FormErrorSummary
+              errors={Object.values(formErrors).filter(Boolean)}
+            />
+            {save.error && (
+              <InlineAlert
+                tone="error"
+                title="Couldn't save your profile"
+                message={save.error}
+              />
+            )}
+            <Button
+              label="Save changes"
+              pending={save.pending}
+              pendingLabel="Saving…"
+              fullWidth
+              onPress={handleSave}
+            />
+            <Button
+              label="Cancel"
+              accessibilityLabel="Cancel editing and discard changes"
+              variant="secondary"
+              disabled={save.pending}
+              fullWidth
+              onPress={cancelEditing}
+            />
+          </>
+        ) : (
+          <Button
+            label="Edit profile"
+            icon="pencil"
+            fullWidth
+            onPress={startEditing}
+          />
+        )}
+      </View>
+
+      {(blocked.length > 0 || blockedLoading) && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Blocked Users</Text>
-          {blockedProfiles.map((p) => (
-            <View key={p.id} style={styles.row}>
-              <Text style={styles.rowValue}>{p.displayName}</Text>
-              <TouchableOpacity onPress={() => handleUnblock(p.id)}>
-                <Text style={styles.unblockText}>Unblock</Text>
-              </TouchableOpacity>
+          <SectionTitle
+            title="Blocked players"
+            subtitle="You don't see messages from these players, and they don't notify you."
+          />
+          {blockedLoading && blocked.length === 0 ? (
+            <LoadingState inline label="Loading blocked players" />
+          ) : null}
+          {unblockError && (
+            <InlineAlert
+              tone="error"
+              message={unblockError}
+              style={styles.alertGap}
+            />
+          )}
+          {blocked.map((entry, i) => (
+            <View
+              key={entry.id}
+              style={[
+                styles.row,
+                styles.blockedRow,
+                i === blocked.length - 1 && styles.rowLast,
+              ]}
+            >
+              <Text style={[styles.rowValue, styles.blockedName]}>
+                {entry.displayName ?? "Player no longer available"}
+              </Text>
+              <Button
+                label="Unblock"
+                accessibilityLabel={`Unblock ${entry.displayName ?? "this player"}`}
+                variant="quiet"
+                size="compact"
+                pending={unblockingId === entry.id}
+                disabled={!!unblockingId && unblockingId !== entry.id}
+                onPress={() => void handleUnblock(entry)}
+              />
             </View>
           ))}
         </View>
       )}
 
-      <View style={styles.actions}>
-        {editing ? (
-          <>
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && styles.btnDisabled]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <Text style={styles.saveBtnText}>
-                {saving ? "Saving…" : "Save Changes"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setEditing(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={styles.editBtn}
-            onPress={() => setEditing(true)}
-          >
-            <Text style={styles.editBtnText}>Edit Profile</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity style={styles.feedbackBtn} onPress={handleFeedback}>
-          <Text style={styles.feedbackBtnText}>Provide feedback</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.feedbackBtn}
-          onPress={() => router.push("/privacy-policy")}
-        >
-          <Text style={styles.feedbackBtnText}>Privacy Policy</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-          <Text style={styles.signOutBtnText}>Sign Out</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteAccountBtn}
-          onPress={handleDeleteAccountPress}
-        >
-          <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
-        </TouchableOpacity>
+      <View style={styles.section}>
+        <SectionTitle title="Account" />
+        <View style={styles.accountActions}>
+          <Button
+            label="Send feedback"
+            icon="bubble.left"
+            variant="secondary"
+            fullWidth
+            onPress={handleFeedback}
+          />
+          <Button
+            label="Privacy Policy"
+            icon="doc.text"
+            variant="secondary"
+            fullWidth
+            onPress={() => router.push("/privacy-policy")}
+          />
+          {signOut.error && (
+            <InlineAlert
+              tone="error"
+              title="Couldn't sign out"
+              message={signOut.error}
+            />
+          )}
+          <Button
+            label="Sign out"
+            variant="secondary"
+            pending={signOut.pending}
+            fullWidth
+            onPress={() => void handleSignOut()}
+          />
+        </View>
       </View>
 
-      <Modal visible={showDeleteModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Confirm Account Deletion</Text>
+      <View style={[styles.section, styles.dangerSection]}>
+        <SectionTitle
+          title="Delete account"
+          subtitle="Permanently removes your personal data. Past match results stay, shown as Deleted User."
+        />
+        <Button
+          label="Delete account"
+          icon="trash"
+          variant="danger"
+          fullWidth
+          onPress={() => void handleDeleteAccountPress()}
+        />
+      </View>
+
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeleteModal}
+      >
+        <KeyboardSafeView style={styles.modalOverlay}>
+          <View
+            style={styles.modalCard}
+            accessibilityViewIsModal
+            accessibilityLabel="Confirm account deletion"
+          >
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Enter your password to delete your account
+            </Text>
             <Text style={styles.modalSubtitle}>
-              Enter your password to permanently delete your account. This
-              cannot be undone.
+              This is the last step. Your account and personal data are deleted
+              right away and can&apos;t be recovered.
             </Text>
             <FormField
               label="Password"
               required
               value={deletePassword}
-              onChangeText={setDeletePassword}
-              placeholder="Password"
+              onChangeText={(value) => {
+                setDeletePassword(value);
+                if (deleteAccount.error) deleteAccount.reset();
+              }}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={[
-                styles.deleteAccountBtnSolid,
-                (!deletePassword || deleting) && styles.btnDisabled,
-              ]}
-              onPress={confirmDeleteAccount}
-              disabled={!deletePassword || deleting}
-            >
-              {deleting ? (
-                <ActivityIndicator color={colors.surface} />
-              ) : (
-                <Text style={styles.deleteAccountBtnSolidText}>
-                  Permanently Delete Account
-                </Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => {
-                setShowDeleteModal(false);
-                setDeletePassword("");
+              autoComplete="current-password"
+              textContentType="password"
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                if (deletePassword) void deleteAccount.run(deletePassword);
               }}
-            >
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+            />
+            {deleteAccount.error && (
+              <InlineAlert
+                tone="error"
+                title="Account not deleted"
+                message={deleteAccount.error}
+                style={styles.modalAlert}
+              />
+            )}
+            <View style={styles.modalActions}>
+              <Button
+                label="Delete my account"
+                variant="danger"
+                pending={deleteAccount.pending}
+                pendingLabel="Deleting…"
+                disabled={!deletePassword}
+                fullWidth
+                onPress={() => void deleteAccount.run(deletePassword)}
+              />
+              <Button
+                label="Keep my account"
+                variant="secondary"
+                disabled={deleteAccount.pending}
+                fullWidth
+                onPress={closeDeleteModal}
+              />
+            </View>
           </View>
-        </View>
+        </KeyboardSafeView>
       </Modal>
     </KeyboardAwareScrollView>
   );
@@ -655,8 +986,14 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: 24 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  content: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxxl,
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
+  },
+  identity: { alignItems: "center", marginBottom: spacing.xl },
   avatar: {
     width: 80,
     height: 80,
@@ -664,182 +1001,182 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "center",
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
-  avatarText: { color: colors.surface, fontSize: 32, fontWeight: "700" },
+  avatarText: { color: colors.onPrimary, fontSize: 32, fontWeight: "700" },
   name: {
+    ...typography.heading,
     fontSize: 22,
-    fontWeight: "700",
     color: colors.text,
     textAlign: "center",
   },
   email: {
-    fontSize: 14,
-    color: colors.textSubtle,
+    ...typography.bodySmall,
+    color: colors.textMuted,
     textAlign: "center",
-    marginBottom: 32,
   },
+  alertGap: { marginBottom: spacing.lg },
   section: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: radii.card,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...elevations.low,
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: colors.primary,
-    marginBottom: 4,
-  },
-  sectionSubtitle: { fontSize: 12, color: colors.textSubtle, marginBottom: 12 },
+  dangerSection: { borderWidth: 1, borderColor: colors.destructiveSoft },
+  sectionHead: { marginBottom: spacing.md, gap: spacing.xxs },
+  sectionTitle: { ...typography.subheading, color: colors.primary },
+  sectionSubtitle: { ...typography.caption, color: colors.textMuted },
+  fields: { gap: spacing.md },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: MIN_TOUCH_TARGET,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  rowLabel: { color: colors.textMuted, fontSize: 14 },
-  rowValue: { color: colors.text, fontSize: 14, fontWeight: "500" },
-  unblockText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 14,
+  rowLast: { borderBottomWidth: 0 },
+  rowLabel: { ...typography.bodySmall, color: colors.textMuted },
+  rowValue: {
+    ...typography.bodySmall,
+    fontWeight: "500",
+    color: colors.text,
+    flexShrink: 1,
+    textAlign: "right",
   },
+  valueText: { ...typography.body, color: colors.text },
+  blockedRow: { justifyContent: "space-between" },
+  blockedName: { textAlign: "left", flex: 1 },
   toggleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    minHeight: MIN_TOUCH_TARGET + spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  toggleLabel: { color: "#444", fontSize: 14, flex: 1, marginRight: 16 },
-  actions: { gap: 12 },
-  editBtn: {
-    backgroundColor: colors.primary,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  editBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  saveBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
-  cancelBtn: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cancelBtnText: { color: "#555", fontWeight: "600", fontSize: 15 },
-  feedbackBtn: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
-  },
-  feedbackBtnText: { color: colors.primary, fontWeight: "700", fontSize: 15 },
-  signOutBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
-  signOutBtnText: {
-    color: colors.destructive,
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  deleteAccountBtn: { padding: 16, borderRadius: 12, alignItems: "center" },
-  deleteAccountBtnText: {
-    color: colors.textSubtle,
-    fontWeight: "500",
-    fontSize: 13,
-  },
-  deleteAccountBtnSolid: {
-    backgroundColor: colors.destructive,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  deleteAccountBtnSolidText: {
-    color: colors.surface,
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modalCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 20 },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.destructive,
-    marginBottom: 8,
-  },
-  modalSubtitle: { fontSize: 13, color: colors.textMuted, marginBottom: 16 },
-  btnDisabled: { opacity: 0.5 },
-  divisionList: { gap: 8 },
+  toggleRowLast: { borderBottomWidth: 0 },
+  toggleText: { flex: 1, gap: spacing.xxs },
+  toggleLabel: { ...typography.body, fontSize: 15, color: colors.text },
+  toggleLabelOff: { color: colors.textMuted },
+  toggleDescription: { ...typography.caption, color: colors.textMuted },
+  actions: { gap: spacing.md, marginBottom: spacing.xl },
+  accountActions: { gap: spacing.md },
+  divisionList: { gap: spacing.sm },
   divisionOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: MIN_TOUCH_TARGET,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    overflow: "hidden",
   },
   divisionOptionActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  divisionOptionText: { color: "#444", fontSize: 14, fontWeight: "600" },
-  divisionOptionTextActive: { color: colors.primary },
-  slotRow: {
-    flexDirection: "row",
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.textMuted,
     alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
+    justifyContent: "center",
   },
-  slotDay: {
+  radioActive: { borderColor: colors.primary },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    minWidth: 56,
-    alignItems: "center",
   },
-  slotDayText: { color: colors.surface, fontWeight: "700", fontSize: 13 },
-  slotTime: {
+  divisionOptionText: { ...typography.label, color: colors.text, flex: 1 },
+  divisionOptionTextActive: { color: colors.primary },
+  slotSummary: {
+    ...typography.body,
+    color: colors.text,
+    paddingVertical: spacing.xs,
+  },
+  slotCard: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 14,
-    width: 70,
-    textAlign: "center",
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
   },
-  slotDash: { color: colors.textSubtle, fontSize: 14 },
-  slotDisabled: { opacity: 0.6 },
-  slotRemove: { padding: 6 },
-  addSlotBtn: {
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: colors.primary,
-    borderRadius: 8,
-    padding: 10,
+  slotHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
+    justifyContent: "space-between",
   },
-  addSlotBtnText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
-  emptyHint: { color: colors.textSubtle, fontSize: 13, paddingVertical: 4 },
-  noteText: { color: "#444", fontSize: 13, marginTop: 8, fontStyle: "italic" },
+  slotHeading: { ...typography.label, color: colors.text },
+  dayChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  dayChip: { minWidth: 48, paddingHorizontal: spacing.sm },
+  timeRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
+  timeField: { flex: 1 },
+  timeInput: { textAlign: "center" },
+  slotDash: {
+    ...typography.body,
+    color: colors.textMuted,
+    paddingBottom: spacing.md,
+  },
+  helper: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  fieldError: {
+    ...typography.caption,
+    color: colors.destructive,
+    fontWeight: "600",
+    marginBottom: spacing.sm,
+  },
+  noteField: { marginTop: spacing.md },
+  noteInput: { minHeight: 72 },
+  emptyHint: { ...typography.bodySmall, color: colors.textMuted },
+  noteText: {
+    ...typography.bodySmall,
+    color: colors.text,
+    marginTop: spacing.sm,
+    fontStyle: "italic",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+    ...elevations.medium,
+  },
+  modalTitle: {
+    ...typography.heading,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.destructive,
+    marginBottom: spacing.sm,
+  },
+  modalSubtitle: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
+    marginBottom: spacing.lg,
+  },
+  modalAlert: { marginTop: spacing.md },
+  modalActions: { gap: spacing.md, marginTop: spacing.lg },
 });
