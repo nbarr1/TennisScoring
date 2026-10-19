@@ -3,15 +3,35 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { IconExternalLink } from "@tabler/icons-react";
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { LoadingBlock } from "../shared/motion";
+import {
+  Button,
+  FieldError,
+  InlineAlert,
+  LoadingBlock,
+  buttonClassName,
+  buttonStyle,
+  cardStyle,
+  color,
+  describeError,
+  fieldLabelStyle,
+  inputStyle,
+  radius,
+  space,
+  target,
+  type,
+  width,
+} from "../shared/ui";
 import {
   submitFeedback,
   useAuthUser,
   useUserProfile,
   type FeedbackCategory,
 } from "@tennis/firebase-client";
+
+const MIN_MESSAGE_LENGTH = 8;
 
 const CATEGORY_OPTIONS: Array<{ value: FeedbackCategory; label: string }> = [
   { value: "bug", label: "Bug report" },
@@ -47,22 +67,40 @@ export default function FeedbackPage(): React.JSX.Element {
   const [allowContact, setAllowContact] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [messageError, setMessageError] = useState("");
   const [issueUrl, setIssueUrl] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [sentWithContact, setSentWithContact] = useState(true);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const successRef = useRef<HTMLHeadingElement>(null);
+
+  // Land keyboard and screen-reader users on the confirmation.
+  useEffect(() => {
+    if (submitted) successRef.current?.focus();
+  }, [submitted]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     if (!firebaseUser) {
-      setError("Please sign in before sending feedback.");
+      setError("Sign in before sending feedback.");
       return;
     }
-    if (!message.trim()) {
-      setError("Please add a short description before sending feedback.");
+    const trimmed = message.trim();
+    if (!trimmed) {
+      setMessageError("Describe what happened or what you'd like to see.");
+      messageRef.current?.focus();
+      return;
+    }
+    if (trimmed.length < MIN_MESSAGE_LENGTH) {
+      setMessageError(`Add a little more detail: at least ${MIN_MESSAGE_LENGTH} characters.`);
+      messageRef.current?.focus();
       return;
     }
 
     setSubmitting(true);
     setError("");
+    setMessageError("");
     setSubmitted(false);
     setIssueUrl(null);
 
@@ -82,15 +120,13 @@ export default function FeedbackPage(): React.JSX.Element {
           divisionId: profile?.divisionId,
         },
       });
+      setSentWithContact(allowContact);
       setSubmitted(true);
       setIssueUrl(result.issueUrl ?? null);
       setMessage("");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not submit feedback. Please try again.",
-      );
+      // The message is kept, so nothing typed is lost on a failed send.
+      setError(describeError(err, "Couldn't send your feedback. Try again."));
     } finally {
       setSubmitting(false);
     }
@@ -107,48 +143,55 @@ export default function FeedbackPage(): React.JSX.Element {
       <main style={styles.main}>
         <h1 style={styles.pageTitle}>Feedback</h1>
         <p style={styles.subtitle}>
-          Tell us what is working, what is broken, or what would make match day
-          smoother.
+          Tell us what&apos;s working, what&apos;s broken, or what would make match day smoother.
+          Your note goes to the people who build Tennis League.
         </p>
 
         {!firebaseUser ? (
           <div style={styles.card}>
-            <h2 style={styles.sectionTitle}>Sign in required</h2>
+            <h2 style={styles.sectionTitle}>Sign in to send feedback</h2>
             <p style={styles.helper}>
-              Please sign in so we can attach your account context to the
-              feedback and follow up if needed.
+              We attach your account to each note so we can follow up if you want us to.
             </p>
-            <Link href="/login" style={styles.loginLink}>
-              Sign in to send feedback
+            <Link href="/login" className={buttonClassName("primary")} style={{ ...buttonStyle("primary"), alignSelf: "flex-start" }}>
+              Sign in
             </Link>
           </div>
         ) : submitted ? (
-          <div role="status" aria-live="polite" style={styles.successCard}>
-            <h2 style={styles.sectionTitle}>Thanks for the feedback!</h2>
-            <p style={styles.helper}>
-              Your note was sent to the Tennis League team.
-            </p>
+          <div style={styles.card}>
+            <InlineAlert
+              tone="success"
+              title={<h2 ref={successRef} tabIndex={-1} style={styles.successTitle}>Thanks, your feedback was sent</h2>}
+            >
+              {sentWithContact
+                ? "We may contact you if we have questions about it."
+                : "You asked not to be contacted, so we won't follow up about it."}
+            </InlineAlert>
             {issueUrl && (
               <p style={styles.helper}>
-                GitHub issue: {" "}
-                <a href={issueUrl} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>
-                  {issueUrl}
+                It&apos;s tracked as an issue on GitHub:{" "}
+                <a href={issueUrl} target="_blank" rel="noreferrer" style={styles.link}>
+                  view the issue
+                  <IconExternalLink size={16} aria-hidden="true" style={{ marginLeft: space.xxs }} />
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </a>
               </p>
             )}
-            <button
-              type="button"
-              style={styles.secondaryBtn}
+            <Button
+              variant="secondary"
               onClick={() => setSubmitted(false)}
+              style={{ alignSelf: "flex-start" }}
             >
               Send another note
-            </button>
+            </Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={styles.card}>
-            <Field label="Category">
+          <form onSubmit={handleSubmit} style={styles.card} noValidate>
+            <div>
+              <label htmlFor="feedback-category" style={fieldLabelStyle}>Category</label>
               <select
-                style={styles.input}
+                id="feedback-category"
+                style={inputStyle}
                 value={category}
                 onChange={(event) =>
                   setCategory(event.target.value as FeedbackCategory)
@@ -161,18 +204,30 @@ export default function FeedbackPage(): React.JSX.Element {
                   </option>
                 ))}
               </select>
-            </Field>
+            </div>
 
-            <Field label="Message">
+            <div>
+              <label htmlFor="feedback-message" style={fieldLabelStyle}>Message</label>
               <textarea
-                style={styles.textarea}
+                ref={messageRef}
+                id="feedback-message"
+                style={{ ...styles.textarea, ...(messageError ? styles.inputInvalid : {}) }}
                 value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="What happened? What did you expect?"
-                minLength={8}
+                onChange={(event) => {
+                  setMessage(event.target.value);
+                  if (messageError) setMessageError("");
+                }}
+                placeholder="What happened? What did you expect to happen?"
+                minLength={MIN_MESSAGE_LENGTH}
                 required
+                aria-invalid={messageError ? true : undefined}
+                aria-describedby={["feedback-message-hint", messageError ? "feedback-message-error" : ""].filter(Boolean).join(" ")}
               />
-            </Field>
+              <div id="feedback-message-hint" style={styles.hint}>
+                For a bug, include the steps that led to it and the match or page you were on.
+              </div>
+              <FieldError id="feedback-message-error">{messageError}</FieldError>
+            </div>
 
             <label style={styles.checkboxRow}>
               <input
@@ -185,22 +240,20 @@ export default function FeedbackPage(): React.JSX.Element {
             </label>
 
             <div style={styles.contextNote}>
-              This form automatically includes web source, current page path,
-              browser user agent, and available build metadata.
+              Sent with your note: your name, email address, and division, plus this page&apos;s
+              address, your browser, and the app version, to help us reproduce problems.
             </div>
 
-            {error && <div role="alert" style={styles.error}>{error}</div>}
+            {error && <InlineAlert tone="error">{error}</InlineAlert>}
 
-            <button
+            <Button
               type="submit"
-              style={{
-                ...styles.submitBtn,
-                ...(submitting ? styles.submitBtnDisabled : {}),
-              }}
-              disabled={submitting}
+              pending={submitting}
+              pendingLabel="Sending…"
+              style={{ alignSelf: "flex-start" }}
             >
-              {submitting ? "Sending…" : "Send feedback"}
-            </button>
+              Send feedback
+            </Button>
           </form>
         )}
       </main>
@@ -208,127 +261,55 @@ export default function FeedbackPage(): React.JSX.Element {
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={styles.field}>
-      <label style={styles.label}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
 const styles: Record<string, React.CSSProperties> = {
-  loadingPage: { maxWidth: 720, margin: "48px auto", padding: "0 24px" },
+  loadingPage: { maxWidth: width.reading, margin: "48px auto", padding: `0 ${space.xl}px` },
   page: appNavStyles.page,
-  main: { maxWidth: 720, margin: "0 auto", padding: "40px 24px" },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: 800,
-    color: "var(--green-dark)",
-    marginBottom: 8,
-  },
-  subtitle: { fontSize: 15, color: "var(--muted)", marginBottom: 24 },
+  main: { maxWidth: width.reading, margin: "0 auto", padding: `40px ${space.lg}px` },
+  pageTitle: { ...type.display, color: color.clubhouseGreen, margin: `0 0 ${space.sm}px` },
+  subtitle: { ...type.body, color: color.textMuted, margin: `0 0 ${space.xl}px`, maxWidth: "60ch" },
   card: {
-    background: "#fff",
-    borderRadius: 14,
-    padding: 28,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+    ...cardStyle,
+    padding: "clamp(20px, 4vw, 28px)",
     display: "flex",
     flexDirection: "column",
-    gap: 18,
+    gap: space.lg,
   },
-  successCard: {
-    background: "#f1fbf6",
-    border: "1px solid #b7e4c7",
-    borderRadius: 14,
-    padding: 28,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "var(--green-dark)",
-    margin: 0,
-  },
-  helper: { color: "var(--muted)", fontSize: 14, lineHeight: 1.5, margin: 0 },
-  field: { display: "flex", flexDirection: "column", gap: 6 },
-  label: { fontSize: 13, fontWeight: 700, color: "#444" },
-  input: {
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: "12px 14px",
-    fontSize: 15,
-    color: "#111",
-    background: "#fff",
-  },
+  sectionTitle: { ...type.headline, color: color.clubhouseGreen, margin: 0 },
+  successTitle: { ...type.label, fontFamily: "inherit", letterSpacing: "normal", margin: 0, color: "inherit" },
+  helper: { ...type.bodySmall, color: color.textMuted, margin: 0 },
+  hint: { ...type.caption, color: color.textMuted, marginTop: space.xs },
   textarea: {
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: "12px 14px",
-    fontSize: 15,
-    color: "#111",
+    ...inputStyle,
+    padding: space.md,
     minHeight: 160,
     resize: "vertical",
     fontFamily: "inherit",
   },
+  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
   checkboxRow: {
     display: "flex",
-    gap: 10,
+    gap: space.md,
     alignItems: "center",
-    fontSize: 14,
-    color: "var(--text)",
+    minHeight: target.min,
+    ...type.bodySmall,
+    color: color.ink,
+    cursor: "pointer",
   },
-  checkbox: { width: 18, height: 18 },
+  checkbox: { width: 20, height: 20, flexShrink: 0 },
   contextNote: {
-    fontSize: 12,
-    color: "var(--muted)",
-    background: "#f8f8f8",
-    borderRadius: 10,
-    padding: 12,
+    ...type.caption,
+    color: color.textMuted,
+    background: color.surfaceMuted,
+    borderRadius: radius.md,
+    padding: space.md,
   },
-  error: {
-    background: "#fff4f4",
-    color: "#c0392b",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 14,
-  },
-  submitBtn: {
-    background: "var(--green-dark)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 10,
-    padding: "13px 18px",
-    fontWeight: 700,
-    cursor: "pointer",
-    fontSize: 15,
-  },
-  submitBtnDisabled: { opacity: 0.65, cursor: "not-allowed" },
-  secondaryBtn: {
-    alignSelf: "flex-start",
-    border: "1px solid var(--green-dark)",
-    background: "#fff",
-    color: "var(--green-dark)",
-    borderRadius: 10,
-    padding: "11px 16px",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  loginLink: {
-    alignSelf: "flex-start",
-    background: "var(--green-dark)",
-    color: "#fff",
-    borderRadius: 10,
-    padding: "12px 16px",
-    fontWeight: 700,
+  link: {
+    color: color.clubhouseGreen,
+    fontWeight: 600,
+    textDecoration: "underline",
+    textUnderlineOffset: 3,
+    display: "inline-flex",
+    alignItems: "center",
+    minHeight: target.min,
   },
 };
