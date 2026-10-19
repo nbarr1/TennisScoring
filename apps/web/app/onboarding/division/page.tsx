@@ -2,34 +2,84 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { IconArrowLeft, IconCopy, IconUsersGroup, IconPlus } from '@tabler/icons-react';
 import {
   useAuthUser,
   createDivision,
   joinDivisionByCode,
   getDivision,
 } from '@tennis/firebase-client';
+import {
+  Button,
+  FieldError,
+  InlineAlert,
+  color,
+  describeError,
+  fieldLabelStyle,
+  inputStyle,
+  radius,
+  shadow,
+  space,
+  target,
+  type,
+  useAnnounce,
+} from '../../shared/ui';
 
 // PLATFORM-SPECIFIC: Web uses the Clipboard API for one-click invite code copying.
 type Mode = 'choose' | 'create' | 'join';
+
+const INVITE_CODE_LENGTH = 8;
 
 export default function DivisionOnboardingPage(): React.JSX.Element {
   const [mode, setMode] = useState<Mode>('choose');
   const [divisionName, setDivisionName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [createdInviteCode, setCreatedInviteCode] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [continuing, setContinuing] = useState(false);
   const router = useRouter();
-  const { firebaseUser } = useAuthUser();
+  const announce = useAnnounce();
+  const { firebaseUser, loading: authLoading } = useAuthUser();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
+
+  // Move focus to the new step's heading so keyboard and screen-reader users
+  // land on what changed.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    headingRef.current?.focus();
+  }, [mode, createdInviteCode]);
+
+  function goTo(next: Mode) {
+    if (loading) return;
+    setError(null);
+    setFieldError(null);
+    setMode(next);
+  }
 
   async function handleCreate() {
-    if (!divisionName.trim() || !firebaseUser) return;
+    if (loading) return;
+    if (!divisionName.trim()) {
+      setFieldError('Enter a name for your division.');
+      document.getElementById('division-name')?.focus();
+      return;
+    }
+    if (!firebaseUser) {
+      setError(authLoading ? 'Still signing you in. Try again in a moment.' : 'Your session has expired. Sign in again to continue.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setFieldError(null);
     setCopyStatus(null);
     setCreatedInviteCode(null);
 
@@ -42,27 +92,45 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 
       if (division?.inviteCode) {
         setCreatedInviteCode(division.inviteCode);
+        announce('Division created.');
       } else {
-        setError('Could not retrieve division details. Please try again.');
+        setError('Your division was created, but its invite code couldn\'t be loaded. Continue to the dashboard and reload.');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not create division. Please try again.');
+      setError(describeError(err, 'Couldn\'t create the division. Try again.'));
     } finally {
       setLoading(false);
     }
   }
 
   async function handleJoin() {
-    if (!inviteCode.trim() || !firebaseUser) return;
+    if (loading) return;
+    const code = inviteCode.trim();
+    if (!code) {
+      setFieldError('Enter the invite code from your division leader.');
+      document.getElementById('invite-code')?.focus();
+      return;
+    }
+    if (!firebaseUser) {
+      setError(authLoading ? 'Still signing you in. Try again in a moment.' : 'Your session has expired. Sign in again to continue.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setFieldError(null);
     try {
-      await joinDivisionByCode(inviteCode.trim(), firebaseUser.uid);
+      await joinDivisionByCode(code, firebaseUser.uid);
+      // Stay pending while the dashboard loads.
       router.replace('/dashboard');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not join division.');
-    } finally {
+      const errorCode = String((err as { code?: unknown } | null)?.code ?? '');
+      if (errorCode.endsWith('not-found')) {
+        setFieldError('That code doesn\'t match a division. Check it with your division leader and try again.');
+        document.getElementById('invite-code')?.focus();
+      } else {
+        setError(describeError(err, 'Couldn\'t join the division. Check the code and try again.'));
+      }
       setLoading(false);
     }
   }
@@ -72,92 +140,150 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 
     try {
       await navigator.clipboard.writeText(createdInviteCode);
-      setCopyStatus('Invite code copied.');
+      setCopyStatus({ ok: true, text: 'Invite code copied.' });
     } catch {
-      setCopyStatus('Could not copy automatically. Please copy manually.');
+      setCopyStatus({ ok: false, text: 'Couldn\'t copy automatically. Select the code and copy it yourself.' });
     }
   }
+
+  const backButton = (
+    <Button variant="quiet" size="sm" icon={<IconArrowLeft size={18} aria-hidden="true" />} onClick={() => goTo('choose')} disabled={loading} style={styles.back}>
+      Back
+    </Button>
+  );
 
   return (
     <main style={styles.root}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Join a Division</h1>
-        <p style={styles.subtitle}>Create a new division or join with an invite code.</p>
-
-        {error ? <p style={styles.error}>{error}</p> : null}
-
         {createdInviteCode ? (
           <div style={styles.stack}>
-            <p style={styles.successTitle}>Division created successfully.</p>
-            <p style={styles.successBody}>Share this invite code with other players:</p>
-            <div style={styles.inviteCodeBox}>{createdInviteCode}</div>
-            <button style={styles.secondaryBtn} onClick={copyInviteCode}>
-              Copy Code
-            </button>
-            {copyStatus ? <p style={styles.copyStatus}>{copyStatus}</p> : null}
-            <button style={styles.primaryBtn} onClick={() => router.replace('/dashboard')}>
-              Continue to Dashboard
-            </button>
+            <h1 ref={headingRef} tabIndex={-1} style={styles.title}>Your division is ready</h1>
+            <p style={styles.body}>
+              You&apos;re the leader of <strong style={styles.strong}>{divisionName.trim()}</strong>. Share this
+              invite code so players can join from their own accounts.
+            </p>
+            <div style={styles.codeRow}>
+              <output aria-label="Invite code" style={styles.inviteCodeBox}>{createdInviteCode}</output>
+              <Button variant="secondary" icon={<IconCopy size={18} aria-hidden="true" />} onClick={() => void copyInviteCode()}>
+                Copy code
+              </Button>
+            </div>
+            {copyStatus ? (
+              <InlineAlert tone={copyStatus.ok ? 'success' : 'warning'}>{copyStatus.text}</InlineAlert>
+            ) : (
+              <p style={styles.hint}>Copy it now: you&apos;ll want it when you invite your players.</p>
+            )}
+            <Button
+              fullWidth
+              pending={continuing}
+              pendingLabel="Opening dashboard…"
+              onClick={() => {
+                setContinuing(true);
+                router.replace('/dashboard');
+              }}
+            >
+              Continue to dashboard
+            </Button>
           </div>
-        ) : null}
-
-        {!createdInviteCode && mode === 'choose' ? (
+        ) : mode === 'choose' ? (
           <div style={styles.stack}>
-            <button style={styles.primaryBtn} onClick={() => setMode('create')}>
-              Create Division
+            <h1 ref={headingRef} tabIndex={-1} style={styles.title}>Join a division</h1>
+            <p style={styles.body}>
+              A division is your league&apos;s group of players, with its own seasons, matches, and standings.
+            </p>
+            {error ? <InlineAlert tone="error">{error}</InlineAlert> : null}
+            <button type="button" style={styles.option} className="lift" onClick={() => goTo('join')}>
+              <IconUsersGroup size={28} stroke={1.5} aria-hidden="true" color={color.courtGreen} />
+              <span style={styles.optionText}>
+                <span style={styles.optionTitle}>Join with an invite code</span>
+                <span style={styles.optionBody}>Your division leader can give you the code.</span>
+              </span>
             </button>
-            <button style={styles.secondaryBtn} onClick={() => setMode('join')}>
-              Join Division
+            <button type="button" style={styles.option} className="lift" onClick={() => goTo('create')}>
+              <IconPlus size={28} stroke={1.5} aria-hidden="true" color={color.courtGreen} />
+              <span style={styles.optionText}>
+                <span style={styles.optionTitle}>Create a division</span>
+                <span style={styles.optionBody}>For leaders starting a new league. You&apos;ll run its roster and seasons.</span>
+              </span>
             </button>
           </div>
-        ) : null}
-
-        {!createdInviteCode && mode === 'create' ? (
+        ) : mode === 'create' ? (
           <form
             style={styles.stack}
+            noValidate
             onSubmit={(e) => {
               e.preventDefault();
               void handleCreate();
             }}
           >
-            <input
-              style={styles.input}
-              value={divisionName}
-              onChange={(e) => setDivisionName(e.target.value)}
-              placeholder="Division name"
-            />
-            <button type="submit" style={styles.primaryBtn} disabled={loading}>
-              {loading ? 'Loading…' : 'Create Division'}
-            </button>
-            <button type="button" style={styles.linkBtn} onClick={() => setMode('choose')}>
-              Back
-            </button>
+            {backButton}
+            <h1 ref={headingRef} tabIndex={-1} style={styles.title}>Create a division</h1>
+            <p style={styles.body}>
+              You&apos;ll become its division leader. Next, you&apos;ll get an invite code to share with your players.
+            </p>
+            <div>
+              <label htmlFor="division-name" style={fieldLabelStyle}>Division name</label>
+              <input
+                id="division-name"
+                style={{ ...inputStyle, ...(fieldError ? styles.inputInvalid : {}) }}
+                value={divisionName}
+                onChange={(e) => {
+                  setDivisionName(e.target.value);
+                  if (fieldError) setFieldError(null);
+                }}
+                maxLength={80}
+                autoComplete="off"
+                aria-invalid={fieldError ? true : undefined}
+                aria-describedby={['division-name-hint', fieldError ? 'division-name-error' : ''].filter(Boolean).join(' ')}
+              />
+              <div id="division-name-hint" style={styles.hint}>Players see this name, for example &quot;Lunchtime Ladder&quot;.</div>
+              <FieldError id="division-name-error">{fieldError}</FieldError>
+            </div>
+            {error ? <InlineAlert tone="error">{error}</InlineAlert> : null}
+            <Button type="submit" fullWidth pending={loading} pendingLabel="Creating division…">
+              Create division
+            </Button>
           </form>
-        ) : null}
-
-        {!createdInviteCode && mode === 'join' ? (
+        ) : (
           <form
             style={styles.stack}
+            noValidate
             onSubmit={(e) => {
               e.preventDefault();
               void handleJoin();
             }}
           >
-            <input
-              style={styles.input}
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-              maxLength={8}
-              placeholder="ABCDEF12"
-            />
-            <button type="submit" style={styles.primaryBtn} disabled={loading}>
-              {loading ? 'Loading…' : 'Join Division'}
-            </button>
-            <button type="button" style={styles.linkBtn} onClick={() => setMode('choose')}>
-              Back
-            </button>
+            {backButton}
+            <h1 ref={headingRef} tabIndex={-1} style={styles.title}>Join with an invite code</h1>
+            <p style={styles.body}>Enter the code your division leader shared with you.</p>
+            <div>
+              <label htmlFor="invite-code" style={fieldLabelStyle}>Invite code</label>
+              <input
+                id="invite-code"
+                style={{ ...inputStyle, ...styles.codeInput, ...(fieldError ? styles.inputInvalid : {}) }}
+                value={inviteCode}
+                onChange={(e) => {
+                  setInviteCode(e.target.value.replace(/\s+/g, '').toUpperCase());
+                  if (fieldError) setFieldError(null);
+                }}
+                maxLength={INVITE_CODE_LENGTH}
+                placeholder="ABCDEF12"
+                autoComplete="off"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={fieldError ? true : undefined}
+                aria-describedby={['invite-code-hint', fieldError ? 'invite-code-error' : ''].filter(Boolean).join(' ')}
+              />
+              <div id="invite-code-hint" style={styles.hint}>{INVITE_CODE_LENGTH} letters and numbers.</div>
+              <FieldError id="invite-code-error">{fieldError}</FieldError>
+            </div>
+            {error ? <InlineAlert tone="error">{error}</InlineAlert> : null}
+            <Button type="submit" fullWidth pending={loading} pendingLabel="Joining division…">
+              Join division
+            </Button>
           </form>
-        ) : null}
+        )}
       </div>
     </main>
   );
@@ -165,67 +291,61 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 
 const styles: Record<string, React.CSSProperties> = {
   root: {
-    minHeight: '100vh',
-    background: '#f5f5f0',
+    minHeight: '100dvh',
+    background: color.canvas,
     display: 'grid',
     placeItems: 'center',
-    padding: 24,
+    padding: `${space.xl}px ${space.lg}px`,
   },
   card: {
     width: '100%',
     maxWidth: 480,
-    background: '#fff',
-    borderRadius: 14,
-    padding: 24,
-    boxShadow: '0 10px 24px rgba(0,0,0,0.08)',
+    background: color.surface,
+    borderRadius: radius.lg,
+    padding: 'clamp(24px, 6vw, 36px)',
+    boxShadow: shadow.raised,
   },
-  title: { margin: 0, marginBottom: 8, color: '#1a472a', fontSize: 28 },
-  subtitle: { marginTop: 0, marginBottom: 16, color: '#5e5e5e' },
-  error: { color: '#b42318', marginBottom: 12 },
-  stack: { display: 'grid', gap: 10 },
-  successTitle: { margin: 0, color: '#1a472a', fontWeight: 700, fontSize: 18 },
-  successBody: { margin: 0, color: '#4f4f4f' },
+  stack: { display: 'flex', flexDirection: 'column', gap: space.lg },
+  back: { alignSelf: 'flex-start', marginLeft: -space.md, marginBottom: -space.sm },
+  title: { ...type.display, color: color.clubhouseGreen, margin: 0 },
+  body: { ...type.body, color: color.ink, margin: 0, overflowWrap: 'anywhere' },
+  strong: { fontWeight: 600 },
+  hint: { ...type.caption, color: color.textMuted, marginTop: space.xs, marginBottom: 0 },
+  option: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: space.md,
+    width: '100%',
+    minHeight: target.control,
+    padding: space.lg,
+    textAlign: 'left',
+    background: color.surface,
+    border: `1px solid ${color.borderStrong}`,
+    borderRadius: radius.md,
+    color: color.ink,
+  },
+  optionText: { display: 'flex', flexDirection: 'column', gap: space.xxs },
+  optionTitle: { ...type.label, fontSize: 16, color: color.clubhouseGreen },
+  optionBody: { ...type.bodySmall, color: color.textMuted },
+  codeRow: { display: 'flex', flexWrap: 'wrap', gap: space.md, alignItems: 'stretch' },
   inviteCodeBox: {
-    border: '1px dashed #1a472a',
-    borderRadius: 8,
-    padding: '12px 10px',
-    fontSize: 22,
-    fontWeight: 800,
-    letterSpacing: 3,
-    textAlign: 'center',
-    color: '#1a472a',
-    background: '#f8fbf8',
-  },
-  copyStatus: { margin: 0, color: '#2d6a4f', fontSize: 13 },
-  input: {
-    border: '1px solid #ddd',
-    borderRadius: 8,
-    padding: '12px 10px',
-    fontSize: 16,
-  },
-  primaryBtn: {
-    border: 'none',
-    borderRadius: 10,
-    background: '#1a472a',
-    color: '#fff',
-    padding: '12px 16px',
+    flex: '1 1 180px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: target.control,
+    border: `1px dashed ${color.clubhouseGreen}`,
+    borderRadius: radius.md,
+    padding: `${space.sm}px ${space.md}px`,
+    fontFamily: 'var(--font-display)',
+    fontSize: 28,
     fontWeight: 700,
-    cursor: 'pointer',
+    letterSpacing: '0.12em',
+    color: color.clubhouseGreen,
+    background: color.greenSoft,
+    userSelect: 'all',
+    fontVariantNumeric: 'tabular-nums',
   },
-  secondaryBtn: {
-    border: '1px solid #1a472a',
-    borderRadius: 10,
-    background: '#fff',
-    color: '#1a472a',
-    padding: '12px 16px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-  linkBtn: {
-    border: 'none',
-    background: 'transparent',
-    color: '#1a472a',
-    padding: '8px 0',
-    cursor: 'pointer',
-  },
+  codeInput: { fontSize: 20, letterSpacing: '0.12em', fontVariantNumeric: 'tabular-nums' },
+  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
 };
