@@ -1,14 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
-import { colors } from "../theme";
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import type { TextInput } from "react-native";
 import Constants from "expo-constants";
 import {
   useLocalSearchParams,
@@ -23,9 +15,34 @@ import {
 } from "@tennis/firebase-client";
 import { KeyboardAwareScrollView } from "../components/KeyboardSafeView";
 import { FormErrorSummary, FormField } from "../components/FormField";
-import type { TextInput } from "react-native";
+import { AppIcon, ICON_SIZE } from "../components/AppIcon";
+import {
+  Button,
+  Chip,
+  InlineAlert,
+  colors,
+  describeError,
+  radii,
+  spacing,
+  typography,
+  useAsyncAction,
+} from "../theme";
 
 const MESSAGE_LIMIT = 2000;
+const OTHER = "__other__";
+
+/**
+ * Category keys the feedback pipeline already labels (see CATEGORY_LABELS in
+ * @tennis/firebase-client). "Something else" keeps the free-text category.
+ */
+const CATEGORY_OPTIONS = [
+  { value: "bug", label: "Something's broken" },
+  { value: "feature_request", label: "Feature idea" },
+  { value: "match_scoring", label: "Match scoring" },
+  { value: "account", label: "Account or division" },
+  { value: "general", label: "General" },
+  { value: OTHER, label: "Something else" },
+] as const;
 
 export default function FeedbackScreen() {
   const router = useRouter();
@@ -35,54 +52,40 @@ export default function FeedbackScreen() {
   const { firebaseUser } = useAuthUser();
   const { profile } = useUserProfile(firebaseUser?.uid ?? null);
 
-  const [category, setCategory] = useState("");
+  const [choice, setChoice] = useState<string>("");
+  const [customCategory, setCustomCategory] = useState("");
   const [message, setMessage] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sent, setSent] = useState(false);
   const categoryRef = useRef<TextInput>(null);
   const messageRef = useRef<TextInput>(null);
+
+  const category = choice === OTHER ? customCategory : choice;
+
   const validate = (field: "category" | "message") =>
     field === "category"
       ? category.trim()
         ? ""
-        : "Enter a feedback category."
+        : choice === OTHER
+          ? "Name the kind of feedback, for example Standings."
+          : "Choose what your feedback is about."
       : message.trim()
         ? ""
-        : "Tell us what happened or what you would like to see.";
+        : "Tell us what happened or what you'd like to see.";
 
   const appVersion = useMemo(
     () => Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? null,
     [],
   );
 
-  async function handleSubmit() {
-    const trimmedCategory = category.trim();
-    const trimmedMessage = message.trim();
-
-    const nextErrors = {
-      category: validate("category"),
-      message: validate("message"),
-    };
-    setErrors(nextErrors);
-    if (nextErrors.category || nextErrors.message) {
-      (nextErrors.category ? categoryRef : messageRef).current?.focus();
-      return;
-    }
-
-    if (!firebaseUser) {
-      Alert.alert("Not signed in", "Please sign in before sending feedback.");
-      return;
-    }
-
-    setSubmitting(true);
-    try {
+  const send = useAsyncAction(
+    async (uid: string, email: string | null, name: string | null) => {
       await submitFeedback({
-        userId: firebaseUser.uid,
-        userEmail: firebaseUser.email ?? null,
-        userDisplayName:
-          profile?.displayName ?? firebaseUser.displayName ?? null,
-        category: trimmedCategory,
-        message: trimmedMessage,
+        userId: uid,
+        userEmail: email,
+        userDisplayName: name,
+        category: category.trim(),
+        message: message.trim(),
         source: "mobile",
         platform: Platform.OS,
         appVersion,
@@ -95,21 +98,65 @@ export default function FeedbackScreen() {
           segments: [...segments],
         },
       });
+    },
+    {
+      successMessage: "Feedback sent. Thank you.",
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't send your feedback. Check your connection and try again. Your message is still here.",
+        ),
+      onSuccess: () => {
+        setChoice("");
+        setCustomCategory("");
+        setMessage("");
+        setErrors({});
+        setSent(true);
+      },
+    },
+  );
 
-      setCategory("");
-      setMessage("");
-      setErrors({});
-      Alert.alert("Feedback sent", "Thanks for helping us improve!", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      Alert.alert(
-        "Could not send feedback",
-        (error as { message?: string }).message || "Please try again.",
-      );
-    } finally {
-      setSubmitting(false);
+  function handleSubmit() {
+    const nextErrors = {
+      category: validate("category"),
+      message: validate("message"),
+    };
+    setErrors(nextErrors);
+    if (nextErrors.category || nextErrors.message) {
+      if (nextErrors.category && choice === OTHER) categoryRef.current?.focus();
+      else if (!nextErrors.category) messageRef.current?.focus();
+      return;
     }
+    if (!firebaseUser) return;
+    void send.run(
+      firebaseUser.uid,
+      firebaseUser.email ?? null,
+      profile?.displayName ?? firebaseUser.displayName ?? null,
+    );
+  }
+
+  if (sent) {
+    return (
+      <View style={[styles.keyboardView, styles.sentWrap]}>
+        <AppIcon
+          name="checkmark.circle.fill"
+          size={ICON_SIZE.brand}
+          color={colors.courtGreen}
+        />
+        <Text style={styles.sentTitle} accessibilityRole="header">
+          Feedback sent
+        </Text>
+        <Text style={styles.sentBody}>
+          Thanks for helping improve Tennis League.
+        </Text>
+        <Button label="Done" fullWidth onPress={() => router.back()} />
+        <Button
+          label="Send more feedback"
+          variant="quiet"
+          onPress={() => setSent(false)}
+        />
+      </View>
+    );
   }
 
   return (
@@ -119,40 +166,95 @@ export default function FeedbackScreen() {
       contentContainerStyle={styles.content}
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Provide feedback</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          Send feedback
+        </Text>
         <Text style={styles.subtitle}>
-          Tell us what is working, what is confusing, or what you would like to
-          see next.
+          Tell us what&apos;s working, what&apos;s confusing, or what
+          you&apos;d like to see next.
         </Text>
       </View>
 
-      <View style={styles.section}>
-        <FormField
-          ref={categoryRef}
-          label="Category"
-          required
-          error={errors.category}
-          accessibilityLabel="Feedback category"
-          value={category}
-          onChangeText={setCategory}
-          onBlur={() =>
-            setErrors((e) => ({ ...e, category: validate("category") }))
-          }
-          placeholder="Bug, feature request, scoring, profile…"
-          autoCapitalize="sentences"
-          returnKeyType="next"
-          onSubmitEditing={() => messageRef.current?.focus()}
+      {!firebaseUser && (
+        <InlineAlert
+          tone="warning"
+          title="Sign in first"
+          message="You need to be signed in to send feedback."
         />
+      )}
+
+      <View style={styles.section}>
+        <View
+          style={styles.categoryGroup}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="What is your feedback about? Required"
+        >
+          <Text
+            style={styles.groupLabel}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          >
+            What is it about?<Text style={styles.required}> *</Text>
+          </Text>
+          <View style={styles.chips}>
+            {CATEGORY_OPTIONS.map((option) => (
+              <Chip
+                key={option.value}
+                label={option.label}
+                selected={choice === option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: choice === option.value }}
+                onPress={() => {
+                  setChoice(option.value);
+                  if (errors.category)
+                    setErrors((e) => ({ ...e, category: "" }));
+                  if (option.value === OTHER)
+                    setTimeout(() => categoryRef.current?.focus(), 50);
+                }}
+              />
+            ))}
+          </View>
+          {errors.category && choice !== OTHER ? (
+            <Text style={styles.fieldError}>{errors.category}</Text>
+          ) : null}
+        </View>
+
+        {choice === OTHER && (
+          <FormField
+            ref={categoryRef}
+            label="Category"
+            required
+            error={errors.category}
+            accessibilityLabel="Feedback category"
+            value={customCategory}
+            onChangeText={(value) => {
+              setCustomCategory(value);
+              if (errors.category) setErrors((e) => ({ ...e, category: "" }));
+            }}
+            onBlur={() =>
+              setErrors((e) => ({ ...e, category: validate("category") }))
+            }
+            placeholder="Standings, messages, notifications…"
+            autoCapitalize="sentences"
+            returnKeyType="next"
+            submitBehavior="submit"
+            onSubmitEditing={() => messageRef.current?.focus()}
+          />
+        )}
 
         <FormField
           ref={messageRef}
           label="Message"
           required
           error={errors.message}
+          helperText="For a problem, say what you did and what you expected."
           accessibilityLabel="Feedback message"
           inputStyle={styles.messageInput}
           value={message}
-          onChangeText={setMessage}
+          onChangeText={(value) => {
+            setMessage(value);
+            if (errors.message) setErrors((e) => ({ ...e, message: "" }));
+          }}
           onBlur={() =>
             setErrors((e) => ({ ...e, message: validate("message") }))
           }
@@ -167,31 +269,35 @@ export default function FeedbackScreen() {
       <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
 
       <View style={styles.contextCard}>
-        <Text style={styles.contextTitle}>Included automatically</Text>
-        <Text style={styles.contextText}>Source: mobile</Text>
-        <Text style={styles.contextText}>Platform: {Platform.OS}</Text>
-        {appVersion ? (
-          <Text style={styles.contextText}>App version: {appVersion}</Text>
-        ) : null}
+        <Text style={styles.contextTitle}>Sent with your message</Text>
+        <Text style={styles.contextText}>
+          Your name and email, so we can follow up
+        </Text>
+        <Text style={styles.contextText}>
+          Device: {Platform.OS === "ios" ? "iOS" : Platform.OS === "android" ? "Android" : Platform.OS}
+          {appVersion ? `, app version ${appVersion}` : ""}
+        </Text>
         <Text style={styles.contextText}>
           Screen: {params.from ?? pathname}
         </Text>
       </View>
 
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityLabel="Send feedback"
-        accessibilityState={{ disabled: submitting, busy: submitting }}
-        style={[styles.submitBtn, submitting && styles.btnDisabled]}
+      {send.error && (
+        <InlineAlert
+          tone="error"
+          title="Couldn't send feedback"
+          message={send.error}
+        />
+      )}
+
+      <Button
+        label="Send feedback"
+        pending={send.pending}
+        pendingLabel="Sending…"
+        disabled={!firebaseUser}
+        fullWidth
         onPress={handleSubmit}
-        disabled={submitting}
-      >
-        {submitting ? (
-          <ActivityIndicator color={colors.surface} />
-        ) : (
-          <Text style={styles.submitBtnText}>Send Feedback</Text>
-        )}
-      </TouchableOpacity>
+      />
     </KeyboardAwareScrollView>
   );
 }
@@ -199,45 +305,56 @@ export default function FeedbackScreen() {
 const styles = StyleSheet.create({
   keyboardView: { flex: 1, backgroundColor: colors.canvas },
   container: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: 24, gap: 16 },
-  header: { gap: 8 },
-  title: { color: colors.text, fontSize: 28, fontWeight: "700" },
-  subtitle: { color: colors.textMuted, fontSize: 15, lineHeight: 22 },
+  content: {
+    padding: spacing.xl,
+    gap: spacing.lg,
+    width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
+  },
+  header: { gap: spacing.sm },
+  title: { ...typography.title, fontSize: 28, lineHeight: 34, color: colors.text },
+  subtitle: { ...typography.body, color: colors.textMuted },
   section: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    gap: 10,
+    borderRadius: radii.card,
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
-  label: { color: colors.primary, fontSize: 14, fontWeight: "700" },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    backgroundColor: colors.surface,
+  categoryGroup: { gap: spacing.sm },
+  groupLabel: { ...typography.label, color: colors.text },
+  required: { color: colors.destructive },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  fieldError: {
+    ...typography.caption,
+    color: colors.destructive,
+    fontWeight: "600",
   },
   messageInput: { minHeight: 160 },
   contextCard: {
     backgroundColor: colors.primarySoft,
-    borderRadius: 14,
-    padding: 16,
-    gap: 4,
+    borderRadius: radii.card,
+    padding: spacing.lg,
+    gap: spacing.xs,
   },
   contextTitle: {
-    color: colors.primary,
-    fontSize: 14,
+    ...typography.label,
     fontWeight: "700",
-    marginBottom: 4,
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
-  contextText: { color: "#436b4b", fontSize: 13 },
-  submitBtn: {
-    backgroundColor: colors.primary,
-    padding: 16,
-    borderRadius: 12,
+  contextText: { ...typography.bodySmall, color: colors.successText },
+  sentWrap: {
     alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+    gap: spacing.lg,
   },
-  submitBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
-  btnDisabled: { opacity: 0.5 },
+  sentTitle: { ...typography.title, color: colors.primary },
+  sentBody: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: "center",
+    maxWidth: 420,
+  },
 });
