@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/700.css';
@@ -7,12 +7,20 @@ import './globals.css';
 import { FcmProvider } from './FcmProvider';
 import { ViewModeProvider } from './shared/viewMode';
 import { EmailVerificationGate } from './shared/EmailVerificationGate';
+import { AnnouncerProvider } from './shared/Announcer';
+import { SkipLink } from './shared/SkipLink';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#1a472a',
+};
+
 export const metadata: Metadata = {
   title: 'Tennis League',
-  description: 'Work Tennis League Scoring & Rankings',
+  description: 'Workplace tennis league scoring, scheduling, and standings.',
   metadataBase: new URL(siteUrl),
   alternates: {
     canonical: '/',
@@ -27,9 +35,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
   return (
     <html lang="en">
       <body>
+        <SkipLink />
         <FcmProvider />
         <EmailVerificationGate />
-        <ViewModeProvider>{children}</ViewModeProvider>
+        <AnnouncerProvider>
+          <ViewModeProvider>{children}</ViewModeProvider>
+        </AnnouncerProvider>
       </body>
     </html>
   );
