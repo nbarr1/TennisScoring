@@ -1,0 +1,867 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-19T12:18:02+00:00",
+  "title": "Design System: Tennis League",
+  "extensions": {
+    "colorMeta": {
+      "clubhouse-green": {
+        "role": "primary",
+        "displayName": "Clubhouse Green",
+        "canonical": "#1A472A",
+        "oklch": "oklch(35.8% 0.071 153)",
+        "tonalRamp": [
+          "oklch(15% 0.056 153)",
+          "oklch(26% 0.071 153)",
+          "oklch(38% 0.071 153)",
+          "oklch(49% 0.071 153)",
+          "oklch(61% 0.071 153)",
+          "oklch(72% 0.071 153)",
+          "oklch(84% 0.061 153)",
+          "oklch(95% 0.018 153)"
+        ]
+      },
+      "clubhouse-green-pressed": {
+        "role": "primary",
+        "displayName": "Clubhouse Green Pressed",
+        "canonical": "#12351F",
+        "oklch": "oklch(29.6% 0.057 153)",
+        "tonalRamp": [
+          "oklch(15% 0.056 153)",
+          "oklch(26% 0.057 153)",
+          "oklch(38% 0.057 153)",
+          "oklch(49% 0.057 153)",
+          "oklch(61% 0.057 153)",
+          "oklch(72% 0.057 153)",
+          "oklch(84% 0.057 153)",
+          "oklch(95% 0.018 153)"
+        ]
+      },
+      "court-green": {
+        "role": "primary",
+        "displayName": "Court Green",
+        "canonical": "#2D6A4F",
+        "oklch": "oklch(47.6% 0.078 162)",
+        "tonalRamp": [
+          "oklch(15% 0.056 162)",
+          "oklch(26% 0.078 162)",
+          "oklch(38% 0.078 162)",
+          "oklch(49% 0.078 162)",
+          "oklch(61% 0.078 162)",
+          "oklch(72% 0.078 162)",
+          "oklch(84% 0.061 162)",
+          "oklch(95% 0.018 162)"
+        ]
+      },
+      "green-soft": {
+        "role": "primary",
+        "displayName": "Green Soft",
+        "canonical": "#E8F5E9",
+        "oklch": "oklch(95.7% 0.021 148)",
+        "tonalRamp": [
+          "oklch(15% 0.021 148)",
+          "oklch(26% 0.021 148)",
+          "oklch(38% 0.021 148)",
+          "oklch(49% 0.021 148)",
+          "oklch(61% 0.021 148)",
+          "oklch(72% 0.021 148)",
+          "oklch(84% 0.021 148)",
+          "oklch(95% 0.018 148)"
+        ]
+      },
+      "green-light": {
+        "role": "primary",
+        "displayName": "Green Light",
+        "canonical": "#A8D5A2",
+        "oklch": "oklch(82.8% 0.084 142)",
+        "tonalRamp": [
+          "oklch(15% 0.056 142)",
+          "oklch(26% 0.084 142)",
+          "oklch(38% 0.084 142)",
+          "oklch(49% 0.084 142)",
+          "oklch(61% 0.084 142)",
+          "oklch(72% 0.084 142)",
+          "oklch(84% 0.061 142)",
+          "oklch(95% 0.018 142)"
+        ]
+      },
+      "ball-yellow": {
+        "role": "secondary",
+        "displayName": "Ball Yellow",
+        "canonical": "#FFDC60",
+        "oklch": "oklch(90.1% 0.146 93)",
+        "tonalRamp": [
+          "oklch(15% 0.056 93)",
+          "oklch(26% 0.098 93)",
+          "oklch(38% 0.140 93)",
+          "oklch(49% 0.146 93)",
+          "oklch(61% 0.145 93)",
+          "oklch(72% 0.103 93)",
+          "oklch(84% 0.061 93)",
+          "oklch(95% 0.018 93)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Paper Canvas",
+        "canonical": "#F5F5F0",
+        "oklch": "oklch(96.9% 0.007 107)",
+        "tonalRamp": [
+          "oklch(15% 0.007 107)",
+          "oklch(26% 0.007 107)",
+          "oklch(38% 0.007 107)",
+          "oklch(49% 0.007 107)",
+          "oklch(61% 0.007 107)",
+          "oklch(72% 0.007 107)",
+          "oklch(84% 0.007 107)",
+          "oklch(95% 0.007 107)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface White",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "surface-muted": {
+        "role": "neutral",
+        "displayName": "Surface Muted",
+        "canonical": "#F0F2ED",
+        "oklch": "oklch(95.8% 0.007 124)",
+        "tonalRamp": [
+          "oklch(15% 0.007 124)",
+          "oklch(26% 0.007 124)",
+          "oklch(38% 0.007 124)",
+          "oklch(49% 0.007 124)",
+          "oklch(61% 0.007 124)",
+          "oklch(72% 0.007 124)",
+          "oklch(84% 0.007 124)",
+          "oklch(95% 0.007 124)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1A1A1A",
+        "oklch": "oklch(21.8% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#666B68",
+        "oklch": "oklch(52.2% 0.008 160)",
+        "tonalRamp": [
+          "oklch(15% 0.008 160)",
+          "oklch(26% 0.008 160)",
+          "oklch(38% 0.008 160)",
+          "oklch(49% 0.008 160)",
+          "oklch(61% 0.008 160)",
+          "oklch(72% 0.008 160)",
+          "oklch(84% 0.008 160)",
+          "oklch(95% 0.008 160)"
+        ]
+      },
+      "text-subtle": {
+        "role": "neutral",
+        "displayName": "Subtle",
+        "canonical": "#888D8A",
+        "oklch": "oklch(63.8% 0.007 160)",
+        "tonalRamp": [
+          "oklch(15% 0.007 160)",
+          "oklch(26% 0.007 160)",
+          "oklch(38% 0.007 160)",
+          "oklch(49% 0.007 160)",
+          "oklch(61% 0.007 160)",
+          "oklch(72% 0.007 160)",
+          "oklch(84% 0.007 160)",
+          "oklch(95% 0.007 160)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#DADDD8",
+        "oklch": "oklch(89.4% 0.007 132)",
+        "tonalRamp": [
+          "oklch(15% 0.007 132)",
+          "oklch(26% 0.007 132)",
+          "oklch(38% 0.007 132)",
+          "oklch(49% 0.007 132)",
+          "oklch(61% 0.007 132)",
+          "oklch(72% 0.007 132)",
+          "oklch(84% 0.007 132)",
+          "oklch(95% 0.007 132)"
+        ]
+      },
+      "disabled": {
+        "role": "neutral",
+        "displayName": "Disabled",
+        "canonical": "#C8CCC9",
+        "oklch": "oklch(84.1% 0.006 154)",
+        "tonalRamp": [
+          "oklch(15% 0.006 154)",
+          "oklch(26% 0.006 154)",
+          "oklch(38% 0.006 154)",
+          "oklch(49% 0.006 154)",
+          "oklch(61% 0.006 154)",
+          "oklch(72% 0.006 154)",
+          "oklch(84% 0.006 154)",
+          "oklch(95% 0.006 154)"
+        ]
+      },
+      "disabled-text": {
+        "role": "neutral",
+        "displayName": "Disabled Text",
+        "canonical": "#777C79",
+        "oklch": "oklch(58.1% 0.007 160)",
+        "tonalRamp": [
+          "oklch(15% 0.007 160)",
+          "oklch(26% 0.007 160)",
+          "oklch(38% 0.007 160)",
+          "oklch(49% 0.007 160)",
+          "oklch(61% 0.007 160)",
+          "oklch(72% 0.007 160)",
+          "oklch(84% 0.007 160)",
+          "oklch(95% 0.007 160)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive",
+        "canonical": "#C0392B",
+        "oklch": "oklch(54.3% 0.174 30)",
+        "tonalRamp": [
+          "oklch(15% 0.056 30)",
+          "oklch(26% 0.098 30)",
+          "oklch(38% 0.140 30)",
+          "oklch(49% 0.174 30)",
+          "oklch(61% 0.145 30)",
+          "oklch(72% 0.103 30)",
+          "oklch(84% 0.061 30)",
+          "oklch(95% 0.018 30)"
+        ]
+      },
+      "destructive-pressed": {
+        "role": "tertiary",
+        "displayName": "Destructive Pressed",
+        "canonical": "#962D22",
+        "oklch": "oklch(45.6% 0.142 30)",
+        "tonalRamp": [
+          "oklch(15% 0.056 30)",
+          "oklch(26% 0.098 30)",
+          "oklch(38% 0.140 30)",
+          "oklch(49% 0.142 30)",
+          "oklch(61% 0.142 30)",
+          "oklch(72% 0.103 30)",
+          "oklch(84% 0.061 30)",
+          "oklch(95% 0.018 30)"
+        ]
+      },
+      "destructive-soft": {
+        "role": "tertiary",
+        "displayName": "Destructive Soft",
+        "canonical": "#FBEAEA",
+        "oklch": "oklch(95.1% 0.019 17)",
+        "tonalRamp": [
+          "oklch(15% 0.019 17)",
+          "oklch(26% 0.019 17)",
+          "oklch(38% 0.019 17)",
+          "oklch(49% 0.019 17)",
+          "oklch(61% 0.019 17)",
+          "oklch(72% 0.019 17)",
+          "oklch(84% 0.019 17)",
+          "oklch(95% 0.018 17)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Warning",
+        "canonical": "#E67E22",
+        "oklch": "oklch(69.6% 0.160 56)",
+        "tonalRamp": [
+          "oklch(15% 0.056 56)",
+          "oklch(26% 0.098 56)",
+          "oklch(38% 0.140 56)",
+          "oklch(49% 0.160 56)",
+          "oklch(61% 0.145 56)",
+          "oklch(72% 0.103 56)",
+          "oklch(84% 0.061 56)",
+          "oklch(95% 0.018 56)"
+        ]
+      },
+      "warning-text": {
+        "role": "tertiary",
+        "displayName": "Warning Text",
+        "canonical": "#7A410D",
+        "oklch": "oklch(43.8% 0.099 56)",
+        "tonalRamp": [
+          "oklch(15% 0.056 56)",
+          "oklch(26% 0.098 56)",
+          "oklch(38% 0.099 56)",
+          "oklch(49% 0.099 56)",
+          "oklch(61% 0.099 56)",
+          "oklch(72% 0.099 56)",
+          "oklch(84% 0.061 56)",
+          "oklch(95% 0.018 56)"
+        ]
+      },
+      "warning-soft": {
+        "role": "tertiary",
+        "displayName": "Warning Soft",
+        "canonical": "#FFF3E0",
+        "oklch": "oklch(96.9% 0.028 79)",
+        "tonalRamp": [
+          "oklch(15% 0.028 79)",
+          "oklch(26% 0.028 79)",
+          "oklch(38% 0.028 79)",
+          "oklch(49% 0.028 79)",
+          "oklch(61% 0.028 79)",
+          "oklch(72% 0.028 79)",
+          "oklch(84% 0.028 79)",
+          "oklch(95% 0.018 79)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Success",
+        "canonical": "#278B50",
+        "oklch": "oklch(56.5% 0.128 153)",
+        "tonalRamp": [
+          "oklch(15% 0.056 153)",
+          "oklch(26% 0.098 153)",
+          "oklch(38% 0.128 153)",
+          "oklch(49% 0.128 153)",
+          "oklch(61% 0.128 153)",
+          "oklch(72% 0.103 153)",
+          "oklch(84% 0.061 153)",
+          "oklch(95% 0.018 153)"
+        ]
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Info",
+        "canonical": "#2D6A8A",
+        "oklch": "oklch(49.9% 0.081 235)",
+        "tonalRamp": [
+          "oklch(15% 0.056 235)",
+          "oklch(26% 0.081 235)",
+          "oklch(38% 0.081 235)",
+          "oklch(49% 0.081 235)",
+          "oklch(61% 0.081 235)",
+          "oklch(72% 0.081 235)",
+          "oklch(84% 0.061 235)",
+          "oklch(95% 0.018 235)"
+        ]
+      },
+      "info-soft": {
+        "role": "tertiary",
+        "displayName": "Info Soft",
+        "canonical": "#E8F2F7",
+        "oklch": "oklch(95.5% 0.013 229)",
+        "tonalRamp": [
+          "oklch(15% 0.013 229)",
+          "oklch(26% 0.013 229)",
+          "oklch(38% 0.013 229)",
+          "oklch(49% 0.013 229)",
+          "oklch(61% 0.013 229)",
+          "oklch(72% 0.013 229)",
+          "oklch(84% 0.013 229)",
+          "oklch(95% 0.013 229)"
+        ]
+      },
+      "live-green": {
+        "role": "tertiary",
+        "displayName": "Live Green",
+        "canonical": "#27AE60",
+        "oklch": "oklch(66.3% 0.160 152)",
+        "tonalRamp": [
+          "oklch(15% 0.056 152)",
+          "oklch(26% 0.098 152)",
+          "oklch(38% 0.140 152)",
+          "oklch(49% 0.160 152)",
+          "oklch(61% 0.145 152)",
+          "oklch(72% 0.103 152)",
+          "oklch(84% 0.061 152)",
+          "oklch(95% 0.018 152)"
+        ]
+      },
+      "proposed-purple": {
+        "role": "tertiary",
+        "displayName": "Proposed Purple",
+        "canonical": "#8E44AD",
+        "oklch": "oklch(52.6% 0.170 315)",
+        "tonalRamp": [
+          "oklch(15% 0.056 315)",
+          "oklch(26% 0.098 315)",
+          "oklch(38% 0.140 315)",
+          "oklch(49% 0.170 315)",
+          "oklch(61% 0.145 315)",
+          "oklch(72% 0.103 315)",
+          "oklch(84% 0.061 315)",
+          "oklch(95% 0.018 315)"
+        ]
+      },
+      "unassigned-soft": {
+        "role": "tertiary",
+        "displayName": "Unassigned Soft",
+        "canonical": "#FFF3CD",
+        "oklch": "oklch(96.4% 0.051 93)",
+        "tonalRamp": [
+          "oklch(15% 0.051 93)",
+          "oklch(26% 0.051 93)",
+          "oklch(38% 0.051 93)",
+          "oklch(49% 0.051 93)",
+          "oklch(61% 0.051 93)",
+          "oklch(72% 0.051 93)",
+          "oklch(84% 0.051 93)",
+          "oklch(95% 0.018 93)"
+        ]
+      },
+      "unassigned-text": {
+        "role": "tertiary",
+        "displayName": "Unassigned Text",
+        "canonical": "#856404",
+        "oklch": "oklch(52.3% 0.106 86)",
+        "tonalRamp": [
+          "oklch(15% 0.056 86)",
+          "oklch(26% 0.098 86)",
+          "oklch(38% 0.106 86)",
+          "oklch(49% 0.106 86)",
+          "oklch(61% 0.106 86)",
+          "oklch(72% 0.103 86)",
+          "oklch(84% 0.061 86)",
+          "oklch(95% 0.018 86)"
+        ]
+      },
+      "scoreboard-black": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Black",
+        "canonical": "#000000",
+        "oklch": "oklch(0.0% 0.000 0)",
+        "tonalRamp": [
+          "oklch(15% 0.000 0)",
+          "oklch(26% 0.000 0)",
+          "oklch(38% 0.000 0)",
+          "oklch(49% 0.000 0)",
+          "oklch(61% 0.000 0)",
+          "oklch(72% 0.000 0)",
+          "oklch(84% 0.000 0)",
+          "oklch(95% 0.000 0)"
+        ]
+      },
+      "scoreboard-row": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Row",
+        "canonical": "#0A0A0A",
+        "oklch": "oklch(14.5% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-panel": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Panel",
+        "canonical": "#141414",
+        "oklch": "oklch(19.1% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-control": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Control",
+        "canonical": "#1C1C1C",
+        "oklch": "oklch(22.6% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-line": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Line",
+        "canonical": "#262626",
+        "oklch": "oklch(26.9% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-text": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Text",
+        "canonical": "#FFFFFF",
+        "oklch": "oklch(100.0% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-muted": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Muted",
+        "canonical": "#B3B3B3",
+        "oklch": "oklch(76.7% 0.000 90)",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(49% 0.000 90)",
+          "oklch(61% 0.000 90)",
+          "oklch(72% 0.000 90)",
+          "oklch(84% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "scoreboard-yellow": {
+        "role": "scoreboard",
+        "displayName": "Scoreboard Yellow",
+        "canonical": "#FFD60A",
+        "oklch": "oklch(88.5% 0.181 95)",
+        "tonalRamp": [
+          "oklch(15% 0.056 95)",
+          "oklch(26% 0.098 95)",
+          "oklch(38% 0.140 95)",
+          "oklch(49% 0.181 95)",
+          "oklch(61% 0.145 95)",
+          "oklch(72% 0.103 95)",
+          "oklch(84% 0.061 95)",
+          "oklch(95% 0.018 95)"
+        ]
+      },
+      "player-blue": {
+        "role": "scoreboard",
+        "displayName": "Player Blue",
+        "canonical": "#3D8BFF",
+        "oklch": "oklch(64.8% 0.189 259)",
+        "tonalRamp": [
+          "oklch(15% 0.056 259)",
+          "oklch(26% 0.098 259)",
+          "oklch(38% 0.140 259)",
+          "oklch(49% 0.182 259)",
+          "oklch(61% 0.145 259)",
+          "oklch(72% 0.103 259)",
+          "oklch(84% 0.061 259)",
+          "oklch(95% 0.018 259)"
+        ]
+      },
+      "player-orange": {
+        "role": "scoreboard",
+        "displayName": "Player Orange",
+        "canonical": "#FF9F1C",
+        "oklch": "oklch(78.3% 0.168 66)",
+        "tonalRamp": [
+          "oklch(15% 0.056 66)",
+          "oklch(26% 0.098 66)",
+          "oklch(38% 0.140 66)",
+          "oklch(49% 0.168 66)",
+          "oklch(61% 0.145 66)",
+          "oklch(72% 0.103 66)",
+          "oklch(84% 0.061 66)",
+          "oklch(95% 0.018 66)"
+        ]
+      },
+      "match-point-pink": {
+        "role": "scoreboard",
+        "displayName": "Match Point Pink",
+        "canonical": "#FF6B81",
+        "oklch": "oklch(71.6% 0.181 14)",
+        "tonalRamp": [
+          "oklch(15% 0.056 14)",
+          "oklch(26% 0.098 14)",
+          "oklch(38% 0.140 14)",
+          "oklch(49% 0.181 14)",
+          "oklch(61% 0.145 14)",
+          "oklch(72% 0.103 14)",
+          "oklch(84% 0.061 14)",
+          "oklch(95% 0.018 14)"
+        ]
+      },
+      "confirmed-green": {
+        "role": "scoreboard",
+        "displayName": "Confirmed Green",
+        "canonical": "#3DDC84",
+        "oklch": "oklch(79.3% 0.180 154)",
+        "tonalRamp": [
+          "oklch(15% 0.056 154)",
+          "oklch(26% 0.098 154)",
+          "oklch(38% 0.140 154)",
+          "oklch(49% 0.180 154)",
+          "oklch(61% 0.145 154)",
+          "oklch(72% 0.103 154)",
+          "oklch(84% 0.061 154)",
+          "oklch(95% 0.018 154)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Web page titles; all web h1-h3."
+      },
+      "scoreboard": {
+        "displayName": "Scoreboard",
+        "purpose": "Live-score numerals and names on the split scoreboard, sized per layout."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings and dialog titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles and mobile section headers, in Clubhouse Green."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Reading text; web forms and lists often step down to 15px."
+      },
+      "body-small": {
+        "displayName": "Body Small",
+        "purpose": "Secondary text, empty-state messages, alert bodies."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Button, chip, and form labels."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Metadata, timestamps, field errors, section subtitles."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-resting",
+        "value": "0 2px 10px rgba(0,0,0,0.06)",
+        "purpose": "Default web list card; mobile elevations.low (0 2px 5px at 6%, Android elevation 2)."
+      },
+      {
+        "name": "raised",
+        "value": "0 4px 24px rgba(0,0,0,0.08)",
+        "purpose": "Modal sheets and centered auth cards; mobile elevations.medium (0 4px 10px at 12%, Android elevation 5)."
+      },
+      {
+        "name": "live-glow",
+        "value": "0 4px 16px rgba(39,174,96,0.15)",
+        "purpose": "Live match card only, with its 4px Live Green left border."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press-hover",
+        "value": "150ms ease",
+        "purpose": "filter, transform, and box-shadow transitions on buttons and links; hover brightness(1.1), press translateY(1px)."
+      },
+      {
+        "name": "card-lift",
+        "value": "translateY(-2px) over 150ms ease",
+        "purpose": "Hover lift on clickable web cards (.lift)."
+      },
+      {
+        "name": "page-enter",
+        "value": "220ms ease-out, from opacity 0 and translateY(6px)",
+        "purpose": "Fade-and-rise when a web page opens (app/template.tsx)."
+      },
+      {
+        "name": "live-pulse",
+        "value": "box-shadow ring spreading 0 to 9px in Live Green",
+        "purpose": "The live-match dot on the matches page."
+      },
+      {
+        "name": "celebrate",
+        "value": "one-second canvas-confetti burst in the brand greens and Ball Yellow",
+        "purpose": "Only when a score is confirmed."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "durations to 0.01ms, no transforms",
+        "purpose": "Applied globally under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one main action on a screen.",
+      "html": "<button class=\"ds-btn-primary\">Confirm score</button>",
+      "css": ".ds-btn-primary { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 48px; padding: 12px 16px; border-radius: 10px; font-size: 14px; line-height: 18px; font-weight: 600; cursor: pointer; transition: filter 150ms ease, transform 150ms ease; background: #1A472A; color: #FFFFFF; border: none; } .ds-btn-primary:hover { filter: brightness(1.1); } .ds-btn-primary:active { background: #12351F; transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Alternative actions next to a primary button.",
+      "html": "<button class=\"ds-btn-secondary\">Propose a time</button>",
+      "css": ".ds-btn-secondary { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 48px; padding: 12px 16px; border-radius: 10px; font-size: 14px; line-height: 18px; font-weight: 600; cursor: pointer; transition: filter 150ms ease, transform 150ms ease; background: #FFFFFF; color: #1A472A; border: 1px solid #1A472A; } .ds-btn-secondary:hover { filter: brightness(1.1); } .ds-btn-secondary:active { background: #E8F5E9; transform: translateY(1px); } .ds-btn-secondary:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Delete and remove actions, confirmed first.",
+      "html": "<button class=\"ds-btn-destructive\">Remove from roster</button>",
+      "css": ".ds-btn-destructive { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 48px; padding: 12px 16px; border-radius: 10px; font-size: 14px; line-height: 18px; font-weight: 600; cursor: pointer; transition: filter 150ms ease, transform 150ms ease; background: #C0392B; color: #FFFFFF; border: none; } .ds-btn-destructive:hover { filter: brightness(1.1); } .ds-btn-destructive:active { background: #962D22; transform: translateY(1px); } .ds-btn-destructive:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labeled single-line input with an error state.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Opponent email</span><input class=\"ds-input\" placeholder=\"name@example.com\"></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 4px; font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; } .ds-field-label { font-size: 14px; line-height: 18px; font-weight: 600; color: #1A1A1A; } .ds-input { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 48px; padding: 0 12px; border: 1px solid #DADDD8; border-radius: 10px; background: #FFFFFF; color: #1A1A1A; font-size: 16px; } .ds-input::placeholder { color: #888D8A; } .ds-input:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; } .ds-input[aria-invalid=\"true\"] { border-color: #C0392B; }"
+    },
+    {
+      "name": "Filter Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pill filters; selected turns Soft Green.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip ds-chip-selected\" aria-pressed=\"true\">Beginner Singles</button><button class=\"ds-chip\" aria-pressed=\"false\">Intermediate Doubles</button></div>",
+      "css": ".ds-chips { display: flex; gap: 8px; flex-wrap: wrap; } .ds-chip { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 44px; padding: 0 12px; border: 1px solid #DADDD8; border-radius: 999px; background: #FFFFFF; color: #666B68; font-size: 14px; font-weight: 600; cursor: pointer; } .ds-chip:hover { background: #F0F2ED; } .ds-chip:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; } .ds-chip-selected { background: #E8F5E9; border-color: #1A472A; color: #1A472A; }"
+    },
+    {
+      "name": "Match Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White list card on the canvas; the live variant adds a green edge and glow.",
+      "html": "<div class=\"ds-card-stack\"><a class=\"ds-card\" href=\"#\"><span class=\"ds-badge\" style=\"color:#1A472A\">● Scheduled</span><strong class=\"ds-card-title\">Rivera vs. Chen</strong><span class=\"ds-card-meta\">Thu, 6:00 PM</span></a><a class=\"ds-card ds-card-live\" href=\"#\"><span class=\"ds-badge\" style=\"color:#27AE60\"><span class=\"ds-dot\"></span> Live</span><strong class=\"ds-card-title\">Smith / Jones vs. Lee / Ruiz</strong><span class=\"ds-card-meta\">6-4, 3-2</span></a></div>",
+      "css": ".ds-card-stack { display: grid; gap: 12px; background: #F5F5F0; padding: 16px; } .ds-card { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; gap: 4px; background: #FFFFFF; border-radius: 14px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); color: #1A1A1A; text-decoration: none; transition: transform 150ms ease; } .ds-card:hover { transform: translateY(-2px); } .ds-card:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; } .ds-card-live { border-left: 4px solid #27AE60; box-shadow: 0 4px 16px rgba(39,174,96,0.15); } .ds-card-title { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-size: 20px; font-weight: 700; } .ds-card-meta { font-size: 13px; color: #666B68; } .ds-badge { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; } .ds-dot { width: 8px; height: 8px; border-radius: 50%; background: #27AE60; animation: ds-pulse 2s infinite; } @keyframes ds-pulse { 0% { box-shadow: 0 0 0 0 rgba(39,174,96,0.55); } 70% { box-shadow: 0 0 0 9px rgba(39,174,96,0); } 100% { box-shadow: 0 0 0 0 rgba(39,174,96,0); } } @media (prefers-reduced-motion: reduce) { .ds-dot { animation: none; } .ds-card:hover { transform: none; } }"
+    },
+    {
+      "name": "Top Navigation",
+      "kind": "nav",
+      "refersTo": "nav-bar",
+      "description": "Web primary nav: green bar, yellow-underlined current page.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><span class=\"ds-nav-brand\"><svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#FFDC60\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0\"/><path d=\"M6 5.3a9 9 0 0 1 0 13.4\"/><path d=\"M18 5.3a9 9 0 0 0 0 13.4\"/></svg> Tennis League</span><span class=\"ds-nav-links\"><a class=\"ds-nav-link\" aria-current=\"page\" href=\"#\">Rankings</a><a class=\"ds-nav-link\" href=\"#\">Matches</a><a class=\"ds-nav-link\" href=\"#\">Messages</a><button class=\"ds-nav-signout\">Sign out</button></span></nav>",
+      "css": ".ds-nav { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1A472A; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; } .ds-nav-brand { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; color: #FFFFFF; font-weight: 700; font-size: 22px; display: inline-flex; align-items: center; gap: 6px; } .ds-nav-links { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; } .ds-nav-link { color: rgba(255,255,255,0.75); font-weight: 500; font-size: 15px; text-decoration: none; } .ds-nav-link:hover { color: #FFFFFF; } .ds-nav-link[aria-current=\"page\"] { color: #FFFFFF; border-bottom: 2px solid #FFDC60; padding-bottom: 2px; } .ds-nav-link:focus-visible, .ds-nav-signout:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; } .ds-nav-signout { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: rgba(255,255,255,0.12); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.35); border-radius: 999px; padding: 6px 12px; font-weight: 700; cursor: pointer; }"
+    },
+    {
+      "name": "Inline Alert",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Tinted alert with a 4px tone-colored left edge.",
+      "html": "<div class=\"ds-alert ds-alert-warning\" role=\"alert\"><strong>Report pending</strong><span>Your opponent has 48 hours to confirm the score.</span></div>",
+      "css": ".ds-alert { font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; gap: 4px; border-left: 4px solid; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 20px; } .ds-alert strong { font-weight: 600; line-height: 18px; } .ds-alert-warning { background: #FFF3E0; border-color: #E67E22; color: #7A410D; }"
+    },
+    {
+      "name": "Split Scoreboard",
+      "kind": "custom",
+      "refersTo": "scoreboard-row",
+      "description": "Signature live-scoring surface: two tappable player rows around the moment band.",
+      "html": "<div class=\"ds-sb\"><button class=\"ds-sb-row ds-sb-p1\"><span class=\"ds-sb-name\">Rivera</span><span class=\"ds-sb-sets\">6 3</span><span class=\"ds-sb-pts\">40</span></button><div class=\"ds-sb-band\">Advantage Rivera</div><button class=\"ds-sb-row ds-sb-p2\"><span class=\"ds-sb-name\">Chen</span><span class=\"ds-sb-sets\">4 2</span><span class=\"ds-sb-pts\">30</span></button></div>",
+      "css": ".ds-sb { background: #000000; padding: 8px; display: grid; gap: 6px; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; } .ds-sb-row { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px; min-height: 96px; padding: 12px 16px; background: #0A0A0A; color: #FFFFFF; border: none; border-left: 6px solid; border-radius: 6px; text-align: left; cursor: pointer; } .ds-sb-row:active { background: #1C1C1C; } .ds-sb-row:focus-visible { outline: 3px solid #FFDC60; outline-offset: 2px; } .ds-sb-p1 { border-left-color: #3D8BFF; } .ds-sb-p2 { border-left-color: #FF9F1C; } .ds-sb-name { font-size: 26px; font-weight: 700; } .ds-sb-sets { font-size: 24px; font-weight: 600; color: #B3B3B3; letter-spacing: 0.2em; } .ds-sb-pts { font-size: 56px; font-weight: 800; line-height: 1; } .ds-sb-band { background: #FFD60A; color: #000000; font-size: 19px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; padding: 8px; border-radius: 6px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Clubhouse Scoreboard",
+    "overview": "**Creative North Star: \"The Clubhouse Scoreboard\"**\n\nThe app has two connected settings. Everything that happens off court, like standings, scheduling, messages, profiles, and admin work, takes place in the clubhouse: a warm off-white room with deep Clubhouse Green framing it and Ball Yellow kept for the few things that need attention. Live scoring moves out to the court, where the room becomes a black, high-contrast scoreboard built for sunlight, glare, and a glance between points. Barlow Condensed headings connect the two settings, so the clubhouse reads like the scoreboard's off-duty version.\n\nThe mood is calm and dependable. Screens are mostly quiet, and color and motion are kept for status: a live match's pulsing dot, a match-point band, or the confetti burst when a score is confirmed. Density is moderate: comfortable 48px touch targets, softly rounded corners, and white cards that rest on the canvas with almost no lift. Components are solid and tappable, with plain fills, clear press feedback, and labels that say what the button does.",
+    "keyCharacteristics": [
+      "Two settings: a light clubhouse for everything off court, and a black scoreboard for live play.",
+      "One brand color (Clubhouse Green) and one accent (Ball Yellow). Any other color carries a meaning.",
+      "Condensed headings and scoreboard numerals, with a neutral sans for body text.",
+      "Mostly flat surfaces, a 48px touch floor, and gently rounded corners.",
+      "Motion is short and functional, and turns off under reduced-motion settings."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Ball Yellow is the only accent. It marks focus, the current location, or a celebration, and never decoration. Any other non-neutral color must name a status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Means Something Rule",
+        "body": "Status colors come only from `MATCH_STATUS_METADATA` and the alert tones. Every status pairs its color with an icon glyph and a text label, so color is never the only cue.",
+        "section": "colors"
+      },
+      {
+        "name": "The No New State Color Rule",
+        "body": "Reuse an existing status or tint pair before adding a color. The unassigned-player amber exists because it reuses the leader-badge tint.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Weights Rule",
+        "body": "Barlow Condensed ships only the weights in use: 600 and 700 on web, plus 800 on mobile. Each mobile weight is loaded by file path through `font(loaded, weight)`, so text falls back to a system weight until the font loads. Never import the package index, which pulls in all eighteen font files.",
+        "section": "typography"
+      },
+      {
+        "name": "The Condensed Is for Headings Rule",
+        "body": "Barlow Condensed sets headings, numerals, and the brand name. Body copy, form text, and anything longer than a line stays in the sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "A surface gets a shadow only when it sits above the page or represents a live event. Hover lift on web cards (2px translate) is the only motion-based depth.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put every clubhouse screen on the Paper Canvas, with content on Surface White cards.",
+      "Do use Clubhouse Green for the one primary action on a screen, and secondary or text buttons for the rest.",
+      "Do keep every touch target at least 44px tall, and 48px for buttons and inputs.",
+      "Do pair every status color with a glyph and a text label.",
+      "Do set headings and numerals in Barlow Condensed, and everything else in the sans.",
+      "Do keep the live-scoring screen on the black scoreboard palette, with text contrast of at least 9:1 and band text at 7:1 or better.",
+      "Do keep motion short (150ms for hover and press, 220ms for the page-enter fade) and turn it off under reduced-motion settings."
+    ],
+    "donts": [
+      "Don't use Ball Yellow for body text or decoration on light surfaces.",
+      "Don't add a new state color when an existing status or tint pair fits. Unassigned players use the existing amber pair.",
+      "Don't bring the clubhouse palette, shadows, or soft tints onto the scoreboard, or the scoreboard's black onto clubhouse screens.",
+      "Don't tell the two players apart by color alone. Always show their names.",
+      "Don't use any company's logos, colors, or trademarks. The brand is the neutral \"Tennis League.\"",
+      "Don't import the full Barlow Condensed package, or set `fontFamily` on mobile without the `font()` fallback."
+    ]
+  }
+}
