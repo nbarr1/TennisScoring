@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import type { Player } from "@tennis/shared";
 import { AppIcon } from "../AppIcon";
+import { InlineAlert } from "../../theme";
 import { SB, font } from "./scoreboardTheme";
 
 type Props = {
@@ -14,6 +15,8 @@ type Props = {
   onStart: () => void;
   /** The start write is in flight; the button ignores further taps. */
   starting: boolean;
+  /** Why the last start failed, shown above the button with a retry. */
+  startError?: string | null;
   watchAppInstalled: boolean;
   launchingWatch: boolean;
   onLaunchWatch: () => void;
@@ -30,6 +33,7 @@ export function ScoreboardSetup({
   onToggleAdvancedStats,
   onStart,
   starting,
+  startError = null,
   watchAppInstalled,
   launchingWatch,
   onLaunchWatch,
@@ -43,18 +47,24 @@ export function ScoreboardSetup({
       >
         WHO SERVES FIRST?
       </Text>
+      <Text style={styles.lead} maxFontSizeMultiplier={1.4}>
+        Pick the first server, then start. During play, tap a player's row
+        to give them the point.
+      </Text>
+      <View accessibilityRole="radiogroup" style={styles.serverGroup}>
       {(["player1", "player2"] as const).map((player) => {
         const selected = server === player;
         return (
           <Pressable
             key={player}
             onPress={() => onPickServer(player)}
-            style={[
+            style={({ pressed }) => [
               styles.card,
               { borderColor: selected ? SB.yellow : SB.panel },
+              pressed && { backgroundColor: SB.pressedRow },
             ]}
             accessibilityRole="radio"
-            accessibilityState={{ selected }}
+            accessibilityState={{ checked: selected, selected }}
             accessibilityLabel={`${names[player]} serves first`}
           >
             <View
@@ -94,6 +104,7 @@ export function ScoreboardSetup({
           </Pressable>
         );
       })}
+      </View>
 
       <View style={styles.options}>
         <View style={[styles.optionRow, styles.optionDivider]}>
@@ -113,6 +124,7 @@ export function ScoreboardSetup({
             trackColor={{ true: SB.yellow, false: SB.ballOff }}
             thumbColor={advancedStats ? SB.onYellow : SB.muted}
             accessibilityLabel="Advanced stats"
+            accessibilityHint="Asks for ace, winner, or error with each point."
           />
         </View>
       </View>
@@ -124,6 +136,7 @@ export function ScoreboardSetup({
           style={styles.watch}
           accessibilityRole="button"
           accessibilityLabel="Open Tennis Score on your watch"
+          accessibilityState={{ disabled: launchingWatch, busy: launchingWatch }}
         >
           <AppIcon name="applewatch" color={SB.yellow} />
           <Text style={[styles.watchText, font(fontsLoaded, "bold")]}>
@@ -133,6 +146,15 @@ export function ScoreboardSetup({
       )}
 
       <View style={styles.spacer} />
+      {startError ? (
+        <InlineAlert
+          tone="error"
+          title="Couldn't start the match"
+          message={startError}
+          actionLabel="Try again"
+          onAction={onStart}
+        />
+      ) : null}
       <Pressable
         onPress={onStart}
         disabled={starting}
@@ -172,7 +194,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     borderWidth: 3,
     borderRadius: 6,
-    backgroundColor: "#0F0F0F",
+    backgroundColor: SB.card,
     overflow: "hidden",
   },
   stripe: { width: 10 },
@@ -183,11 +205,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
+  lead: {
+    color: SB.muted,
+    fontSize: 15,
+    lineHeight: 21,
+    marginHorizontal: 4,
+    marginTop: -8,
+  },
+  serverGroup: { gap: 12 },
   cardName: { color: SB.text, fontSize: 34 },
   cardNote: { flexDirection: "row", alignItems: "center", gap: 8 },
   ball: { width: 18, height: 18, borderRadius: 9 },
   cardNoteText: { fontSize: 19, letterSpacing: 1 },
-  options: { backgroundColor: "#0F0F0F", borderRadius: 6 },
+  options: { backgroundColor: SB.card, borderRadius: 6 },
   optionRow: {
     flexDirection: "row",
     alignItems: "center",

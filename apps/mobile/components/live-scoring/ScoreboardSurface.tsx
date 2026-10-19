@@ -1,16 +1,24 @@
-import React, { useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useRef } from "react";
 import {
-  formatGameScore,
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type AccessibilityActionEvent,
+} from "react-native";
+import {
   formatScoreDisplay,
   getMatchMoment,
-  type LiveScore,
   type Match,
   type MatchMomentTone,
   type Player,
 } from "@tennis/shared";
 import { AppIcon } from "../AppIcon";
+import { useReduceMotion } from "../../theme";
 import { BAND_TONES, SB, font, shortName } from "./scoreboardTheme";
+import { serverFirstCall, spokenPoint } from "./scoreSpeech";
 
 const FLAG_LABELS = {
   BP: "BREAK POINT",
@@ -18,6 +26,10 @@ const FLAG_LABELS = {
   MP: "MATCH POINT",
 } as const;
 const UNDO_HOLD_MS = 1000;
+/** How long a scored row glows: enough to see between points, never in the way. */
+const FLASH_MS = 420;
+/** Peak opacity of the yellow glow: faint enough that the numerals stay readable. */
+const FLASH_PEAK = 0.22;
 
 type Props = {
   match: Match;
@@ -29,9 +41,15 @@ type Props = {
   onSwap: () => void;
   onPoint: (player: Player) => void;
   scoring: boolean;
+  /** The row whose point is on its way to the server, if any. */
+  recordingFor?: Player | null;
+  /** The last point that landed; a change of `seq` flashes that row once. */
+  lastPoint?: { player: Player; seq: number } | null;
   onUndo: () => void;
   canUndo: boolean;
   undoHint: string;
+  /** What screen readers hear for the undo target ("30, 15. Games: …"). */
+  undoSpoken?: string;
 };
 
 function pointValue(match: Match, player: Player): string {
@@ -44,18 +62,6 @@ function pointValue(match: Match, player: Player): string {
     );
   }
   return score.currentGame[player] === "Ad" ? "AD" : score.currentGame[player];
-}
-
-/**
- * The game score as an umpire calls it: the server's points first, whichever
- * row they occupy. formatGameScore reads player1 first, which put the call
- * backwards whenever player2 served.
- */
-function serverFirstCall(score: LiveScore): string {
-  const call = formatGameScore(score);
-  if (score.server !== "player2") return call;
-  const [first, second, ...rest] = call.split(" – ");
-  return second !== undefined && rest.length === 0 ? `${second} – ${first}` : call;
 }
 
 function bandText(
@@ -111,6 +117,20 @@ function resultLabel(match: Match): string | null {
   }
 }
 
+/** Band text before a match starts: says what happens next, not just that nothing has. */
+function notStartedText(match: Match): string {
+  switch (match.status) {
+    case "proposed":
+      return "Proposed · not scheduled yet";
+    case "scheduled":
+      return "Scheduled · not started";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "Not started";
+  }
+}
+
 /**
  * The split scoreboard: each player's full-width row is the button that
  * scores their point, with a status band between the rows that reads the
@@ -125,11 +145,19 @@ export function ScoreboardSurface({
   onSwap,
   onPoint,
   scoring,
+  recordingFor = null,
+  lastPoint = null,
   onUndo,
   canUndo,
   undoHint,
+  undoSpoken,
 }: Props) {
   const holdProgress = useRef(new Animated.Value(0)).current;
+  const flash = useRef({
+    player1: new Animated.Value(0),
+    player2: new Animated.Value(0),
+  }).current;
+  const reduceMotion = useReduceMotion();
   const score = match.liveScore;
   const live = match.status === "in_progress";
   const finalLabel = resultLabel(match);
@@ -152,6 +180,26 @@ export function ScoreboardSurface({
     .slice(0, maxSets);
   const court = score.serviceSide === "advantage" ? "AD" : "DEUCE";
 
+  // Acknowledge a landed point on its row. The glow is a colour change, not
+  // movement, so it stays under Reduce Motion, just without the fade.
+  useEffect(() => {
+    if (!lastPoint) return;
+    const value = flash[lastPoint.player];
+    value.stopAnimation();
+    if (reduceMotion) {
+      value.setValue(FLASH_PEAK);
+      const timer = setTimeout(() => value.setValue(0), FLASH_MS);
+      return () => clearTimeout(timer);
+    }
+    value.setValue(FLASH_PEAK);
+    Animated.timing(value, {
+      toValue: 0,
+      duration: FLASH_MS,
+      useNativeDriver: true,
+    }).start();
+    return undefined;
+  }, [lastPoint?.seq]);
+
   const tone: MatchMomentTone = live ? moment.tone : "live";
   const band = BAND_TONES[tone];
   const who = moment.player ? shortName(names[moment.player]) : "";
@@ -159,7 +207,7 @@ export function ScoreboardSurface({
     ? `${finalLabel} · ${formatScoreDisplay(score).replace(/, /g, "  ")}`
     : live
       ? bandText(tone, match, who, points, interactive)
-      : "Not started";
+      : notStartedText(match);
   const bandIsSwap = interactive && tone === "ok";
 
   // A read-only scoreboard (before or after the match, or for a spectator)
@@ -187,6 +235,15 @@ export function ScoreboardSurface({
           rowMin: 0,
         };
 
+  function setGames(set: (typeof sets)[number], player: Player): number {
+    if (set.matchTiebreak && set.tiebreak) {
+      return player === "player1"
+        ? set.tiebreak.player1Points
+        : set.tiebreak.player2Points;
+    }
+    return player === "player1" ? set.player1Games : set.player2Games;
+  }
+
   function renderRow(player: Player) {
     const other: Player = player === "player1" ? "player2" : "player1";
     const setsWon =
@@ -196,20 +253,37 @@ export function ScoreboardSurface({
     const winner = finished && match.winner === player;
     const loser = finished && match.winner === other;
     const serving = live && score.server === player;
+    const recording = interactive && recordingFor === player;
+    const momentFlag = live ? moment.flags[player] : undefined;
     const flag = winner
       ? "WINNER"
-      : live && moment.flags[player]
-        ? FLAG_LABELS[moment.flags[player]!]
+      : momentFlag
+        ? FLAG_LABELS[momentFlag]
         : undefined;
     const flagBg = winner ? SB.yellow : BAND_TONES[moment.tone].bg;
     const big = finished ? String(setsWon) : points[player];
-    const serveText = finished
-      ? "SETS WON"
-      : serving
-        ? `SERVING · ${court} COURT`
-        : live
-          ? "RECEIVING"
-          : "";
+    const serveText = recording
+      ? "ADDING POINT…"
+      : finished
+        ? "SETS WON"
+        : serving
+          ? `SERVING · ${court} COURT`
+          : live
+            ? "RECEIVING"
+            : "";
+    const currentSet = score.sets[score.currentSet];
+    const gamesNow = currentSet ? setGames(currentSet, player) : 0;
+
+    // One spoken summary per row, instead of a stop on every number.
+    const spokenState = finished
+      ? `${winner ? "winner, " : ""}${setsWon} sets to ${otherSetsWon}. Set scores ${sets
+          .map((set) => `${setGames(set, player)}`)
+          .join(", ")}`
+      : live
+        ? `${spokenPoint(big === "AD" ? "Ad" : big)}, ${gamesNow} games this set, ${setsWon} sets${
+            serving ? `, serving from the ${court.toLowerCase()} court` : ", receiving"
+          }${flag ? `, ${flag.toLowerCase()}` : ""}`
+        : "not started";
 
     const content = (
       <>
@@ -249,19 +323,23 @@ export function ScoreboardSurface({
           </View>
           {serveText !== "" && (
             <View style={styles.serveLine}>
-              {!finished && (
-                <View
-                  style={[
-                    styles.ball,
-                    { backgroundColor: serving ? SB.yellow : SB.ballOff },
-                  ]}
-                />
+              {recording ? (
+                <ActivityIndicator size="small" color={SB.yellow} />
+              ) : (
+                !finished && (
+                  <View
+                    style={[
+                      styles.ball,
+                      { backgroundColor: serving ? SB.yellow : SB.ballOff },
+                    ]}
+                  />
+                )
               )}
               <Text
                 style={[
                   styles.serveText,
                   font(fontsLoaded, "bold"),
-                  { color: serving ? SB.yellow : SB.muted },
+                  { color: serving || recording ? SB.yellow : SB.muted },
                 ]}
                 maxFontSizeMultiplier={1.3}
               >
@@ -301,13 +379,7 @@ export function ScoreboardSurface({
                       ]}
                       maxFontSizeMultiplier={1.1}
                     >
-                      {set.matchTiebreak && set.tiebreak
-                        ? player === "player1"
-                          ? set.tiebreak.player1Points
-                          : set.tiebreak.player2Points
-                        : player === "player1"
-                          ? set.player1Games
-                          : set.player2Games}
+                      {setGames(set, player)}
                     </Text>
                   </View>
                 );
@@ -324,16 +396,15 @@ export function ScoreboardSurface({
                 },
               ]}
               maxFontSizeMultiplier={1.1}
-              accessibilityLabel={
-                finished
-                  ? `${names[player]}, ${setsWon} sets to ${otherSetsWon}`
-                  : `${names[player]}, ${big}`
-              }
             >
               {big}
             </Text>
           </View>
         </View>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flash, { opacity: flash[player] }]}
+        />
       </>
     );
 
@@ -341,6 +412,8 @@ export function ScoreboardSurface({
       return (
         <View
           key={player}
+          accessible
+          accessibilityLabel={`${names[player]}, ${spokenState}`}
           style={[
             styles.row,
             {
@@ -362,11 +435,13 @@ export function ScoreboardSurface({
           styles.row,
           {
             minHeight: sizes.rowMin,
-            backgroundColor: pressed ? "#1A1A1A" : SB.row,
+            backgroundColor: pressed || recording ? SB.pressedRow : SB.row,
           },
         ]}
         accessibilityRole="button"
         accessibilityLabel={`Point to ${names[player]}`}
+        accessibilityValue={{ text: spokenState }}
+        accessibilityState={{ disabled: scoring, busy: recording }}
       >
         {content}
       </Pressable>
@@ -377,6 +452,19 @@ export function ScoreboardSurface({
     ? ["player2", "player1"]
     : ["player1", "player2"];
 
+  const undoDisabled = !canUndo || scoring;
+  function onUndoAction(event: AccessibilityActionEvent) {
+    // Screen readers cannot hold a key on a timer; their double-tap (or
+    // double-tap-and-hold) is already a deliberate act, so it undoes directly.
+    if (
+      !undoDisabled &&
+      (event.nativeEvent.actionName === "activate" ||
+        event.nativeEvent.actionName === "longpress")
+    ) {
+      onUndo();
+    }
+  }
+
   return (
     <View style={[styles.surface, !interactive && styles.surfaceStatic]}>
       {renderRow(order[0])}
@@ -384,7 +472,11 @@ export function ScoreboardSurface({
         onPress={bandIsSwap ? onSwap : undefined}
         disabled={!bandIsSwap}
         accessibilityRole={bandIsSwap ? "button" : "text"}
-        accessibilityLiveRegion="polite"
+        accessibilityLabel={bandIsSwap ? "Change ends. Swap the rows" : text}
+        // A participant hears each point through the screen's own
+        // announcement; the live region is for spectators, whose score
+        // changes on someone else's phone.
+        accessibilityLiveRegion={interactive ? "none" : "polite"}
         style={[
           styles.band,
           { minHeight: sizes.band, backgroundColor: band.bg },
@@ -410,7 +502,7 @@ export function ScoreboardSurface({
         <View style={[styles.bar, { minHeight: sizes.bar }]}>
           <Pressable
             onPressIn={() => {
-              if (!canUndo || scoring) return;
+              if (undoDisabled) return;
               Animated.timing(holdProgress, {
                 toValue: 1,
                 duration: UNDO_HOLD_MS,
@@ -423,11 +515,19 @@ export function ScoreboardSurface({
             }}
             onLongPress={onUndo}
             delayLongPress={UNDO_HOLD_MS}
-            disabled={!canUndo || scoring}
-            hitSlop={8}
-            style={[styles.undo, (!canUndo || scoring) && styles.disabled]}
+            disabled={undoDisabled}
+            style={[styles.undo, undoDisabled && styles.disabled]}
             accessibilityRole="button"
-            accessibilityLabel="Hold to undo the last point"
+            accessibilityLabel={canUndo ? "Undo last point" : "Nothing to undo"}
+            accessibilityValue={
+              canUndo && undoSpoken ? { text: `Back to ${undoSpoken}` } : undefined
+            }
+            accessibilityState={{ disabled: undoDisabled }}
+            accessibilityActions={[
+              { name: "activate", label: "Undo last point" },
+              { name: "longpress", label: "Undo last point" },
+            ]}
+            onAccessibilityAction={onUndoAction}
           >
             <Animated.View
               pointerEvents="none"
@@ -460,9 +560,13 @@ export function ScoreboardSurface({
           </Pressable>
           <Pressable
             onPress={onSwap}
-            style={styles.swap}
+            style={({ pressed }) => [
+              styles.swap,
+              pressed && { backgroundColor: SB.controlFill },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Swap ends"
+            accessibilityHint="Swaps which player's row is on top."
           >
             <AppIcon name="arrow.up.arrow.down" color={SB.text} />
             <Text
@@ -486,6 +590,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     borderTopWidth: 1,
     borderTopColor: SB.line,
+    overflow: "hidden",
   },
   stripe: { width: 10 },
   rowBody: {
@@ -506,7 +611,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     overflow: "hidden",
   },
-  serveLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+  serveLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 22,
+  },
   ball: { width: 16, height: 16, borderRadius: 8 },
   serveText: { fontSize: 18, letterSpacing: 1 },
   bottomLine: {
@@ -523,6 +633,15 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     includeFontPadding: false,
   },
+  flash: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: SB.yellow,
+    opacity: 0,
+  },
   band: {
     flexDirection: "row",
     alignItems: "center",
@@ -533,7 +652,8 @@ const styles = StyleSheet.create({
   bandText: { letterSpacing: 1, flexShrink: 1 },
   bar: {
     flexDirection: "row",
-    gap: 8,
+    // A wider gap than before keeps a thumb aimed at Swap off the undo key.
+    gap: 12,
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 10,
