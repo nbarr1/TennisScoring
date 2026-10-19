@@ -19,6 +19,7 @@ import {
   exportDivisionCsv,
   useDivisionLevels,
   useDivisionMemberships,
+  useDivisionRosteredSeasons,
   useDivisionMessageReports,
   useReportsAwaitingResolution,
   resolveMessageReport,
@@ -131,6 +132,10 @@ export default function AdminScreen() {
     null,
     ROSTER_STATUSES,
   );
+  // Players move between divisions from one season to the next, so a player
+  // rostered only in another season is not listed on this one.
+  const { seasonsByUserId: rosteredSeasonsByUserId } =
+    useDivisionRosteredSeasons(division?.id);
   const {
     reports: messageReports,
     loading: reportsLoading,
@@ -582,9 +587,16 @@ export default function AdminScreen() {
     divisionLevels.forEach((l) => map.set(l.id, l.name));
     return map;
   }, [divisionLevels]);
+  // Rostered in another season of this division, but not this one.
+  const inOtherSeasonOnly = (id: string) =>
+    !membershipByUser.has(id) && Boolean(rosteredSeasonsByUserId.get(id)?.size);
+  const seasonPlayers = players.filter((p) => !inOtherSeasonOnly(p.id));
+  const otherSeasonCount = players.length - seasonPlayers.length;
   const unassignedCount =
     division && levelsForSeason.length > 0 && !membershipsLoading
-      ? division.playerIds.filter((id) => !membershipByUser.has(id)).length
+      ? division.playerIds.filter(
+          (id) => !membershipByUser.has(id) && !inOtherSeasonOnly(id),
+        ).length
       : 0;
 
   if (!isAdmin) {
@@ -679,7 +691,7 @@ export default function AdminScreen() {
           {division.name}
         </Text>
         <Text style={styles.hint}>
-          {plural(players.length, "player")} · Working on {selectedSeason.name}
+          {plural(seasonPlayers.length, "player")} · Working on {selectedSeason.name}
         </Text>
         <View style={styles.chipRow}>
           {seasonOptions.map((season) => (
@@ -831,13 +843,13 @@ export default function AdminScreen() {
         <Text style={styles.sectionTitle} accessibilityRole="header">
           Players
         </Text>
-        {players.length === 0 ? (
+        {seasonPlayers.length === 0 ? (
           <Text style={styles.hint}>
-            No players yet. Add the first one below.
+            No players in {selectedSeason.name} yet. Add the first one below.
           </Text>
         ) : (
           <View>
-            {players.map((p, i) => {
+            {seasonPlayers.map((p, i) => {
               const isLeader = division.leaderIds.includes(p.id);
               const membership = membershipByUser.get(p.id);
               const onRoster = division.playerIds.includes(p.id);
@@ -884,6 +896,14 @@ export default function AdminScreen() {
             })}
           </View>
         )}
+        {otherSeasonCount > 0 ? (
+          <Text style={styles.hint}>
+            {plural(otherSeasonCount, "player")} from other seasons{" "}
+            {otherSeasonCount === 1 ? "isn't" : "aren't"} listed. To add one
+            to {selectedSeason.name}, assign them a level from the web admin
+            roster's Other seasons filter.
+          </Text>
+        ) : null}
 
         <View style={styles.subsection}>
           <Text style={styles.subTitle} accessibilityRole="header">

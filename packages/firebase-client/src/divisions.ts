@@ -106,6 +106,51 @@ export function useDivisionMemberships(
   return { memberships, loading };
 }
 
+/**
+ * The seasons each player is rostered in (active or waitlisted), across every season of a
+ * division.
+ *
+ * Players move between divisions from one season to the next. An admin roster uses this to
+ * tell a player who is new to the division (no rostered season anywhere, so genuinely
+ * unassigned) from one who belongs to another season and must not be listed on this one.
+ */
+export function useDivisionRosteredSeasons(
+  divisionId: string | null | undefined,
+): { seasonsByUserId: Map<string, Set<string>>; loading: boolean } {
+  const [seasonsByUserId, setSeasonsByUserId] = useState<Map<string, Set<string>>>(() => new Map());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId) {
+      setSeasonsByUserId(new Map());
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    return onSnapshot(
+      query(divisionMembershipsCol(divisionId), where('status', 'in', ['active', 'waitlisted'])),
+      (snap) => {
+        const next = new Map<string, Set<string>>();
+        snap.docs.forEach((docSnap) => {
+          const { userId, seasonId } = docSnap.data();
+          if (!userId || !seasonId) return;
+          const seasons = next.get(userId) ?? new Set<string>();
+          seasons.add(seasonId);
+          next.set(userId, seasons);
+        });
+        setSeasonsByUserId(next);
+        setLoading(false);
+      },
+      () => {
+        setSeasonsByUserId(new Map());
+        setLoading(false);
+      },
+    );
+  }, [divisionId]);
+
+  return { seasonsByUserId, loading };
+}
+
 export async function upsertDivisionLevel(input: {
   divisionId: string;
   levelId?: string;

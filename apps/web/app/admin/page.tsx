@@ -24,6 +24,7 @@ import {
   useAuthUser,
   useDivisionLevels,
   useDivisionMemberships,
+  useDivisionRosteredSeasons,
   upsertDivisionMembership,
   removeDivisionMembership,
   useRankings,
@@ -124,6 +125,8 @@ function initialsOf(name: string): string {
 
 /** Statuses that put a player on the admin roster. Module-level so the array identity is stable. */
 const ROSTER_MEMBERSHIP_STATUSES = ["active", "waitlisted"] as const;
+// Roster filter listing division players rostered in other seasons but not the selected one.
+const OTHER_SEASONS_FILTER = "other-seasons";
 
 /** Max callables in flight at once — enough to stop a 40-player import crawling, gentle on quota. */
 const ROSTER_WRITE_CONCURRENCY = 5;
@@ -225,6 +228,10 @@ export default function AdminPage(): React.JSX.Element {
     null,
     ROSTER_MEMBERSHIP_STATUSES,
   );
+  // Players move between divisions from one season to the next, so a player rostered only in
+  // another season is not on this one: listing them here as unassigned is what put Fall-only
+  // players on the Spring roster and the other way around.
+  const { seasonsByUserId: rosteredSeasonsByUserId } = useDivisionRosteredSeasons(division?.id);
   const [csvMessage, setCsvMessage] = useState("");
   const [exportingType, setExportingType] = useState<"matches" | "rankings" | null>(null);
   const [openToolPanel, setOpenToolPanel] = useState<ToolPanel>(null);
@@ -1097,12 +1104,18 @@ export default function AdminPage(): React.JSX.Element {
         updatedAt: membership.updatedAt,
       } satisfies User),
     }));
+    // Division players with no membership this season are unassigned only when they hold none
+    // in any season; the rest belong to other seasons and are listed under their own filter.
     const legacyRows: RosterRow[] = players
-      .filter((player) => !membershipByUserId.has(player.id))
+      .filter(
+        (player) =>
+          !membershipByUserId.has(player.id) && !(rosteredSeasonsByUserId.get(player.id)?.size),
+      )
       .map((player) => ({ player, membership: null }));
     const known = new Set([
       ...membershipRows.map((row) => row.player.id),
       ...legacyRows.map((row) => row.player.id),
+      ...rosteredSeasonsByUserId.keys(),
     ]);
     // Players added in this session sit at the top until the snapshot includes them.
     const optimisticRows: RosterRow[] = pendingNewPlayers
@@ -1125,7 +1138,15 @@ export default function AdminPage(): React.JSX.Element {
         } satisfies User,
       }));
     return [...optimisticRows, ...membershipRows, ...legacyRows];
-  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players]);
+  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players, rosteredSeasonsByUserId]);
+
+  /** Division players rostered in another season but not this one, offered for carrying over. */
+  const otherSeasonRows: RosterRow[] = useMemo(() => {
+    const onRoster = new Set(rosterRows.map((row) => row.player.id));
+    return players
+      .filter((player) => !onRoster.has(player.id) && rosteredSeasonsByUserId.get(player.id)?.size)
+      .map((player) => ({ player, membership: null }));
+  }, [players, rosterRows, rosteredSeasonsByUserId]);
 
   /** The level a row should display: a pending write wins over the snapshot; "" means unassigned. */
   const effectiveLevelId = useCallback(
@@ -1156,6 +1177,14 @@ export default function AdminPage(): React.JSX.Element {
 
   const visibleRows = useMemo(() => {
     const term = rosterSearch.trim().toLowerCase();
+    if (rosterFilter === OTHER_SEASONS_FILTER) {
+      return otherSeasonRows.filter(
+        (row) =>
+          !term ||
+          row.player.displayName.toLowerCase().includes(term) ||
+          (row.player.email ?? "").toLowerCase().includes(term),
+      );
+    }
     return rosterRows.filter((row) => {
       const levelId = effectiveLevelId(row);
       if (rosterFilter === "unassigned" && levelId) return false;
@@ -1168,7 +1197,7 @@ export default function AdminPage(): React.JSX.Element {
         (row.player.email ?? "").toLowerCase().includes(term)
       );
     });
-  }, [effectiveLevelId, rosterFilter, rosterRows, rosterSearch]);
+  }, [effectiveLevelId, otherSeasonRows, rosterFilter, rosterRows, rosterSearch]);
 
   const visibleIds = useMemo(() => visibleRows.map((row) => row.player.id), [visibleRows]);
   const selectedVisibleIds = useMemo(
@@ -1529,7 +1558,7 @@ export default function AdminPage(): React.JSX.Element {
 
   const noLevelsYet = adminSeasonLevels.length === 0;
   const detailRow = expandedPlayerId
-    ? rosterRows.find((row) => row.player.id === expandedPlayerId) ?? null
+    ? [...rosterRows, ...otherSeasonRows].find((row) => row.player.id === expandedPlayerId) ?? null
     : null;
   const detailDirty =
     detailRow !== null &&
@@ -1831,6 +1860,9 @@ export default function AdminPage(): React.JSX.Element {
                           label: level.name,
                           count: countByLevelId.get(level.id) ?? 0,
                         })),
+                        ...(otherSeasonRows.length > 0
+                          ? [{ id: OTHER_SEASONS_FILTER, label: "Other seasons", count: otherSeasonRows.length }]
+                          : []),
                       ].map((chip) => {
                         const active = rosterFilter === chip.id;
                         return (
@@ -2058,7 +2090,9 @@ export default function AdminPage(): React.JSX.Element {
                   ) : null}
 
                   <p style={styles.tableFooter} aria-live="polite">
-                    {isFiltered
+                    {rosterFilter === OTHER_SEASONS_FILTER
+                      ? `${plural(visibleRows.length, "player", "players")} from other seasons. Choose a level to add them to ${adminSeason.name}.`
+                      : isFiltered
                       ? `Showing ${visibleRows.length} of ${rosterRows.length} players`
                       : `${plural(rosterRows.length, "player", "players")} in ${adminSeason.name}`}
                   </p>
