@@ -51,7 +51,7 @@ export const colors = {
   /** Live Green: the in-progress dot and live card border, never text. */
   live: "#27AE60",
   /** Text that names a live match. 5.4:1 on white. */
-  liveText: "#1E7A45",
+  liveText: "#1E7B45",
   /** Proposed Purple. 5.9:1 on white. */
   proposed: "#8E44AD",
   /** Unassigned Amber pair: admin roster only (reuses the leader-badge tint). */

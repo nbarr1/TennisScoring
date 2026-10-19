@@ -15,6 +15,7 @@ colors:
   text-muted: "#666B68"
   text-subtle: "#888D8A"
   border: "#DADDD8"
+  border-strong: "#8A8F8C"
   disabled: "#C8CCC9"
   disabled-text: "#777C79"
   destructive: "#C0392B"
@@ -27,6 +28,7 @@ colors:
   info: "#2D6A8A"
   info-soft: "#E8F2F7"
   live-green: "#27AE60"
+  live-text: "#1E7B45"
   proposed-purple: "#8E44AD"
   unassigned-soft: "#FFF3CD"
   unassigned-text: "#856404"
@@ -202,13 +204,13 @@ A deep grass-green and warm-paper palette with a single tennis-ball accent, plus
 
 ### Secondary
 
-- **Ball Yellow** (`ball-yellow`): the accent. It carries the 3px keyboard focus ring on web, the active-tab underline in the web nav, the ball in the brand mark, and confetti. It's never used for body text on light surfaces, because its contrast against white is too low.
+- **Ball Yellow** (`ball-yellow`): the accent. It carries the 3px keyboard focus ring on web (with a Clubhouse Green inner edge, since yellow alone is about 1.3:1 on white), the active-tab underline in the web nav, the ball in the brand mark, and confetti. It's never used for body text on light surfaces, because its contrast against white is too low.
 
 ### Tertiary
 
 These status colors each carry one meaning:
 
-- **Live Green** (`live-green`): an in-progress match. Used for its pulsing dot, its card's left border, and its tinted shadow.
+- **Live Green** (`live-green`, text `live-text`): an in-progress match. Used for its pulsing dot, its card's left border, and its tinted shadow. Live Green is about 2.9:1 on white, so the "Live" label and any other live text use Live Text (`live-text`), and it's never a button fill under white text.
 - **Proposed Purple** (`proposed-purple`): the proposed match status.
 - **Warning Orange** (`warning`, text `warning-text`, tint `warning-soft`): pending-report status and warning alerts.
 - **Destructive Red** (`destructive`, pressed `destructive-pressed`, tint `destructive-soft`): disputed status, errors, and destructive buttons.
@@ -219,8 +221,8 @@ These status colors each carry one meaning:
 
 - **Paper Canvas** (`canvas`): the background of every clubhouse screen on web and mobile.
 - **Surface White** (`surface`): cards, inputs, chips, and dialogs. **Muted Surface** (`surface-muted`) is used for pressed chips and quiet wells.
-- **Ink** (`ink`): primary text. **Muted** (`text-muted`) and **Subtle** (`text-subtle`) are used for secondary text, captions, and placeholders.
-- **Hairline** (`border`): input, chip, and divider strokes. Web inputs use a slightly lighter gray stroke.
+- **Ink** (`ink`): primary text. **Muted** (`text-muted`) is for secondary text, captions, and placeholders. **Subtle** (`text-subtle`) is about 3:1 on white, so it's only for icons, dividers, and large text, never small text.
+- **Hairline** (`border`): chip and divider strokes. **Strong Hairline** (`border-strong`) outlines inputs and other control edges, because the hairline alone is too faint (about 1.4:1) to show where a field is.
 - **Disabled** (`disabled`, `disabled-text`): inactive fills and labels. Inactive controls also drop to about 50% opacity.
 
 ### Scoreboard
@@ -319,7 +321,7 @@ Solid and tappable.
 
 ### Navigation
 
-- **Web:** a full-width Clubhouse Green bar with the brand (a Ball Yellow ball icon and "Tennis League" in Barlow Condensed 700 at 22px) on the left, and links in 15px weight-500 white text at 75% opacity. The current page shows full white with a 2px Ball Yellow underline. The bar wraps on narrow screens.
+- **Web:** a full-width Clubhouse Green bar with the brand (a Ball Yellow ball icon and "Tennis League" in Barlow Condensed 700 at 22px) on the left, and links in 15px weight-500 white text at 75% opacity. The current page shows full white with a 2px Ball Yellow underline and `aria-current="page"`. At 1080px and narrower, the links, the View menu, and Sign out collapse behind a Menu button.
 - **Mobile:** a Clubhouse Green stack header with white tint, and a bottom tab bar whose icons are Clubhouse Green when active and gray when inactive. Icons use the platform's own symbol set (SF Symbols or Material Symbols) through `expo-symbols`. Web icons come from Tabler and sit on the text baseline.
 
 ### Inline alerts
