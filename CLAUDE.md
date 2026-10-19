@@ -185,7 +185,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 
 **Typed React hooks** in `packages/firebase-client/src/hooks/`:
 
-- `useMatch` — real-time match subscription. Also exports `proposeMatch()`, `acceptMatchProposal()`, `declineMatchProposal()` for the scheduling workflow.
+- `useMatch` — real-time match subscription. `usePlayerMatches(uid, reloadKey)` subscribes to one player's own matches, newest first. Also exports `proposeMatch()`, `acceptMatchProposal()`, `declineMatchProposal()` for the scheduling workflow.
 - `useRankings` — division rankings subscription. Uses the server's rows when they form one table (one season and level). Falls back to recomputing from completed matches (via `completedDivisionMatchesQuery` + `computeRankings`) when they are absent, or when no level filter is set and the season has several levels, since rows from different levels carry ranks from different tables. Zero-match roster rows come from `profiles` (readable by every member of the division), never from the private `users` docs (readable only by leaders), and carry no stats. Doubles matches are skipped, since their results belong to the team standings, and so are guest matches, which `recalculateRankings` also leaves out because nobody but the recorder confirms them.
 - `useDoublesRankings` — doubles team standings subscription over `divisions/{divisionId}/doublesRankings`, with the same client-side recompute fallback keyed on `doublesTeamId`.
 - `useMessages` — channel/message subscription.
@@ -278,7 +278,8 @@ api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker ro
 robots.ts              # Generated /robots.txt
 sitemap.ts             # Generated /sitemap.xml
 FcmProvider.tsx        # Web FCM setup/token registration (mounted from the root layout)
-shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker, motion.tsx (AnimatedDiv, LoadingBlock), celebrate.ts (score-confirmed confetti)
+shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker, motion.tsx (AnimatedDiv, LoadingBlock), celebrate.ts (score-confirmed confetti),
+                       # and the design-system pieces exported from ui.ts (tokens, Button, Dialog, ConfirmDialog/useConfirm, InlineAlert, useAnnounce, Empty/Error/DataState, useAsyncAction); see shared/README.md
 template.tsx           # Wraps every page in the `page-enter` fade (keyframes in globals.css)
 ```
 
@@ -294,6 +295,12 @@ match/           # Match detail screens
 round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
 privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
 ```
+
+### Mobile UI building blocks
+
+`apps/mobile/theme/` holds the tokens (`colors`, `statusTextColors`, `MIN_TOUCH_TARGET`: 48 on Android, 44 on iOS) and the primitives screens use: `Button` (with `pending`), `InlineAlert`, `EmptyState`, `ErrorState`, `LoadingState`, `useAsyncAction`, `confirmDestructive`/`confirmAction`, and `announce`. `apps/mobile/components/README.md` is the guide. Use `textMuted`, not `textSubtle`, for small text, and `statusTextColors` rather than `getMatchStatusMetadata().color` for status text on light surfaces.
+
+**`AppIcon` needs an Android mapping for every SF Symbol name.** `expo-symbols` draws nothing on Android for a bare SF Symbol name, so `ANDROID_SYMBOLS` in `components/AppIcon.tsx` maps each name the app uses to a Material Symbol. A name missing from that table renders as a blank space on Android.
 
 ### Live-scoring screen (mobile)
 
