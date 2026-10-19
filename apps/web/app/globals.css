@@ -1,27 +1,141 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Design tokens. These mirror the DESIGN.md frontmatter, and
+   app/shared/tokens.ts carries the same values for inline style objects.
+   Change a value in both places. */
 :root {
-  --green-dark: #1a472a;
-  --green-mid: #2d6a4f;
+  /* Brand and accent */
+  --clubhouse-green: #1a472a;
+  --clubhouse-green-pressed: #12351f;
+  --court-green: #2d6a4f;
+  --green-soft: #e8f5e9;
   --green-light: #a8d5a2;
-  --gold: #ffdc60;
-  --bg: #f5f5f0;
-  --text: #1a1a1a;
-  --muted: #666;
-  --card: #fff;
-  --radius: 12px;
+  --ball-yellow: #ffdc60;
+
+  /* Neutrals */
+  --canvas: #f5f5f0;
+  --surface: #ffffff;
+  --surface-muted: #f0f2ed;
+  --ink: #1a1a1a;
+  /* 4.67:1 or better on every clubhouse surface and tint: safe for text. */
+  --text-muted: #666b68;
+  /* About 3:1. Icons, dividers, and large text only, never small text. */
+  --text-subtle: #888d8a;
+  --border: #daddd8;
+  /* Input and control strokes, 3:1 against white so field edges are visible. */
+  --border-strong: #8a8f8c;
+  --disabled: #c8ccc9;
+  --disabled-text: #777c79;
+
+  /* Status and alert tones */
+  --destructive: #c0392b;
+  --destructive-pressed: #962d22;
+  --destructive-soft: #fbeaea;
+  --warning: #e67e22;
+  --warning-text: #7a410d;
+  --warning-soft: #fff3e0;
+  --success: #278b50;
+  --info: #2d6a8a;
+  --info-soft: #e8f2f7;
+  --live-green: #27ae60;
+  /* Text shade of Live Green (Live Green itself is 2.9:1 on white). */
+  --live-text: #1e7b45;
+  --proposed-purple: #8e44ad;
+  --unassigned-soft: #fff3cd;
+  --unassigned-text: #856404;
+
+  /* Scoreboard (live play only) */
+  --scoreboard-black: #000000;
+  --scoreboard-row: #0a0a0a;
+  --scoreboard-panel: #141414;
+  --scoreboard-control: #1c1c1c;
+  --scoreboard-line: #262626;
+  --scoreboard-text: #ffffff;
+  --scoreboard-muted: #b3b3b3;
+  --scoreboard-yellow: #ffd60a;
+  --player-blue: #3d8bff;
+  --player-orange: #ff9f1c;
+  --match-point-pink: #ff6b81;
+  --confirmed-green: #3ddc84;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-card: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Spacing (4px base) */
+  --space-xxs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --space-xxxl: 48px;
+
+  /* Type */
   --font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Barlow Condensed', 'Arial Narrow', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-size-display: 28px;
+  --font-size-headline: 24px;
+  --font-size-title: 20px;
+  --font-size-body: 16px;
+  --font-size-body-small: 14px;
+  --font-size-label: 14px;
+  --font-size-caption: 12px;
+
+  /* Elevation */
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --shadow-raised: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --shadow-live: 0 4px 16px rgba(39, 174, 96, 0.15);
+
+  /* Focus ring: a Ball Yellow ring with a Clubhouse Green inner edge, so it is
+     visible (3:1 or better) on light surfaces as well as on the green nav. */
+  --focus-ring-color: var(--ball-yellow);
+  --focus-ring-inner: var(--clubhouse-green);
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-page: 220ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Interactive size floors */
+  --target-min: 44px;
+  --target-control: 48px;
+
+  /* Legacy names still used by pages. Prefer the names above in new code. */
+  --green-dark: var(--clubhouse-green);
+  --green-mid: var(--court-green);
+  --gold: var(--ball-yellow);
+  --bg: var(--canvas);
+  --text: var(--ink);
+  --muted: var(--text-muted);
+  --card: var(--surface);
+  --radius: 12px;
+
+  color-scheme: light;
+  accent-color: var(--clubhouse-green);
 }
 
 body {
   font-family: var(--font-body);
-  background: var(--bg);
-  color: var(--text);
+  background: var(--canvas);
+  color: var(--ink);
   line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
 }
 
 a { color: inherit; text-decoration: none; }
+
+::selection {
+  background: var(--green-light);
+  color: var(--ink);
+}
 
 /* Headings use the condensed face the mobile scoreboard ships. Barlow
    Condensed is loaded at 600 and 700; heavier inline weights resolve to 700. */
@@ -31,6 +145,7 @@ h3 {
   font-family: var(--font-display);
   letter-spacing: 0.01em;
   line-height: 1.15;
+  text-wrap: balance;
 }
 
 /* Tabler icons sit on the text baseline next to their label. */
@@ -44,6 +159,15 @@ button {
   cursor: pointer;
 }
 
+button:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+button[aria-busy='true'] {
+  cursor: progress;
+}
+
 button,
 input,
 select,
@@ -51,9 +175,29 @@ textarea {
   font-family: inherit;
 }
 
-:where(a, button, input, select, textarea):focus-visible {
-  outline: 3px solid var(--gold);
-  outline-offset: 2px;
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Tabular numerals wherever scores and standings line up in columns. */
+table,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex], [role='button']):focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  box-shadow: 0 0 0 var(--focus-ring-offset) var(--focus-ring-inner);
+}
+
+/* Programmatic focus targets (dialog panels, <main> after the skip link) do
+   not need a ring: the content itself is where the user is. */
+:where([tabindex='-1']):focus {
+  outline: none;
+  box-shadow: none;
 }
 
 .sr-only {
@@ -68,11 +212,36 @@ textarea {
   border: 0;
 }
 
+/* Skip link: hidden until focused, then pinned top-left above the nav. */
+.tl-skip-link {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: 1100;
+  background: var(--surface);
+  color: var(--clubhouse-green);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-raised);
+}
+
+.tl-skip-link:focus {
+  top: 8px;
+}
+
+/* Skeleton placeholders on the clubhouse palette. */
+.react-loading-skeleton {
+  --base-color: var(--surface-muted);
+  --highlight-color: var(--surface);
+}
+
 /* Short fade-and-rise when a page opens (applied by app/template.tsx).
    `backwards` leaves no transform behind once it finishes, so fixed-position
    dialogs inside the page are positioned against the viewport as before. */
 .page-enter {
-  animation: page-enter 220ms ease-out backwards;
+  animation: page-enter var(--duration-page) var(--ease-out) backwards;
 }
 
 @keyframes page-enter {
@@ -86,16 +255,17 @@ textarea {
    styles set no filter or transform, so neither overrides these. */
 :where(button, a) {
   transition:
-    filter 150ms ease,
-    transform 150ms ease,
-    box-shadow 150ms ease;
+    filter var(--duration-fast) ease,
+    transform var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background-color var(--duration-fast) ease;
 }
 
-:where(button:not(:disabled)):hover {
+:where(button:not(:disabled):not([aria-disabled='true'])):hover {
   filter: brightness(1.1);
 }
 
-:where(button:not(:disabled)):active {
+:where(button:not(:disabled):not([aria-disabled='true'])):active {
   transform: translateY(1px);
 }
 
@@ -117,6 +287,287 @@ textarea {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Shared components (app/shared). Inline styles carry the look; these classes
+   carry what inline styles cannot: pseudo-classes, media queries, keyframes.
+   ------------------------------------------------------------------------ */
+
+/* Buttons (shared/Button.tsx). Variant fills are inline; these add states. */
+.tl-btn {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tl-btn--secondary:not(:disabled):not([aria-disabled='true']):hover,
+.tl-btn--quiet:not(:disabled):not([aria-disabled='true']):hover {
+  filter: none;
+  background-color: var(--green-soft);
+}
+
+.tl-btn--primary:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--clubhouse-green-pressed);
+}
+
+.tl-btn--danger:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--destructive-pressed);
+}
+
+.tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):hover {
+  filter: none;
+  background-color: var(--destructive-soft);
+}
+
+.tl-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: tl-spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Dialog (shared/Dialog.tsx). Centered card on wide screens, bottom sheet
+   under 600px. */
+.tl-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(26, 26, 26, 0.5);
+  animation: tl-fade-in var(--duration-fast) ease-out;
+}
+
+.tl-dialog-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(100dvh - 48px);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+  animation: tl-dialog-in var(--duration-page) var(--ease-out);
+}
+
+.tl-dialog-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 24px 24px;
+  flex: 1 1 auto;
+}
+
+.tl-dialog-footer {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+@media (max-width: 600px) {
+  .tl-dialog-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .tl-dialog-panel {
+    max-width: none !important;
+    max-height: 92dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    animation-name: tl-sheet-in;
+  }
+
+  .tl-dialog-body {
+    padding: 0 16px 16px;
+  }
+
+  .tl-dialog-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* Full-width, stacked actions are easier to hit one-handed. */
+  .tl-dialog-footer > * {
+    flex: 1 1 100%;
+  }
+}
+
+@keyframes tl-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes tl-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes tl-sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+/* Announcer toast (shared/Announcer.tsx). */
+.tl-toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 1050;
+  width: min(480px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.tl-toast {
+  pointer-events: auto;
+  animation: tl-sheet-in var(--duration-page) var(--ease-out);
+}
+
+/* Primary navigation (shared/AppNav.tsx). */
+.tl-nav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 32px;
+  background: var(--clubhouse-green);
+  color: #ffffff;
+}
+
+.tl-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.tl-nav__toggle {
+  display: none;
+}
+
+.tl-nav__menu {
+  display: flex;
+  align-items: center;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tl-nav__list {
+  display: flex;
+  align-items: center;
+  gap: 4px 20px;
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.tl-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 500;
+  font-size: 15px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+
+.tl-nav__link:hover {
+  color: #ffffff;
+}
+
+.tl-nav__link[aria-current='page'] {
+  color: #ffffff;
+  text-decoration-color: var(--ball-yellow);
+}
+
+.tl-nav__extras {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1080px) {
+  .tl-nav {
+    flex-wrap: wrap;
+    padding: 6px 16px;
+  }
+
+  .tl-nav__toggle {
+    display: inline-flex;
+  }
+
+  .tl-nav__menu {
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 4px 0 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .tl-nav__menu.is-open {
+    display: flex;
+  }
+
+  .tl-nav__list {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .tl-nav__link {
+    display: flex;
+    min-height: 48px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: 16px;
+  }
+
+  .tl-nav__link[aria-current='page'] {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .tl-nav__extras {
+    justify-content: space-between;
+    padding: 8px 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -130,5 +581,13 @@ textarea {
   .lift:hover,
   :where(button:not(:disabled)):active {
     transform: none;
+  }
+
+  /* A frozen spinner still reads as "working" next to its label; keep the
+     ring but stop it turning. */
+  .tl-spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
   }
 }
