@@ -1,26 +1,26 @@
 import React, { useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  Pressable,
-} from "react-native";
+import { View, Text, FlatList, StyleSheet, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import {
   useRankings,
   useDoublesRankings,
   recalculateDivisionRankings,
 } from "@tennis/firebase-client";
-import { currentSeasonForDate, defaultSeasonOptions } from "@tennis/shared";
+import {
+  currentSeasonForDate,
+  defaultSeasonOptions,
+  isPrivilegedRole,
+  type DivisionMatchType,
+} from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
-import type { DivisionMatchType } from "@tennis/shared";
 import {
   Button,
+  Card,
   Chip,
   EmptyState,
+  ErrorState,
+  InlineAlert,
+  LoadingState,
   Screen,
   SectionHeader,
   colors,
@@ -28,6 +28,7 @@ import {
   radii,
   spacing,
   typography,
+  useAsyncAction,
 } from "../../theme";
 
 /** One standings row, normalized so singles and doubles render identically. */
@@ -42,6 +43,21 @@ type StandingsRow = {
   gameDifferential: number;
 };
 
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 function RankingRow({
   item,
   index,
@@ -52,16 +68,16 @@ function RankingRow({
   isCurrentUser: boolean;
 }) {
   const [showDetails, setShowDetails] = useState(false);
-  const podiumStyle = [styles.rowTop1, styles.rowTop2, styles.rowTop3][index];
   const differential = `${item.gameDifferential > 0 ? "+" : ""}${item.gameDifferential}`;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.displayName}, rank ${index + 1}, ${item.matchesWon} wins and ${item.matchesLost} losses, game differential ${differential}`}
-      accessibilityHint="Shows set record"
+      accessibilityLabel={`${isCurrentUser ? "You, " : ""}${item.displayName}, rank ${index + 1}, ${item.matchesWon} wins and ${item.matchesLost} losses, game differential ${differential}`}
+      accessibilityHint={showDetails ? "Hides set record" : "Shows set record"}
       accessibilityState={{ expanded: showDetails }}
+      android_ripple={{ color: colors.primarySoft }}
       onPress={() => setShowDetails((visible) => !visible)}
-      style={[styles.row, podiumStyle, isCurrentUser && styles.rowCurrentUser]}
+      style={[styles.row, isCurrentUser && styles.rowCurrentUser]}
     >
       <View style={styles.primaryRow}>
         <View style={[styles.rankMarker, index < 3 && styles.rankMarkerTop]}>
@@ -101,56 +117,236 @@ function RankingRow({
   );
 }
 
-export default function RankingsScreen() {
-  const { divisionId, user } = useAppStore();
-  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
-  const [selectedSeasonId, setSelectedSeasonId] = useState(
-    () => currentSeasonForDate().id,
-  );
-  // Matches web's dashboard: standings are scoped to one season at a time, since
-  // matches from every season otherwise pool into a single all-time ranking.
-  const [matchTypeFilter, setMatchTypeFilter] =
-    useState<DivisionMatchType>("singles");
-  const { rankings: singlesRankings, loading: singlesLoading } = useRankings(
-    matchTypeFilter === "singles" ? divisionId : null,
-    { seasonId: selectedSeasonId },
-  );
-  const { rankings: doublesRankings, loading: doublesLoading } =
-    useDoublesRankings(matchTypeFilter === "doubles" ? divisionId : null, {
-      seasonId: selectedSeasonId,
-    });
-  const isDoubles = matchTypeFilter === "doubles";
-  const loading = isDoubles ? doublesLoading : singlesLoading;
+/**
+ * The standings table for one season and format. Keyed by the parent so
+ * "Try again" remounts it, which resubscribes the rankings hooks.
+ */
+function StandingsContent({
+  divisionId,
+  seasonId,
+  seasonName,
+  matchType,
+  filters,
+  onRetry,
+}: {
+  divisionId: string;
+  seasonId: string;
+  seasonName: string;
+  matchType: DivisionMatchType;
+  filters: React.ReactNode;
+  onRetry: () => void;
+}) {
+  const { user } = useAppStore();
+  const router = useRouter();
+  const isDoubles = matchType === "doubles";
+  const singles = useRankings(isDoubles ? null : divisionId, { seasonId });
+  const doubles = useDoublesRankings(isDoubles ? divisionId : null, { seasonId });
+  const loading = isDoubles ? doubles.loading : singles.loading;
+  const loadError = isDoubles ? doubles.error : singles.error;
   const rankings: StandingsRow[] = isDoubles
-    ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
-    : singlesRankings.map((r) => ({
+    ? doubles.rankings.map((r) => ({ ...r, key: r.teamId }))
+    : singles.rankings.map((r) => ({
         ...r,
         key: r.userId,
         playerIds: [r.userId],
       }));
-  const router = useRouter();
-  const [recalculating, setRecalculating] = useState(false);
   const [showTiebreakers, setShowTiebreakers] = useState(false);
 
-  const canRecalculate =
-    user?.role === "division_leader" || user?.role === "admin";
+  // The callable decides for real (leader of this division, or admin).
+  const canRecalculate = isPrivilegedRole(user?.role);
+  const recalculate = useAsyncAction(
+    () => recalculateDivisionRankings(divisionId),
+    {
+      successMessage: "Rankings recalculated",
+      errorMessage: "Couldn't recalculate rankings. Check your connection and try again.",
+    },
+  );
+  const [recalcDone, setRecalcDone] = useState(false);
+  const runRecalculate = async () => {
+    setRecalcDone(false);
+    const result = await recalculate.run();
+    if (result !== undefined) setRecalcDone(true);
+  };
 
-  async function handleRecalculate() {
-    if (!divisionId) return;
-    setRecalculating(true);
-    try {
-      await recalculateDivisionRankings(divisionId);
-      Alert.alert("Done", "Rankings have been recalculated.");
-    } catch {
-      Alert.alert("Error", "Could not recalculate rankings. Please try again.");
-    } finally {
-      setRecalculating(false);
-    }
+  const myIndex = user?.id
+    ? rankings.findIndex((r) => r.playerIds.includes(user.id))
+    : -1;
+  const me = myIndex >= 0 ? rankings[myIndex] : null;
+  const formatLabel = isDoubles ? "doubles" : "singles";
+  const goToMatches = () => router.push("/(tabs)/matches");
+
+  const recalcControls = canRecalculate ? (
+    <View style={styles.recalcBlock}>
+      <Button
+        label="Recalculate rankings"
+        icon="arrow.clockwise"
+        variant="secondary"
+        size="compact"
+        pending={recalculate.pending}
+        pendingLabel="Recalculating rankings"
+        style={styles.recalcBtn}
+        onPress={() => void runRecalculate()}
+      />
+      {recalculate.error ? (
+        <InlineAlert
+          tone="error"
+          message={recalculate.error}
+          actionLabel="Try again"
+          onAction={() => void runRecalculate()}
+        />
+      ) : recalcDone ? (
+        <InlineAlert
+          tone="success"
+          message="Rankings recalculated from confirmed results."
+        />
+      ) : null}
+    </View>
+  ) : null;
+
+  if (loading) {
+    return (
+      <View style={styles.flex}>
+        <View style={styles.filtersOnly}>{filters}</View>
+        <LoadingState label={`Loading ${formatLabel} standings`} />
+      </View>
+    );
   }
 
-  const seasonSelector = (
-    <View style={styles.seasonSection}>
-      <Text style={styles.seasonLabel}>Format</Text>
+  if (loadError) {
+    return (
+      <View style={styles.flex}>
+        <View style={styles.filtersOnly}>{filters}</View>
+        <ErrorState title="Couldn't load standings" onRetry={onRetry} />
+      </View>
+    );
+  }
+
+  if (rankings.length === 0) {
+    return (
+      <View style={styles.flex}>
+        <View style={styles.filtersOnly}>{filters}</View>
+        <EmptyState
+          icon="trophy"
+          title={`No ${formatLabel} standings for ${seasonName} yet`}
+          message={
+            isDoubles
+              ? "Team standings appear once a doubles result is reported and confirmed by the other team."
+              : "Standings appear once a result is reported and confirmed by the opponent. Propose a match to get started."
+          }
+          action={
+            <View style={styles.emptyActions}>
+              <Button label="Go to Matches" onPress={goToMatches} />
+              {recalcControls}
+            </View>
+          }
+        />
+      </View>
+    );
+  }
+
+  const myStanding = (
+    <Card style={styles.myCard}>
+      {me ? (
+        <>
+          <Text style={styles.myHeadline} accessibilityRole="header">
+            {isDoubles ? "Your team is" : "You're"} {ordinal(myIndex + 1)} of{" "}
+            {rankings.length}
+          </Text>
+          <Text style={styles.myDetail}>
+            {me.matchesWon}–{me.matchesLost} in {seasonName} {formatLabel}
+            {isDoubles ? ` as ${me.displayName}` : ""}
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.myHeadline} accessibilityRole="header">
+            You're not in these standings yet
+          </Text>
+          <Text style={styles.myDetail}>
+            Play a {formatLabel} match this season and have the result confirmed to
+            appear here.
+          </Text>
+        </>
+      )}
+      <Button
+        label="Find your next match"
+        size="compact"
+        style={styles.myAction}
+        onPress={goToMatches}
+      />
+    </Card>
+  );
+
+  return (
+    <FlatList
+      data={rankings}
+      keyExtractor={(item) => item.key}
+      renderItem={({ item, index }) => (
+        <RankingRow
+          item={item}
+          index={index}
+          isCurrentUser={Boolean(user?.id && item.playerIds.includes(user.id))}
+        />
+      )}
+      ListHeaderComponent={
+        <View style={styles.tableHeader}>
+          {myStanding}
+          {filters}
+          <SectionHeader
+            style={styles.sectionHeader}
+            title={isDoubles ? "Doubles team standings" : "Division standings"}
+            subtitle={seasonName}
+          />
+          <Button
+            label="How standings work"
+            variant="quiet"
+            size="compact"
+            accessibilityState={{ expanded: showTiebreakers }}
+            style={styles.infoButton}
+            onPress={() => setShowTiebreakers((visible) => !visible)}
+          />
+          {showTiebreakers && (
+            <Text style={styles.tiebreakerText}>
+              Ranked by matches won. Ties are decided by sets won, games won, game
+              differential, then head-to-head results. Only confirmed results count.
+            </Text>
+          )}
+          {recalcControls}
+          <View
+            style={styles.columnHeader}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Text style={styles.rankHeader}>#</Text>
+            <Text style={styles.playerHeader}>{isDoubles ? "Team" : "Player"}</Text>
+            <Text style={styles.recordHeader}>W–L</Text>
+            <Text style={styles.diffHeader}>Diff</Text>
+          </View>
+        </View>
+      }
+      contentContainerStyle={styles.list}
+    />
+  );
+}
+
+export default function RankingsScreen() {
+  const { divisionId } = useAppStore();
+  const router = useRouter();
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  // Matches web's dashboard: standings are scoped to one season at a time, since
+  // matches from every season otherwise pool into a single all-time ranking.
+  const [selectedSeasonId, setSelectedSeasonId] = useState(
+    () => currentSeasonForDate().id,
+  );
+  const [matchTypeFilter, setMatchTypeFilter] =
+    useState<DivisionMatchType>("singles");
+  const [retryKey, setRetryKey] = useState(0);
+  const seasonName =
+    seasonOptions.find((s) => s.id === selectedSeasonId)?.name ?? "";
+
+  const filters = (
+    <View style={styles.filters}>
+      <Text style={styles.filterLabel}>Format</Text>
       <View style={styles.chipRow}>
         {(["singles", "doubles"] as DivisionMatchType[]).map((option) => (
           <Chip
@@ -162,7 +358,7 @@ export default function RankingsScreen() {
           />
         ))}
       </View>
-      <Text style={styles.seasonLabel}>Season</Text>
+      <Text style={styles.filterLabel}>Season</Text>
       <View style={styles.chipRow}>
         {seasonOptions.map((season) => (
           <Chip
@@ -177,114 +373,40 @@ export default function RankingsScreen() {
     </View>
   );
 
-  if (loading) {
+  if (!divisionId) {
     return (
       <Screen>
-        {seasonSelector}
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <EmptyState
+          icon="person.crop.rectangle.stack"
+          title="Join a division to see standings"
+          message="Standings belong to a division. Join one with an invite or a join code."
+          actionLabel="Choose a division"
+          onAction={() => router.push("/(onboarding)/division")}
+        />
       </Screen>
     );
   }
 
   return (
     <Screen>
-      {seasonSelector}
-      {rankings.length === 0 ? (
-        <EmptyState
-          title="No Rankings Yet"
-          message={
-            isDoubles
-              ? "Complete doubles matches to see team standings."
-              : "Complete matches to see the standings."
-          }
-          action={
-            <View style={styles.emptyActions}>
-              <Button
-                label="Start a Match"
-                onPress={() => router.push("/(tabs)/matches")}
-              />
-              {canRecalculate && (
-                <Button
-                  label="↺  Recalculate Rankings"
-                  variant="secondary"
-                  loading={recalculating}
-                  onPress={handleRecalculate}
-                />
-              )}
-            </View>
-          }
-        />
-      ) : (
-        <FlatList
-          data={rankings}
-          keyExtractor={(item) => item.key}
-          renderItem={({ item, index }) => (
-            <RankingRow
-              item={item}
-              index={index}
-              isCurrentUser={Boolean(
-                user?.id && item.playerIds.includes(user.id),
-              )}
-            />
-          )}
-          ListHeaderComponent={
-            <View style={styles.tableHeader}>
-              <SectionHeader
-                title={
-                  isDoubles ? "Doubles Team Standings" : "Division Standings"
-                }
-              />
-              <Button
-                label="How standings work"
-                variant="text"
-                accessibilityState={{ expanded: showTiebreakers }}
-                style={styles.infoButton}
-                onPress={() => setShowTiebreakers((visible) => !visible)}
-              />
-              {showTiebreakers && (
-                <Text style={styles.tiebreakerText}>
-                  Ties are decided by sets won, games won, game differential,
-                  then head-to-head results.
-                </Text>
-              )}
-              {canRecalculate && (
-                <Button
-                  label="↺  Recalculate Rankings"
-                  variant="secondary"
-                  loading={recalculating}
-                  style={styles.recalcBtn}
-                  onPress={handleRecalculate}
-                />
-              )}
-              <View style={styles.columnHeader} accessibilityRole="header">
-                <Text style={styles.rankHeader}>#</Text>
-                <Text style={styles.playerHeader}>
-                  {isDoubles ? "Team" : "Player"}
-                </Text>
-                <Text style={styles.recordHeader}>W–L</Text>
-                <Text style={styles.diffHeader}>Diff</Text>
-              </View>
-            </View>
-          }
-          contentContainerStyle={styles.list}
-        />
-      )}
+      <StandingsContent
+        key={`${matchTypeFilter}-${selectedSeasonId}-${retryKey}`}
+        divisionId={divisionId}
+        seasonId={selectedSeasonId}
+        seasonName={seasonName}
+        matchType={matchTypeFilter}
+        filters={filters}
+        onRetry={() => setRetryKey((k) => k + 1)}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.xxl,
-  },
-  seasonSection: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  seasonLabel: {
+  flex: { flex: 1 },
+  filtersOnly: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  filters: { marginBottom: spacing.md },
+  filterLabel: {
     ...typography.caption,
     color: colors.textMuted,
     marginBottom: spacing.sm,
@@ -293,54 +415,46 @@ const styles = StyleSheet.create({
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   list: { padding: spacing.lg },
-  tableHeader: { marginBottom: 12 },
+  tableHeader: { marginBottom: spacing.md, gap: spacing.xs },
+  sectionHeader: { marginTop: spacing.sm },
+  myCard: { gap: spacing.xs, marginBottom: spacing.xs, ...elevations.low },
+  myHeadline: { ...typography.heading, color: colors.primary },
+  myDetail: { ...typography.bodySmall, color: colors.textMuted },
+  myAction: { alignSelf: "flex-start", marginTop: spacing.sm },
   columnHeader: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 7,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
   },
-  rankHeader: {
-    width: 38,
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: "700",
-  },
+  rankHeader: { width: 38, ...typography.caption, color: colors.textMuted },
   playerHeader: {
     flex: 1,
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: "700",
+    ...typography.caption,
+    color: colors.textMuted,
     textTransform: "uppercase",
   },
   recordHeader: {
     width: 58,
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: "700",
+    ...typography.caption,
+    color: colors.textMuted,
     textAlign: "center",
   },
   diffHeader: {
     width: 48,
-    color: colors.textSubtle,
-    fontSize: 11,
-    fontWeight: "700",
+    ...typography.caption,
+    color: colors.textMuted,
     textAlign: "right",
   },
   row: {
-    padding: 0,
-    borderRadius: 0,
-    marginBottom: 0,
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     borderLeftWidth: 3,
     borderLeftColor: colors.transparent,
-    ...elevations.none,
+    overflow: "hidden",
   },
-  rowTop1: { backgroundColor: "#fff9e8", borderLeftColor: "#c99616" },
-  rowTop2: { backgroundColor: "#f5f7f7", borderLeftColor: "#899391" },
-  rowTop3: { backgroundColor: "#fff4ec", borderLeftColor: "#af7047" },
   rowCurrentUser: {
     backgroundColor: colors.primarySoft,
     borderLeftColor: colors.primary,
@@ -349,64 +463,63 @@ const styles = StyleSheet.create({
     minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   rankMarker: {
-    width: 27,
-    height: 27,
-    borderRadius: 14,
-    marginRight: 11,
+    width: 28,
+    height: 28,
+    borderRadius: radii.pill,
+    marginRight: spacing.md,
     alignItems: "center",
     justifyContent: "center",
   },
   rankMarkerTop: { backgroundColor: colors.primary },
-  rank: { fontSize: 14, fontWeight: "700", color: colors.textMuted },
+  rank: { ...typography.label, color: colors.textMuted },
   rankTop: { color: colors.onPrimary },
   playerCell: { flex: 1, minWidth: 0 },
-  nameLine: { flexDirection: "row", alignItems: "center", gap: 6 },
-  name: { ...typography.subheading, color: colors.text },
+  nameLine: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  name: { ...typography.subheading, color: colors.text, flexShrink: 1 },
   youLabel: {
+    ...typography.caption,
+    fontWeight: "700",
     color: colors.primary,
-    backgroundColor: colors.primarySoft,
-    fontSize: 10,
-    fontWeight: "800",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.sm,
+    overflow: "hidden",
   },
   recordCell: {
     width: 58,
+    ...typography.label,
     color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
     textAlign: "center",
   },
   diffCell: {
     width: 48,
+    ...typography.label,
     color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: "700",
     textAlign: "right",
   },
-  positiveDiff: { color: colors.success },
+  positiveDiff: { color: colors.successText },
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 50,
-    paddingBottom: 10,
+    paddingLeft: 52,
+    paddingRight: spacing.md,
+    paddingBottom: spacing.sm,
   },
   detailLabel: { ...typography.caption, color: colors.textMuted },
   detailValue: { ...typography.caption, color: colors.text, fontWeight: "700" },
-  infoButton: { alignSelf: "flex-start", paddingHorizontal: 0 },
+  infoButton: { alignSelf: "flex-start" },
   tiebreakerText: {
-    ...typography.caption,
+    ...typography.bodySmall,
     color: colors.textMuted,
     backgroundColor: colors.surfaceMuted,
-    padding: 10,
+    padding: spacing.md,
     borderRadius: radii.sm,
-    marginBottom: 8,
   },
-  recalcBtn: { marginTop: spacing.sm, alignSelf: "flex-start" },
-  emptyActions: { gap: spacing.md, alignItems: "stretch" },
+  recalcBlock: { gap: spacing.sm, alignSelf: "stretch" },
+  recalcBtn: { alignSelf: "flex-start" },
+  emptyActions: { gap: spacing.md, alignItems: "stretch", alignSelf: "stretch" },
 });

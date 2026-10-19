@@ -26,13 +26,22 @@ struct StatusBadge: View {
 
   var body: some View {
     let metadata = status.metadata
-    Text(metadata.label)
-      .font(.caption.weight(.semibold))
-      .padding(.horizontal, 8)
-      .padding(.vertical, 3)
-      .foregroundStyle(Color(hex: metadata.colorHex))
-      .background(Color(hex: metadata.colorHex).opacity(0.14), in: Capsule())
-      .accessibilityLabel(metadata.accessibilityLabel)
+    let color = Color(hex: metadata.colorHex)
+    // The status color goes on the glyph and the tint; the label stays in the
+    // primary text color, since orange or green text on its own tint fails
+    // contrast in both appearances.
+    HStack(spacing: 4) {
+      Text(metadata.icon)
+        .foregroundStyle(color)
+      Text(metadata.label)
+        .foregroundStyle(.primary)
+    }
+    .font(.caption.weight(.semibold))
+    .padding(.horizontal, 8)
+    .padding(.vertical, 3)
+    .background(color.opacity(0.14), in: Capsule())
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(metadata.accessibilityLabel)
   }
 }
 
@@ -57,6 +66,9 @@ struct Scoreboard: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+        // Each player's row names its sets and points, so the column headings
+        // would only be read as noise.
+        .accessibilityHidden(true)
 
         ForEach(Player.allCases, id: \.self) { side in
           GridRow {
@@ -86,7 +98,8 @@ struct Scoreboard: View {
                 .gridColumnAlignment(.center)
             }
           }
-          .accessibilityElement(children: .combine)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(rowAccessibilityLabel(for: side))
         }
       }
 
@@ -120,6 +133,20 @@ struct Scoreboard: View {
     .gridColumnAlignment(.center)
   }
 
+  /// "Ann Smith, winner, set 1: 6, set 2: 4" or "Sam Rivera, set 1: 3, 30 in this game, serving".
+  private func rowAccessibilityLabel(for side: Player) -> String {
+    var parts = [match.sideDisplayName(side)]
+    if match.winner == side { parts.append("winner") }
+    for index in score.sets.indices {
+      parts.append("set \(index + 1): \(score.sets[index].games(for: side))")
+    }
+    if match.status == .inProgress {
+      parts.append(score.isTiebreak ? "\(currentPoints(for: side)) in the tiebreak" : "\(currentPoints(for: side)) in this game")
+    }
+    if showsServer && score.server == side { parts.append("serving") }
+    return parts.joined(separator: ", ")
+  }
+
   private func currentPoints(for side: Player) -> String {
     if score.isTiebreak, let tiebreak = score.tiebreakScore {
       return "\(tiebreak.points(for: side))"
@@ -144,6 +171,8 @@ struct TipCard: View {
       Spacer(minLength: 0)
       Button(action: dismiss) {
         Image(systemName: "xmark")
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(Rectangle())
       }
       .buttonStyle(.borderless)
       .accessibilityLabel("Dismiss tip")

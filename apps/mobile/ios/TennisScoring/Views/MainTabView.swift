@@ -67,7 +67,11 @@ struct MainTabView: View {
           if let rankings {
             RankingsView(model: rankings)
           } else {
-            ContentUnavailableView("No division", systemImage: "list.number")
+            ContentUnavailableView(
+              "No division",
+              systemImage: "list.number",
+              description: Text("Join a division to see its standings.")
+            )
           }
         }
         .navigationTitle("Standings")

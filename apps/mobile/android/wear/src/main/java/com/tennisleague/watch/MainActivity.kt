@@ -4,12 +4,16 @@ import android.app.Activity
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.View
 import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
@@ -22,6 +26,8 @@ import org.json.JSONObject
 import java.util.UUID
 
 class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
+  private lateinit var statusTitle: TextView
+  private lateinit var scoreboard: LinearLayout
   private lateinit var player1Name: TextView
   private lateinit var player2Name: TextView
   private lateinit var setsScore: TextView
@@ -122,25 +128,29 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       setPadding(dp(12), dp(10), dp(12), dp(12))
     }
 
-    val title = label("LIVE", 10, AMBER, true)
-    title.letterSpacing = 0.22f
-    root.addView(title)
+    statusTitle = label("WAITING", 12, AMBER, true)
+    statusTitle.letterSpacing = 0.18f
+    root.addView(statusTitle)
 
-    val scoreboard = LinearLayout(this).apply {
+    // TalkBack reads the scoreboard as one sentence (its contentDescription, set
+    // in renderScore) rather than four fragments such as "AD-40".
+    scoreboard = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      background = rounded(SCOREBOARD, dp(18), Color.argb(55, 242, 239, 230), dp(1))
+      background = rounded(SCOREBOARD, dp(18), LINE_SUBTLE, dp(1))
       setPadding(dp(10), dp(8), dp(10), dp(8))
+      isFocusable = true
+      importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
     }
     setsScore = label("Sets 0-0", 18, LINE, true)
-    gamesScore = label("Games 0-0", 13, AMBER, true)
+    gamesScore = label("Games 0-0", 15, AMBER, true)
     pointScore = label("0-0", 32, LINE, true)
     pointScore.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-    serverText = label("Waiting for phone", 10, MUTED, false)
-    scoreboard.addView(setsScore)
-    scoreboard.addView(gamesScore)
-    scoreboard.addView(pointScore)
-    scoreboard.addView(serverText)
+    serverText = label("Waiting for phone", 13, MUTED, false)
+    for (child in listOf(setsScore, gamesScore, pointScore, serverText)) {
+      child.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+      scoreboard.addView(child)
+    }
     root.addView(scoreboard, fullWidth())
 
     val names = LinearLayout(this).apply {
@@ -148,8 +158,11 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       gravity = Gravity.CENTER
       setPadding(0, dp(6), 0, dp(2))
     }
-    player1Name = label("P1", 10, LINE, true)
-    player2Name = label("P2", 10, LINE, true)
+    // The point buttons already name each player, so TalkBack skips this row.
+    player1Name = singleLine(label("Player 1", 12, LINE, true))
+    player2Name = singleLine(label("Player 2", 12, LINE, true))
+    player1Name.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    player2Name.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     names.addView(player1Name, rowWeight())
     names.addView(player2Name, rowWeight())
     root.addView(names, fullWidth())
@@ -159,32 +172,46 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       gravity = Gravity.CENTER
     }
     player1Button = pointButton("P1", PA)
-    player1Button.setOnClickListener { sendCommand("player1") }
+    player1Button.contentDescription = "Point to player 1"
+    player1Button.setOnClickListener { view -> if (sendCommand("player1")) confirmTap(view) }
     player1Button.setOnLongClickListener { sendCommand("undo"); true }
     player2Button = pointButton("P2", PB)
-    player2Button.setOnClickListener { sendCommand("player2") }
+    player2Button.contentDescription = "Point to player 2"
+    player2Button.setOnClickListener { view -> if (sendCommand("player2")) confirmTap(view) }
     player2Button.setOnLongClickListener { sendCommand("undo"); true }
     buttons.addView(player1Button, rowWeight())
     buttons.addView(player2Button, rowWeight())
     root.addView(buttons, fullWidth())
 
     undoButton = Button(this).apply {
-      text = "Hold undo"
-      textSize = 10f
-      setTextColor(Color.rgb(36, 24, 6))
+      text = "Hold to undo"
+      textSize = 14f
+      setAllCaps(false)
+      setTextColor(Color.BLACK)
       setTypeface(Typeface.DEFAULT, Typeface.BOLD)
       background = rounded(AMBER, dp(16), Color.TRANSPARENT, 0)
-      minHeight = dp(38)
+      minHeight = dp(48)
+      minimumHeight = dp(48)
+      // TalkBack appends its own "double-tap and hold" hint for a long-press action.
+      contentDescription = "Undo last point"
       setOnLongClickListener { sendCommand("undo"); true }
     }
     root.addView(undoButton, fullWidth())
 
-    feedbackTitle = label("", 12, AMBER, true)
+    // A polite live region, so TalkBack announces sync and scoring messages
+    // without the player having to find them.
+    val feedback = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER_HORIZONTAL
+      accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+    }
+    feedbackTitle = label("", 14, AMBER, true)
     feedbackTitle.setPadding(0, dp(6), 0, 0)
-    root.addView(feedbackTitle)
+    feedback.addView(feedbackTitle)
 
-    feedbackBody = label("", 10, MUTED, false)
-    root.addView(feedbackBody)
+    feedbackBody = label("", 13, MUTED, false)
+    feedback.addView(feedbackBody)
+    root.addView(feedback, fullWidth())
 
     scroll.addView(root)
     setContentView(scroll)
@@ -192,12 +219,13 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun renderWaitingState() {
     matchFinished = false
-    player1Button.isEnabled = true
-    player2Button.isEnabled = true
+    setScoreButtonsEnabled(true)
     undoButton.isEnabled = true
-    setsScore.text = "Tennis"
-    gamesScore.text = "Court-native"
-    pointScore.text = "0-0"
+    statusTitle.text = "WAITING"
+    setsScore.text = "Tennis League"
+    gamesScore.text = "No live match"
+    pointScore.text = "--"
+    scoreboard.contentDescription = "No live match yet."
     feedbackTitle.text = "Ready"
     feedbackBody.text = "Open a live match on your phone."
   }
@@ -274,34 +302,47 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     val server = score.optString("server", "player1")
     val serviceSide = score.optString("serviceSide", "deuce")
 
-    player1Name.text = p1Name.take(10)
-    player2Name.text = p2Name.take(10)
-    player1Button.text = pointButtonLabel(p1Name, if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0")))
-    player2Button.text = pointButtonLabel(p2Name, if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0")))
+    val p1Point = if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0"))
+    val p2Point = if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0"))
+    val serverName = if (server == "player1") p1Name else p2Name
+    val court = if (serviceSide == "advantage") "ad" else "deuce"
+
+    player1Name.text = p1Name
+    player2Name.text = p2Name
+    player1Button.text = pointButtonLabel(p1Name, p1Point)
+    player2Button.text = pointButtonLabel(p2Name, p2Point)
+    player1Button.contentDescription = "Point to $p1Name, now on $p1Point"
+    player2Button.contentDescription = "Point to $p2Name, now on $p2Point"
     setsScore.text = "Sets $p1Sets-$p2Sets"
     gamesScore.text = "Games $p1Games-$p2Games"
     pointScore.text =
       if (isTiebreak && tiebreak != null) {
         "TB ${tiebreak.optInt("player1Points", 0)}-${tiebreak.optInt("player2Points", 0)}"
       } else {
-        "${formatPoint(currentGame?.optString("player1", "0"))}-${formatPoint(currentGame?.optString("player2", "0"))}"
+        "$p1Point-$p2Point"
       }
-    serverText.text = "● ${if (server == "player1") p1Name else p2Name} · $serviceSide court"
+    serverText.text = "$serverName serves · $court court"
+    scoreboard.contentDescription =
+      "Sets $p1Sets to $p2Sets. Games $p1Games to $p2Games. " +
+        "${if (isTiebreak) "Tiebreak. " else ""}$p1Name $p1Point, $p2Name $p2Point. " +
+        "$serverName serves from the $court court."
 
     matchFinished =
       status == "pending_report" ||
         status == "completed" ||
         root.optString("feedbackTitle") == "Match complete" ||
         winnerName.isNotBlank()
-    player1Button.isEnabled = !matchFinished
-    player2Button.isEnabled = !matchFinished
+    setScoreButtonsEnabled(!matchFinished)
+    statusTitle.text = if (matchFinished) "FINAL" else "LIVE"
 
     if (matchFinished) {
-      feedbackTitle.text = "MATCH COMPLETE"
-      feedbackBody.text = if (winnerName.isNotBlank()) "$winnerName wins. Confirm on phone." else "Confirm the report on phone."
+      feedbackTitle.text = "Match complete"
+      feedbackBody.text =
+        if (winnerName.isNotBlank()) "$winnerName wins. Finish the report on your phone."
+        else "Finish the report on your phone."
     } else {
-      feedbackTitle.text = root.optString("feedbackTitle", "Game")
-      feedbackBody.text = root.optString("feedbackBody", "Tap a plinth for point. Long-press to undo.")
+      feedbackTitle.text = root.optString("feedbackTitle", "Score a point")
+      feedbackBody.text = root.optString("feedbackBody", "Tap the player who won it. Hold to undo.")
     }
 
     hasRenderedScore = true
@@ -309,28 +350,29 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun reportRenderFailure(e: Exception) {
     Log.e(TAG, "Error rendering payload", e)
-    feedbackTitle.text = "Sync error"
-    feedbackBody.text = "Could not read latest score."
+    feedbackTitle.text = "Score not updated"
+    feedbackBody.text = "Couldn't read the latest score from your phone. Check the score there."
   }
 
-  private fun sendCommand(command: String) {
-    if (matchFinished && command != "undo") return
+  /** Returns whether the command was handed to the Data Layer; the tap haptic depends on it. */
+  private fun sendCommand(command: String): Boolean {
+    if (matchFinished && command != "undo") return false
     if (!hasRenderedScore) {
       showWaitingForMatch()
-      return
+      return false
     }
 
     if (!speaksV1) {
       // A pre-v1 phone understands a bare action string on the old path only.
       sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone)
-      return
+      return true
     }
 
     val sessionId = activeSessionId
     val matchId = activeMatchId
     if (sessionId == null || matchId == null) {
       showWaitingForMatch()
-      return
+      return false
     }
     commandSequence += 1
     val payload = JSONObject()
@@ -342,6 +384,20 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       .put("action", command)
       .toString().toByteArray()
     sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone)
+    return true
+  }
+
+  /** A short tick confirming the tap registered, so the player need not look down between points. */
+  private fun confirmTap(view: View) {
+    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+  }
+
+  /** Disabled point buttons also dim, so a finished match does not look tappable. */
+  private fun setScoreButtonsEnabled(enabled: Boolean) {
+    for (button in listOf(player1Button, player2Button)) {
+      button.isEnabled = enabled
+      button.alpha = if (enabled) 1f else 0.45f
+    }
   }
 
   private fun showWaitingForMatch() {
@@ -352,7 +408,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   private fun reportMissingPhone(hasNodes: Boolean) {
     if (hasNodes) return
     feedbackTitle.text = "Phone not found"
-    feedbackBody.text = "Pair this watch and open the live match on your phone."
+    feedbackBody.text = "Point not sent. Pair this watch and open the live match on your phone."
   }
 
   private fun requestScoreSync() {
@@ -418,15 +474,33 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     }
   }
 
+  /**
+   * A dark scoreboard plate edged in the player's color, with white text, so the
+   * label stays readable in sunlight. Pressing fills it with that color.
+   */
   private fun pointButton(text: String, color: Int): Button {
+    val pressed = rounded(color, dp(20), color, dp(3))
+    val resting = rounded(SCOREBOARD_CONTROL, dp(20), color, dp(3))
     return Button(this).apply {
       this.text = text
-      textSize = 15f
+      textSize = 16f
+      setAllCaps(false)
       setTextColor(Color.WHITE)
       setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD))
-      background = rounded(color, dp(20), Color.argb(50, 255, 180, 74), dp(2))
+      background = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed), pressed)
+        addState(intArrayOf(), resting)
+      }
       minHeight = dp(78)
-      setPadding(dp(2), 0, dp(2), 0)
+      minimumHeight = dp(78)
+      setPadding(dp(4), 0, dp(4), 0)
+    }
+  }
+
+  private fun singleLine(view: TextView): TextView {
+    return view.apply {
+      maxLines = 1
+      ellipsize = TextUtils.TruncateAt.END
     }
   }
 
@@ -481,12 +555,15 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     private const val UNKNOWN_SESSION = "unknown-session"
     private const val DOUBLE_PRESS_MS = 300L
     private const val PROTOCOL_VERSION = 1
-    private val BACKGROUND = Color.rgb(8, 16, 20)
-    private val SCOREBOARD = Color.rgb(14, 20, 24)
-    private val LINE = Color.rgb(242, 239, 230)
-    private val AMBER = Color.rgb(255, 180, 74)
-    private val PA = Color.rgb(30, 136, 255)
-    private val PB = Color.rgb(255, 90, 78)
-    private val MUTED = Color.argb(185, 242, 239, 230)
+    // The scoreboard palette in DESIGN.md: scoreboard-*, player-blue, player-orange.
+    private val BACKGROUND = Color.BLACK
+    private val SCOREBOARD = Color.rgb(0x14, 0x14, 0x14)
+    private val SCOREBOARD_CONTROL = Color.rgb(0x1C, 0x1C, 0x1C)
+    private val LINE = Color.WHITE
+    private val LINE_SUBTLE = Color.rgb(0x26, 0x26, 0x26)
+    private val AMBER = Color.rgb(0xFF, 0xD6, 0x0A)
+    private val PA = Color.rgb(0x3D, 0x8B, 0xFF)
+    private val PB = Color.rgb(0xFF, 0x9F, 0x1C)
+    private val MUTED = Color.rgb(0xB3, 0xB3, 0xB3)
   }
 }

@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,14 +13,20 @@ import {
   type TextInputProps,
   type ViewProps,
 } from "react-native";
+import type { SymbolViewProps } from "expo-symbols";
+import { AppIcon, ICON_SIZE } from "../components/AppIcon";
+import { announce, hitSlopFor } from "./a11y";
 import {
   colors,
   elevations,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
   touchTargets,
   typography,
 } from "./tokens";
+
+const IS_ANDROID = Platform.OS === "android";
 
 export function Screen({
   scroll = false,
@@ -36,6 +43,7 @@ export function Screen({
       <ScrollView
         style={[styles.screen, style]}
         contentContainerStyle={[styles.screenContent, contentContainerStyle]}
+        keyboardShouldPersistTaps="handled"
         {...(props as ScrollViewProps)}
       >
         {children}
@@ -52,55 +60,130 @@ export function Card({ style, ...props }: ViewProps) {
   return <View style={[styles.card, style]} {...props} />;
 }
 
-export type ButtonVariant = "primary" | "secondary" | "destructive" | "text";
+/**
+ * `primary` (one per screen), `secondary` (outlined), `danger` (destructive
+ * fill, confirm first), `quiet` (text button for low-priority and inline
+ * actions). `destructive` and `text` are the original names and still work.
+ */
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "danger"
+  | "quiet"
+  | "destructive"
+  | "text";
+type CanonicalVariant = "primary" | "secondary" | "danger" | "quiet";
+const canonical = (variant: ButtonVariant): CanonicalVariant =>
+  variant === "destructive" ? "danger" : variant === "text" ? "quiet" : variant;
+
+export type ButtonProps = Omit<PressableProps, "children"> & {
+  /** Visible text. Also the accessibility label unless one is given. */
+  label?: string;
+  variant?: ButtonVariant;
+  /** Shows a spinner, disables the button, and sets accessibilityState.busy. */
+  pending?: boolean;
+  /** Same as `pending` (original name). */
+  loading?: boolean;
+  /** Optional text shown next to the spinner while pending ("Saving…"). */
+  pendingLabel?: string;
+  /** Leading SF Symbol (mapped to Material Symbols on Android). */
+  icon?: SymbolViewProps["name"];
+  /**
+   * `compact` draws a 36pt-tall button for dense rows and uses hitSlop to
+   * keep the touch target at the platform minimum.
+   */
+  size?: "regular" | "compact";
+  fullWidth?: boolean;
+  children?: React.ReactNode;
+};
+
 export function Button({
   label,
   variant = "primary",
-  loading = false,
+  pending,
+  loading,
+  pendingLabel,
+  icon,
+  size = "regular",
+  fullWidth = false,
   disabled,
   style,
   children,
+  accessibilityLabel,
+  accessibilityState,
+  hitSlop,
   ...props
-}: PressableProps & {
-  label?: string;
-  variant?: ButtonVariant;
-  loading?: boolean;
-}) {
-  const inactive = disabled || loading;
+}: ButtonProps) {
+  const kind = canonical(variant);
+  const busy = Boolean(pending ?? loading);
+  const inactive = Boolean(disabled) || busy;
+  const compact = size === "compact";
+  const fg = labelColors[kind];
+  const spinner = (
+    <ActivityIndicator
+      color={fg}
+      size="small"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
+  );
+  const content = children ?? (
+    <>
+      {icon ? (
+        <AppIcon name={icon} size={ICON_SIZE.action} color={fg} />
+      ) : null}
+      {label ? (
+        <Text
+          style={[styles.buttonLabel, { color: fg }]}
+          numberOfLines={2}
+          maxFontSizeMultiplier={1.6}
+        >
+          {label}
+        </Text>
+      ) : null}
+    </>
+  );
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(inactive), busy: loading }}
-      disabled={Boolean(inactive)}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{
+        ...accessibilityState,
+        disabled: inactive,
+        busy,
+      }}
+      disabled={inactive}
+      hitSlop={hitSlop ?? (compact ? hitSlopFor(MIN_TOUCH_TARGET, COMPACT_HEIGHT) : undefined)}
+      android_ripple={
+        inactive ? undefined : { color: rippleColors[kind], foreground: true }
+      }
       style={(state) => [
         styles.button,
-        buttonStyles[variant],
-        state.pressed && !inactive && pressedStyles[variant],
-        inactive && styles.disabled,
+        compact && styles.buttonCompact,
+        fullWidth && styles.fullWidth,
+        buttonStyles[kind],
+        !IS_ANDROID && state.pressed && !inactive && pressedStyles[kind],
+        Boolean(disabled) && !busy && styles.disabled,
         typeof style === "function" ? style(state) : style,
       ]}
       {...props}
     >
-      {loading ? (
-        <ActivityIndicator
-          color={
-            variant === "secondary" || variant === "text"
-              ? colors.primary
-              : colors.onPrimary
-          }
-        />
-      ) : (
-        (children ?? (
-          <Text
-            style={[
-              styles.buttonLabel,
-              labelStyles[variant],
-              inactive && styles.disabledLabel,
-            ]}
-          >
-            {label}
+      {busy && pendingLabel ? (
+        <>
+          {spinner}
+          <Text style={[styles.buttonLabel, { color: fg }]} numberOfLines={1}>
+            {pendingLabel}
           </Text>
-        ))
+        </>
+      ) : busy ? (
+        <>
+          {/* Keep the label in layout so the button does not change width. */}
+          <View style={styles.hiddenContent}>{content}</View>
+          <View style={styles.spinnerOverlay}>{spinner}</View>
+        </>
+      ) : (
+        content
       )}
     </Pressable>
   );
@@ -111,20 +194,41 @@ export function IconButton({
   icon,
   variant = "text",
   loading,
+  pending,
+  style,
   ...props
-}: Omit<React.ComponentProps<typeof Button>, "label"> & {
+}: Omit<ButtonProps, "label" | "icon"> & {
+  /** Required: the accessibility label, since the button has no text. */
   label: string;
-  icon: React.ReactNode;
+  icon: React.ReactNode | SymbolViewProps["name"];
 }) {
+  const kind = canonical(variant);
+  const glyph =
+    typeof icon === "string" ||
+    (icon !== null &&
+      typeof icon === "object" &&
+      !React.isValidElement(icon) &&
+      ("ios" in icon || "android" in icon)) ? (
+      <AppIcon
+        name={icon as SymbolViewProps["name"]}
+        size={ICON_SIZE.tab}
+        color={labelColors[kind]}
+      />
+    ) : (
+      (icon as React.ReactNode)
+    );
   return (
     <Button
       accessibilityLabel={label}
       variant={variant}
-      loading={loading}
-      style={styles.iconButton}
+      pending={pending ?? loading}
+      style={(state) => [
+        styles.iconButton,
+        typeof style === "function" ? style(state) : style,
+      ]}
       {...props}
     >
-      {icon}
+      {glyph}
     </Button>
   );
 }
@@ -133,18 +237,40 @@ export function TextField({
   label,
   error,
   style,
+  multiline,
   ...props
 }: TextInputProps & { label?: string; error?: string }) {
   return (
     <View style={styles.fieldWrap}>
-      {label && <Text style={styles.fieldLabel}>{label}</Text>}
+      {label && (
+        <Text
+          style={styles.fieldLabel}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+        >
+          {label}
+        </Text>
+      )}
       <TextInput
-        placeholderTextColor={colors.textSubtle}
-        style={[styles.field, error && styles.fieldError, style]}
+        placeholderTextColor={colors.placeholder}
+        multiline={multiline}
+        style={[
+          styles.field,
+          multiline && styles.fieldMultiline,
+          error && styles.fieldError,
+          style,
+        ]}
         accessibilityLabel={props.accessibilityLabel ?? label}
+        accessibilityHint={
+          props.accessibilityHint ?? (error ? `Error: ${error}` : undefined)
+        }
         {...props}
       />
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && (
+        <Text style={styles.errorText} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      )}
     </View>
   );
 }
@@ -154,23 +280,29 @@ export function Chip({
   selected = false,
   disabled,
   style,
+  accessibilityLabel,
   ...props
 }: PressableProps & { label: string; selected?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ selected, disabled: Boolean(disabled) }}
       disabled={Boolean(disabled)}
+      android_ripple={{ color: RIPPLE_GREEN, foreground: true }}
       style={(state) => [
         styles.chip,
         selected && styles.chipSelected,
-        state.pressed && styles.chipPressed,
+        !IS_ANDROID && state.pressed && styles.chipPressed,
         disabled && styles.disabled,
         typeof style === "function" ? style(state) : style,
       ]}
       {...props}
     >
-      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
+      <Text
+        style={[styles.chipLabel, selected && styles.chipLabelSelected]}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </Pressable>
@@ -187,7 +319,9 @@ export function SectionHeader({
   return (
     <View style={[styles.sectionHeader, style]} {...props}>
       <View style={styles.flex}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {title}
+        </Text>
         {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
       </View>
       {action}
@@ -200,51 +334,210 @@ export function EmptyState({
   message,
   icon,
   action,
+  actionLabel,
+  onAction,
   style,
   ...props
 }: ViewProps & {
   title: string;
   message: string;
-  icon?: React.ReactNode;
+  /** An SF Symbol name, or any node. Decorative. */
+  icon?: React.ReactNode | SymbolViewProps["name"];
+  /** A custom action node. */
   action?: React.ReactNode;
+  /** Shorthand for a primary Button: the next step out of the empty state. */
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <View style={[styles.empty, style]} {...props}>
-      {icon}
-      <Text style={styles.emptyTitle}>{title}</Text>
+      {typeof icon === "string" ? (
+        <AppIcon
+          name={icon as SymbolViewProps["name"]}
+          size={ICON_SIZE.feature}
+          color={colors.textMuted}
+        />
+      ) : (
+        (icon as React.ReactNode)
+      )}
+      <Text style={styles.emptyTitle} accessibilityRole="header">
+        {title}
+      </Text>
       <Text style={styles.emptyMessage}>{message}</Text>
       {action}
+      {actionLabel && onAction ? (
+        <Button label={actionLabel} onPress={onAction} />
+      ) : null}
     </View>
   );
 }
 
+/**
+ * A failed load, with a way out. Say what failed in `title` and what to do in
+ * `message`; `onRetry` adds a "Try again" button.
+ */
+export function ErrorState({
+  title = "Couldn't load this",
+  message = "Check your connection, then try again.",
+  onRetry,
+  retryLabel = "Try again",
+  retrying = false,
+  style,
+  ...props
+}: ViewProps & {
+  title?: string;
+  message?: string;
+  onRetry?: () => void;
+  retryLabel?: string;
+  retrying?: boolean;
+}) {
+  useEffect(() => {
+    announce(`${title}. ${message}`);
+  }, [title, message]);
+  return (
+    <View style={[styles.empty, style]} {...props}>
+      <AppIcon
+        name="exclamationmark.triangle"
+        size={ICON_SIZE.feature}
+        color={colors.destructive}
+      />
+      <Text style={styles.emptyTitle} accessibilityRole="header">
+        {title}
+      </Text>
+      <Text style={styles.emptyMessage}>{message}</Text>
+      {onRetry ? (
+        <Button
+          label={retryLabel}
+          icon="arrow.clockwise"
+          variant="secondary"
+          pending={retrying}
+          onPress={onRetry}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A loading placeholder. `label` names what is loading ("Loading matches")
+ * and is what screen readers hear. `inline` renders a compact row instead of
+ * filling the screen.
+ */
+export function LoadingState({
+  label = "Loading",
+  inline = false,
+  showLabel,
+  style,
+  ...props
+}: ViewProps & { label?: string; inline?: boolean; showLabel?: boolean }) {
+  const visible = showLabel ?? !inline;
+  return (
+    <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      accessibilityState={{ busy: true }}
+      style={[inline ? styles.loadingInline : styles.loading, style]}
+      {...props}
+    >
+      <ActivityIndicator
+        color={colors.primary}
+        size={inline ? "small" : "large"}
+      />
+      {visible ? <Text style={styles.loadingLabel}>{label}</Text> : null}
+    </View>
+  );
+}
+
+export type AlertTone = "info" | "success" | "warning" | "error" | "destructive";
+const alertIcon: Record<
+  Exclude<AlertTone, "destructive">,
+  SymbolViewProps["name"]
+> = {
+  info: "info.circle",
+  success: "checkmark.circle",
+  warning: "exclamationmark.triangle",
+  error: "exclamationmark.circle",
+};
+
+/**
+ * A tinted message block. Errors and successes are announced to screen
+ * readers when they appear or change (`announce` overrides that).
+ */
 export function InlineAlert({
   title,
   message,
   tone = "info",
+  actionLabel,
+  onAction,
+  announce: shouldAnnounce,
   style,
   ...props
 }: ViewProps & {
   title?: string;
   message: string;
-  tone?: "info" | "success" | "warning" | "destructive";
+  tone?: AlertTone;
+  /** An optional quiet button inside the alert ("Try again", "Undo"). */
+  actionLabel?: string;
+  onAction?: () => void;
+  announce?: boolean;
 }) {
+  const kind = tone === "destructive" ? "error" : tone;
+  const speak = shouldAnnounce ?? (kind === "error" || kind === "success");
+  useEffect(() => {
+    if (speak) announce(title ? `${title}. ${message}` : message);
+  }, [speak, title, message]);
   return (
     <View
-      accessibilityRole="alert"
-      style={[styles.alert, alertStyles[tone], style]}
+      accessibilityRole={kind === "error" || kind === "warning" ? "alert" : undefined}
+      style={[styles.alert, alertStyles[kind], style]}
       {...props}
     >
-      {title && (
-        <Text style={[styles.alertTitle, alertTextStyles[tone]]}>{title}</Text>
-      )}
-      <Text style={[styles.alertMessage, alertTextStyles[tone]]}>
-        {message}
-      </Text>
+      <View style={styles.alertRow}>
+        <AppIcon
+          name={alertIcon[kind]}
+          size={ICON_SIZE.action}
+          color={alertTextColors[kind]}
+        />
+        <View style={styles.flex}>
+          {title && (
+            <Text style={[styles.alertTitle, { color: alertTextColors[kind] }]}>
+              {title}
+            </Text>
+          )}
+          <Text style={[styles.alertMessage, { color: alertTextColors[kind] }]}>
+            {message}
+          </Text>
+        </View>
+      </View>
+      {actionLabel && onAction ? (
+        <Button
+          label={actionLabel}
+          variant="quiet"
+          size="compact"
+          onPress={onAction}
+          style={styles.alertAction}
+        />
+      ) : null}
     </View>
   );
 }
 
+const COMPACT_HEIGHT = 36;
+const RIPPLE_GREEN = "rgba(26, 71, 42, 0.16)";
+
+const labelColors: Record<CanonicalVariant, string> = {
+  primary: colors.onPrimary,
+  secondary: colors.primary,
+  danger: colors.onDestructive,
+  quiet: colors.primary,
+};
+const rippleColors: Record<CanonicalVariant, string> = {
+  primary: "rgba(255, 255, 255, 0.24)",
+  secondary: RIPPLE_GREEN,
+  danger: "rgba(255, 255, 255, 0.24)",
+  quiet: RIPPLE_GREEN,
+};
 const buttonStyles = StyleSheet.create({
   primary: { backgroundColor: colors.primary },
   secondary: {
@@ -252,36 +545,30 @@ const buttonStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
   },
-  destructive: { backgroundColor: colors.destructive },
-  text: { backgroundColor: colors.transparent },
+  danger: { backgroundColor: colors.destructive },
+  quiet: { backgroundColor: colors.transparent },
 });
 const pressedStyles = StyleSheet.create({
   primary: { backgroundColor: colors.primaryPressed },
   secondary: { backgroundColor: colors.primarySoft },
-  destructive: { backgroundColor: colors.destructivePressed },
-  text: { backgroundColor: colors.primarySoft },
-});
-const labelStyles = StyleSheet.create({
-  primary: { color: colors.onPrimary },
-  secondary: { color: colors.primary },
-  destructive: { color: colors.onPrimary },
-  text: { color: colors.primary },
+  danger: { backgroundColor: colors.destructivePressed },
+  quiet: { backgroundColor: colors.primarySoft },
 });
 const alertStyles = StyleSheet.create({
   info: { backgroundColor: colors.infoSoft, borderColor: colors.info },
   success: { backgroundColor: colors.successSoft, borderColor: colors.success },
   warning: { backgroundColor: colors.warningSoft, borderColor: colors.warning },
-  destructive: {
+  error: {
     backgroundColor: colors.destructiveSoft,
     borderColor: colors.destructive,
   },
 });
-const alertTextStyles = StyleSheet.create({
-  info: { color: colors.info },
-  success: { color: colors.primary },
-  warning: { color: "#7A410D" },
-  destructive: { color: colors.destructive },
-});
+const alertTextColors: Record<Exclude<AlertTone, "destructive">, string> = {
+  info: colors.info,
+  success: colors.successText,
+  warning: colors.warningText,
+  error: colors.destructive,
+};
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
@@ -289,12 +576,13 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radii.md,
+    borderRadius: radii.card,
     padding: spacing.lg,
     ...elevations.low,
   },
   button: {
     minHeight: touchTargets.comfortable,
+    minWidth: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderRadius: radii.md,
@@ -302,11 +590,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: spacing.sm,
+    // Clips the Android ripple to the rounded corners.
+    overflow: "hidden",
   },
-  buttonLabel: { ...typography.label },
+  buttonCompact: {
+    minHeight: COMPACT_HEIGHT,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  fullWidth: { alignSelf: "stretch" },
+  buttonLabel: { ...typography.label, textAlign: "center", flexShrink: 1 },
+  hiddenContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    opacity: 0,
+  },
+  spinnerOverlay: {
+    position: "absolute", top: 0, right: 0, bottom: 0, left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   disabled: { opacity: 0.52 },
-  disabledLabel: { color: colors.disabledText },
-  iconButton: { width: touchTargets.comfortable, paddingHorizontal: 0 },
+  iconButton: {
+    width: touchTargets.comfortable,
+    minWidth: touchTargets.comfortable,
+    paddingHorizontal: 0,
+  },
   fieldWrap: { gap: spacing.xs },
   fieldLabel: { ...typography.label, color: colors.text },
   field: {
@@ -319,10 +629,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     ...typography.body,
   },
-  fieldError: { borderColor: colors.destructive },
-  errorText: { ...typography.caption, color: colors.destructive },
+  fieldMultiline: {
+    minHeight: 96,
+    paddingVertical: spacing.md,
+    textAlignVertical: "top",
+  },
+  fieldError: { borderColor: colors.destructive, borderWidth: 2 },
+  errorText: { ...typography.caption, color: colors.destructive, fontWeight: "600" },
   chip: {
-    minHeight: touchTargets.minimum,
+    minHeight: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -330,6 +645,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   chipSelected: {
     borderColor: colors.primary,
@@ -347,7 +663,7 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.heading, color: colors.primary },
   sectionSubtitle: {
     ...typography.caption,
-    color: colors.textSubtle,
+    color: colors.textMuted,
     marginTop: spacing.xs,
   },
   empty: {
@@ -367,13 +683,32 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: "center",
     marginBottom: spacing.md,
+    maxWidth: 360,
   },
+  loading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xxl,
+    gap: spacing.md,
+  },
+  loadingInline: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: MIN_TOUCH_TARGET,
+    gap: spacing.sm,
+  },
+  loadingLabel: { ...typography.bodySmall, color: colors.textMuted },
   alert: {
     borderLeftWidth: 4,
     borderRadius: radii.sm,
     padding: spacing.md,
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
+  alertRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   alertTitle: { ...typography.label },
   alertMessage: { ...typography.bodySmall },
+  alertAction: { alignSelf: "flex-start", marginLeft: spacing.xl },
 });
+

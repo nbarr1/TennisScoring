@@ -1,13 +1,5 @@
 import React, { useRef, useState } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  TextInput,
-} from "react-native";
+import { View, Text, StyleSheet, TextInput } from "react-native";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -21,90 +13,97 @@ import { router } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import { FormErrorSummary, FormField } from "../../components/FormField";
+import {
+  Button,
+  InlineAlert,
+  colors,
+  spacing,
+  typography,
+  useAsyncAction,
+} from "../../theme";
 
 type Mode = "signin" | "signup";
+
+/** Plain-language text for the Firebase Auth errors this screen can hit. */
+function authErrorMessage(error: unknown, mode: Mode): string {
+  const code = (error as { code?: string })?.code;
+  switch (code) {
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "That email and password don't match an account. Check them and try again, or reset your password.";
+    case "auth/email-already-in-use":
+      return "An account already uses this email. Sign in instead, or use a different email address.";
+    case "auth/weak-password":
+      return "Choose a stronger password with at least 8 characters.";
+    case "auth/invalid-email":
+      return "That doesn't look like an email address. Check it and try again.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Wait a few minutes, then try again.";
+    case "auth/network-request-failed":
+      return "Couldn't reach the server. Check your connection and try again.";
+    case "auth/user-disabled":
+      return "This account has been turned off. Contact your division leader.";
+    default:
+      return mode === "signup"
+        ? "Couldn't create your account. Check your connection and try again."
+        : "Couldn't sign you in. Check your connection and try again.";
+  }
+}
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<Mode>("signin");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
   const nameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const validate = (field: string) => {
     if (field === "displayName" && mode === "signup" && !displayName.trim())
-      return "Enter your display name.";
+      return "Enter your name. Other players see it in standings and messages.";
     if (field === "email") {
       if (!email.trim()) return "Enter your email address.";
       if (!/^\S+@\S+\.\S+$/.test(email.trim()))
-        return "Enter a valid email address.";
+        return "Enter an email address like name@example.com.";
     }
     if (field === "password") {
       if (!password) return "Enter your password.";
       if (mode === "signup" && password.length < 8)
-        return "Use at least 8 characters.";
+        return "Use at least 8 characters for your password.";
     }
     return "";
   };
   const validateOnBlur = (field: string) =>
     setErrors((current) => ({ ...current, [field]: validate(field) }));
 
-  async function handleForgotPassword() {
-    const emailError = validate("email");
-    setErrors({ email: emailError });
-    if (emailError) {
-      emailRef.current?.focus();
-      return;
-    }
-    setLoading(true);
-    try {
-      await sendPasswordResetEmail(auth, email.trim());
-    } catch (err: unknown) {
-      const code = (err as { code?: string }).code;
-      if (code === "auth/invalid-email") {
-        Alert.alert("Invalid Email", "Please enter a valid email address.");
-        return;
+  const reset = useAsyncAction(
+    async (address: string) => {
+      try {
+        await sendPasswordResetEmail(auth, address);
+      } catch (err: unknown) {
+        const code = (err as { code?: string }).code;
+        if (code === "auth/invalid-email" || code === "auth/too-many-requests")
+          throw err;
+        // Any other failure, including an unknown address, gets the same
+        // neutral message, so the form never reveals which addresses have
+        // accounts.
       }
-      if (code === "auth/too-many-requests") {
-        Alert.alert(
-          "Too Many Attempts",
-          "Wait a few minutes and try again.",
-        );
-        return;
-      }
-      // Any other failure, including an unknown address, gets the same neutral
-      // message, so the form never reveals which addresses have accounts.
-    } finally {
-      setLoading(false);
-    }
-    Alert.alert(
-      "Check Your Email",
-      "If an account exists for that address, we sent a password reset link.",
-    );
-  }
+      return address;
+    },
+    {
+      errorMessage: (err) => authErrorMessage(err, "signin"),
+      successMessage: "Password reset email sent",
+      onSuccess: (address) => setResetSentTo(address),
+    },
+  );
 
-  async function handleSubmit() {
-    const fields =
-      mode === "signup"
-        ? ["displayName", "email", "password"]
-        : ["email", "password"];
-    const nextErrors = Object.fromEntries(
-      fields.map((field) => [field, validate(field)]),
-    );
-    setErrors(nextErrors);
-    const firstInvalid = fields.find((field) => nextErrors[field]);
-    if (firstInvalid) {
-      ({ displayName: nameRef, email: emailRef, password: passwordRef })[
-        firstInvalid
-      ]?.current?.focus();
-      return;
-    }
-    setLoading(true);
-    try {
+  const submit = useAsyncAction(
+    async () => {
       if (mode === "signup") {
         const credential = await createUserWithEmailAndPassword(
           auth,
@@ -146,30 +145,55 @@ export default function LoginScreen() {
         await signInWithEmailAndPassword(auth, email.trim(), password);
       }
       // Auth state change in _layout.tsx handles redirect automatically
-    } catch (err: unknown) {
-      const code = (err as { code?: string }).code;
-      if (
-        code === "auth/user-not-found" ||
-        code === "auth/wrong-password" ||
-        code === "auth/invalid-credential"
-      ) {
-        Alert.alert("Sign In Failed", "Incorrect email or password.");
-      } else if (code === "auth/email-already-in-use") {
-        Alert.alert(
-          "Email Taken",
-          "Sign in to your existing account, or use a different email address.",
-        );
-      } else if (code === "auth/weak-password") {
-        Alert.alert("Weak Password", "Password must be at least 8 characters.");
-      } else if (code === "auth/invalid-email") {
-        Alert.alert("Invalid Email", "Please enter a valid email address.");
-      } else {
-        Alert.alert("Error", "Something went wrong. Please try again.");
-      }
-    } finally {
-      setLoading(false);
+    },
+    { errorMessage: (err) => authErrorMessage(err, mode) },
+  );
+
+  const busy = submit.pending || reset.pending;
+
+  function handleForgotPassword() {
+    const emailError = validate("email");
+    setErrors({ email: emailError });
+    submit.reset();
+    setResetSentTo(null);
+    if (emailError) {
+      emailRef.current?.focus();
+      return;
     }
+    void reset.run(email.trim());
   }
+
+  function handleSubmit() {
+    if (busy) return;
+    const fields =
+      mode === "signup"
+        ? ["displayName", "email", "password"]
+        : ["email", "password"];
+    const nextErrors = Object.fromEntries(
+      fields.map((field) => [field, validate(field)]),
+    );
+    setErrors(nextErrors);
+    reset.reset();
+    setResetSentTo(null);
+    const firstInvalid = fields.find((field) => nextErrors[field]);
+    if (firstInvalid) {
+      ({ displayName: nameRef, email: emailRef, password: passwordRef })[
+        firstInvalid
+      ]?.current?.focus();
+      return;
+    }
+    void submit.run();
+  }
+
+  function switchMode() {
+    setMode(mode === "signin" ? "signup" : "signin");
+    setErrors({});
+    submit.reset();
+    reset.reset();
+    setResetSentTo(null);
+  }
+
+  const isSignup = mode === "signup";
 
   return (
     <KeyboardAwareScrollView
@@ -186,17 +210,24 @@ export default function LoginScreen() {
             emphasized
           />
         </View>
-        <Text style={styles.title}>Tennis League</Text>
-        <Text style={styles.subtitle}>Work Tennis Scoring & Rankings</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          Tennis League
+        </Text>
+        <Text style={styles.subtitle}>
+          {isSignup
+            ? "Create your account to join your division."
+            : "Schedule, score, and track your league matches."}
+        </Text>
       </View>
 
       <View style={styles.form}>
-        {mode === "signup" && (
+        {isSignup && (
           <FormField
             ref={nameRef}
-            label="Display Name"
+            label="Your name"
             required
             error={errors.displayName}
+            helperText="Shown to other players in standings and messages."
             value={displayName}
             onChangeText={(value) => {
               setDisplayName(value);
@@ -204,9 +235,12 @@ export default function LoginScreen() {
                 setErrors((e) => ({ ...e, displayName: "" }));
             }}
             onBlur={() => validateOnBlur("displayName")}
-            placeholder="Your name"
+            placeholder="Ann Smith"
             autoCapitalize="words"
+            autoComplete="name"
+            textContentType="name"
             returnKeyType="next"
+            submitBehavior="submit"
             onSubmitEditing={() => emailRef.current?.focus()}
           />
         )}
@@ -217,110 +251,149 @@ export default function LoginScreen() {
           required
           error={errors.email}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={(value) => {
+            setEmail(value);
+            if (errors.email) setErrors((e) => ({ ...e, email: "" }));
+          }}
           onBlur={() => validateOnBlur("email")}
           placeholder="you@example.com"
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="email"
+          textContentType={isSignup ? "username" : "emailAddress"}
           returnKeyType="next"
+          submitBehavior="submit"
           onSubmitEditing={() => passwordRef.current?.focus()}
         />
 
-        <FormField
-          ref={passwordRef}
-          label="Password"
-          required
-          error={errors.password}
-          helperText={
-            mode === "signup" ? "Use at least 8 characters." : undefined
-          }
-          value={password}
-          onChangeText={setPassword}
-          onBlur={() => validateOnBlur("password")}
-          placeholder="••••••••"
-          secureTextEntry
-          returnKeyType="done"
-          onSubmitEditing={handleSubmit}
-        />
-
-        {mode === "signin" && (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Forgot password"
-            accessibilityHint="Sends a password reset link to the email address entered"
-            accessibilityState={{ disabled: loading }}
-            style={styles.forgotBtn}
-            onPress={handleForgotPassword}
-            disabled={loading}
-          >
-            <Text style={styles.forgotText}>Forgot password?</Text>
-          </TouchableOpacity>
-        )}
+        <View>
+          <FormField
+            ref={passwordRef}
+            label="Password"
+            required
+            error={errors.password}
+            helperText={isSignup ? "Use at least 8 characters." : undefined}
+            value={password}
+            onChangeText={(value) => {
+              setPassword(value);
+              if (errors.password) setErrors((e) => ({ ...e, password: "" }));
+            }}
+            onBlur={() => validateOnBlur("password")}
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete={isSignup ? "new-password" : "current-password"}
+            textContentType={isSignup ? "newPassword" : "password"}
+            returnKeyType={isSignup ? "join" : "go"}
+            onSubmitEditing={handleSubmit}
+          />
+          <View style={styles.passwordActions}>
+            <Button
+              label={showPassword ? "Hide password" : "Show password"}
+              variant="quiet"
+              size="compact"
+              accessibilityState={{ checked: showPassword }}
+              onPress={() => setShowPassword((shown) => !shown)}
+            />
+            {!isSignup && (
+              <Button
+                label="Forgot password?"
+                variant="quiet"
+                size="compact"
+                accessibilityLabel="Forgot password"
+                accessibilityHint="Sends a password reset link to the email address entered"
+                pending={reset.pending}
+                disabled={submit.pending}
+                onPress={handleForgotPassword}
+              />
+            )}
+          </View>
+        </View>
 
         <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel={mode === "signin" ? "Sign in" : "Create account"}
-          accessibilityState={{ disabled: loading, busy: loading }}
-          style={[styles.button, loading && styles.buttonDisabled]}
+        {resetSentTo && (
+          <InlineAlert
+            tone="success"
+            title="Check your email"
+            message={`If an account exists for ${resetSentTo}, we sent it a password reset link. Check your spam folder if it doesn't arrive in a few minutes.`}
+          />
+        )}
+        {reset.error && (
+          <InlineAlert
+            tone="error"
+            title="Couldn't send the reset link"
+            message={reset.error}
+          />
+        )}
+        {submit.error && (
+          <InlineAlert
+            tone="error"
+            title={isSignup ? "Couldn't create your account" : "Couldn't sign in"}
+            message={submit.error}
+          />
+        )}
+
+        <Button
+          label={isSignup ? "Create account" : "Sign in"}
+          pending={submit.pending}
+          disabled={reset.pending}
+          fullWidth
           onPress={handleSubmit}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>
-              {mode === "signin" ? "Sign In" : "Create Account"}
-            </Text>
-          )}
-        </TouchableOpacity>
+          style={styles.submit}
+        />
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel={
-            mode === "signin" ? "Create an account" : "Sign in instead"
-          }
-          style={styles.toggleBtn}
-          onPress={() => {
-            setMode(mode === "signin" ? "signup" : "signin");
-            setErrors({});
-          }}
-        >
-          <Text style={styles.toggleText}>
-            {mode === "signin"
-              ? "Don't have an account? Create one"
-              : "Already have an account? Sign in"}
+        <View style={styles.switchRow}>
+          <Text style={styles.switchPrompt}>
+            {isSignup ? "Already have an account?" : "New to the league?"}
           </Text>
-        </TouchableOpacity>
+          <Button
+            label={isSignup ? "Sign in" : "Create an account"}
+            accessibilityLabel={
+              isSignup ? "Sign in instead" : "Create an account"
+            }
+            variant="quiet"
+            size="compact"
+            disabled={busy}
+            onPress={switchMode}
+          />
+        </View>
 
-        <TouchableOpacity
-          accessibilityRole="button"
+        <Button
+          label="Privacy Policy"
           accessibilityLabel="View Privacy Policy"
+          variant="quiet"
+          size="compact"
           style={styles.privacyLink}
           onPress={() => router.push("/privacy-policy")}
-        >
-          <Text style={styles.privacyLinkText}>Privacy Policy</Text>
-        </TouchableOpacity>
+        />
       </View>
     </KeyboardAwareScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f0" },
-  inner: { flexGrow: 1, justifyContent: "center", padding: 32 },
-  header: { alignItems: "center", marginBottom: 40 },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  inner: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+  },
+  header: { alignItems: "center", marginBottom: spacing.xxl },
   brandMark: {
     width: 76,
     height: 76,
     borderRadius: 24,
-    marginBottom: 16,
+    marginBottom: spacing.lg,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    backgroundColor: ICON_COLOR.active,
+    backgroundColor: colors.primary,
     transform: [{ rotate: "-4deg" }],
   },
   brandCourtLine: {
@@ -330,33 +403,34 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.3)",
     transform: [{ rotate: "-35deg" }],
   },
-  title: { fontSize: 28, fontWeight: "700", color: "#1a472a", marginBottom: 6 },
-  subtitle: { fontSize: 15, color: "#666", textAlign: "center" },
-  form: { gap: 16 },
-  field: { gap: 6 },
-  label: { fontSize: 14, fontWeight: "600", color: "#444" },
-  input: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 15,
-    color: "#111",
+  title: {
+    ...typography.title,
+    fontSize: 28,
+    lineHeight: 34,
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
-  button: {
-    backgroundColor: "#1a472a",
-    borderRadius: 12,
-    paddingVertical: 16,
+  subtitle: {
+    ...typography.body,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
+  form: { gap: spacing.lg },
+  passwordActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginTop: spacing.xs,
+    gap: spacing.sm,
+  },
+  submit: { marginTop: spacing.xs },
+  switchRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "center",
+    gap: spacing.xs,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  forgotBtn: { alignSelf: "flex-end", paddingVertical: 4 },
-  forgotText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
-  toggleBtn: { alignItems: "center", paddingVertical: 12 },
-  toggleText: { color: "#1a472a", fontSize: 14, fontWeight: "500" },
-  privacyLink: { alignItems: "center", paddingVertical: 4 },
-  privacyLinkText: { color: "#888", fontSize: 13 },
+  switchPrompt: { ...typography.bodySmall, color: colors.textMuted },
+  privacyLink: { alignSelf: "center" },
 });

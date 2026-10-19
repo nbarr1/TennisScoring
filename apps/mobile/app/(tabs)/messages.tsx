@@ -1,20 +1,22 @@
-import React, { useState, useRef } from "react";
-import { colors } from "../../theme";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   Linking,
   Modal,
   ActivityIndicator,
   Alert,
+  BackHandler,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getDoc } from "firebase/firestore";
 import {
   useChannels,
   useMessages,
@@ -23,6 +25,7 @@ import {
   searchDivisionPlayers,
   reportMessage,
   blockUser,
+  profileDoc,
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import type {
@@ -41,6 +44,25 @@ import {
   ICON_COLOR,
   ICON_SIZE,
 } from "../../components/AppIcon";
+import { FormField } from "../../components/FormField";
+import {
+  Button,
+  Chip,
+  EmptyState,
+  ErrorState,
+  InlineAlert,
+  LoadingState,
+  MIN_TOUCH_TARGET,
+  colors,
+  confirmDestructive,
+  describeError,
+  elevations,
+  hitSlopFor,
+  radii,
+  spacing,
+  typography,
+  useAsyncAction,
+} from "../../theme";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -51,82 +73,150 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 
 const CONTACT_SHARE_EXPLAINED_KEY = "messages.contactShareExplained";
 
+/**
+ * Display names for the other person in unnamed direct conversations, read
+ * from their public profile. Falls back to "Direct message" when unreadable.
+ */
+function useDirectChannelNames(channels: Channel[], myId: string | undefined) {
+  const [names, setNames] = useState<Record<string, string>>({});
+  const wanted = channels
+    .filter((c) => c.type !== "division" && !c.name)
+    .map((c) => c.participantIds.find((id) => id !== myId))
+    .filter((id): id is string => !!id);
+  const key = Array.from(new Set(wanted)).sort().join(",");
+
+  useEffect(() => {
+    const ids = key ? key.split(",") : [];
+    const missing = ids.filter((id) => !(id in names));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      missing.map((id) =>
+        getDoc(profileDoc(id))
+          .then((snap) =>
+            snap.exists()
+              ? ((snap.data() as { displayName?: string }).displayName ?? "")
+              : "",
+          )
+          .catch(() => ""),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      setNames((current) => {
+        const next = { ...current };
+        missing.forEach((id, i) => {
+          next[id] = results[i];
+        });
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `names` is read only to skip ids already fetched.
+  }, [key]);
+
+  return (channel: Channel) => {
+    if (channel.name) return channel.name;
+    if (channel.type === "division") return "Division chat";
+    const otherId = channel.participantIds.find((id) => id !== myId);
+    return (otherId && names[otherId]) || "Direct message";
+  };
+}
+
 function MessageBubble({
   message,
   isMe,
-  onLongPress,
   onOpenActions,
 }: {
   message: Message;
   isMe: boolean;
-  onLongPress?: () => void;
   onOpenActions?: () => void;
 }) {
+  const sender = isMe ? "You" : message.senderName;
   return (
-    <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-      <TouchableOpacity
-        activeOpacity={isMe ? 1 : 0.7}
-        disabled={isMe || !onLongPress}
-        onLongPress={onLongPress}
-        delayLongPress={350}
-        accessibilityRole="text"
-        accessibilityLabel={`${isMe ? "You" : message.senderName}: ${message.content}`}
-        accessibilityHint={
-          !isMe ? "Long press for report and block actions" : undefined
-        }
-      >
-        {!isMe && <Text style={styles.senderName}>{message.senderName}</Text>}
-        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-          {message.content}
-        </Text>
-      </TouchableOpacity>
+    <View style={[styles.bubbleRow, isMe && styles.bubbleRowMe]}>
+      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+        <Pressable
+          disabled={isMe || !onOpenActions}
+          onLongPress={onOpenActions}
+          delayLongPress={350}
+          accessible
+          accessibilityLabel={`${sender}: ${message.content}`}
+          accessibilityHint={
+            !isMe && onOpenActions
+              ? "Long press, or use the report button, to report or block"
+              : undefined
+          }
+        >
+          {!isMe && <Text style={styles.senderName}>{message.senderName}</Text>}
+          <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+            {message.content}
+          </Text>
+        </Pressable>
+
+        {/* Shared contact quick-actions */}
+        {message.sharedContact && (
+          <View style={styles.contactActions}>
+            {message.sharedContact.phone && (
+              <Pressable
+                onPress={() =>
+                  Linking.openURL(`tel:${message.sharedContact!.phone}`)
+                }
+                hitSlop={hitSlopFor(MIN_TOUCH_TARGET, 24)}
+                accessibilityRole="button"
+                accessibilityLabel={`Call ${message.senderName}`}
+                accessibilityHint="Opens the phone app"
+                style={styles.contactLinkTarget}
+              >
+                <IconLabel
+                  name="phone"
+                  color={isMe ? colors.onPrimary : colors.primary}
+                  textStyle={[styles.contactLink, isMe && styles.contactLinkMe]}
+                >
+                  Call
+                </IconLabel>
+              </Pressable>
+            )}
+            {message.sharedContact.email && (
+              <Pressable
+                onPress={() =>
+                  Linking.openURL(`mailto:${message.sharedContact!.email}`)
+                }
+                hitSlop={hitSlopFor(MIN_TOUCH_TARGET, 24)}
+                accessibilityRole="button"
+                accessibilityLabel={`Email ${message.senderName}`}
+                accessibilityHint="Opens the email app"
+                style={styles.contactLinkTarget}
+              >
+                <IconLabel
+                  name="envelope"
+                  color={isMe ? colors.onPrimary : colors.primary}
+                  textStyle={[styles.contactLink, isMe && styles.contactLinkMe]}
+                >
+                  Email
+                </IconLabel>
+              </Pressable>
+            )}
+          </View>
+        )}
+      </View>
 
       {!isMe && onOpenActions && (
-        <TouchableOpacity
+        <Pressable
           style={styles.messageActionsBtn}
           onPress={onOpenActions}
+          android_ripple={{ color: colors.surfaceMuted, borderless: true }}
           accessibilityRole="button"
-          accessibilityLabel={`More actions for message from ${message.senderName}`}
-          accessibilityHint="Opens report and block actions"
+          accessibilityLabel={`Report or block ${message.senderName}`}
+          accessibilityHint="Opens report and block actions for this message"
         >
-          <Text style={styles.messageActionsText}>•••</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Shared contact quick-actions */}
-      {message.sharedContact && (
-        <View style={styles.contactActions}>
-          {message.sharedContact.phone && (
-            <TouchableOpacity
-              onPress={() =>
-                Linking.openURL(`tel:${message.sharedContact!.phone}`)
-              }
-              accessibilityRole="button"
-              accessibilityLabel={`Call ${message.senderName}`}
-              accessibilityHint="Opens the phone app"
-              accessibilityState={{ disabled: false }}
-            >
-              <IconLabel name="phone" textStyle={styles.contactLink}>
-                Call
-              </IconLabel>
-            </TouchableOpacity>
-          )}
-          {message.sharedContact.email && (
-            <TouchableOpacity
-              onPress={() =>
-                Linking.openURL(`mailto:${message.sharedContact!.email}`)
-              }
-              accessibilityRole="button"
-              accessibilityLabel={`Email ${message.senderName}`}
-              accessibilityHint="Opens the email app"
-              accessibilityState={{ disabled: false }}
-            >
-              <IconLabel name="envelope" textStyle={styles.contactLink}>
-                Email
-              </IconLabel>
-            </TouchableOpacity>
-          )}
-        </View>
+          <AppIcon
+            name="flag"
+            size={ICON_SIZE.small}
+            color={colors.textMuted}
+          />
+        </Pressable>
       )}
     </View>
   );
@@ -134,7 +224,8 @@ function MessageBubble({
 
 function ChannelView({ channel }: { channel: Channel }) {
   const { width } = useWindowDimensions();
-  const { user } = useAppStore();
+  const insets = useSafeAreaInsets();
+  const user = useAppStore((state) => state.user);
   const {
     messages: allMessages,
     loading,
@@ -149,56 +240,74 @@ function ChannelView({ channel }: { channel: Channel }) {
   const [reportReason, setReportReason] =
     useState<MessageReportReason>("harassment");
   const [reportNote, setReportNote] = useState("");
-  const [reporting, setReporting] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [failed, setFailed] = useState<"text" | "contact" | null>(null);
 
   const blockedIds = new Set(user?.blockedUserIds ?? []);
   const messages = allMessages.filter(
     (m) => m.senderId === user?.id || !blockedIds.has(m.senderId),
   );
 
-  function handleLongPressMessage(message: Message) {
-    setActionMessage(message);
-  }
+  const send = useAsyncAction(
+    async (content: string) => {
+      if (!user) return;
+      await sendMessage({
+        channelId: channel.id,
+        senderId: user.id,
+        senderName: user.displayName ?? "Unknown",
+        content,
+      });
+      setText((draft) => (draft.trim() === content ? "" : draft));
+    },
+    {
+      errorMessage: "Message not sent. Your draft is still here.",
+      onSuccess: () => setFailed(null),
+      onError: () => setFailed("text"),
+    },
+  );
 
-  async function handleBlockSender() {
-    if (!user || !actionMessage) return;
-    const senderId = actionMessage.senderId;
-    const senderName = actionMessage.senderName;
-    setActionMessage(null);
-    Alert.alert(
-      "Block " + senderName + "?",
-      "You won't see messages from this person anymore. You can unblock them later from your profile.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Block",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await blockUser(user.id, senderId);
-            } catch {
-              Alert.alert("Could not block user", "Please try again.");
-            }
-          },
-        },
-      ],
-    );
-  }
+  const shareContact = useAsyncAction(
+    async (sharedContact: { phone?: string; email?: string }) => {
+      if (!user) return;
+      await sendMessage({
+        channelId: channel.id,
+        senderId: user.id,
+        senderName: user.displayName ?? "Unknown",
+        content: "Shared contact information",
+        sharedContact,
+      });
+    },
+    {
+      successMessage: "Contact details shared",
+      errorMessage: "Contact details not sent.",
+      onSuccess: () => setFailed(null),
+      onError: () => setFailed("contact"),
+    },
+  );
 
-  function handleOpenReport() {
-    if (!actionMessage) return;
-    setReportMessageTarget(actionMessage);
-    setReportReason("harassment");
-    setReportNote("");
-    setActionMessage(null);
-  }
+  const block = useAsyncAction(
+    async (senderId: string, senderName: string) => {
+      if (!user) return senderName;
+      await blockUser(user.id, senderId);
+      return senderName;
+    },
+    {
+      successMessage: (name) => `${name} blocked`,
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't block this player. Check your connection and try again.",
+        ),
+      onSuccess: (name) =>
+        setNotice(
+          `You blocked ${name}. Their messages are hidden and won't notify you. Unblock them from your Profile.`,
+        ),
+    },
+  );
 
-  async function handleSubmitReport() {
-    if (!user || !reportMessageTarget) return;
-    setReporting(true);
-    try {
+  const report = useAsyncAction(
+    async () => {
+      if (!user || !reportMessageTarget) return;
       await reportMessage({
         channelId: channel.id,
         message: reportMessageTarget,
@@ -207,39 +316,63 @@ function ChannelView({ channel }: { channel: Channel }) {
         note: reportNote,
         divisionId: user.divisionId,
       });
-      setReportMessageTarget(null);
-      Alert.alert(
-        "Message reported",
-        "Thanks — a division leader will review it.",
-      );
-    } catch {
-      Alert.alert("Could not submit report", "Please try again.");
-    } finally {
-      setReporting(false);
-    }
+    },
+    {
+      successMessage: "Report sent",
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't send the report. Check your connection and try again.",
+        ),
+      onSuccess: () => {
+        setReportMessageTarget(null);
+        setNotice(
+          "Report sent. A division leader will review the message. To stop seeing this player's messages, block them too.",
+        );
+      },
+    },
+  );
+
+  const sending = send.pending || shareContact.pending;
+  const sendError = send.error ?? shareContact.error;
+
+  async function handleBlockSender() {
+    if (!user || !actionMessage) return;
+    const senderId = actionMessage.senderId;
+    const senderName = actionMessage.senderName;
+    setActionMessage(null);
+    const ok = await confirmDestructive({
+      title: `Block ${senderName}?`,
+      message:
+        "You won't see their messages or get notifications from them. They aren't told. You can unblock them from your Profile.",
+      confirmLabel: "Block",
+    });
+    if (ok) void block.run(senderId, senderName);
   }
 
-  async function handleSend() {
-    if (!text.trim() || !user || sending) return;
+  function handleOpenReport() {
+    if (!actionMessage) return;
+    setReportMessageTarget(actionMessage);
+    setReportReason("harassment");
+    setReportNote("");
+    report.reset();
+    setActionMessage(null);
+  }
+
+  function closeReport() {
+    if (report.pending) return;
+    setReportMessageTarget(null);
+    report.reset();
+  }
+
+  function handleSend() {
     const content = text.trim();
-    setSending(true);
-    setSendError(null);
-    try {
-      await sendMessage({
-        channelId: channel.id,
-        senderId: user.id,
-        senderName: user.displayName ?? "Unknown",
-        content,
-      });
-      setText((draft) => (draft.trim() === content ? "" : draft));
-    } catch {
-      setSendError("Message not sent. Your draft is still here.");
-    } finally {
-      setSending(false);
-    }
+    if (!content || !user || sending) return;
+    shareContact.reset();
+    void send.run(content);
   }
 
-  async function sendContact() {
+  function sendContact() {
     if (!user) return;
     const sharedContact = {
       phone: user.contactPreferences?.allowSMS ? user.phone : undefined,
@@ -247,26 +380,18 @@ function ChannelView({ channel }: { channel: Channel }) {
     };
     if (!sharedContact.phone && !sharedContact.email) {
       Alert.alert(
-        "No contact info to share",
-        "Enable email or SMS contact sharing in your profile first.",
+        "Nothing to share yet",
+        "Turn on email or phone sharing under Contact preferences in your Profile, then try again.",
       );
       return;
     }
-    setSending(true);
-    setSendError(null);
-    try {
-      await sendMessage({
-        channelId: channel.id,
-        senderId: user.id,
-        senderName: user.displayName ?? "Unknown",
-        content: "Shared contact information",
-        sharedContact,
-      });
-    } catch {
-      setSendError("Contact details not sent. Please try again.");
-    } finally {
-      setSending(false);
-    }
+    send.reset();
+    void shareContact.run(sharedContact);
+  }
+
+  function retryFailed() {
+    if (failed === "contact") sendContact();
+    else handleSend();
   }
 
   async function handleShareContact() {
@@ -279,8 +404,8 @@ function ChannelView({ channel }: { channel: Channel }) {
     }
     if (!explained) {
       Alert.alert(
-        "Share contact details",
-        "Share the contact details enabled in your profile.",
+        "Share your contact details?",
+        "This sends the email and phone number you chose to share in your Profile. Everyone in this conversation can see them.",
         [
           {
             text: "Not now",
@@ -297,18 +422,39 @@ function ChannelView({ channel }: { channel: Channel }) {
                 CONTACT_SHARE_EXPLAINED_KEY,
                 "true",
               ).catch(() => undefined);
-              void sendContact();
+              sendContact();
             },
           },
         ],
       );
       return;
     }
-    await sendContact();
+    sendContact();
   }
+
+  const canSend = !!text.trim() && !sending;
 
   return (
     <KeyboardSafeView>
+      {notice && (
+        <InlineAlert
+          tone="success"
+          message={notice}
+          actionLabel="Dismiss"
+          onAction={() => setNotice(null)}
+          style={styles.notice}
+        />
+      )}
+      {block.error && (
+        <InlineAlert
+          tone="error"
+          title="Couldn't block"
+          message={block.error}
+          actionLabel="Dismiss"
+          onAction={block.reset}
+          style={styles.notice}
+        />
+      )}
       <FlatList
         ref={listRef}
         data={messages}
@@ -319,134 +465,154 @@ function ChannelView({ channel }: { channel: Channel }) {
             <MessageBubble
               message={item}
               isMe={isMe}
-              onLongPress={
-                isMe ? undefined : () => handleLongPressMessage(item)
-              }
-              onOpenActions={
-                isMe ? undefined : () => handleLongPressMessage(item)
-              }
+              onOpenActions={isMe ? undefined : () => setActionMessage(item)}
             />
           );
         }}
-        contentContainerStyle={styles.messageList}
+        contentContainerStyle={[
+          styles.messageList,
+          messages.length === 0 && styles.messageListEmpty,
+        ]}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           loading ? (
-            <View style={styles.stateContainer}>
-              <ActivityIndicator color="#1a472a" />
-              <Text style={styles.stateText}>Loading messages…</Text>
-            </View>
+            <LoadingState label="Loading messages" />
           ) : error ? (
-            <View style={styles.stateContainer}>
-              <Text style={styles.stateTitle}>Couldn’t load messages</Text>
-              <TouchableOpacity
-                style={styles.retryBtn}
-                onPress={retry}
-                accessibilityRole="button"
-                accessibilityLabel="Retry loading messages"
-                accessibilityHint="Attempts to load this conversation again"
-              >
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
+            <ErrorState
+              title="Couldn't load messages"
+              message="Check your connection, then try again."
+              onRetry={retry}
+            />
           ) : (
-            <View style={styles.stateContainer}>
-              <Text style={styles.stateTitle}>No messages yet</Text>
-              <Text style={styles.stateText}>
-                Send a message to start the conversation.
-              </Text>
-            </View>
+            <EmptyState
+              icon="bubble.left"
+              title="No messages yet"
+              message={
+                channel.type === "division"
+                  ? "Everyone in your division can read this chat. Say hello or find someone to play."
+                  : "Send a message to set up a match."
+              }
+            />
           )
         }
         onContentSizeChange={() =>
           listRef.current?.scrollToEnd({ animated: false })
         }
       />
-      <View style={[styles.inputRow, width < 360 && styles.inputRowCompact]}>
-        <TouchableOpacity
+      {!!sendError && (
+        <InlineAlert
+          tone="error"
+          message={sendError}
+          actionLabel="Try again"
+          onAction={retryFailed}
+          style={styles.sendError}
+        />
+      )}
+      <View
+        style={[
+          styles.inputRow,
+          width < 360 && styles.inputRowCompact,
+          { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+        ]}
+      >
+        <Pressable
           onPress={handleShareContact}
           style={styles.shareContactBtn}
           disabled={sending}
+          android_ripple={{ color: colors.primarySoft, borderless: true }}
           accessibilityRole="button"
           accessibilityLabel="Share contact details"
-          accessibilityHint="Shares the contact details enabled in your profile"
-          accessibilityState={{ disabled: sending }}
+          accessibilityHint="Sends the email and phone number you chose to share in your Profile"
+          accessibilityState={{ disabled: sending, busy: shareContact.pending }}
         >
-          <AppIcon
-            name="person.crop.rectangle.stack"
-            size={ICON_SIZE.tab}
-            color={ICON_COLOR.active}
-          />
-        </TouchableOpacity>
+          {shareContact.pending ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <AppIcon
+              name="person.crop.rectangle.stack"
+              size={ICON_SIZE.tab}
+              color={ICON_COLOR.active}
+            />
+          )}
+        </Pressable>
         <TextInput
           style={styles.textInput}
           value={text}
           onChangeText={setText}
           maxLength={2000}
-          placeholder="Message…"
+          placeholder="Message"
+          placeholderTextColor={colors.placeholder}
+          accessibilityLabel="Message"
           multiline
         />
-        <TouchableOpacity
-          style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+        <Pressable
+          style={({ pressed }) => [
+            styles.sendBtn,
+            !canSend && styles.sendBtnDisabled,
+            pressed && canSend && styles.sendBtnPressed,
+          ]}
           onPress={handleSend}
-          disabled={!text.trim() || sending}
+          disabled={!canSend}
           accessibilityRole="button"
-          accessibilityLabel={
-            sendError ? "Retry sending message" : "Send message"
-          }
-          accessibilityHint="Sends the current message"
+          accessibilityLabel="Send message"
           accessibilityState={{
-            disabled: !text.trim() || sending,
-            busy: sending,
+            disabled: !canSend,
+            busy: send.pending,
           }}
         >
-          {sending ? (
-            <ActivityIndicator color="#fff" size="small" />
+          {send.pending ? (
+            <ActivityIndicator color={colors.onPrimary} size="small" />
           ) : (
-            <Text style={styles.sendText}>{sendError ? "Retry" : "Send"}</Text>
+            <Text style={styles.sendText}>Send</Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
-      {!!sendError && (
-        <View style={styles.sendError} accessibilityRole="alert">
-          <Text style={styles.sendErrorText}>{sendError}</Text>
-          <Text style={styles.sendErrorHint}>
-            {text.trim()
-              ? "Tap Retry to try again."
-              : "Tap Contact to try again."}
-          </Text>
-        </View>
-      )}
 
-      <Modal visible={!!actionMessage} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.actionSheetOverlay}
-          activeOpacity={1}
-          onPress={() => setActionMessage(null)}
-          accessibilityRole="button"
-          accessibilityLabel="Close message actions"
-          accessibilityHint="Closes the report and block menu"
-        >
-          <View style={styles.actionSheetCard}>
-            <Text style={styles.actionSheetTitle}>
-              {actionMessage?.senderName}
+      <Modal
+        visible={!!actionMessage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionMessage(null)}
+      >
+        <View style={styles.actionSheetOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setActionMessage(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close message actions"
+          />
+          <View
+            style={[
+              styles.actionSheetCard,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+            ]}
+            accessibilityViewIsModal
+          >
+            <Text style={styles.actionSheetTitle} accessibilityRole="header">
+              Message from {actionMessage?.senderName}
             </Text>
-            <TouchableOpacity
+            <Text style={styles.actionSheetPreview} numberOfLines={3}>
+              {actionMessage?.content}
+            </Text>
+            <Pressable
               style={styles.actionSheetOption}
               onPress={handleOpenReport}
+              android_ripple={{ color: colors.surfaceMuted }}
               accessibilityRole="button"
               accessibilityLabel="Report message"
-              accessibilityHint="Opens the message report form"
+              accessibilityHint="Sends this message to a division leader for review"
             >
               <IconLabel name="flag" textStyle={styles.actionSheetOptionText}>
                 Report message
               </IconLabel>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               style={styles.actionSheetOption}
-              onPress={handleBlockSender}
+              onPress={() => void handleBlockSender()}
+              android_ripple={{ color: colors.surfaceMuted }}
               accessibilityRole="button"
               accessibilityLabel={`Block ${actionMessage?.senderName ?? "sender"}`}
-              accessibilityHint="Stops messages from this person from appearing"
+              accessibilityHint="Hides their messages and notifications"
             >
               <IconLabel
                 name="person.crop.circle.badge.xmark"
@@ -455,85 +621,99 @@ function ChannelView({ channel }: { channel: Channel }) {
               >
                 Block {actionMessage?.senderName}
               </IconLabel>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               style={styles.actionSheetOption}
               onPress={() => setActionMessage(null)}
+              android_ripple={{ color: colors.surfaceMuted }}
               accessibilityRole="button"
-              accessibilityLabel="Cancel message actions"
-              accessibilityHint="Closes this menu"
+              accessibilityLabel="Cancel"
             >
               <Text style={styles.actionSheetOptionText}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
-      <Modal visible={!!reportMessageTarget} transparent animationType="slide">
+      <Modal
+        visible={!!reportMessageTarget}
+        transparent
+        animationType="slide"
+        onRequestClose={closeReport}
+      >
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Report Message</Text>
-            <Text style={styles.reportPreview}>
-              "{reportMessageTarget?.content}"
+          <View
+            style={[
+              styles.modalCard,
+              { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+            ]}
+            accessibilityViewIsModal
+          >
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Report message
             </Text>
-            <View style={styles.chipRow}>
+            <Text style={styles.modalSubtitle}>
+              A division leader will review it and can remove it.
+            </Text>
+            <Text style={styles.reportPreview} numberOfLines={4}>
+              {reportMessageTarget?.senderName}: “{reportMessageTarget?.content}”
+            </Text>
+            <Text
+              style={styles.groupLabel}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              Reason
+            </Text>
+            <View
+              style={styles.chipRow}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Reason"
+            >
               {REPORT_REASONS.map((r) => (
-                <TouchableOpacity
+                <Chip
                   key={r.value}
-                  style={[
-                    styles.chip,
-                    reportReason === r.value && styles.chipActive,
-                  ]}
-                  onPress={() => setReportReason(r.value)}
+                  label={r.label}
+                  selected={reportReason === r.value}
                   accessibilityRole="radio"
-                  accessibilityLabel={`${r.label} report reason`}
-                  accessibilityState={{ selected: reportReason === r.value }}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      reportReason === r.value && styles.chipTextActive,
-                    ]}
-                  >
-                    {r.label}
-                  </Text>
-                </TouchableOpacity>
+                  accessibilityState={{ checked: reportReason === r.value }}
+                  onPress={() => setReportReason(r.value)}
+                />
               ))}
             </View>
-            <TextInput
-              style={[styles.input, { minHeight: 56 }]}
+            <FormField
+              label="Details (optional)"
               value={reportNote}
               maxLength={1000}
               onChangeText={setReportNote}
-              placeholder="Add details (optional)"
+              placeholder="What should the leader know?"
               multiline
+              inputStyle={styles.reportNote}
             />
-            <TouchableOpacity
-              style={[styles.sendReportBtn, reporting && styles.btnDisabled]}
-              onPress={handleSubmitReport}
-              disabled={reporting}
-              accessibilityRole="button"
-              accessibilityLabel="Submit message report"
-              accessibilityHint="Sends this report to a division leader"
-              accessibilityState={{ disabled: reporting, busy: reporting }}
-            >
-              {reporting ? (
-                <ActivityIndicator color={colors.surface} />
-              ) : (
-                <Text style={styles.sendReportBtnText}>Submit Report</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setReportMessageTarget(null)}
-              disabled={reporting}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel report"
-              accessibilityHint="Closes the report form without submitting"
-              accessibilityState={{ disabled: reporting }}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+            {report.error && (
+              <InlineAlert
+                tone="error"
+                title="Report not sent"
+                message={report.error}
+                style={styles.modalAlert}
+              />
+            )}
+            <View style={styles.modalActions}>
+              <Button
+                label="Send report"
+                pending={report.pending}
+                pendingLabel="Sending…"
+                fullWidth
+                onPress={() => void report.run()}
+              />
+              <Button
+                label="Cancel"
+                accessibilityLabel="Cancel report"
+                variant="quiet"
+                disabled={report.pending}
+                onPress={closeReport}
+              />
+            </View>
           </View>
         </KeyboardAwareBottomSheet>
       </Modal>
@@ -544,72 +724,114 @@ function ChannelView({ channel }: { channel: Channel }) {
 export default function MessagesScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { user, divisionId } = useAppStore();
+  const user = useAppStore((state) => state.user);
+  const divisionId = useAppStore((state) => state.divisionId);
   const { channels, loading, error, retry } = useChannels(user?.id ?? null);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [showNewDM, setShowNewDM] = useState(false);
   const [dmSearch, setDmSearch] = useState("");
   const [dmResults, setDmResults] = useState<PublicProfile[]>([]);
   const [dmSearching, setDmSearching] = useState(false);
-  const [dmCreating, setDmCreating] = useState(false);
+  const [dmSearchError, setDmSearchError] = useState(false);
+  const searchSeq = useRef(0);
+  const channelName = useDirectChannelNames(channels, user?.id);
+  const blockedIds = new Set(user?.blockedUserIds ?? []);
+
+  // System Back leaves the conversation instead of the tab.
+  useEffect(() => {
+    if (!activeChannel) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setActiveChannel(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeChannel]);
 
   async function handleSearchDM(text: string) {
     setDmSearch(text);
+    setDmSearchError(false);
+    const seq = ++searchSeq.current;
     if (!divisionId || !text.trim()) {
       setDmResults([]);
+      setDmSearching(false);
       return;
     }
     setDmSearching(true);
     try {
       // A direct conversation needs a shared active division, which roster-only players lack.
-      const results = await searchDivisionPlayers(divisionId, text, { profilesOnly: true });
-      const blockedIds = new Set(user?.blockedUserIds ?? []);
+      const results = await searchDivisionPlayers(divisionId, text, {
+        profilesOnly: true,
+      });
+      if (seq !== searchSeq.current) return;
       setDmResults(
         results.filter((u) => u.id !== user?.id && !blockedIds.has(u.id)),
       );
     } catch {
+      if (seq !== searchSeq.current) return;
       setDmResults([]);
+      setDmSearchError(true);
     } finally {
-      setDmSearching(false);
+      if (seq === searchSeq.current) setDmSearching(false);
     }
   }
 
-  async function handleStartDM(other: PublicProfile) {
-    if (!user) return;
-    setDmCreating(true);
-    try {
-      const channel = await getOrCreateDM(user.id, other.id);
-      setShowNewDM(false);
-      setDmSearch("");
-      setDmResults([]);
-      setActiveChannel(channel);
-    } catch (error) {
-      console.error("Failed to create DM channel", error);
-    } finally {
-      setDmCreating(false);
-    }
+  const startDM = useAsyncAction(
+    async (other: PublicProfile) => {
+      if (!user) return null;
+      return getOrCreateDM(user.id, other.id);
+    },
+    {
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't open the conversation. Check your connection and try again.",
+        ),
+      onError: (err) => console.error("Failed to create DM channel", err),
+      onSuccess: (channel) => {
+        if (!channel) return;
+        closeNewDM();
+        setActiveChannel(channel);
+      },
+    },
+  );
+
+  function closeNewDM() {
+    setShowNewDM(false);
+    setDmSearch("");
+    setDmResults([]);
+    setDmSearchError(false);
+    searchSeq.current += 1;
+    startDM.reset();
   }
 
   if (activeChannel) {
+    const title = channelName(activeChannel);
     return (
-      <View style={{ flex: 1 }}>
+      <View style={styles.flex}>
         <View
           style={[
             styles.channelHeader,
-            { paddingTop: Math.max(insets.top, 12) },
+            { paddingTop: Math.max(insets.top, spacing.md) },
           ]}
         >
-          <TouchableOpacity
+          <Pressable
             style={styles.backButtonTarget}
             onPress={() => setActiveChannel(null)}
+            android_ripple={{
+              color: "rgba(255,255,255,0.2)",
+              borderless: true,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Back to conversations"
           >
-            <Text style={styles.backBtn}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.channelTitle} numberOfLines={2}>
-            {activeChannel.name ??
-              (activeChannel.type === "division"
-                ? "Division Chat"
-                : "Direct Message")}
+            <Text style={styles.backBtn}>Back</Text>
+          </Pressable>
+          <Text
+            style={styles.channelTitle}
+            numberOfLines={2}
+            accessibilityRole="header"
+          >
+            {title}
           </Text>
         </View>
         <ChannelView channel={activeChannel} />
@@ -622,138 +844,195 @@ export default function MessagesScreen() {
       <FlatList
         data={channels}
         keyExtractor={(c) => c.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.channelCard}
-            onPress={() => setActiveChannel(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.name ?? (item.type === "division" ? "Division chat" : "Direct message")}${item.lastMessage ? `. Last message from ${item.lastMessage.senderName}: ${item.lastMessage.content}` : ""}`}
-            accessibilityHint="Opens this conversation"
-            accessibilityState={{ disabled: false }}
-          >
-            <Text style={styles.channelName}>
-              {item.name ??
-                (item.type === "division" ? "Division Chat" : "Direct Message")}
-            </Text>
-            {item.lastMessage && (
-              <Text style={styles.lastMessage}>
-                {item.lastMessage.senderName}: {item.lastMessage.content}
-              </Text>
-            )}
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const name = channelName(item);
+          const last = item.lastMessage;
+          const lastHidden = !!last && blockedIds.has(last.senderId);
+          const preview = last
+            ? lastHidden
+              ? "Message from a blocked player"
+              : `${last.senderId === user?.id ? "You" : last.senderName}: ${last.content}`
+            : item.type === "division"
+              ? "Your division's group chat"
+              : "No messages yet";
+          return (
+            <Pressable
+              style={({ pressed }) => [
+                styles.channelCard,
+                pressed && Platform.OS === "ios" && styles.channelCardPressed,
+              ]}
+              android_ripple={{ color: colors.surfaceMuted, foreground: true }}
+              onPress={() => setActiveChannel(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`${name}. ${preview}`}
+              accessibilityHint="Opens this conversation"
+            >
+              <AppIcon
+                name={
+                  item.type === "division"
+                    ? "person.crop.rectangle.stack"
+                    : "bubble.left"
+                }
+                size={ICON_SIZE.tab}
+                color={colors.primary}
+              />
+              <View style={styles.flex}>
+                <Text style={styles.channelName} numberOfLines={1}>
+                  {name}
+                </Text>
+                <Text
+                  style={[styles.lastMessage, lastHidden && styles.lastHidden]}
+                  numberOfLines={2}
+                >
+                  {preview}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        }}
         ListEmptyComponent={
           loading ? (
-            <View style={styles.empty}>
-              <ActivityIndicator color="#1a472a" />
-              <Text style={styles.emptySubText}>Loading conversations…</Text>
-            </View>
+            <LoadingState label="Loading conversations" />
           ) : error ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>Couldn’t load conversations</Text>
-              <TouchableOpacity
-                style={styles.retryBtn}
-                onPress={retry}
-                accessibilityRole="button"
-                accessibilityLabel="Retry loading conversations"
-                accessibilityHint="Attempts to load your conversations again"
-              >
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
+            <ErrorState
+              title="Couldn't load conversations"
+              message="Check your connection, then try again."
+              onRetry={retry}
+            />
           ) : (
-            <View style={styles.empty}>
-              <Text style={styles.emptyText}>No conversations yet.</Text>
-              <Text style={styles.emptySubText}>
-                Tap Message to message a teammate.
-              </Text>
-            </View>
+            <EmptyState
+              icon="bubble.left"
+              title="No conversations yet"
+              message="Message a player in your division to set up a match."
+            />
           )
         }
-        contentContainerStyle={styles.channelList}
+        contentContainerStyle={[
+          styles.channelList,
+          channels.length === 0 && styles.channelListEmpty,
+        ]}
       />
 
       <View
         style={[
           styles.newMessageBar,
-          { paddingBottom: Math.max(insets.bottom, 12) },
+          { paddingBottom: Math.max(insets.bottom, spacing.md) },
         ]}
       >
-        <TouchableOpacity
-          style={[styles.fab, width < 360 && styles.fabCompact]}
+        <Button
+          label="New message"
+          icon="plus"
+          accessibilityHint="Search for a player in your division to message"
+          fullWidth={width < 360}
+          style={styles.fab}
           onPress={() => setShowNewDM(true)}
-        >
-          <Text style={styles.fabText}>+ Message</Text>
-        </TouchableOpacity>
+        />
       </View>
 
-      <Modal visible={showNewDM} transparent animationType="slide">
+      <Modal
+        visible={showNewDM}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!startDM.pending) closeNewDM();
+        }}
+      >
         <KeyboardAwareBottomSheet style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>New Direct Message</Text>
-            <View style={styles.searchRow}>
-              <TextInput
-                style={[styles.input, styles.searchInput]}
+          <View
+            style={[
+              styles.modalCard,
+              { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+            ]}
+            accessibilityViewIsModal
+          >
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              New message
+            </Text>
+            {!divisionId ? (
+              <InlineAlert
+                tone="info"
+                message="Choose an active division on your Profile to message its players."
+              />
+            ) : (
+              <FormField
+                label="Find a player"
+                helperText="Players in your active division."
                 value={dmSearch}
                 onChangeText={handleSearchDM}
-                placeholder="Search teammates..."
+                placeholder="Search by name"
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus
+                returnKeyType="search"
               />
-              {dmSearching && (
-                <ActivityIndicator
-                  style={{ marginLeft: 8 }}
-                  color={colors.primary}
-                />
-              )}
-            </View>
-            {dmCreating && (
-              <ActivityIndicator
-                color={colors.primary}
-                style={{ marginVertical: 12 }}
+            )}
+            {dmSearching && (
+              <LoadingState inline showLabel label="Searching players" />
+            )}
+            {dmSearchError && (
+              <InlineAlert
+                tone="error"
+                message="Couldn't search players. Check your connection and try again."
+                actionLabel="Try again"
+                onAction={() => void handleSearchDM(dmSearch)}
+                style={styles.modalAlert}
+              />
+            )}
+            {startDM.error && (
+              <InlineAlert
+                tone="error"
+                message={startDM.error}
+                style={styles.modalAlert}
               />
             )}
             <FlatList
               data={dmResults}
               keyExtractor={(u) => u.id}
-              style={{ maxHeight: 280 }}
+              style={styles.resultList}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
-                <TouchableOpacity
+                <Pressable
                   style={styles.resultRow}
-                  onPress={() => handleStartDM(item)}
-                  disabled={dmCreating}
+                  onPress={() => void startDM.run(item)}
+                  disabled={startDM.pending}
+                  android_ripple={{ color: colors.surfaceMuted }}
                   accessibilityRole="button"
                   accessibilityLabel={`Message ${item.displayName}`}
-                  accessibilityHint="Starts a direct conversation"
-                  accessibilityState={{ disabled: dmCreating }}
+                  accessibilityState={{
+                    disabled: startDM.pending,
+                    busy: startDM.pending,
+                  }}
                 >
                   <Text style={styles.resultName}>{item.displayName}</Text>
-                  <Text style={styles.resultEmail}>Public profile</Text>
-                </TouchableOpacity>
+                  {startDM.pending ? (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                  ) : (
+                    <AppIcon
+                      name="bubble.left"
+                      size={ICON_SIZE.small}
+                      color={colors.textMuted}
+                    />
+                  )}
+                </Pressable>
               )}
               ListEmptyComponent={
-                dmSearch.trim().length > 0 && !dmSearching ? (
-                  <Text style={styles.noResults}>No teammates found.</Text>
+                dmSearch.trim().length > 0 &&
+                !dmSearching &&
+                !dmSearchError ? (
+                  <Text style={styles.noResults}>
+                    No players match “{dmSearch.trim()}”. Check the spelling,
+                    or try a first name.
+                  </Text>
                 ) : null
               }
             />
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => {
-                setShowNewDM(false);
-                setDmSearch("");
-                setDmResults([]);
-              }}
-              disabled={dmCreating}
-              accessibilityRole="button"
+            <Button
+              label="Cancel"
               accessibilityLabel="Cancel new message"
-              accessibilityHint="Closes teammate search"
-              accessibilityState={{ disabled: dmCreating }}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
+              variant="quiet"
+              disabled={startDM.pending}
+              onPress={closeNewDM}
+            />
           </View>
         </KeyboardAwareBottomSheet>
       </Modal>
@@ -762,284 +1041,235 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.canvas },
-  channelList: { padding: 16 },
+  channelList: { padding: spacing.lg, gap: spacing.sm },
+  channelListEmpty: { flexGrow: 1 },
   channelCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: radii.card,
+    padding: spacing.lg,
+    minHeight: 64,
+    overflow: Platform.OS === "android" ? "hidden" : "visible",
+    ...elevations.low,
   },
+  channelCardPressed: { backgroundColor: colors.surfaceMuted },
   channelName: {
-    fontSize: 16,
-    fontWeight: "700",
+    ...typography.subheading,
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: spacing.xxs,
   },
-  lastMessage: { fontSize: 13, color: colors.textSubtle },
-  empty: { flex: 1, padding: 40, alignItems: "center" },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#555",
-    marginBottom: 8,
-  },
-  emptySubText: { fontSize: 13, color: colors.textSubtle, textAlign: "center" },
+  lastMessage: { ...typography.bodySmall, color: colors.textMuted },
+  lastHidden: { fontStyle: "italic" },
   channelHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.sm,
     backgroundColor: colors.primary,
-    padding: 16,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  backBtn: { color: colors.surface, fontSize: 16, marginRight: 16 },
-  channelTitle: { color: colors.surface, fontWeight: "700", fontSize: 16 },
-  messageList: { padding: 16, paddingBottom: 8 },
-  bubble: { maxWidth: "80%", padding: 12, borderRadius: 16, marginBottom: 8 },
+  backBtn: { ...typography.label, fontSize: 16, color: colors.onPrimary },
+  channelTitle: {
+    ...typography.subheading,
+    color: colors.onPrimary,
+    flex: 1,
+  },
+  notice: { margin: spacing.md, marginBottom: 0 },
+  messageList: { padding: spacing.lg, paddingBottom: spacing.sm },
+  messageListEmpty: { flexGrow: 1, justifyContent: "center" },
+  bubbleRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    marginBottom: spacing.sm,
+    maxWidth: "88%",
+    alignSelf: "flex-start",
+  },
+  bubbleRowMe: { alignSelf: "flex-end" },
+  bubble: {
+    flexShrink: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.lg,
+  },
   bubbleMe: {
     backgroundColor: colors.primary,
-    alignSelf: "flex-end",
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: spacing.xs,
   },
   bubbleThem: {
     backgroundColor: colors.surface,
-    alignSelf: "flex-start",
-    borderBottomLeftRadius: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    borderBottomLeftRadius: spacing.xs,
+    ...elevations.low,
   },
   messageActionsBtn: {
-    alignSelf: "flex-end",
-    minWidth: 44,
-    minHeight: 44,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: -8,
-    marginBottom: -8,
   },
-  messageActionsText: {
-    color: colors.textMuted,
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  bubbleText: { fontSize: 15, color: colors.text },
-  bubbleTextMe: { color: colors.surface },
+  bubbleText: { ...typography.body, fontSize: 15, lineHeight: 21, color: colors.text },
+  bubbleTextMe: { color: colors.onPrimary },
   senderName: {
-    fontSize: 11,
-    color: colors.textSubtle,
-    marginBottom: 4,
+    ...typography.caption,
     fontWeight: "600",
+    color: colors.textMuted,
+    marginBottom: spacing.xxs,
   },
-  contactActions: { flexDirection: "row", gap: 12, marginTop: 8 },
-  contactLink: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  contactActions: {
+    flexDirection: "row",
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  contactLinkTarget: { minHeight: 24, justifyContent: "center" },
+  contactLink: { ...typography.label, color: colors.primary },
+  contactLinkMe: { color: colors.onPrimary },
+  sendError: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    padding: 10,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
     backgroundColor: colors.surface,
   },
   inputRowCompact: { flexWrap: "wrap" },
   shareContactBtn: {
-    minWidth: 44,
-    minHeight: 44,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
   },
-  shareContactText: { fontSize: 22 },
   textInput: {
     flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.lg - 2,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    ...typography.body,
     fontSize: 15,
-    maxHeight: 100,
-    minHeight: 44,
-    marginRight: 8,
+    lineHeight: 20,
+    color: colors.text,
+    maxHeight: 120,
+    minHeight: MIN_TOUCH_TARGET,
   },
   sendBtn: {
     backgroundColor: colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    minHeight: 44,
+    paddingHorizontal: spacing.lg + 2,
+    borderRadius: radii.xl,
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: 72,
+    alignItems: "center",
     justifyContent: "center",
   },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: colors.surface, fontWeight: "700" },
-  sendError: {
-    backgroundColor: colors.destructiveSoft,
-    borderTopWidth: 1,
-    borderTopColor: colors.destructive,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  sendErrorText: { color: colors.destructive, fontSize: 13, fontWeight: "700" },
-  sendErrorHint: { color: colors.destructive, fontSize: 12, marginTop: 2 },
-  stateContainer: { padding: 32, alignItems: "center" },
-  stateTitle: { color: colors.textMuted, fontSize: 16, fontWeight: "700" },
-  stateText: {
-    color: colors.textSubtle,
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 8,
-  },
-  retryBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    marginTop: 12,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  retryText: { color: colors.onPrimary, fontWeight: "700" },
-  fab: {
-    position: "absolute",
-    bottom: 24,
-    right: 20,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 28,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  fabCompact: { position: "relative", bottom: 0, right: 0 },
+  sendBtnDisabled: { backgroundColor: colors.disabled },
+  sendBtnPressed: { backgroundColor: colors.primaryPressed },
+  sendText: { ...typography.label, fontSize: 15, color: colors.onPrimary },
   backButtonTarget: {
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: MIN_TOUCH_TARGET + spacing.lg,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.sm,
     alignItems: "center",
     justifyContent: "center",
   },
   newMessageBar: {
     alignItems: "flex-end",
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    backgroundColor: "#f5f5f0",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.canvas,
   },
-  fabText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
+  fab: { borderRadius: radii.pill, ...elevations.medium },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   modalCard: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    padding: spacing.xl,
     width: "100%",
+    gap: spacing.sm,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.primary,
-    marginBottom: 16,
-  },
-  searchRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  searchInput: { flex: 1, marginBottom: 0 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-  },
+  modalTitle: { ...typography.heading, color: colors.primary },
+  modalSubtitle: { ...typography.bodySmall, color: colors.textMuted },
+  modalAlert: { marginTop: spacing.xs },
+  modalActions: { gap: spacing.xs, marginTop: spacing.sm },
+  groupLabel: { ...typography.label, color: colors.text, marginTop: spacing.xs },
+  resultList: { maxHeight: 280 },
   resultRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: MIN_TOUCH_TARGET + spacing.sm,
+    paddingHorizontal: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  resultName: { fontSize: 15, fontWeight: "600", color: "#222" },
-  resultEmail: { fontSize: 13, color: colors.textSubtle, marginTop: 2 },
+  resultName: { ...typography.body, fontWeight: "600", color: colors.text },
   noResults: {
-    fontSize: 14,
-    color: colors.textSubtle,
+    ...typography.bodySmall,
+    color: colors.textMuted,
     textAlign: "center",
-    marginVertical: 12,
+    marginVertical: spacing.md,
   },
-  cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 8 },
-  cancelText: { color: colors.textSubtle, fontSize: 15 },
-  btnDisabled: { opacity: 0.5 },
   actionSheetOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   actionSheetCard: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 12,
-    paddingBottom: 28,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
   },
   actionSheetTitle: {
+    ...typography.label,
     textAlign: "center",
-    color: colors.textSubtle,
-    fontSize: 12,
-    fontWeight: "600",
-    paddingVertical: 8,
+    color: colors.textMuted,
+  },
+  actionSheetPreview: {
+    ...typography.bodySmall,
+    textAlign: "center",
+    color: colors.text,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.md,
   },
   actionSheetOption: {
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
+    minHeight: 56,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
     alignItems: "center",
-    minHeight: 44,
-  },
-  actionSheetOptionText: {
-    fontSize: 16,
-    color: colors.text,
-    fontWeight: "500",
-  },
-  actionSheetOptionTextDestructive: {
-    fontSize: 16,
-    color: colors.destructive,
-    fontWeight: "600",
-  },
-  reportPreview: {
-    fontSize: 13,
-    color: colors.textSubtle,
-    fontStyle: "italic",
-    marginBottom: 16,
-  },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 44,
     justifyContent: "center",
   },
-  chipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
+  actionSheetOptionText: {
+    ...typography.body,
+    fontWeight: "500",
+    color: colors.text,
   },
-  chipText: { color: "#555", fontWeight: "600", fontSize: 13 },
-  chipTextActive: { color: colors.primary },
-  sendReportBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
-    minHeight: 44,
+  actionSheetOptionTextDestructive: {
+    ...typography.body,
+    fontWeight: "600",
+    color: colors.destructive,
   },
-  sendReportBtnText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
+  reportPreview: {
+    ...typography.bodySmall,
+    color: colors.text,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    fontStyle: "italic",
+  },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  reportNote: { minHeight: 72 },
 });

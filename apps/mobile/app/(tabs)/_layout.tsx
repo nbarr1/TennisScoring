@@ -1,7 +1,8 @@
 import { Tabs } from "expo-router";
 import { isPrivilegedRole } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
-import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
+import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
+import { colors, typography } from "../../theme";
 
 function TabIcon({
   focused,
@@ -16,7 +17,7 @@ function TabIcon({
     <AppIcon
       name={focused ? active : regular}
       size={ICON_SIZE.tab}
-      color={focused ? ICON_COLOR.active : ICON_COLOR.inactive}
+      color={focused ? colors.primary : colors.textMuted}
       emphasized={focused}
     />
   );
@@ -31,11 +32,18 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: ICON_COLOR.active,
-        tabBarInactiveTintColor: ICON_COLOR.inactive,
-        headerStyle: { backgroundColor: "#1a472a" },
-        headerTintColor: "#fff",
-        headerTitleStyle: { fontWeight: "700" },
+        // Inactive labels use the muted text token (5.4:1 on white) so they
+        // stay readable; the active tab also switches to its filled icon, so
+        // color is not the only cue.
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+        tabBarLabelStyle: { ...typography.caption, fontWeight: "600" },
+        tabBarAllowFontScaling: true,
+        headerStyle: { backgroundColor: colors.primary },
+        headerTintColor: colors.onPrimary,
+        headerTitleStyle: { fontWeight: "700", color: colors.onPrimary },
+        sceneStyle: { backgroundColor: colors.canvas },
       }}
     >
       <Tabs.Screen

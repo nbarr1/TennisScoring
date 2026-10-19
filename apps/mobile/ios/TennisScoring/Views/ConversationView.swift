@@ -88,7 +88,7 @@ struct ConversationView: View {
       titleVisibility: .visible,
       presenting: confirmingBlock
     ) { message in
-      Button("Block", role: .destructive) {
+      Button("Block \(message.senderName)", role: .destructive) {
         Task { await model.blockSender(of: message) }
       }
     } message: { _ in
@@ -123,6 +123,8 @@ struct ConversationView: View {
         } label: {
           Image(systemName: "person.crop.circle.badge.plus")
             .font(.title2)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
         }
         .accessibilityLabel("Share contact details")
         .disabled(model.isSending)
@@ -135,12 +137,16 @@ struct ConversationView: View {
         Button {
           Task { await model.send() }
         } label: {
-          if model.isSending {
-            ProgressView()
-          } else {
-            Image(systemName: "arrow.up.circle.fill")
-              .font(.title)
+          Group {
+            if model.isSending {
+              ProgressView()
+            } else {
+              Image(systemName: "arrow.up.circle.fill")
+                .font(.title)
+            }
           }
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(Rectangle())
         }
         .accessibilityLabel("Send")
         .disabled(!model.canSend)

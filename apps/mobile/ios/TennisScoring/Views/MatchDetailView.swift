@@ -6,6 +6,8 @@ struct MatchDetailView: View {
   @State private var model: MatchDetailModel
   @State private var choosingServer = false
   @State private var confirmingDispute = false
+  @State private var confirmingDecline = false
+  @State private var confirmingWithdraw = false
 
   init(matchId: String, user: User, services: AppServices) {
     _model = State(initialValue: MatchDetailModel(
@@ -153,22 +155,44 @@ struct MatchDetailView: View {
           }
           .buttonStyle(.borderedProminent)
           Button(role: .destructive) {
-            Task { await model.declineProposal() }
+            confirmingDecline = true
           } label: {
             Text("Decline").frame(maxWidth: .infinity)
           }
           .buttonStyle(.bordered)
+          .confirmationDialog(
+            "Decline this proposal?",
+            isPresented: $confirmingDecline,
+            titleVisibility: .visible
+          ) {
+            Button("Decline proposal", role: .destructive) {
+              Task { await model.declineProposal() }
+            }
+          } message: {
+            Text("The match is cancelled and \(match.sideDisplayName(.player1)) is notified.")
+          }
         }
       }
 
       if model.canWithdrawProposal {
         note("Waiting for \(match.sideDisplayName(.player2)) to respond.", systemImage: "hourglass")
         Button(role: .destructive) {
-          Task { await model.declineProposal() }
+          confirmingWithdraw = true
         } label: {
           Text("Withdraw proposal").frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
+        .confirmationDialog(
+          "Withdraw this proposal?",
+          isPresented: $confirmingWithdraw,
+          titleVisibility: .visible
+        ) {
+          Button("Withdraw proposal", role: .destructive) {
+            Task { await model.declineProposal() }
+          }
+        } message: {
+          Text("The match is cancelled, and \(match.sideDisplayName(.player2)) can no longer accept it.")
+        }
       }
 
       if model.canSubmitReport {

@@ -112,6 +112,12 @@ struct NewMessageView: View {
           ProgressView()
         } else if model.results.isEmpty && !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
           ContentUnavailableView.search(text: model.query)
+        } else if model.results.isEmpty && model.errorMessage == nil {
+          ContentUnavailableView(
+            "Find a player",
+            systemImage: "magnifyingglass",
+            description: Text("Search by name to message someone in your division.")
+          )
         }
       }
       .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search players in your division")

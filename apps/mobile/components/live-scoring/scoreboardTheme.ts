@@ -26,6 +26,16 @@ export const SB = {
   ballOff: "#333333",
   wonSet: "#2A2A2A",
   lostSet: "#141414",
+  /** A player row while a finger is on it. */
+  pressedRow: "#1A1A1A",
+  /** Setup cards and option groups on the black surface. */
+  card: "#0F0F0F",
+  /** Behind sheets and dialogs over the scoreboard. */
+  scrim: "rgba(0,0,0,0.7)",
+  /** Warning text on black (break-point orange, 9:1). */
+  warn: "#FF9F1C",
+  /** Positive text on black (confirmed green, 12:1). */
+  ok: "#3DDC84",
 } as const;
 
 /** Band colours per match moment; text on each is black, at least 7:1. */
@@ -34,10 +44,10 @@ export const BAND_TONES: Record<MatchMomentTone, { bg: string; fg: string }> = {
   deuce: { bg: "#FFFFFF", fg: "#000000" },
   ad: { bg: SB.yellow, fg: "#000000" },
   sp: { bg: SB.yellow, fg: "#000000" },
-  bp: { bg: "#FF9F1C", fg: "#000000" },
+  bp: { bg: SB.warn, fg: "#000000" },
   mp: { bg: "#FF6B81", fg: "#000000" },
   tb: { bg: SB.yellow, fg: "#000000" },
-  ok: { bg: "#3DDC84", fg: "#000000" },
+  ok: { bg: SB.ok, fg: "#000000" },
 };
 
 export const FONT = {

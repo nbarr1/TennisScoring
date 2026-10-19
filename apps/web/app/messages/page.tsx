@@ -2,10 +2,23 @@
 
 export const dynamic = "force-dynamic";
 
-import { AppNav, appNavStyles } from "../shared/AppNav";
-import { AnimatedDiv, LoadingBlock } from "../shared/motion";
-import { IconBan, IconFlag, IconMail, IconMessageCircle, IconPhone, IconUsers } from "@tabler/icons-react";
-import { useState, useRef, useEffect } from "react";
+import { AppNav } from "../shared/AppNav";
+import {
+  IconAlertCircle,
+  IconArrowLeft,
+  IconBan,
+  IconDots,
+  IconFlag,
+  IconMail,
+  IconMessageCircle,
+  IconPhone,
+  IconPlus,
+  IconRefresh,
+  IconSend,
+  IconTrash,
+  IconUsers,
+} from "@tabler/icons-react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import {
   useAuthUser,
   useChannels,
@@ -21,6 +34,26 @@ import {
 } from "@tennis/firebase-client";
 import { getDoc } from "firebase/firestore";
 import type { Channel, Message, PublicProfile, MessageReportReason } from "@tennis/shared";
+import {
+  Button,
+  DataState,
+  Dialog,
+  EmptyState,
+  InlineAlert,
+  Spinner,
+  color,
+  describeError,
+  fieldLabelStyle,
+  inputStyle,
+  radius,
+  shadow,
+  space,
+  target,
+  type,
+  useAnnounce,
+  useConfirm,
+  useDialogClose,
+} from "../shared/ui";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -29,26 +62,75 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+const MAX_MESSAGE_LENGTH = 2000;
+
+/**
+ * Layout rules inline styles can't express: the two-pane split, and below
+ * 760px a list-or-thread toggle so a phone shows one pane at a time.
+ */
+const LAYOUT_CSS = `
+.msg-layout { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; flex: 1; min-height: 0; }
+.msg-sidebar { min-height: 0; overflow-y: auto; }
+.msg-thread { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.msg-back { display: none !important; }
+.msg-channel:hover { background: var(--surface-muted); }
+@media (max-width: 760px) {
+  .msg-layout { grid-template-columns: 1fr; }
+  .msg-layout[data-view="thread"] .msg-sidebar { display: none; }
+  .msg-layout[data-view="list"] .msg-thread { display: none; }
+  .msg-back { display: inline-flex !important; }
+  .msg-sidebar { border-right: none !important; }
+}
+`;
+
+function formatTime(timestamp: number | undefined): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return sameDay
+    ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function formatFullTime(timestamp: number | undefined): string {
+  if (!timestamp) return "";
+  return new Date(timestamp).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function MessagesPage(): React.JSX.Element {
   const { firebaseUser } = useAuthUser();
   const { user: profile } = usePrivateUser(firebaseUser?.uid ?? null);
-  const { channels, loading: channelsLoading } = useChannels(firebaseUser?.uid ?? null);
-  const [active, setActive] = useState<Channel | null>(null);
+  const {
+    channels,
+    loading: channelsLoading,
+    error: channelsError,
+    retry: retryChannels,
+  } = useChannels(firebaseUser?.uid ?? null);
+  const [activeFallback, setActiveFallback] = useState<Channel | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [showNewDm, setShowNewDm] = useState(false);
   const [participantNames, setParticipantNames] = useState<Record<string, string>>({});
 
-
   useEffect(() => {
-    const ids = Array.from(
-      new Set(channels.flatMap((channel) => channel.participantIds)),
-    ).filter((id) => id && !participantNames[id]);
+    const ids = Array.from(new Set(channels.flatMap((channel) => channel.participantIds))).filter(
+      (id) => id && !participantNames[id],
+    );
     if (ids.length === 0) return;
     let cancelled = false;
     void Promise.all(
       ids.map(async (id) => {
-        const snap = await getDoc(profileDoc(id));
-        const data = snap.data();
-        return [id, data?.displayName || id] as const;
+        try {
+          const snap = await getDoc(profileDoc(id));
+          return [id, snap.data()?.displayName || "Player"] as const;
+        } catch {
+          return [id, "Player"] as const;
+        }
       }),
     ).then((entries) => {
       if (!cancelled) {
@@ -60,102 +142,161 @@ export default function MessagesPage(): React.JSX.Element {
     };
   }, [channels, participantNames]);
 
+  // The live channel object when it's in the list, else the one just created.
+  const active = activeId
+    ? channels.find((ch) => ch.id === activeId) ?? (activeFallback?.id === activeId ? activeFallback : null)
+    : null;
+
+  const sortedChannels = [...channels].sort(
+    (a, b) => (b.lastMessage?.timestamp ?? b.createdAt ?? 0) - (a.lastMessage?.timestamp ?? a.createdAt ?? 0),
+  );
+
   function channelLabel(ch: Channel): string {
     if (ch.name) return ch.name;
-    if (ch.type === "division") return "Division Chat";
+    if (ch.type === "division") return "Division chat";
     if (ch.type === "direct") {
       const otherId = ch.participantIds.find((id) => id !== firebaseUser?.uid);
-      return otherId
-        ? participantNames[otherId] ?? "Direct Message"
-        : "Direct Message";
+      return otherId ? participantNames[otherId] ?? "Direct message" : "Direct message";
     }
     return ch.type;
   }
 
+  function openChannel(ch: Channel) {
+    setActiveFallback(ch);
+    setActiveId(ch.id);
+  }
+
+  const canStartDm = !!profile?.divisionId;
+
   return (
     <div style={styles.page}>
+      <style>{LAYOUT_CSS}</style>
       <AppNav active="messages" />
 
-      <div style={styles.layout}>
-        {/* Sidebar */}
-        <aside style={styles.sidebar}>
+      <div className="msg-layout" data-view={active ? "thread" : "list"}>
+        <nav className="msg-sidebar" aria-labelledby="conversations-heading" style={styles.sidebar}>
           <div style={styles.sidebarHeader}>
-            <h2 style={styles.sidebarTitle}>Channels</h2>
-            {profile?.divisionId && (
-              <button
-                type="button"
-                aria-label="New direct message"
-                style={styles.newDmBtn}
+            <h1 id="conversations-heading" style={styles.sidebarTitle}>
+              Messages
+            </h1>
+            {canStartDm && (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<IconPlus size={18} aria-hidden="true" />}
                 onClick={() => setShowNewDm(true)}
-                title="New direct message"
               >
-                +
-              </button>
+                New message
+              </Button>
             )}
           </div>
-          {channels.map((ch) => (
-            <button
-              key={ch.id}
-              style={{
-                ...styles.channelBtn,
-                ...(active?.id === ch.id ? styles.channelBtnActive : {}),
-              }}
-              onClick={() => setActive(ch)}
-            >
-              <span style={styles.channelName}>
-                {ch.type === "division" ? <IconUsers size={16} aria-hidden="true" /> : <IconMessageCircle size={16} aria-hidden="true" />}{" "}
-                {channelLabel(ch)}
-              </span>
-              {ch.lastMessage && (
-                <span style={styles.preview} title={ch.lastMessage.content}>
-                  {ch.lastMessage.content.slice(0, 40)}
-                </span>
-              )}
-            </button>
-          ))}
-          {channelsLoading && channels.length === 0 && (
-            <LoadingBlock label="Loading conversations…" rows={4} rowHeight={44} style={styles.channelsLoading} />
-          )}
-          {!channelsLoading && channels.length === 0 && (
-            <p style={styles.empty}>
-              No channels yet. Join a division to start chatting.
-            </p>
-          )}
-        </aside>
+          <DataState
+            loading={channelsLoading && channels.length === 0}
+            error={channelsError}
+            isEmpty={channels.length === 0}
+            loadingLabel="Loading conversations…"
+            loadingRows={4}
+            errorTitle="Couldn't load your conversations."
+            onRetry={retryChannels}
+            empty={
+              <EmptyState
+                compact
+                icon={<IconMessageCircle size={32} aria-hidden="true" />}
+                title="No conversations yet"
+                description={
+                  canStartDm
+                    ? "Message a player in your division to set up a match."
+                    : "Join a division to chat with its players."
+                }
+                action={
+                  canStartDm ? (
+                    <Button size="sm" onClick={() => setShowNewDm(true)}>
+                      Start a conversation
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+          >
+            <ul style={styles.channelList}>
+              {sortedChannels.map((ch) => {
+                const isActive = active?.id === ch.id;
+                const label = channelLabel(ch);
+                const last = ch.lastMessage;
+                return (
+                  <li key={ch.id}>
+                    <button
+                      type="button"
+                      className="msg-channel"
+                      aria-current={isActive ? "true" : undefined}
+                      style={{ ...styles.channelBtn, ...(isActive ? styles.channelBtnActive : {}) }}
+                      onClick={() => openChannel(ch)}
+                    >
+                      <span style={styles.channelIcon}>
+                        {ch.type === "division" ? (
+                          <IconUsers size={18} aria-hidden="true" />
+                        ) : (
+                          <IconMessageCircle size={18} aria-hidden="true" />
+                        )}
+                      </span>
+                      <span style={styles.channelText}>
+                        <span style={styles.channelTopRow}>
+                          <span style={styles.channelName}>
+                            {label}
+                            <span className="sr-only">{ch.type === "division" ? ", division chat" : ", direct message"}</span>
+                          </span>
+                          {last && <span style={styles.channelTime}>{formatTime(last.timestamp)}</span>}
+                        </span>
+                        {last && (
+                          <span style={styles.preview}>
+                            {last.senderId === firebaseUser?.uid ? "You: " : ""}
+                            {last.content}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </DataState>
+        </nav>
 
-        {/* Chat area */}
-        <main style={styles.chatArea}>
+        <main className="msg-thread" style={styles.chatArea}>
           {active ? (
             <ChatPane
-              // A new pane per channel, so a draft or a failed send's restored
-              // text can never land in another conversation's composer.
+              // A new pane per channel, so a draft or a failed send can never
+              // land in another conversation's composer.
               key={active.id}
               channel={active}
               currentUserId={firebaseUser?.uid ?? ""}
-              currentUserName={
-                profile?.displayName ?? firebaseUser?.displayName ?? "You"
-              }
+              currentUserName={profile?.displayName ?? firebaseUser?.displayName ?? "You"}
               divisionId={profile?.divisionId}
               blockedUserIds={profile?.blockedUserIds ?? []}
               title={channelLabel(active)}
-              onDeleted={() => setActive(null)}
+              onBack={() => setActiveId(null)}
+              onDeleted={() => setActiveId(null)}
             />
           ) : (
-            <div style={styles.selectPrompt}>
-              Select a channel to start messaging
-            </div>
+            <EmptyState
+              icon={<IconMessageCircle size={40} aria-hidden="true" />}
+              title="Pick a conversation"
+              description="Choose a conversation from the list to read and reply."
+              style={{ margin: "auto" }}
+            />
           )}
         </main>
       </div>
 
-      {showNewDm && firebaseUser && profile?.divisionId && (
-        <NewDmModal
+      {firebaseUser && profile?.divisionId && (
+        <NewDmDialog
+          open={showNewDm}
           currentUserId={firebaseUser.uid}
           divisionId={profile.divisionId}
           blockedUserIds={profile.blockedUserIds ?? []}
           onClose={() => setShowNewDm(false)}
           onCreated={(channel) => {
-            setActive(channel);
+            openChannel(channel);
             setShowNewDm(false);
           }}
         />
@@ -164,13 +305,15 @@ export default function MessagesPage(): React.JSX.Element {
   );
 }
 
-function NewDmModal({
+function NewDmDialog({
+  open,
   currentUserId,
   divisionId,
   blockedUserIds,
   onClose,
   onCreated,
 }: {
+  open: boolean;
   currentUserId: string;
   divisionId: string;
   blockedUserIds: string[];
@@ -180,104 +323,159 @@ function NewDmModal({
   const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState<PublicProfile[]>([]);
   const [searching, setSearching] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [searchAttempt, setSearchAttempt] = useState(0);
+  const [creatingId, setCreatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setSearchText("");
+      setResults([]);
+      setError("");
+      setSearchFailed(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!searchText.trim()) {
       setResults([]);
+      setSearchFailed(false);
       return;
     }
+    let cancelled = false;
     const t = setTimeout(async () => {
       setSearching(true);
+      setSearchFailed(false);
       try {
         // A direct conversation needs a shared active division, which roster-only players lack.
         const r = await searchDivisionPlayers(divisionId, searchText, { profilesOnly: true });
         const blockedIds = new Set(blockedUserIds);
-        setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
+        if (!cancelled) setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
       } catch {
-        setResults([]);
+        if (!cancelled) {
+          setResults([]);
+          setSearchFailed(true);
+        }
       } finally {
-        setSearching(false);
+        if (!cancelled) setSearching(false);
       }
     }, 300);
-    return () => clearTimeout(t);
-  }, [searchText, divisionId, currentUserId, blockedUserIds]);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [searchText, divisionId, currentUserId, blockedUserIds, searchAttempt]);
 
   async function handlePick(user: PublicProfile) {
-    setCreating(true);
+    if (creatingId) return;
+    setCreatingId(user.id);
     setError("");
     try {
       const channel = await getOrCreateDM(currentUserId, user.id);
       onCreated({ ...channel, name: channel.name ?? user.displayName });
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Could not start conversation. Please try again.",
-      );
+      setError(describeError(e, "Couldn't start the conversation. Please try again."));
     } finally {
-      setCreating(false);
+      setCreatingId(null);
     }
   }
 
+  const query = searchText.trim();
+
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-dm-title"
-        style={styles.modalCard}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="new-dm-title" style={styles.modalTitle}>New Direct Message</h2>
-        <p style={styles.modalHint}>
-          Search for a player in your division to start a conversation.
-        </p>
-        <label htmlFor="new-dm-search" style={styles.label}>
-          Search people
-        </label>
-        <input
-          id="new-dm-search"
-          style={styles.modalInput}
-          autoFocus
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder="Search by name…"
-        />
-        {searching && <div style={styles.muted}>Searching…</div>}
-        {results.length > 0 && (
-          <div style={styles.results}>
-            {results.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                aria-label={`Start conversation with ${u.displayName}`}
-                style={styles.resultRow}
-                onClick={() => handlePick(u)}
-                disabled={creating}
-              >
-                <div style={styles.resultName}>{u.displayName}</div>
-              </button>
-            ))}
-          </div>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="New message"
+      description="Search for a player in your division."
+      dismissible={!creatingId}
+      footer={<DialogCancel label="Cancel" disabled={!!creatingId} />}
+    >
+      <label htmlFor="new-dm-search" style={fieldLabelStyle}>
+        Player name
+      </label>
+      <input
+        id="new-dm-search"
+        type="search"
+        style={inputStyle}
+        data-autofocus
+        autoComplete="off"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        aria-describedby="new-dm-status"
+      />
+      <div id="new-dm-status" role="status" style={styles.searchStatus}>
+        {searching ? (
+          <Spinner label="Searching…" />
+        ) : searchFailed ? null : query && results.length === 0 ? (
+          `No players in your division match "${query}".`
+        ) : query ? (
+          `${results.length} ${results.length === 1 ? "player" : "players"} found`
+        ) : (
+          ""
         )}
-        {searchText.trim().length > 0 && !searching && results.length === 0 && (
-          <div style={styles.muted}>No players found.</div>
-        )}
-        {error && <div role="alert" style={styles.error}>{error}</div>}
-        <button
-          type="button"
-          style={styles.modalCancel}
-          onClick={onClose}
-          disabled={creating}
-        >
-          Close
-        </button>
       </div>
-    </div>
+      {searchFailed && (
+        <InlineAlert
+          tone="error"
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setSearchAttempt((n) => n + 1)}>
+              Try again
+            </Button>
+          }
+        >
+          Couldn&apos;t search players. Check your connection and try again.
+        </InlineAlert>
+      )}
+      {results.length > 0 && (
+        <ul style={styles.results}>
+          {results.map((u) => (
+            <li key={u.id}>
+              <button
+                type="button"
+                className="msg-channel"
+                style={styles.resultRow}
+                onClick={() => void handlePick(u)}
+                disabled={!!creatingId}
+                aria-busy={creatingId === u.id || undefined}
+              >
+                <span style={styles.resultName}>{u.displayName}</span>
+                {creatingId === u.id ? (
+                  <Spinner label="Opening…" />
+                ) : (
+                  <span style={styles.resultHint}>Message</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <InlineAlert tone="error" style={{ marginTop: space.md }}>
+          {error}
+        </InlineAlert>
+      )}
+    </Dialog>
   );
 }
+
+function DialogCancel({ label, disabled }: { label: string; disabled?: boolean }) {
+  const close = useDialogClose();
+  return (
+    <Button variant="secondary" onClick={close} disabled={disabled}>
+      {label}
+    </Button>
+  );
+}
+
+type OutgoingMessage = {
+  localId: string;
+  content: string;
+  startedAt: number;
+  status: "sending" | "failed";
+  error?: string;
+};
 
 function ChatPane({
   channel,
@@ -286,6 +484,7 @@ function ChatPane({
   divisionId,
   blockedUserIds,
   title,
+  onBack,
   onDeleted,
 }: {
   channel: Channel;
@@ -294,245 +493,510 @@ function ChatPane({
   divisionId?: string;
   blockedUserIds: string[];
   title: string;
+  onBack: () => void;
   onDeleted: () => void;
 }) {
-  const { messages: allMessages } = useMessages(channel.id);
+  const announce = useAnnounce();
+  const { confirm, confirmDialog } = useConfirm();
+  const { messages: allMessages, loading, error, retry } = useMessages(channel.id);
   const [text, setText] = useState("");
-  const [deleteMessage, setDeleteMessage] = useState("");
+  const [outgoing, setOutgoing] = useState<OutgoingMessage[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [actionMessage, setActionMessage] = useState<Message | null>(null);
-  const [reportTarget, setReportTarget] = useState<Message | null>(null);
-  const [reportReason, setReportReason] = useState<MessageReportReason>("harassment");
-  const [reportNote, setReportNote] = useState("");
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState("");
   const [actionError, setActionError] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const blockedIds = new Set(blockedUserIds);
-  const messages = allMessages.filter(
-    (m) => m.senderId === currentUserId || !blockedIds.has(m.senderId),
+  const messages = allMessages.filter((m) => m.senderId === currentUserId || !blockedIds.has(m.senderId));
+  const hiddenCount = allMessages.length - messages.length;
+
+  // A send whose message already arrived through the snapshot is not shown twice.
+  const visibleOutgoing = outgoing.filter(
+    (o) =>
+      o.status === "failed" ||
+      !messages.some((m) => m.senderId === currentUserId && m.content === o.content && m.createdAt >= o.startedAt - 1000),
   );
 
+  // Move focus to the conversation when it opens, so a phone user who just
+  // switched panes (and a screen reader) lands in the thread.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    headingRef.current?.focus();
+  }, []);
 
-  function handleOpenReport() {
-    if (!actionMessage) return;
-    setReportTarget(actionMessage);
-    setReportReason("harassment");
-    setReportNote("");
-    setReportError("");
-    setActionMessage(null);
-  }
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, visibleOutgoing.length]);
 
-  async function handleSubmitReport() {
-    if (!reportTarget) return;
-    setReporting(true);
-    setReportError("");
+  // Grow the composer with its content, up to about five lines.
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [text]);
+
+  async function deliver(localId: string, content: string) {
     try {
-      await reportMessage({
-        channelId: channel.id,
-        message: reportTarget,
-        reportedBy: currentUserId,
-        reason: reportReason,
-        note: reportNote,
-        divisionId,
-      });
-      setReportTarget(null);
-    } catch {
-      setReportError("Could not submit report. Please try again.");
-    } finally {
-      setReporting(false);
+      await sendMessage({ channelId: channel.id, senderId: currentUserId, senderName: currentUserName, content });
+      setOutgoing((list) => list.filter((o) => o.localId !== localId));
+    } catch (e) {
+      setOutgoing((list) =>
+        list.map((o) =>
+          o.localId === localId
+            ? { ...o, status: "failed", error: describeError(e, "Couldn't send. Check your connection.") }
+            : o,
+        ),
+      );
+      announce("Message not sent. Use Retry to send it again.", { politeness: "assertive" });
     }
   }
 
-  async function handleBlockSender() {
-    if (!actionMessage) return;
-    const senderId = actionMessage.senderId;
-    const senderName = actionMessage.senderName;
-    setActionMessage(null);
-    const confirmed = window.confirm(
-      `Block ${senderName}? You won't see messages from this person anymore. You can unblock them later from your profile.`,
-    );
-    if (!confirmed) return;
-    try {
-      await blockUser(currentUserId, senderId);
-    } catch {
-      setActionError("Could not block user. Please try again.");
-    }
-  }
-
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
-    if (!text.trim()) return;
+  function send() {
     const content = text.trim();
+    if (!content) return;
+    const localId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setOutgoing((list) => [...list, { localId, content, startedAt: Date.now(), status: "sending" }]);
     setText("");
     setActionError("");
-    try {
-      await sendMessage({
-        channelId: channel.id,
-        senderId: currentUserId,
-        senderName: currentUserName,
-        content,
-      });
-    } catch {
-      // Put the message back so a failed send doesn't lose it, unless the
-      // user has already started typing something else.
-      setText((current) => current || content);
-      setActionError("Could not send your message. Please try again.");
+    void deliver(localId, content);
+  }
+
+  function retrySend(item: OutgoingMessage) {
+    setOutgoing((list) =>
+      list.map((o) => (o.localId === item.localId ? { ...o, status: "sending", error: undefined, startedAt: Date.now() } : o)),
+    );
+    void deliver(item.localId, item.content);
+  }
+
+  function discardSend(item: OutgoingMessage) {
+    setOutgoing((list) => list.filter((o) => o.localId !== item.localId));
+    // Hand the text back so nothing typed is lost, unless a new draft exists.
+    setText((current) => current || item.content);
+    composerRef.current?.focus();
+  }
+
+  function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      send();
     }
   }
 
-
   async function handleDeleteThread() {
-    if (channel.type !== "direct") return;
-    const confirmed = window.confirm(
-      "Delete this chat thread for all participants? This cannot be undone.",
-    );
-    if (!confirmed) return;
+    if (channel.type !== "direct" || deleting) return;
+    const ok = await confirm({
+      title: `Delete your conversation with ${title}?`,
+      message: "The conversation and all its messages are deleted for both of you. This can't be undone.",
+      confirmLabel: "Delete conversation",
+    });
+    if (!ok) return;
     setDeleting(true);
-    setDeleteMessage("");
+    setActionError("");
     try {
       await deleteDirectChannel(channel.id);
+      announce("Conversation deleted.", { toast: true });
       onDeleted();
-    } catch {
-      setDeleteMessage("Could not delete this chat thread. Please try again.");
-    } finally {
+    } catch (e) {
+      setActionError(describeError(e, "Couldn't delete this conversation. Please try again."));
       setDeleting(false);
     }
   }
 
+  const remaining = MAX_MESSAGE_LENGTH - text.length;
+
   return (
     <div style={styles.chatPane}>
       <div style={styles.chatHeader}>
-        <span style={styles.chatTitle}>{title}</span>
+        <Button
+          variant="quiet"
+          size="sm"
+          className="msg-back"
+          icon={<IconArrowLeft size={18} aria-hidden="true" />}
+          onClick={onBack}
+        >
+          Conversations
+        </Button>
+        <h2 ref={headingRef} tabIndex={-1} style={styles.chatTitle}>
+          {title}
+        </h2>
         {channel.type === "direct" && (
-          <button
-            type="button"
-            style={styles.deleteThreadBtn}
-            onClick={handleDeleteThread}
-            disabled={deleting}
+          <Button
+            variant="quiet-danger"
+            size="sm"
+            icon={<IconTrash size={18} aria-hidden="true" />}
+            pending={deleting}
+            pendingLabel="Deleting…"
+            onClick={() => void handleDeleteThread()}
           >
-            {deleting ? "Deleting…" : "Delete thread"}
-          </button>
+            Delete conversation
+          </Button>
         )}
       </div>
-      {deleteMessage && <div role="alert" style={styles.threadError}>{deleteMessage}</div>}
-      {actionError && <div role="alert" style={styles.threadError}>{actionError}</div>}
+      {actionError && (
+        <InlineAlert tone="error" onDismiss={() => setActionError("")} style={styles.threadAlert}>
+          {actionError}
+        </InlineAlert>
+      )}
 
-      <AnimatedDiv style={styles.messageList}>
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            isMe={m.senderId === currentUserId}
-            onOpenActions={() => setActionMessage(m)}
-          />
-        ))}
-        <div ref={bottomRef} />
-      </AnimatedDiv>
+      <div
+        ref={listRef}
+        role="log"
+        aria-label={`Messages with ${title}`}
+        tabIndex={0}
+        style={styles.messageList}
+      >
+        <DataState
+          loading={loading && allMessages.length === 0}
+          error={error}
+          isEmpty={messages.length === 0 && visibleOutgoing.length === 0}
+          loadingLabel="Loading messages…"
+          loadingRows={4}
+          errorTitle="Couldn't load these messages."
+          onRetry={retry}
+          empty={
+            <EmptyState
+              compact
+              title={hiddenCount > 0 ? "Only messages from blocked players here" : "No messages yet"}
+              description={
+                hiddenCount > 0
+                  ? "Messages from players you've blocked are hidden."
+                  : channel.type === "division"
+                    ? "Say hello to your division, or ask who's free to play this week."
+                    : `Say hello to ${title} and suggest a time to play.`
+              }
+              style={{ margin: "auto" }}
+            />
+          }
+        >
+          {hiddenCount > 0 && (
+            <p style={styles.hiddenNote}>
+              {hiddenCount} {hiddenCount === 1 ? "message" : "messages"} from blocked players hidden.
+            </p>
+          )}
+          {messages.map((m) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isMe={m.senderId === currentUserId}
+              onOpenActions={() => setActionMessage(m)}
+            />
+          ))}
+          {visibleOutgoing.map((o) => (
+            <OutgoingBubble key={o.localId} item={o} onRetry={() => retrySend(o)} onDiscard={() => discardSend(o)} />
+          ))}
+        </DataState>
+      </div>
 
-      <form style={styles.inputRow} onSubmit={handleSend}>
-        <label htmlFor="message-composer" style={styles.srOnly}>
-          Message
+      <form
+        style={styles.inputRow}
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <label htmlFor="message-composer" className="sr-only">
+          Message {title}
         </label>
-        <input
+        <textarea
           id="message-composer"
+          ref={composerRef}
+          rows={1}
           style={styles.input}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          maxLength={2000}
-          placeholder="Type a message…"
+          onKeyDown={handleComposerKeyDown}
+          maxLength={MAX_MESSAGE_LENGTH}
+          placeholder="Write a message"
+          aria-describedby="message-composer-hint"
         />
-        <button
-          type="submit"
-          aria-label="Send message"
-          style={styles.sendBtn}
-          disabled={!text.trim()}
-        >
+        <span id="message-composer-hint" className="sr-only">
+          Press Enter to send, Shift and Enter for a new line.
+          {remaining <= 100 ? ` ${remaining} characters left.` : ""}
+        </span>
+        <Button type="submit" icon={<IconSend size={18} aria-hidden="true" />} disabled={!text.trim()} style={styles.sendBtn}>
           Send
-        </button>
+        </Button>
       </form>
-
-      {actionMessage && (
-        <div style={styles.modalOverlay} onClick={() => setActionMessage(null)}>
-          <div style={styles.actionSheetCard} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>{actionMessage.senderName}</h3>
-            <button type="button" style={styles.actionSheetOption} onClick={handleOpenReport}>
-              <IconFlag size={16} aria-hidden="true" /> Report message
-            </button>
-            <button
-              type="button"
-              style={{ ...styles.actionSheetOption, color: "#c0392b" }}
-              onClick={handleBlockSender}
-            >
-              <IconBan size={16} aria-hidden="true" /> Block {actionMessage.senderName}
-            </button>
-            <button
-              type="button"
-              style={styles.modalCancel}
-              onClick={() => setActionMessage(null)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+      {remaining <= 100 && (
+        <p style={styles.counter} aria-hidden="true">
+          {remaining} characters left
+        </p>
       )}
 
-      {reportTarget && (
-        <div style={styles.modalOverlay} onClick={() => setReportTarget(null)}>
-          <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>Report message</h3>
-            <p style={styles.reportPreview}>&ldquo;{reportTarget.content}&rdquo;</p>
-            <div style={styles.chipRow}>
-              {REPORT_REASONS.map((r) => (
-                <button
-                  key={r.value}
-                  type="button"
-                  style={{
-                    ...styles.chip,
-                    ...(reportReason === r.value ? styles.chipActive : {}),
-                  }}
-                  onClick={() => setReportReason(r.value)}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            <label htmlFor="report-note" style={styles.label}>
-              Details (optional)
-            </label>
-            <textarea
-              id="report-note"
-              style={{ ...styles.modalInput, minHeight: 64, resize: "vertical" as const }}
-              value={reportNote}
-              maxLength={1000}
-              onChange={(e) => setReportNote(e.target.value)}
-              placeholder="Add details (optional)"
-            />
-            {reportError && <div role="alert" style={styles.error}>{reportError}</div>}
-            <div style={styles.modalBtns}>
-              <button
-                type="button"
-                style={{ ...styles.modalCancel, width: "auto" }}
-                onClick={() => setReportTarget(null)}
-                disabled={reporting}
+      <MessageActionsDialog
+        message={actionMessage}
+        onClose={() => setActionMessage(null)}
+        onReport={async (target, reason, note) => {
+          await reportMessage({
+            channelId: channel.id,
+            message: target,
+            reportedBy: currentUserId,
+            reason,
+            note,
+            divisionId,
+          });
+          setActionMessage(null);
+          announce("Report sent. A division leader will review it.", { toast: true });
+        }}
+        onBlock={async (target) => {
+          await blockUser(currentUserId, target.senderId);
+          setActionMessage(null);
+          announce(`${target.senderName} blocked. You can unblock them from your profile.`, { toast: true });
+        }}
+      />
+
+      {confirmDialog}
+    </div>
+  );
+}
+
+type ActionMode = "menu" | "report" | "block";
+
+/**
+ * Report and block live in one dialog that changes step, so moving from the
+ * menu to a form never stacks or chains dialogs (which would fight over focus).
+ */
+function MessageActionsDialog({
+  message,
+  onClose,
+  onReport,
+  onBlock,
+}: {
+  message: Message | null;
+  onClose: () => void;
+  onReport: (target: Message, reason: MessageReportReason, note: string) => Promise<void>;
+  onBlock: (target: Message) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<ActionMode>("menu");
+  const [reason, setReason] = useState<MessageReportReason | null>(null);
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const stepFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (message) {
+      setMode("menu");
+      setReason(null);
+      setNote("");
+      setError("");
+    }
+  }, [message]);
+
+  // Each step change moves focus to the step's first control.
+  const menuFirstRef = useRef<HTMLButtonElement>(null);
+  const previousMode = useRef<ActionMode>("menu");
+  useEffect(() => {
+    if (mode !== "menu") stepFocusRef.current?.focus();
+    else if (previousMode.current !== "menu") menuFirstRef.current?.focus();
+    previousMode.current = mode;
+  }, [mode]);
+
+  async function run(action: () => Promise<void>, fallback: string) {
+    if (pending) return;
+    setPending(true);
+    setError("");
+    try {
+      await action();
+    } catch (err) {
+      setError(describeError(err, fallback));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function submitReport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!message) return;
+    if (!reason) {
+      setError("Choose a reason for the report.");
+      return;
+    }
+    void run(() => onReport(message, reason, note), "Couldn't send the report. Please try again.");
+  }
+
+  const name = message?.senderName ?? "this player";
+  const title =
+    mode === "report" ? "Report message" : mode === "block" ? `Block ${name}?` : `Message from ${name}`;
+  const description =
+    mode === "report"
+      ? "A division leader reviews every report and can remove the message. The sender isn't told who reported it."
+      : undefined;
+
+  const footer =
+    mode === "report" ? (
+      <>
+        <Button variant="secondary" onClick={() => setMode("menu")} disabled={pending}>
+          Back
+        </Button>
+        <Button type="submit" form="report-message-form" pending={pending} pendingLabel="Sending report…">
+          Send report
+        </Button>
+      </>
+    ) : mode === "block" ? (
+      <>
+        <Button
+          variant="secondary"
+          onClick={() => setMode("menu")}
+          disabled={pending}
+          ref={(el) => {
+            stepFocusRef.current = el;
+          }}
+        >
+          Back
+        </Button>
+        <Button
+          variant="danger"
+          pending={pending}
+          pendingLabel="Blocking…"
+          onClick={() => message && void run(() => onBlock(message), `Couldn't block ${name}. Please try again.`)}
+        >
+          Block {name}
+        </Button>
+      </>
+    ) : undefined;
+
+  return (
+    <Dialog
+      open={message !== null}
+      onClose={onClose}
+      title={title}
+      description={description}
+      size="sm"
+      role={mode === "block" ? "alertdialog" : "dialog"}
+      dirty={mode === "report" && (!!reason || !!note.trim())}
+      dismissible={!pending}
+      footer={footer}
+    >
+      {message && (
+        <>
+          <p style={styles.reportPreview}>
+            <span className="sr-only">Message from {message.senderName}: </span>&ldquo;{message.content}&rdquo;
+          </p>
+
+          {mode === "menu" && (
+            <div style={styles.actionList}>
+              <Button
+                ref={menuFirstRef}
+                variant="secondary"
+                fullWidth
+                icon={<IconFlag size={18} aria-hidden="true" />}
+                onClick={() => setMode("report")}
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                style={styles.sendBtn}
-                onClick={handleSubmitReport}
-                disabled={reporting}
+                Report message
+              </Button>
+              <Button
+                variant="quiet-danger"
+                fullWidth
+                icon={<IconBan size={18} aria-hidden="true" />}
+                onClick={() => setMode("block")}
               >
-                {reporting ? "Submitting…" : "Submit report"}
-              </button>
+                Block {name}
+              </Button>
             </div>
-          </div>
+          )}
+
+          {mode === "block" && (
+            <div style={{ ...type.body, color: color.ink }}>
+              <p>
+                You won&apos;t see their messages in any conversation, and you won&apos;t get notifications for them.{" "}
+                {name} isn&apos;t told.
+              </p>
+              <p style={{ marginTop: space.sm }}>You can unblock them anytime from your profile.</p>
+            </div>
+          )}
+
+          {mode === "report" && (
+            <form id="report-message-form" onSubmit={submitReport} noValidate>
+              <fieldset style={styles.fieldset}>
+                <legend style={fieldLabelStyle}>Reason</legend>
+                <div style={styles.chipRow}>
+                  {REPORT_REASONS.map((r, index) => {
+                    const selected = reason === r.value;
+                    return (
+                      <label key={r.value} style={{ ...styles.chip, ...(selected ? styles.chipActive : {}) }}>
+                        <input
+                          type="radio"
+                          name="report-reason"
+                          value={r.value}
+                          checked={selected}
+                          ref={
+                            index === 0
+                              ? (el) => {
+                                  stepFocusRef.current = el;
+                                }
+                              : undefined
+                          }
+                          onChange={() => {
+                            setReason(r.value);
+                            setError("");
+                          }}
+                          style={styles.radio}
+                        />
+                        {r.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <label htmlFor="report-note" style={fieldLabelStyle}>
+                Details (optional)
+              </label>
+              <textarea
+                id="report-note"
+                style={{ ...inputStyle, minHeight: 88, padding: "10px 12px", resize: "vertical" }}
+                value={note}
+                maxLength={1000}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </form>
+          )}
+
+          {error && (
+            <InlineAlert tone="error" style={{ marginTop: space.md }}>
+              {error}
+            </InlineAlert>
+          )}
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+function OutgoingBubble({
+  item,
+  onRetry,
+  onDiscard,
+}: {
+  item: OutgoingMessage;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) {
+  const failed = item.status === "failed";
+  return (
+    <div style={{ ...styles.bubbleWrap, alignSelf: "flex-end", alignItems: "flex-end" }}>
+      <div style={{ ...styles.bubble, ...styles.bubbleMe, ...(failed ? styles.bubbleFailed : styles.bubbleSending) }}>
+        <div style={styles.bubbleText}>{item.content}</div>
+      </div>
+      {failed ? (
+        <div style={styles.failedRow} role="alert">
+          <span style={styles.failedText}>
+            <IconAlertCircle size={16} aria-hidden="true" /> Not sent. {item.error}
+          </span>
+          <span style={styles.failedActions}>
+            <Button size="sm" variant="secondary" icon={<IconRefresh size={16} aria-hidden="true" />} onClick={onRetry}>
+              Retry
+            </Button>
+            <Button size="sm" variant="quiet" onClick={onDiscard}>
+              Edit
+            </Button>
+          </span>
         </div>
+      ) : (
+        <span style={styles.metaText}>Sending…</span>
       )}
     </div>
   );
@@ -550,381 +1014,263 @@ function MessageBubble({
   return (
     <div
       style={{
-        ...styles.bubble,
-        ...(isMe ? styles.bubbleMe : styles.bubbleThem),
+        ...styles.bubbleWrap,
+        alignSelf: isMe ? "flex-end" : "flex-start",
+        alignItems: isMe ? "flex-end" : "flex-start",
       }}
     >
-      {!isMe && (
-        <div style={styles.bubbleTopRow}>
-          <div style={styles.senderName}>{message.senderName}</div>
-          {onOpenActions && (
-            <button
-              type="button"
-              aria-label={`Message actions for ${message.senderName}`}
-              style={styles.bubbleActionsBtn}
-              onClick={onOpenActions}
-            >
-              ⋯
-            </button>
-          )}
-        </div>
-      )}
-      <div style={styles.bubbleText}>{message.content}</div>
-      {message.sharedContact && (
-        <div style={styles.contactActions}>
-          {message.sharedContact.phone && (
-            <a
-              href={`tel:${message.sharedContact.phone}`}
-              style={styles.contactLink}
-            >
-              <IconPhone size={14} aria-hidden="true" /> Call
-            </a>
-          )}
-          {message.sharedContact.email && (
-            <a
-              href={`mailto:${message.sharedContact.email}`}
-              style={styles.contactLink}
-            >
-              <IconMail size={14} aria-hidden="true" /> Email
-            </a>
-          )}
-        </div>
-      )}
+      <div style={{ ...styles.bubble, ...(isMe ? styles.bubbleMe : styles.bubbleThem) }}>
+        {!isMe && <div style={styles.senderName}>{message.senderName}</div>}
+        {isMe && <span className="sr-only">You: </span>}
+        <div style={styles.bubbleText}>{message.content}</div>
+        {message.sharedContact && (
+          <div style={styles.contactActions}>
+            {message.sharedContact.phone && (
+              <a href={`tel:${message.sharedContact.phone}`} style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
+                <IconPhone size={16} aria-hidden="true" /> Call {message.sharedContact.phone}
+              </a>
+            )}
+            {message.sharedContact.email && (
+              <a href={`mailto:${message.sharedContact.email}`} style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
+                <IconMail size={16} aria-hidden="true" /> Email {message.sharedContact.email}
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={styles.metaRow}>
+        <time style={styles.metaText} dateTime={new Date(message.createdAt || 0).toISOString()} title={formatFullTime(message.createdAt)}>
+          {formatTime(message.createdAt)}
+        </time>
+        {!isMe && onOpenActions && (
+          <button
+            type="button"
+            aria-label={`Report or block: message from ${message.senderName}`}
+            style={styles.bubbleActionsBtn}
+            onClick={onOpenActions}
+          >
+            <IconDots size={20} aria-hidden="true" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  channelsLoading: { padding: "4px 16px" },
   page: {
-    ...appNavStyles.page,
+    height: "100dvh",
+    minHeight: 480,
+    background: color.canvas,
     display: "flex",
     flexDirection: "column",
   },
-  layout: {
-    display: "flex",
-    flex: 1,
-    flexWrap: "wrap",
-    overflow: "hidden",
-    minHeight: "calc(100vh - 57px)",
-  },
   sidebar: {
-    width: "min(280px, 100%)",
-    background: "#fff",
-    borderRight: "1px solid #eee",
-    overflowY: "auto" as const,
-    padding: "16px 0",
+    background: color.surface,
+    borderRight: `1px solid ${color.border}`,
+    padding: `${space.lg}px 0`,
   },
   sidebarHeader: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "0 16px 12px",
+    flexWrap: "wrap",
+    gap: space.sm,
+    padding: `0 ${space.lg}px ${space.md}px`,
   },
-  sidebarTitle: {
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#999",
-    textTransform: "uppercase" as const,
-    letterSpacing: 1,
-    margin: 0,
-  },
-  newDmBtn: {
-    background: "var(--green-dark)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "50%",
-    width: 26,
-    height: 26,
-    fontSize: 18,
-    fontWeight: 700,
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    lineHeight: 1,
-  },
-  modalOverlay: {
-    position: "fixed" as const,
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 100,
-    padding: 16,
-  },
-  modalCard: {
-    background: "#fff",
-    borderRadius: 16,
-    padding: 28,
-    maxWidth: 420,
-    width: "100%",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: "#1a472a",
-    marginBottom: 8,
-  },
-  modalHint: { fontSize: 13, color: "#666", marginBottom: 14 },
-  label: {
-    display: "block",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#444",
-    marginBottom: 6,
-  },
-  srOnly: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    padding: 0,
-    margin: -1,
-    overflow: "hidden",
-    clip: "rect(0, 0, 0, 0)",
-    whiteSpace: "nowrap",
-    border: 0,
-  },
-  modalInput: {
-    width: "100%",
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: "10px 14px",
-    fontSize: 14,
-    marginBottom: 12,
-    boxSizing: "border-box" as const,
-  },
-  results: {
-    maxHeight: 240,
-    overflowY: "auto" as const,
-    border: "1px solid #eee",
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  resultRow: {
-    display: "block",
-    width: "100%",
-    textAlign: "left" as const,
-    padding: "10px 14px",
-    background: "#fff",
-    border: "none",
-    borderBottom: "1px solid #f5f5f5",
-    cursor: "pointer",
-  },
-  resultName: { fontSize: 14, fontWeight: 600, color: "#222" },
-  resultEmail: { fontSize: 12, color: "#888", marginTop: 2 },
-  muted: { color: "#999", fontSize: 13, marginBottom: 12 },
-  error: { color: "#c0392b", fontSize: 13, marginBottom: 12 },
-  modalCancel: {
-    width: "100%",
-    padding: "10px 0",
-    background: "#f0f0f0",
-    border: "none",
-    borderRadius: 10,
-    fontWeight: 600,
-    color: "#333",
-    cursor: "pointer",
-  },
-  modalBtns: {
-    display: "flex",
-    gap: 12,
-    justifyContent: "flex-end",
-    marginTop: 16,
-  },
-  actionSheetCard: {
-    background: "#fff",
-    borderRadius: 16,
-    padding: 12,
-    maxWidth: 320,
-    width: "100%",
-  },
-  actionSheetOption: {
-    display: "block",
-    width: "100%",
-    textAlign: "left" as const,
-    padding: "12px 14px",
-    background: "transparent",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#222",
-    cursor: "pointer",
-  },
-  reportPreview: {
-    fontSize: 13,
-    color: "#666",
-    fontStyle: "italic" as const,
-    marginBottom: 12,
-  },
-  chipRow: { display: "flex", gap: 8, flexWrap: "wrap" as const, marginBottom: 12 },
-  chip: {
-    border: "1px solid #ddd",
-    borderRadius: 999,
-    padding: "6px 12px",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#555",
-    background: "#fff",
-    cursor: "pointer",
-  },
-  chipActive: {
-    borderColor: "var(--green-dark)",
-    background: "#e8f5e9",
-    color: "var(--green-dark)",
-  },
+  sidebarTitle: { ...type.headline, color: color.clubhouseGreen },
+  channelList: { listStyle: "none", margin: 0, padding: 0 },
   channelBtn: {
-    display: "block",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: space.md,
     width: "100%",
-    textAlign: "left" as const,
-    padding: "12px 16px",
+    minHeight: 64,
+    textAlign: "left",
+    padding: `${space.md}px ${space.lg}px`,
     border: "none",
+    borderBottom: `1px solid ${color.border}`,
     background: "transparent",
     cursor: "pointer",
-    borderBottom: "1px solid #f5f5f5",
+    color: color.ink,
   },
-  channelBtnActive: {
-    background: "#f0f9f0",
-    borderLeft: "3px solid var(--green-dark)",
-  },
+  channelBtnActive: { background: color.greenSoft, boxShadow: `inset 3px 0 0 ${color.clubhouseGreen}` },
+  channelIcon: { color: color.clubhouseGreen, display: "flex", paddingTop: 2, flexShrink: 0 },
+  channelText: { display: "grid", gap: space.xxs, minWidth: 0, flex: 1 },
+  channelTopRow: { display: "flex", justifyContent: "space-between", gap: space.sm, alignItems: "baseline" },
   channelName: {
-    display: "block",
-    fontWeight: 600,
-    color: "#222",
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  preview: {
-    display: "block",
-    fontSize: 12,
-    color: "#aaa",
+    ...type.label,
+    fontSize: 15,
+    color: color.ink,
     overflow: "hidden",
     textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
+    whiteSpace: "nowrap",
   },
-  empty: {
-    fontSize: 13,
-    color: "#bbb",
-    padding: "16px",
-    textAlign: "center" as const,
-  },
-  chatArea: {
-    flex: 1,
-    minWidth: 320,
-    display: "flex",
-    flexDirection: "column",
+  channelTime: { ...type.caption, color: color.textMuted, flexShrink: 0 },
+  preview: {
+    ...type.bodySmall,
+    color: color.textMuted,
     overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
-  selectPrompt: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#bbb",
-    fontSize: 16,
-  },
-  chatPane: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-  },
+  chatArea: { background: color.canvas },
+  chatPane: { flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
   chatHeader: {
-    padding: "14px 24px",
-    borderBottom: "1px solid #eee",
-    background: "#fff",
+    padding: `${space.sm}px ${space.lg}px`,
+    minHeight: 60,
+    borderBottom: `1px solid ${color.border}`,
+    background: color.surface,
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    gap: space.sm,
   },
-  deleteThreadBtn: {
-    background: "#fff",
-    border: "1px solid #c0392b",
-    color: "#c0392b",
-    borderRadius: 10,
-    padding: "8px 12px",
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: "pointer",
+  chatTitle: {
+    ...type.title,
+    fontSize: 18,
+    fontFamily: "var(--font-body)",
+    color: color.ink,
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
-  threadError: {
-    background: "#fff4f4",
-    color: "#c0392b",
-    padding: "8px 24px",
-    fontSize: 13,
-  },
-  chatTitle: { fontWeight: 700, fontSize: 16, color: "#222" },
+  threadAlert: { margin: `${space.sm}px ${space.lg}px 0` },
   messageList: {
     flex: 1,
-    overflowY: "auto" as const,
-    padding: "20px 24px",
+    minHeight: 0,
+    overflowY: "auto",
+    padding: `${space.lg}px ${space.lg}px`,
     display: "flex",
     flexDirection: "column",
-    gap: 8,
+    gap: space.md,
   },
+  hiddenNote: { ...type.caption, color: color.textMuted, textAlign: "center" },
+  bubbleWrap: { display: "flex", flexDirection: "column", gap: space.xxs, maxWidth: "min(75%, 560px)" },
   bubble: {
-    maxWidth: "65%",
     padding: "10px 14px",
-    borderRadius: 16,
+    borderRadius: radius.lg,
+    ...type.body,
+    fontSize: 15,
+    overflowWrap: "anywhere",
+  },
+  bubbleMe: { background: color.clubhouseGreen, color: color.surface, borderBottomRightRadius: 4 },
+  bubbleThem: { background: color.surface, color: color.ink, borderBottomLeftRadius: 4, boxShadow: shadow.card },
+  bubbleSending: { opacity: 0.7 },
+  bubbleFailed: { background: color.destructiveSoft, color: color.ink, border: `1px solid ${color.destructive}` },
+  senderName: { ...type.caption, fontWeight: 700, color: color.courtGreen, marginBottom: space.xxs },
+  bubbleText: { whiteSpace: "pre-wrap" },
+  metaRow: { display: "flex", alignItems: "center", gap: space.xs },
+  metaText: { ...type.caption, color: color.textMuted },
+  bubbleActionsBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: target.min,
+    height: target.min,
+    margin: -10,
+    marginLeft: 0,
+    background: "transparent",
+    border: "none",
+    borderRadius: radius.md,
+    color: color.textMuted,
+    cursor: "pointer",
+  },
+  failedRow: { display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end", gap: space.sm },
+  failedText: { ...type.caption, color: color.destructivePressed, display: "inline-flex", alignItems: "center", gap: space.xs },
+  failedActions: { display: "inline-flex", gap: space.xs },
+  contactActions: { display: "flex", flexWrap: "wrap", gap: space.md, marginTop: space.sm },
+  contactLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.xs,
+    minHeight: target.min,
+    color: color.clubhouseGreen,
+    fontWeight: 600,
     fontSize: 14,
+    textDecoration: "underline",
   },
-  bubbleMe: {
-    background: "var(--green-dark)",
-    color: "#fff",
-    alignSelf: "flex-end",
-    borderBottomRightRadius: 4,
+  contactLinkMe: { color: color.surface },
+  inputRow: {
+    display: "flex",
+    alignItems: "flex-end",
+    gap: space.sm,
+    padding: `${space.md}px ${space.lg}px`,
+    borderTop: `1px solid ${color.border}`,
+    background: color.surface,
   },
-  bubbleThem: {
-    background: "#fff",
-    color: "#222",
-    alignSelf: "flex-start",
-    borderBottomLeftRadius: 4,
-    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+  input: {
+    ...inputStyle,
+    flex: 1,
+    minHeight: target.control,
+    padding: "11px 16px",
+    borderRadius: radius.xl,
+    resize: "none",
+    overflowY: "auto",
   },
-  bubbleTopRow: {
+  sendBtn: { borderRadius: radius.xl, flexShrink: 0 },
+  counter: {
+    ...type.caption,
+    color: color.textMuted,
+    textAlign: "right",
+    padding: `0 ${space.lg}px ${space.sm}px`,
+    background: color.surface,
+  },
+  searchStatus: { ...type.bodySmall, color: color.textMuted, minHeight: 24, margin: `${space.sm}px 0` },
+  results: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    maxHeight: 280,
+    overflowY: "auto",
+    border: `1px solid ${color.border}`,
+    borderRadius: radius.md,
+  },
+  resultRow: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 4,
-  },
-  senderName: { fontSize: 11, fontWeight: 700, color: "#888" },
-  bubbleActionsBtn: {
+    gap: space.sm,
+    width: "100%",
+    minHeight: target.control,
+    textAlign: "left",
+    padding: `0 ${space.md}px`,
     background: "transparent",
     border: "none",
-    color: "#aaa",
+    borderBottom: `1px solid ${color.border}`,
     cursor: "pointer",
-    fontSize: 14,
-    lineHeight: 1,
-    padding: "0 2px",
+    color: color.ink,
   },
-  bubbleText: { lineHeight: 1.5 },
-  contactActions: { display: "flex", gap: 12, marginTop: 8 },
-  contactLink: { color: "var(--green-dark)", fontWeight: 700, fontSize: 12 },
-  inputRow: {
-    display: "flex",
-    gap: 8,
-    padding: "12px 24px",
-    borderTop: "1px solid #eee",
-    background: "#fff",
+  resultName: { ...type.label, fontSize: 15, overflowWrap: "anywhere" },
+  resultHint: { ...type.caption, color: color.clubhouseGreen, fontWeight: 600 },
+  reportPreview: {
+    ...type.bodySmall,
+    color: color.textMuted,
+    fontStyle: "italic",
+    marginBottom: space.lg,
+    padding: space.md,
+    borderRadius: radius.sm,
+    background: color.surfaceMuted,
+    overflowWrap: "anywhere",
+    whiteSpace: "pre-wrap",
   },
-  input: {
-    flex: 1,
-    border: "1px solid #ddd",
-    borderRadius: 24,
-    padding: "10px 16px",
-    fontSize: 14,
-  },
-  sendBtn: {
-    background: "var(--green-dark)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 24,
-    padding: "10px 20px",
-    fontWeight: 600,
-    fontSize: 14,
+  actionList: { display: "grid", gap: space.sm },
+  fieldset: { border: "none", margin: `0 0 ${space.lg}px`, padding: 0, minWidth: 0 },
+  chipRow: { display: "flex", gap: space.sm, flexWrap: "wrap" },
+  chip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: target.min,
+    padding: "0 14px",
+    border: `1px solid ${color.borderStrong}`,
+    borderRadius: radius.pill,
+    ...type.label,
+    color: color.ink,
+    background: color.surface,
     cursor: "pointer",
   },
+  chipActive: { borderColor: color.clubhouseGreen, background: color.greenSoft, color: color.clubhouseGreen },
+  radio: { width: 18, height: 18, margin: 0, accentColor: "var(--clubhouse-green)" },
 };

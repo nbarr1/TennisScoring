@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PointAttribution } from "@tennis/firebase-client";
 import { SB, font } from "./scoreboardTheme";
 
@@ -15,11 +16,19 @@ type Props = {
   fontsLoaded: boolean;
 };
 
-const CHOICES: { label: string; attribution?: PointAttribution }[] = [
-  { label: "POINT" },
-  { label: "ACE", attribution: "ace" },
-  { label: "WINNER", attribution: "winner" },
-  { label: "OPPONENT ERROR", attribution: "opponent_error" },
+const CHOICES: {
+  label: string;
+  spoken: string;
+  attribution?: PointAttribution;
+}[] = [
+  { label: "POINT", spoken: "Point, no detail" },
+  { label: "ACE", spoken: "Ace", attribution: "ace" },
+  { label: "WINNER", spoken: "Winner", attribution: "winner" },
+  {
+    label: "OPPONENT ERROR",
+    spoken: "Opponent error",
+    attribution: "opponent_error",
+  },
 ];
 
 /**
@@ -35,6 +44,7 @@ export function PointTypeSheet({
   onCancel,
   fontsLoaded,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const choices = CHOICES.filter((choice) => isServer || choice.attribution !== "ace");
   return (
     <Modal
@@ -46,11 +56,25 @@ export function PointTypeSheet({
       <Pressable
         style={styles.backdrop}
         onPress={onCancel}
-        accessibilityLabel="Cancel"
+        // The Cancel button below is the screen-reader route out; the
+        // backdrop is a tap target for sighted users only.
+        accessible={false}
+        importantForAccessibility="no"
       >
-        <Pressable style={styles.sheet} accessibilityViewIsModal>
-          <Text style={[styles.title, font(fontsLoaded, "extrabold")]}>
+        <Pressable
+          style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}
+          accessibilityViewIsModal
+          accessible={false}
+        >
+          <Text
+            style={[styles.title, font(fontsLoaded, "extrabold")]}
+            accessibilityRole="header"
+            maxFontSizeMultiplier={1.3}
+          >
             POINT TO {(playerName ?? "").toUpperCase()}
+          </Text>
+          <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
+            {busy ? "Saving the last point…" : "How was it won?"}
           </Text>
           <View style={styles.grid}>
             {choices.map((choice, index) => (
@@ -58,13 +82,15 @@ export function PointTypeSheet({
                 key={choice.label}
                 onPress={() => onPick(choice.attribution)}
                 disabled={busy}
-                style={[
+                style={({ pressed }) => [
                   styles.choice,
                   index === 0 ? styles.primary : styles.secondary,
+                  pressed && styles.pressed,
                   busy && styles.busy,
                 ]}
                 accessibilityRole="button"
-                accessibilityState={{ disabled: busy }}
+                accessibilityLabel={`${choice.spoken} for ${playerName ?? "this player"}`}
+                accessibilityState={{ disabled: busy, busy }}
               >
                 <Text
                   style={[
@@ -72,6 +98,7 @@ export function PointTypeSheet({
                     font(fontsLoaded, "extrabold"),
                     { color: index === 0 ? SB.onYellow : SB.yellow },
                   ]}
+                  maxFontSizeMultiplier={1.3}
                 >
                   {choice.label}
                 </Text>
@@ -80,8 +107,12 @@ export function PointTypeSheet({
           </View>
           <Pressable
             onPress={onCancel}
-            style={styles.cancel}
+            style={({ pressed }) => [
+              styles.cancel,
+              pressed && { backgroundColor: SB.control },
+            ]}
             accessibilityRole="button"
+            accessibilityLabel="Cancel, no point added"
           >
             <Text style={[styles.cancelText, font(fontsLoaded, "bold")]}>
               CANCEL
@@ -95,9 +126,10 @@ export function PointTypeSheet({
 
 const styles = StyleSheet.create({
   busy: { opacity: 0.5 },
+  pressed: { opacity: 0.8 },
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: SB.scrim,
     justifyContent: "flex-end",
   },
   sheet: {
@@ -105,7 +137,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderTopColor: SB.yellow,
     padding: 12,
-    paddingBottom: 20,
     gap: 12,
   },
   title: {
@@ -114,6 +145,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     paddingHorizontal: 4,
   },
+  subtitle: { color: SB.muted, fontSize: 15, paddingHorizontal: 4, marginTop: -6 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   choice: {
     flexBasis: "48%",

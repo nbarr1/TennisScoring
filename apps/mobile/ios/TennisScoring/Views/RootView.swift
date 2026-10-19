@@ -1,6 +1,7 @@
 import SwiftUI
 import TennisAppModel
 import TennisCore
+import UIKit
 
 /// Routes between sign-in, joining a division, and the main tabs, following
 /// `SessionModel.state`.
@@ -92,6 +93,10 @@ struct SignInView: View {
         }
       }
       .navigationTitle("Tennis League")
+      .onChange(of: session.signInError) { _, error in
+        // The error appears below the fields, away from VoiceOver's focus.
+        if let error { UIAccessibility.post(notification: .announcement, argument: error) }
+      }
     }
   }
 
@@ -141,6 +146,9 @@ struct JoinDivisionView: View {
         }
       }
       .navigationTitle("Welcome, \(user.displayName)")
+      .onChange(of: session.joinDivisionError) { _, error in
+        if let error { UIAccessibility.post(notification: .announcement, argument: error) }
+      }
       .toolbar {
         Button("Sign out") { session.signOut() }
       }

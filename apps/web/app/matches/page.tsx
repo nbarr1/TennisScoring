@@ -5,7 +5,8 @@ export const dynamic = "force-dynamic";
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useViewMode } from "../shared/viewMode";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { onSnapshot, where } from "firebase/firestore";
 import {
@@ -13,7 +14,6 @@ import {
   divisionMatchesUnorderedQuery,
   recordHistoricMatch,
   recordMatchOnBehalf,
-  searchDivisionPlayers,
   proposeMatch,
   proposeDoublesMatch,
   createMatch,
@@ -24,24 +24,74 @@ import {
   useAuthUser,
   useUserProfile,
   useDivisionLevels,
+  useDivisionMemberships,
 } from "@tennis/firebase-client";
 import {
   formatScoreDisplay,
   formatGameScore,
-  getMatchStatusMetadata,
   currentSeasonForDate,
   defaultSeasonOptions,
   sideOfPlayer,
+  sideDisplayName,
+  isMatchParticipant,
+  isDoublesMatch,
+  canRespondToReport,
   canBeMatchTiebreak,
+  isAdminRole,
   parseRecordedSetToken,
   validateRecordedSets,
 } from "@tennis/shared";
-import type { Match, PublicProfile, RecordedSetInput } from "@tennis/shared";
+import type {
+  DivisionLevel,
+  DivisionMembershipStatus,
+  Match,
+  Player,
+  PublicProfile,
+  RecordedSetInput,
+} from "@tennis/shared";
 import { PlayerSlotPicker } from "../shared/PlayerSlotPicker";
-import { AnimatedDiv, LoadingBlock } from "../shared/motion";
-import { IconCalendarEvent, IconCalendarPlus, IconCheck, IconClipboardList, IconX } from "@tabler/icons-react";
+import {
+  AnimatedDiv,
+  Button,
+  ConfirmDialog,
+  DataState,
+  Dialog,
+  EmptyState,
+  InlineAlert,
+  StatusBadge,
+  buttonClassName,
+  buttonStyle,
+  cardStyle,
+  color,
+  describeError,
+  fieldLabelStyle,
+  inputStyle,
+  radius,
+  shadow,
+  space,
+  target,
+  type,
+  useAnnounce,
+  useAsyncAction,
+  useDialogClose,
+  width,
+} from "../shared/ui";
+import type { ButtonVariant } from "../shared/ui";
+import {
+  IconBallTennis,
+  IconCalendarEvent,
+  IconCalendarPlus,
+  IconCheck,
+  IconChevronDown,
+  IconClipboardList,
+  IconPlus,
+  IconX,
+} from "@tabler/icons-react";
 
 type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
+
+/** Rostered statuses: a waitlisted player still has a division level. */
+const ROSTERED: readonly DivisionMembershipStatus[] = ["active", "waitlisted"];
 
 /** Clears the match tiebreak flag from any row that is no longer the deciding set. */
 function withEligibleTiebreaks(rows: SetDraft[]): SetDraft[] {
@@ -52,10 +102,9 @@ function withEligibleTiebreaks(rows: SetDraft[]): SetDraft[] {
   );
 }
 
-function formatScheduledAt(ts?: number): string {
-  if (!ts) return "Time TBD";
-  const d = new Date(ts);
-  return d.toLocaleString(undefined, {
+function formatWhen(ts?: number): string {
+  if (!ts) return "Time not set";
+  return new Date(ts).toLocaleString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -64,92 +113,259 @@ function formatScheduledAt(ts?: number): string {
   });
 }
 
-function StatusBadge({ status }: { status: Match["status"] }) {
-  const metadata = getMatchStatusMetadata(status);
-
-  return (
-    <span
-      aria-label={metadata.accessibilityLabel}
-      style={{ ...styles.statusBadge, color: metadata.color }}
-    >
-      <span aria-hidden="true">{metadata.icon}</span> {metadata.label}
-    </span>
-  );
+/** When the match was (or will be) played, for sorting by play date. */
+function playDate(m: Match): number {
+  return m.scheduledAt ?? m.startedAt ?? m.completedAt ?? m.createdAt ?? 0;
 }
 
-function MatchCard({ m, actions }: { m: Match; actions?: React.ReactNode }) {
+/** `datetime-local` value for a moment, in the viewer's time zone. */
+function toLocalInputValue(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * A side's name as the viewer reads it: their own side is "You" (or "You and
+ * Bob Jones" in doubles), a guest is marked as one.
+ */
+function sideLabel(m: Match, side: Player, uid: string | undefined, myName: string | undefined): string {
+  const name = sideDisplayName(m, side);
+  const isMine = !!uid && sideOfPlayer(m, uid) === side;
+  if (isMine) {
+    if (!isDoublesMatch(m)) return "You";
+    const partner = name
+      .split(" / ")
+      .map((part) => part.trim())
+      .filter((part) => part && part !== myName?.trim());
+    return partner.length === 1 ? `You and ${partner[0]}` : `Your team (${name})`;
+  }
+  return side === "player2" && m.player2IsGuest ? `${name} (guest)` : name;
+}
+
+/** The side opposite the viewer, by name; the second side when they aren't playing. */
+function opponentName(m: Match, uid: string | undefined): string {
+  const mine = uid ? sideOfPlayer(m, uid) : undefined;
+  return sideDisplayName(m, mine === "player2" ? "player1" : "player2");
+}
+
+function serverLine(m: Match, uid: string | undefined, myName: string | undefined): string {
+  const server = sideLabel(m, m.liveScore.server, uid, myName);
+  const plural = server === "You" || server.startsWith("You and ");
+  return `${server} ${plural ? "serve" : "serves"} from the ${m.liveScore.serviceSide} side`;
+}
+
+function hasBeenPlayed(m: Match): boolean {
+  return ["in_progress", "pending_report", "completed", "disputed"].includes(m.status);
+}
+
+type CardLink = { label: string; variant?: ButtonVariant };
+
+function MatchCard({
+  m,
+  uid,
+  myName,
+  context,
+  actions,
+  link,
+  featured,
+}: {
+  m: Match;
+  uid?: string;
+  myName?: string;
+  context?: ReactNode;
+  actions?: ReactNode;
+  link: CardLink;
+  featured?: boolean;
+}) {
+  const headingId = useId();
   const isLive = m.status === "in_progress";
-  const isHistoric = m.source === "manual";
-  const isUpcoming = m.status === "scheduled" || m.status === "proposed";
-  const p1 = m.player1Name ?? "Player 1";
-  const p2 = m.player2Name ?? "Player 2";
+  const isRecorded = m.source === "manual";
+  const p1 = sideLabel(m, "player1", uid, myName);
+  const p2 = sideLabel(m, "player2", uid, myName);
+  const winnerLabel = m.winner === "player1" ? p1 : m.winner === "player2" ? p2 : null;
+  const played = hasBeenPlayed(m);
+
   return (
-    <Link
-      key={m.id}
-      href={`/matches/${m.id}`}
-      className="lift"
-      style={{ ...styles.card, ...(isLive ? styles.cardLive : {}) }}
+    <article
+      aria-labelledby={headingId}
+      style={{
+        ...styles.card,
+        ...(isLive ? styles.cardLive : {}),
+        ...(featured ? styles.cardFeatured : {}),
+      }}
     >
       <div style={styles.cardTop}>
         <StatusBadge status={m.status} />
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={12} aria-hidden="true" /> Historic</span>}
-          {m.status === "completed" && m.winner && (
-            <span style={styles.winnerBadge}>
-              {m.winner === "player1" ? p1 : p2} wins
+        <div style={styles.badges}>
+          {isRecorded && (
+            <span style={styles.recordedBadge}>
+              <IconClipboardList size={14} aria-hidden="true" /> Recorded result
             </span>
           )}
-        </div>
-      </div>
-
-      {isUpcoming && (
-        <div style={styles.scheduledLine}>
-          <IconCalendarEvent size={14} aria-hidden="true" /> {formatScheduledAt(m.scheduledAt)}
-        </div>
-      )}
-
-      {!isUpcoming && (
-        <div style={styles.scoreBlock}>
-          <span style={styles.setScore}>{formatScoreDisplay(m.liveScore)}</span>
-          {isLive && (
-            <span style={styles.gameScore}>{formatGameScore(m.liveScore)}</span>
+          {m.status === "completed" && winnerLabel && (
+            <span style={styles.winnerBadge}>{winnerLabel === "You" ? "You won" : `${winnerLabel} won`}</span>
           )}
         </div>
-      )}
-
-      <div style={styles.players}>
-        <span
-          style={m.winner === "player1" ? styles.winnerName : styles.playerName}
-        >
-          {p1}
-        </span>
-        <span style={styles.vs}>vs</span>
-        <span
-          style={m.winner === "player2" ? styles.winnerName : styles.playerName}
-        >
-          {p2}
-          {m.player2IsGuest ? " (Guest)" : ""}
-        </span>
       </div>
 
-      {isLive && (
-        <div style={styles.serverLine}>
-          {m.liveScore.server === "player1" ? p1 : p2} serves ·{" "}
-          {m.liveScore.serviceSide} side
-        </div>
+      <h3 id={headingId} style={featured ? styles.cardTitleFeatured : styles.cardTitle}>
+        <span style={m.winner === "player1" ? styles.winnerName : undefined}>{p1}</span>
+        <span style={styles.vs}> vs </span>
+        <span style={m.winner === "player2" ? styles.winnerName : undefined}>{p2}</span>
+      </h3>
+
+      {played ? (
+        <p style={styles.scoreBlock}>
+          <span style={styles.setScore}>{formatScoreDisplay(m.liveScore)}</span>
+          {isLive && <span style={styles.gameScore}>{formatGameScore(m.liveScore)}</span>}
+        </p>
+      ) : (
+        <p style={styles.whenLine}>
+          <IconCalendarEvent size={16} aria-hidden="true" />
+          {m.scheduledAt ? <time dateTime={new Date(m.scheduledAt).toISOString()}>{formatWhen(m.scheduledAt)}</time> : formatWhen()}
+        </p>
       )}
 
-      {actions && <div style={styles.actionsRow}>{actions}</div>}
-    </Link>
+      {isLive && <p style={styles.metaLine}>{serverLine(m, uid, myName)}</p>}
+
+      {context && <p style={styles.contextLine}>{context}</p>}
+
+      <div style={styles.actionsRow}>
+        {actions}
+        <Link
+          href={`/matches/${m.id}`}
+          aria-describedby={headingId}
+          className={buttonClassName(link.variant ?? "secondary")}
+          style={{ ...buttonStyle(link.variant ?? "secondary"), flex: actions ? "1 1 140px" : "0 1 auto" }}
+        >
+          {link.label}
+        </Link>
+      </div>
+    </article>
   );
 }
 
-function stop(handler: () => void) {
-  return (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    handler();
-  };
+/** Accept or decline a proposal sent to the viewer. Decline is confirmed first. */
+function InvitationActions({ m, proposer }: { m: Match; proposer: string }) {
+  const announce = useAnnounce();
+  const [confirmingDecline, setConfirmingDecline] = useState(false);
+  const accept = useAsyncAction(() => acceptMatchProposal(m.id), {
+    successMessage: `Proposal accepted. Your match with ${proposer} is scheduled.`,
+    errorMessage: "Couldn't accept the proposal. Try again.",
+  });
+
+  return (
+    <>
+      <div style={styles.decisionRow}>
+        <Button
+          icon={<IconCheck size={18} aria-hidden="true" />}
+          pending={accept.pending}
+          pendingLabel="Accepting…"
+          onClick={() => void accept.run()}
+          style={styles.decisionBtn}
+        >
+          Accept
+        </Button>
+        <Button
+          variant="secondary"
+          icon={<IconX size={18} aria-hidden="true" />}
+          disabled={accept.pending}
+          onClick={() => setConfirmingDecline(true)}
+          style={styles.decisionBtn}
+        >
+          Decline
+        </Button>
+      </div>
+      {accept.error && (
+        <InlineAlert tone="error" style={styles.cardAlert}>
+          {accept.error}
+        </InlineAlert>
+      )}
+      <ConfirmDialog
+        open={confirmingDecline}
+        title={`Decline ${proposer}'s proposal?`}
+        message={`${proposer} will be told you declined. To play another time, propose a new match.`}
+        confirmLabel="Decline proposal"
+        pendingLabel="Declining…"
+        onConfirm={async () => {
+          await declineMatchProposal(m.id);
+          setConfirmingDecline(false);
+          announce(`Proposal from ${proposer} declined.`, { toast: true });
+        }}
+        onCancel={() => setConfirmingDecline(false)}
+      />
+    </>
+  );
+}
+
+/** Withdraw a proposal the viewer sent. Confirmed first. */
+function WithdrawAction({ m, opponent }: { m: Match; opponent: string }) {
+  const announce = useAnnounce();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <>
+      <Button variant="quiet-danger" onClick={() => setConfirming(true)} style={{ flex: "1 1 140px" }}>
+        Withdraw proposal
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        title={`Withdraw your proposal to ${opponent}?`}
+        message={`${opponent} won't be able to accept it any more. You can propose a new match at any time.`}
+        confirmLabel="Withdraw proposal"
+        pendingLabel="Withdrawing…"
+        cancelLabel="Keep proposal"
+        onConfirm={async () => {
+          await declineMatchProposal(m.id);
+          setConfirming(false);
+          announce(`Proposal to ${opponent} withdrawn.`, { toast: true });
+        }}
+        onCancel={() => setConfirming(false)}
+      />
+    </>
+  );
+}
+
+function Section({
+  title,
+  count,
+  children,
+  live,
+  description,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+  live?: boolean;
+  description?: ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} style={styles.section}>
+      <div style={styles.sectionHeader}>
+        {live && <span style={styles.livePulse} aria-hidden="true" />}
+        <h2 id={headingId} style={styles.sectionTitle}>
+          {title}
+          {count !== undefined && count > 0 && <span style={styles.sectionCount}> ({count})</span>}
+        </h2>
+      </div>
+      {description && <p style={styles.sectionDescription}>{description}</p>}
+      {children}
+    </section>
+  );
+}
+
+function CollapsedSection({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  return (
+    <details style={styles.details} data-matches-group="">
+      <summary style={styles.summary}>
+        <IconChevronDown size={20} aria-hidden="true" className="matches-group-chevron" />
+        <span style={styles.summaryTitle}>{title}</span>
+        <span style={styles.sectionCount}>({count})</span>
+      </summary>
+      <div style={styles.detailsBody}>{children}</div>
+    </details>
+  );
 }
 
 export default function MatchesPage(): React.JSX.Element {
@@ -164,6 +380,8 @@ export default function MatchesPage(): React.JSX.Element {
   );
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [showRecord, setShowRecord] = useState(false);
   const [showPropose, setShowPropose] = useState(false);
   const [showLive, setShowLive] = useState(false);
@@ -195,13 +413,14 @@ export default function MatchesPage(): React.JSX.Element {
           ...(d.data() as Omit<Match, "id">),
         }))
         .filter((match) => match.seasonId === selectedSeasonId)
-        .filter((match) => !activeLevelId || match.divisionLevelId === activeLevelId)
-        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+        .filter((match) => !activeLevelId || match.divisionLevelId === activeLevelId);
       setMatches(nextMatches);
+      setLoadError(null);
       setLoading(false);
     };
 
     setLoading(true);
+    setLoadError(null);
     let fallbackUnsubscribe: (() => void) | undefined;
     const q = divisionMatchesQuery(
       divisionId,
@@ -219,8 +438,10 @@ export default function MatchesPage(): React.JSX.Element {
         fallbackUnsubscribe = onSnapshot(
           divisionMatchesUnorderedQuery(divisionId),
           applySnapshot,
-          () => {
+          (fallbackError) => {
+            // Say so instead of showing an empty season.
             setMatches([]);
+            setLoadError(fallbackError);
             setLoading(false);
           },
         );
@@ -231,70 +452,125 @@ export default function MatchesPage(): React.JSX.Element {
       unsubscribe();
       fallbackUnsubscribe?.();
     };
-  }, [divisionId, activeLevelId, selectedSeasonId]);
+  }, [divisionId, activeLevelId, selectedSeasonId, reloadKey]);
 
   const uid = firebaseUser?.uid;
-  const liveMatches = matches.filter((m) => m.status === "in_progress");
-  // Side membership rather than player2Id/player1Id, so a doubles partner sees
-  // the proposal too instead of only the side's first player.
-  const pendingInvites = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
-    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
-  const awaitingOpponent = matches
-    .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1")
-    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
-  const upcomingMatches = matches
-    .filter((m) => m.status === "scheduled")
-    .sort((a, b) => (a.scheduledAt ?? 0) - (b.scheduledAt ?? 0));
-  const otherStatuses = new Set(["in_progress", "proposed", "scheduled"]);
-  const otherMatches = matches.filter((m) => !otherStatuses.has(m.status));
-
+  const myName = profile?.displayName;
+  const isLeader = profile?.role === "division_leader" || isAdminRole(profile?.role);
   const canRecordOnBehalf =
     profile?.role === "admin" ||
     profile?.role === "division_leader" ||
     profile?.role === "app_developer";
 
+  const groups = useMemo(() => {
+    const mine = (m: Match) => !!uid && isMatchParticipant(m, uid);
+    const byDateAsc = (a: Match, b: Match) => playDate(a) - playDate(b);
+    const byDateDesc = (a: Match, b: Match) => playDate(b) - playDate(a);
+    const canConfirm = (m: Match) =>
+      !!uid && m.status === "pending_report" && !!m.reportSubmission && canRespondToReport(m, uid, m.reportSubmission.submittedBy);
+
+    // Side membership rather than player2Id, so a doubles partner sees the proposal too.
+    const invitations = matches
+      .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
+      .sort(byDateAsc);
+    const toConfirm = matches.filter(canConfirm).sort(byDateAsc);
+    const toReport = matches
+      .filter((m) => m.status === "pending_report" && !m.reportSubmission && mine(m))
+      .sort(byDateAsc);
+    const next = matches
+      .filter((m) => mine(m) && (m.status === "in_progress" || m.status === "scheduled"))
+      .sort((a, b) =>
+        a.status === b.status ? byDateAsc(a, b) : a.status === "in_progress" ? -1 : 1,
+      );
+    const waiting = matches
+      .filter(
+        (m) =>
+          (m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1") ||
+          (m.status === "pending_report" && !!m.reportSubmission && mine(m) && !canConfirm(m)) ||
+          (m.status === "disputed" && mine(m)),
+      )
+      .sort(byDateAsc);
+    const unsettled = isLeader
+      ? matches
+          .filter(
+            (m) =>
+              !mine(m) &&
+              (m.status === "disputed" || (m.status === "pending_report" && !!m.reportSubmission)),
+          )
+          .sort(byDateAsc)
+      : [];
+    const liveElsewhere = matches.filter((m) => m.status === "in_progress" && !mine(m));
+
+    const shown = new Set(
+      [...invitations, ...toConfirm, ...toReport, ...next, ...waiting, ...unsettled, ...liveElsewhere].map((m) => m.id),
+    );
+    const schedule = matches
+      .filter((m) => !shown.has(m.id) && (m.status === "proposed" || m.status === "scheduled"))
+      .sort(byDateAsc);
+    const history = matches
+      .filter((m) => !shown.has(m.id) && m.status !== "proposed" && m.status !== "scheduled")
+      .sort(byDateDesc);
+
+    return { invitations, toConfirm, toReport, next, waiting, unsettled, liveElsewhere, schedule, history };
+  }, [matches, uid, isLeader]);
+
+  const needsYouCount = groups.invitations.length + groups.toConfirm.length + groups.toReport.length;
+  const canCreate = !!(divisionId && firebaseUser && profile);
+
   const pageStyle = isIosView ? { ...styles.page, ...styles.iosPage } : styles.page;
   const mainStyle = isIosView ? { ...styles.main, ...styles.iosMain } : styles.main;
   const titleActionsStyle = isIosView ? { ...styles.titleActions, ...styles.iosTitleActions } : styles.titleActions;
+  const filteredByLevel = !!activeLevel;
+  const seasonName = seasonOptions.find((s) => s.id === selectedSeasonId)?.name ?? "this season";
+
+  const proposeButton = (variant: ButtonVariant = "primary") => (
+    <Button
+      variant={variant}
+      icon={<IconCalendarPlus size={18} aria-hidden="true" />}
+      onClick={() => setShowPropose(true)}
+    >
+      Propose a match
+    </Button>
+  );
 
   return (
     <div style={pageStyle}>
       <AppNav active="matches" />
+      <style>{collapsedGroupCss}</style>
 
       <main style={mainStyle}>
         <div style={styles.titleRow}>
           <h1 style={styles.pageTitle}>Matches</h1>
-          {divisionId && firebaseUser && profile && (
+          {canCreate && (
             <div style={titleActionsStyle}>
-              {isIosView && (
-                <button
-                  style={styles.liveBtn}
-                  onClick={() => setShowLive(true)}
-                >
-                  + Live
-                </button>
-              )}
-              <button
-                style={styles.proposeBtn}
-                onClick={() => setShowPropose(true)}
-              >
-                <IconCalendarPlus size={18} aria-hidden="true" /> Propose Match
-              </button>
-              <button
-                style={styles.recordBtn}
+              {proposeButton()}
+              <Button
+                variant="secondary"
+                icon={<IconClipboardList size={18} aria-hidden="true" />}
                 onClick={() => setShowRecord(true)}
               >
-                <IconClipboardList size={18} aria-hidden="true" /> Record Past Match
-              </button>
+                Record a result
+              </Button>
+              {isIosView && (
+                <Button
+                  variant="secondary"
+                  icon={<IconBallTennis size={18} aria-hidden="true" />}
+                  onClick={() => setShowLive(true)}
+                >
+                  Score live now
+                </Button>
+              )}
             </div>
           )}
         </div>
 
-        <div style={styles.filterBar} aria-label="Match filters">
-          <label style={styles.filterLabel}>
-            Season
+        <div role="group" aria-label="Show matches from" style={styles.filterBar}>
+          <div style={styles.filterField}>
+            <label htmlFor="matches-filter-season" style={fieldLabelStyle}>
+              Season
+            </label>
             <select
+              id="matches-filter-season"
               style={styles.select}
               value={selectedSeasonId}
               onChange={(e) => {
@@ -308,135 +584,242 @@ export default function MatchesPage(): React.JSX.Element {
                 </option>
               ))}
             </select>
-          </label>
-          <label style={styles.filterLabel}>
-            Division
+          </div>
+          <div style={styles.filterField}>
+            <label htmlFor="matches-filter-level" style={fieldLabelStyle}>
+              Division level
+            </label>
             <select
+              id="matches-filter-level"
               style={styles.select}
               value={activeLevelId ?? "all"}
               onChange={(e) => setSelectedLevelId(e.target.value)}
             >
-              <option value="all">All divisions</option>
+              <option value="all">All division levels</option>
               {seasonLevels.map((level) => (
                 <option key={level.id} value={level.id}>
                   {level.name}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         </div>
 
         {!divisionLoading && !divisionId ? (
           <div style={styles.emptyCard}>
-            Join or create a division to see and record matches.
-          </div>
-        ) : loading || divisionLoading ? (
-          <LoadingBlock label="Loading matches…" rows={3} rowHeight={110} style={styles.placeholder} />
-        ) : matches.length === 0 ? (
-          <div style={styles.emptyCard}>
-            No matches yet. Create one from the mobile app, or record a past
-            match above.
+            <EmptyState
+              title="You're not in a division yet"
+              description="Join a division with an invite or a join code to propose, score, and record matches."
+              action={
+                <Link href="/onboarding/division" className={buttonClassName("primary")} style={buttonStyle("primary")}>
+                  Join a division
+                </Link>
+              }
+            />
           </div>
         ) : (
-          <>
-            {liveMatches.length > 0 && (
-              <section style={styles.liveSection}>
-                <div style={styles.liveSectionHeader}>
-                  <span style={styles.livePulse} />
-                  <h2 style={styles.liveSectionTitle}>Now Live</h2>
+          <DataState
+            loading={loading || divisionLoading}
+            error={loadError}
+            isEmpty={matches.length === 0}
+            loadingLabel="Loading matches"
+            loadingRows={3}
+            errorTitle="Couldn't load matches."
+            onRetry={() => setReloadKey((k) => k + 1)}
+            empty={
+              <div style={styles.emptyCard}>
+                <EmptyState
+                  title={filteredByLevel ? `No matches in ${activeLevel?.name} for ${seasonName}` : `No matches in ${seasonName} yet`}
+                  description={
+                    filteredByLevel
+                      ? "Show every division level, or start this level's season with a proposal."
+                      : "Propose a match to someone in your division, or record a result you've already played."
+                  }
+                  action={
+                    <>
+                      {filteredByLevel && (
+                        <Button variant="secondary" onClick={() => setSelectedLevelId("all")}>
+                          Show all division levels
+                        </Button>
+                      )}
+                      {canCreate && proposeButton(filteredByLevel ? "secondary" : "primary")}
+                    </>
+                  }
+                />
+              </div>
+            }
+          >
+            <Section title="Needs you" count={needsYouCount}>
+              {needsYouCount === 0 ? (
+                <p style={styles.quietLine}>Nothing needs you right now.</p>
+              ) : (
+                <AnimatedDiv style={styles.grid}>
+                  {groups.invitations.map((m) => {
+                    const proposer = opponentName(m, uid);
+                    return (
+                      <MatchCard
+                        key={m.id}
+                        m={m}
+                        uid={uid}
+                        myName={myName}
+                        context={`${proposer} proposed this match. Accept to schedule it, or decline.`}
+                        actions={<InvitationActions m={m} proposer={proposer} />}
+                        link={{ label: "View details", variant: "quiet" }}
+                      />
+                    );
+                  })}
+                  {groups.toConfirm.map((m) => {
+                    const submittedBy = m.reportSubmission?.submittedBy;
+                    const reporterSide = submittedBy ? sideOfPlayer(m, submittedBy) : undefined;
+                    const reporter = reporterSide ? sideDisplayName(m, reporterSide) : opponentName(m, uid);
+                    return (
+                      <MatchCard
+                        key={m.id}
+                        m={m}
+                        uid={uid}
+                        myName={myName}
+                        context={`${reporter} reported this score. Confirm it, or dispute it if it's wrong.`}
+                        link={{ label: "Review score", variant: "primary" }}
+                      />
+                    );
+                  })}
+                  {groups.toReport.map((m) => (
+                    <MatchCard
+                      key={m.id}
+                      m={m}
+                      uid={uid}
+                      myName={myName}
+                      context={`The match is over. Submit the score so ${opponentName(m, uid)} can confirm it.`}
+                      link={{ label: "Submit score", variant: "primary" }}
+                    />
+                  ))}
+                </AnimatedDiv>
+              )}
+            </Section>
+
+            <Section title={groups.next.length > 1 ? "Your next matches" : "Your next match"}>
+              {groups.next.length === 0 ? (
+                <div style={styles.inlineEmpty}>
+                  <p style={styles.quietLine}>
+                    You have no matches scheduled{filteredByLevel ? " in this division level" : ""}. Propose one to keep your season moving.
+                  </p>
+                  {canCreate && proposeButton("secondary")}
                 </div>
+              ) : (
                 <AnimatedDiv style={styles.grid}>
-                  {liveMatches.map((m) => (
-                    <MatchCard key={m.id} m={m} />
-                  ))}
-                </AnimatedDiv>
-              </section>
-            )}
-
-            {pendingInvites.length > 0 && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>Pending Invitations</h2>
-                <AnimatedDiv style={styles.grid}>
-                  {pendingInvites.map((m) => (
+                  {groups.next.map((m, index) => (
                     <MatchCard
                       key={m.id}
                       m={m}
-                      actions={
-                        <>
-                          <button
-                            style={styles.acceptBtn}
-                            onClick={stop(() => acceptMatchProposal(m.id))}
-                          >
-                            <IconCheck size={16} aria-hidden="true" /> Accept
-                          </button>
-                          <button
-                            style={styles.declineBtn}
-                            onClick={stop(() => declineMatchProposal(m.id))}
-                          >
-                            <IconX size={16} aria-hidden="true" /> Decline
-                          </button>
-                        </>
+                      uid={uid}
+                      myName={myName}
+                      featured={index === 0}
+                      context={
+                        m.status === "in_progress"
+                          ? "Your match is live."
+                          : index === 0
+                            ? "Open the match to start live scoring when you're on court."
+                            : undefined
+                      }
+                      link={
+                        m.status === "in_progress"
+                          ? { label: "Resume scoring", variant: "primary" }
+                          : { label: "Open match", variant: index === 0 ? "primary" : "secondary" }
                       }
                     />
                   ))}
                 </AnimatedDiv>
-              </section>
+              )}
+            </Section>
+
+            {groups.waiting.length > 0 && (
+              <Section title="Waiting on others" count={groups.waiting.length}>
+                <AnimatedDiv style={styles.grid}>
+                  {groups.waiting.map((m) => {
+                    const opponent = opponentName(m, uid);
+                    const context =
+                      m.status === "proposed"
+                        ? `Waiting for ${opponent} to accept.`
+                        : m.status === "disputed"
+                          ? "Disputed. A division leader will review the score."
+                          : `Waiting for ${opponent} to confirm the score.`;
+                    return (
+                      <MatchCard
+                        key={m.id}
+                        m={m}
+                        uid={uid}
+                        myName={myName}
+                        context={context}
+                        actions={m.status === "proposed" ? <WithdrawAction m={m} opponent={opponent} /> : undefined}
+                        link={{ label: "View details" }}
+                      />
+                    );
+                  })}
+                </AnimatedDiv>
+              </Section>
             )}
 
-            {awaitingOpponent.length > 0 && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>Awaiting Opponent</h2>
+            {groups.unsettled.length > 0 && (
+              <Section
+                title="Results to settle"
+                count={groups.unsettled.length}
+                description="As a division leader you can confirm a reported score or set the correct one."
+              >
                 <AnimatedDiv style={styles.grid}>
-                  {awaitingOpponent.map((m) => (
+                  {groups.unsettled.map((m) => (
                     <MatchCard
                       key={m.id}
                       m={m}
-                      actions={
-                        <button
-                          style={styles.declineBtn}
-                          onClick={stop(() => declineMatchProposal(m.id))}
-                        >
-                          Cancel proposal
-                        </button>
-                      }
+                      uid={uid}
+                      myName={myName}
+                      context={m.status === "disputed" ? "The players disagree on this score." : "Reported, but the opposing side hasn't confirmed it."}
+                      link={{ label: "Review result" }}
                     />
                   ))}
                 </AnimatedDiv>
-              </section>
+              </Section>
             )}
 
-            {upcomingMatches.length > 0 && (
-              <section style={styles.section}>
-                <h2 style={styles.sectionTitle}>Upcoming</h2>
+            {groups.liveElsewhere.length > 0 && (
+              <Section title="Live in your division" count={groups.liveElsewhere.length} live>
                 <AnimatedDiv style={styles.grid}>
-                  {upcomingMatches.map((m) => (
-                    <MatchCard key={m.id} m={m} />
+                  {groups.liveElsewhere.map((m) => (
+                    <MatchCard key={m.id} m={m} uid={uid} myName={myName} link={{ label: "Watch live" }} />
                   ))}
                 </AnimatedDiv>
-              </section>
+              </Section>
             )}
 
-            {otherMatches.length > 0 && (
-              <section>
-                <h2 style={styles.sectionTitle}>All Matches</h2>
-                <AnimatedDiv style={styles.grid}>
-                  {otherMatches.map((m) => (
-                    <MatchCard key={m.id} m={m} />
-                  ))}
-                </AnimatedDiv>
-              </section>
+            {(groups.schedule.length > 0 || groups.history.length > 0) && (
+              <div style={styles.collapsedGroup}>
+                {groups.schedule.length > 0 && (
+                  <CollapsedSection title="Division schedule" count={groups.schedule.length}>
+                    <div style={styles.grid}>
+                      {groups.schedule.map((m) => (
+                        <MatchCard key={m.id} m={m} uid={uid} myName={myName} link={{ label: "View match" }} />
+                      ))}
+                    </div>
+                  </CollapsedSection>
+                )}
+                {groups.history.length > 0 && (
+                  <CollapsedSection title="History" count={groups.history.length}>
+                    <div style={styles.grid}>
+                      {groups.history.map((m) => (
+                        <MatchCard key={m.id} m={m} uid={uid} myName={myName} link={{ label: "View match" }} />
+                      ))}
+                    </div>
+                  </CollapsedSection>
+                )}
+              </div>
             )}
-
-          </>
+          </DataState>
         )}
 
         {showLive && firebaseUser && profile && divisionId && (
-          <StartLiveMatchModal
+          <StartLiveMatchDialog
             currentUser={profile}
             divisionId={divisionId}
-            seasonId={selectedSeasonId}
-            divisionLevelId={activeLevelId}
-            matchType={activeLevel?.matchType}
+            levels={divisionLevels}
             onClose={() => setShowLive(false)}
             onCreated={(matchId) => {
               setShowLive(false);
@@ -446,24 +829,20 @@ export default function MatchesPage(): React.JSX.Element {
         )}
 
         {showRecord && firebaseUser && profile && divisionId && (
-          <RecordPastMatchModal
+          <RecordResultDialog
             currentUser={profile}
             divisionId={divisionId}
-            seasonId={selectedSeasonId}
-            divisionLevelId={activeLevelId}
-            matchType={activeLevel?.matchType}
+            levels={divisionLevels}
             canRecordOnBehalf={canRecordOnBehalf}
             onClose={() => setShowRecord(false)}
           />
         )}
 
         {showPropose && firebaseUser && profile && divisionId && (
-          <ProposeMatchModal
+          <ProposeMatchDialog
             currentUser={profile}
             divisionId={divisionId}
-            seasonId={selectedSeasonId}
-            divisionLevelId={activeLevelId}
-            matchType={activeLevel?.matchType}
+            levels={divisionLevels}
             onClose={() => setShowPropose(false)}
           />
         )}
@@ -472,31 +851,235 @@ export default function MatchesPage(): React.JSX.Element {
   );
 }
 
+/* ------------------------------------------------------------------------ */
+/* Season and division level for a new match                                 */
+/* ------------------------------------------------------------------------ */
 
-function StartLiveMatchModal({
+type Competition = {
+  seasonId: string;
+  setSeasonId: (id: string) => void;
+  levelId: string;
+  setLevelId: (id: string) => void;
+  level: DivisionLevel | undefined;
+  seasonLevels: DivisionLevel[];
+  seasonName: string;
+  /** True while the level is the subject's own level, not a manual choice. */
+  isOwnLevel: boolean;
+  /** The user changed the season or the level. */
+  touched: boolean;
+};
+
+/**
+ * Where a new match belongs. Defaults to the current season and the given
+ * player's own division level, never to whatever the list happens to show.
+ */
+function useCompetition(divisionId: string, levels: DivisionLevel[], subjectId: string | null): Competition {
+  const current = useMemo(() => currentSeasonForDate(), []);
+  const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
+  const [seasonId, setSeasonIdState] = useState(current.id);
+  const [levelChoice, setLevelChoice] = useState<string | null>(null);
+  const { memberships } = useDivisionMemberships(divisionId, seasonId, undefined, ROSTERED);
+  const seasonLevels = levels
+    .filter((level) => level.seasonId === seasonId)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const ownLevelId = subjectId
+    ? memberships.find(
+        (membership) =>
+          membership.userId === subjectId && seasonLevels.some((level) => level.id === membership.divisionLevelId),
+      )?.divisionLevelId
+    : undefined;
+  const levelId = levelChoice ?? ownLevelId ?? "";
+  return {
+    seasonId,
+    setSeasonId: (id) => {
+      setSeasonIdState(id);
+      setLevelChoice(null);
+    },
+    levelId,
+    setLevelId: (id) => setLevelChoice(id),
+    level: seasonLevels.find((level) => level.id === levelId),
+    seasonLevels,
+    seasonName: seasonOptions.find((s) => s.id === seasonId)?.name ?? seasonId,
+    isOwnLevel: levelChoice === null && !!ownLevelId,
+    touched: seasonId !== current.id || levelChoice !== null,
+  };
+}
+
+function CompetitionFields({
+  comp,
+  idPrefix,
+  ownLevelLabel,
+  typeHint,
+}: {
+  comp: Competition;
+  idPrefix: string;
+  /** "your" or "Ann's", for the default-level hint. */
+  ownLevelLabel: string;
+  /** Extra sentence about the match type, when the form changes with it. */
+  typeHint?: ReactNode;
+}) {
+  const hintId = `${idPrefix}-competition-hint`;
+  const matchTypeLabel = comp.level ? (comp.level.matchType === "doubles" ? "Doubles" : "Singles") : null;
+  let hint: string;
+  if (comp.level) {
+    hint = comp.isOwnLevel
+      ? `${matchTypeLabel}. This is ${ownLevelLabel} division level in ${comp.seasonName}.`
+      : `${matchTypeLabel} division level.`;
+  } else if (comp.seasonLevels.length === 0) {
+    hint = `${comp.seasonName} has no division levels yet, so this match won't belong to one.`;
+  } else {
+    hint = "This match won't belong to a division level.";
+  }
+
+  return (
+    <fieldset style={styles.fieldset}>
+      <legend style={styles.legend}>Where this match counts</legend>
+      <div style={styles.twoCol}>
+        <div>
+          <label htmlFor={`${idPrefix}-season`} style={fieldLabelStyle}>
+            Season
+          </label>
+          <select
+            id={`${idPrefix}-season`}
+            style={inputStyle}
+            value={comp.seasonId}
+            onChange={(e) => comp.setSeasonId(e.target.value)}
+          >
+            {defaultSeasonOptions().map((season) => (
+              <option key={season.id} value={season.id}>
+                {season.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={`${idPrefix}-level`} style={fieldLabelStyle}>
+            Division level
+          </label>
+          <select
+            id={`${idPrefix}-level`}
+            style={inputStyle}
+            value={comp.levelId}
+            onChange={(e) => comp.setLevelId(e.target.value)}
+            aria-describedby={hintId}
+          >
+            {comp.seasonLevels.map((level) => (
+              <option key={level.id} value={level.id}>
+                {level.name}
+              </option>
+            ))}
+            <option value="">No division level</option>
+          </select>
+        </div>
+      </div>
+      <p id={hintId} style={styles.hint}>
+        {hint}
+        {typeHint ? <> {typeHint}</> : null}
+      </p>
+    </fieldset>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Shared form pieces                                                         */
+/* ------------------------------------------------------------------------ */
+
+function CancelButton({ disabled }: { disabled?: boolean }) {
+  const close = useDialogClose();
+  return (
+    <Button variant="secondary" onClick={close} disabled={disabled}>
+      Cancel
+    </Button>
+  );
+}
+
+function SegmentedControl<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div style={styles.segmentBlock}>
+      <span style={fieldLabelStyle} id={`seg-${label.replace(/\W+/g, "-")}`}>
+        {label}
+      </span>
+      <div role="group" aria-labelledby={`seg-${label.replace(/\W+/g, "-")}`} style={styles.segment}>
+        {options.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={active}
+              style={{ ...styles.segmentBtn, ...(active ? styles.segmentBtnActive : {}) }}
+              onClick={() => onChange(option.value)}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CheckboxField({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <div style={styles.checkboxBlock}>
+      <label style={styles.checkboxLabel}>
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={styles.checkbox} />
+        <span>{label}</span>
+      </label>
+      {hint && <p style={styles.checkboxHint}>{hint}</p>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/* Score live now (guest opponent)                                           */
+/* ------------------------------------------------------------------------ */
+
+function StartLiveMatchDialog({
   onClose,
   onCreated,
   divisionId,
   currentUser,
-  seasonId,
-  divisionLevelId,
-  matchType,
+  levels,
 }: {
   onClose: () => void;
   onCreated: (matchId: string) => void;
   divisionId: string;
   currentUser: PublicProfile;
-  seasonId: string;
-  divisionLevelId?: string;
-  matchType?: "singles" | "doubles";
+  levels: DivisionLevel[];
 }) {
+  const announce = useAnnounce();
+  const comp = useCompetition(divisionId, levels, currentUser.id);
   const [opponentName, setOpponentName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const formId = "start-live-form";
 
-  async function handleCreateLive() {
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
     if (!opponentName.trim()) {
-      setError("Enter an opponent name.");
+      setError("Enter your opponent's name.");
       return;
     }
     setSubmitting(true);
@@ -510,214 +1093,213 @@ function StartLiveMatchModal({
         player2Name: opponentName.trim(),
         player2IsGuest: true,
         divisionId,
-        seasonId,
-        divisionLevelId,
-        matchType,
+        seasonId: comp.seasonId,
+        divisionLevelId: comp.level?.id,
+        matchType: comp.level?.matchType,
         createdBy: currentUser.id,
         scheduledAt: Date.now(),
       });
       await startMatch(matchId, "player1", false);
+      announce("Live match started. You serve first.");
       onCreated(matchId);
-    } catch {
-      setError("Could not create live match. Try again.");
+    } catch (caught) {
+      if (matchId) {
+        // The match exists; let the player pick the server on its page.
+        announce("Match created, but scoring didn't start. Pick who serves to begin.", { toast: true });
+        onCreated(matchId);
+        return;
+      }
+      setError(describeError(caught, "Couldn't create the live match. Try again."));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div style={modalStyles.overlay}>
-      <div style={modalStyles.card}>
-        <h2 style={modalStyles.title}>New Live Match</h2>
-        <p style={modalStyles.hint}>Quick start for iOS: create a live match and jump straight into scoring.</p>
-        <label style={modalStyles.label}>
-          Opponent name
-          <input
-            style={modalStyles.input}
-            value={opponentName}
-            onChange={(event) => setOpponentName(event.target.value)}
-            placeholder="Guest opponent"
-          />
+    <Dialog
+      open
+      onClose={onClose}
+      title="Score a match live"
+      description="Against a guest who has no account. To score against a division player, open your scheduled match and start scoring there."
+      dirty={!!opponentName.trim() || comp.touched}
+      dismissible={!submitting}
+      footer={
+        <>
+          <CancelButton disabled={submitting} />
+          <Button type="submit" form={formId} pending={submitting} pendingLabel="Starting…">
+            Start scoring
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} noValidate>
+        <label htmlFor="live-opponent-name" style={fieldLabelStyle}>
+          Guest opponent&apos;s name
         </label>
-{error && <div role="alert" style={modalStyles.error}>{error}</div>}
-        <div style={modalStyles.actions}>
-          <button style={modalStyles.cancelBtn} onClick={onClose} disabled={submitting}>Cancel</button>
-          <button style={{ ...modalStyles.submitBtn, ...(submitting ? modalStyles.btnDisabled : {}) }} onClick={handleCreateLive} disabled={submitting}>{submitting ? "Starting…" : "+ Live"}</button>
-        </div>
-      </div>
-    </div>
+        <input
+          id="live-opponent-name"
+          style={{ ...inputStyle, marginBottom: space.lg }}
+          value={opponentName}
+          onChange={(event) => setOpponentName(event.target.value)}
+          autoComplete="off"
+          aria-invalid={error && !opponentName.trim() ? true : undefined}
+        />
+        <CompetitionFields comp={comp} idPrefix="live" ownLevelLabel="your" />
+        <p style={styles.hint}>You serve first. Guest results stay out of the standings until you link the guest&apos;s account.</p>
+        {error && <InlineAlert tone="error" style={styles.formAlert}>{error}</InlineAlert>}
+      </form>
+    </Dialog>
   );
 }
 
-function RecordPastMatchModal({
+/* ------------------------------------------------------------------------ */
+/* Record a result                                                            */
+/* ------------------------------------------------------------------------ */
+
+function RecordResultDialog({
   currentUser,
   divisionId,
-  seasonId,
-  divisionLevelId,
-  matchType,
+  levels,
   canRecordOnBehalf,
   onClose,
 }: {
   currentUser: PublicProfile;
   divisionId: string;
-  seasonId: string;
-  divisionLevelId?: string;
-  matchType?: "singles" | "doubles";
+  levels: DivisionLevel[];
   canRecordOnBehalf: boolean;
   onClose: () => void;
 }) {
-  const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">(
-    "self",
-  );
-  const [opponentMode, setOpponentMode] = useState<"search" | "guest">(
-    "search",
-  );
+  const announce = useAnnounce();
+  const [entryMode, setEntryMode] = useState<"single" | "bulk">("single");
+  const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">("self");
+  const [opponentMode, setOpponentMode] = useState<"search" | "guest">("search");
   const [guestName, setGuestName] = useState("");
-  const [player1SearchText, setPlayer1SearchText] = useState("");
-  const [player1SearchResults, setPlayer1SearchResults] = useState<
-    PublicProfile[]
-  >([]);
-  const [selectedPlayer1, setSelectedPlayer1] =
-    useState<PublicProfile | null>(null);
-  const [searchingPlayer1, setSearchingPlayer1] = useState(false);
-  const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] =
-    useState<PublicProfile | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [selectedPlayer1, setSelectedPlayer1] = useState<PublicProfile | null>(null);
+  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
   const [sets, setSets] = useState<SetDraft[]>([{ p1: "", p2: "" }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isDivisionMatch, setIsDivisionMatch] = useState(true);
-  const [entryMode, setEntryMode] = useState<"single" | "bulk">("single");
   const [bulkText, setBulkText] = useState("");
+  const formId = "record-result-form";
 
-  useEffect(() => {
-    if (recordingMode !== "onBehalf" || !player1SearchText.trim() || selectedPlayer1) {
-      setPlayer1SearchResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setSearchingPlayer1(true);
-      try {
-        const results = await searchDivisionPlayers(divisionId, player1SearchText);
-        setPlayer1SearchResults(results.filter((u) => u.id !== selectedOpponent?.id));
-      } catch {
-        setPlayer1SearchResults([]);
-      } finally {
-        setSearchingPlayer1(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [
-    player1SearchText,
+  const onBehalf = entryMode === "single" && recordingMode === "onBehalf";
+  const guestOpponent = entryMode === "single" && !onBehalf && opponentMode === "guest";
+  const comp = useCompetition(
     divisionId,
-    selectedPlayer1,
-    selectedOpponent?.id,
-    recordingMode,
-  ]);
+    levels,
+    onBehalf ? selectedPlayer1?.id ?? null : currentUser.id,
+  );
 
-  useEffect(() => {
-    if (!searchText.trim() || selectedOpponent) {
-      setSearchResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await searchDivisionPlayers(divisionId, searchText);
-        const player1Id = recordingMode === "onBehalf" ? selectedPlayer1?.id : currentUser.id;
-        setSearchResults(results.filter((u) => u.id !== player1Id));
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [
-    searchText,
-    divisionId,
-    selectedOpponent,
-    currentUser.id,
-    recordingMode,
-    selectedPlayer1?.id,
-  ]);
+  const dirty =
+    comp.touched ||
+    !!guestName.trim() ||
+    !!selectedPlayer1 ||
+    !!selectedOpponent ||
+    !!bulkText.trim() ||
+    sets.some((s) => s.p1 || s.p2);
 
-  const activePlayer1 = recordingMode === "onBehalf" ? selectedPlayer1 : currentUser;
-  const isGuestOpponent = opponentMode === "guest";
-  const opponentReady = isGuestOpponent
-    ? guestName.trim().length > 0
-    : !!selectedOpponent;
-  const player1Ready = recordingMode === "self" || !!selectedPlayer1;
+  const firstLabel = onBehalf ? (selectedPlayer1 ? `${selectedPlayer1.displayName}'s` : "the first player's") : "your";
+  const opponentLabel = onBehalf
+    ? selectedOpponent?.displayName ?? "second player"
+    : guestOpponent
+      ? guestName.trim() || "opponent"
+      : selectedOpponent?.displayName ?? "opponent";
 
-  function parseBulkLine(
-    line: string,
-  ): { opponentName: string; sets: RecordedSetInput[] } | null {
-    const cleaned = line.trim();
-    if (!cleaned) return null;
-    const parts = cleaned
+  function parseBulkLine(line: string): { opponentName: string; sets: RecordedSetInput[] } | null {
+    const parts = line
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
     if (parts.length < 3) return null;
     const opponentName = parts[0];
-    const sets = parts.slice(1).map(parseRecordedSetToken);
-    if (!opponentName || sets.some((s) => !s)) return null;
-    return { opponentName, sets: sets as RecordedSetInput[] };
+    const parsed = parts.slice(1).map(parseRecordedSetToken);
+    if (!opponentName || parsed.some((s) => !s)) return null;
+    return { opponentName, sets: parsed as RecordedSetInput[] };
   }
 
-  async function handleSubmit() {
+  async function handleBulk() {
+    const lines = bulkText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      setError("Add at least one line, such as: Jane Doe, 6-3, 6-4");
+      return;
+    }
+    // Check every line before writing any, so a typo on line 4 doesn't leave
+    // lines 1-3 recorded and the rest not.
+    const items: Array<{ opponentName: string; sets: RecordedSetInput[] }> = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const item = parseBulkLine(lines[i]);
+      if (!item) {
+        setError(`Line ${i + 1} isn't in the format Opponent Name, 6-4, 7-5 (use [10-8] for a match tiebreak).`);
+        return;
+      }
+      const invalid = validateRecordedSets(item.sets);
+      if (invalid) {
+        setError(`Line ${i + 1} (${item.opponentName}): ${invalid}`);
+        return;
+      }
+      items.push(item);
+    }
+    setSubmitting(true);
+    let recorded = 0;
+    try {
+      for (const item of items) {
+        await recordHistoricMatch({
+          player1Id: currentUser.id,
+          player2Id: "guest",
+          player1Name: currentUser.displayName,
+          player2Name: item.opponentName,
+          player2IsGuest: true,
+          divisionId,
+          seasonId: comp.seasonId,
+          divisionLevelId: comp.level?.id,
+          matchType: comp.level?.matchType,
+          createdBy: currentUser.id,
+          sets: item.sets,
+          isDivisionMatch,
+        });
+        recorded += 1;
+      }
+      announce(`${recorded} ${recorded === 1 ? "result" : "results"} recorded against guests.`, { toast: true });
+      onClose();
+    } catch (caught) {
+      const reason = describeError(caught, "Couldn't record that line.");
+      if (recorded > 0) {
+        // Drop the lines that landed so trying again can't record them twice.
+        setBulkText(lines.slice(recorded).join("\n"));
+        setError(
+          `Recorded ${recorded} of ${items.length}. ${items[recorded].opponentName} wasn't recorded: ${reason} The recorded lines were removed, so you can try the rest again.`,
+        );
+      } else {
+        setError(reason);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
     setError("");
     if (entryMode === "bulk") {
-      const lines = bulkText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
-      if (lines.length === 0) {
-        setError("Add at least one line for bulk import.");
-        return;
-      }
-      const parsedLines = lines.map(parseBulkLine);
-      if (parsedLines.some((line) => !line)) {
-        setError("Each line must be: Opponent Name, 6-4, 7-5 (or [10-8] for a match tiebreak)");
-        return;
-      }
-      setSubmitting(true);
-      try {
-        for (const item of parsedLines as {
-          opponentName: string;
-          sets: RecordedSetInput[];
-        }[]) {
-          const invalid = validateRecordedSets(item.sets);
-          if (invalid) {
-            throw new Error(`Line for ${item.opponentName}: ${invalid}`);
-          }
-          await recordHistoricMatch({
-            player1Id: currentUser.id,
-            player2Id: "guest",
-            player1Name: currentUser.displayName,
-            player2Name: item.opponentName,
-            player2IsGuest: true,
-            divisionId,
-            seasonId,
-            divisionLevelId,
-            matchType,
-            createdBy: currentUser.id,
-            sets: item.sets,
-            isDivisionMatch,
-          });
-        }
-        onClose();
-      } catch (e) {
-        setError(
-          e instanceof Error
-            ? e.message
-            : "Could not bulk record matches. Please try again.",
-        );
-      } finally {
-        setSubmitting(false);
-      }
+      await handleBulk();
+      return;
+    }
+
+    if (onBehalf && (!selectedPlayer1 || !selectedOpponent)) {
+      setError("Choose both players.");
+      return;
+    }
+    if (!onBehalf && guestOpponent && !guestName.trim()) {
+      setError("Enter the guest's name.");
+      return;
+    }
+    if (!onBehalf && !guestOpponent && !selectedOpponent) {
+      setError("Choose your opponent.");
       return;
     }
 
@@ -731,565 +1313,342 @@ function RecordPastMatchModal({
       setError(invalid);
       return;
     }
+
+    const competition = {
+      divisionId,
+      seasonId: comp.seasonId,
+      divisionLevelId: comp.level?.id,
+      matchType: comp.level?.matchType,
+    };
     setSubmitting(true);
     try {
-      const isGuest = opponentMode === "guest";
-      if (recordingMode === "onBehalf") {
-        if (isGuest) {
-          setError("Select a registered division player for both sides when recording on behalf of players.");
-          return;
-        }
+      if (onBehalf) {
         await recordMatchOnBehalf({
-          player1Id: activePlayer1!.id,
+          player1Id: selectedPlayer1!.id,
           player2Id: selectedOpponent!.id,
-          divisionId,
-          seasonId,
-          divisionLevelId,
-          matchType,
+          ...competition,
           sets: parsed,
           isDivisionMatch,
           notifyPlayers: true,
         });
-      } else {
-        await recordHistoricMatch(
-          isGuest
-            ? {
-                player1Id: currentUser.id,
-                player2Id: "guest",
-                player1Name: currentUser.displayName,
-                player2Name: guestName.trim(),
-                player2IsGuest: true,
-                divisionId,
-                seasonId,
-                divisionLevelId,
-                matchType,
-                createdBy: currentUser.id,
-                sets: parsed,
-                isDivisionMatch,
-              }
-            : {
-                player1Id: currentUser.id,
-                player2Id: selectedOpponent!.id,
-                player1Name: currentUser.displayName,
-                player2Name: selectedOpponent!.displayName,
-                player2IsGuest: false, // EXPLICIT: Real division player
-                divisionId,
-                seasonId,
-                divisionLevelId,
-                matchType,
-                createdBy: currentUser.id,
-                sets: parsed,
-                isDivisionMatch,
-              },
+        announce(
+          `Result recorded and confirmed. ${selectedPlayer1!.displayName} and ${selectedOpponent!.displayName} have been notified.`,
+          { toast: true },
         );
+      } else if (guestOpponent) {
+        await recordHistoricMatch({
+          player1Id: currentUser.id,
+          player2Id: "guest",
+          player1Name: currentUser.displayName,
+          player2Name: guestName.trim(),
+          player2IsGuest: true,
+          ...competition,
+          createdBy: currentUser.id,
+          sets: parsed,
+          isDivisionMatch,
+        });
+        announce(
+          `Result recorded against ${guestName.trim()}. It stays out of the standings until you link their account.`,
+          { toast: true },
+        );
+      } else {
+        await recordHistoricMatch({
+          player1Id: currentUser.id,
+          player2Id: selectedOpponent!.id,
+          player1Name: currentUser.displayName,
+          player2Name: selectedOpponent!.displayName,
+          player2IsGuest: false, // EXPLICIT: Real division player
+          ...competition,
+          createdBy: currentUser.id,
+          sets: parsed,
+          isDivisionMatch,
+        });
+        announce(`Result recorded. ${selectedOpponent!.displayName} will be asked to confirm it.`, { toast: true });
       }
       onClose();
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Could not record match. Please try again.",
-      );
+    } catch (caught) {
+      setError(describeError(caught, "Couldn't record the result. Try again."));
     } finally {
       setSubmitting(false);
     }
   }
 
+  function updateSet(index: number, patch: Partial<SetDraft>) {
+    setSets((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+
   return (
-    <div style={modalStyles.overlay} onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="record-past-match-title"
-        style={modalStyles.card}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="record-past-match-title" style={modalStyles.title}>Record Past Match</h2>
-
-        {canRecordOnBehalf && entryMode === "single" && (
-          <>
-            <div style={modalStyles.modeToggle}>
-              <button
-                type="button"
-                style={{
-                  ...modalStyles.modeBtn,
-                  ...(recordingMode === "self" ? modalStyles.modeBtnActive : {}),
-                }}
-                onClick={() => {
-                  setRecordingMode("self");
-                  setSelectedPlayer1(null);
-                  setPlayer1SearchText("");
-                  setPlayer1SearchResults([]);
-                }}
-              >
-                My Match
-              </button>
-              <button
-                type="button"
-                style={{
-                  ...modalStyles.modeBtn,
-                  ...(recordingMode === "onBehalf" ? modalStyles.modeBtnActive : {}),
-                }}
-                onClick={() => {
-                  setRecordingMode("onBehalf");
-                  setOpponentMode("search");
-                  setGuestName("");
-                  setSelectedOpponent(null);
-                  setSearchText("");
-                  setSearchResults([]);
-                }}
-              >
-                Any Two Players
-              </button>
-            </div>
-
-            {recordingMode === "onBehalf" && (
-              selectedPlayer1 ? (
-                <div style={modalStyles.selectedRow}>
-                  <div>
-                    <div style={modalStyles.selectedName}>{selectedPlayer1.displayName}</div>
-                  </div>
-                  <button
-                    type="button"
-                    style={modalStyles.changeBtn}
-                    onClick={() => {
-                      setSelectedPlayer1(null);
-                      setPlayer1SearchText("");
-                    }}
-                  >
-                    Change first player
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <label htmlFor="record-match-player1-search" style={modalStyles.label}>
-                    Search first player
-                  </label>
-                  <input
-                    id="record-match-player1-search"
-                    style={modalStyles.input}
-                    value={player1SearchText}
-                    onChange={(e) => setPlayer1SearchText(e.target.value)}
-                    placeholder="Search first player by name…"
-                  />
-                  {searchingPlayer1 && <div style={modalStyles.muted}>Searching…</div>}
-                  {player1SearchResults.length > 0 && (
-                    <div style={modalStyles.results}>
-                      {player1SearchResults.map((u) => (
-                        <button
-                          key={u.id}
-                          type="button"
-                          aria-label={`Select ${u.displayName} as first player`}
-                          style={modalStyles.resultRow}
-                          onClick={() => {
-                            setSelectedPlayer1(u);
-                            setPlayer1SearchResults([]);
-                          }}
-                        >
-                          <div style={modalStyles.resultName}>{u.displayName}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {player1SearchText.trim().length > 0 &&
-                    !searchingPlayer1 &&
-                    player1SearchResults.length === 0 && (
-                      <div style={modalStyles.muted}>No players found.</div>
-                    )}
-                </>
-              )
-            )}
-          </>
-        )}
-
-        <div style={modalStyles.modeToggle}>
-          <button
-            type="button"
-            style={{
-              ...modalStyles.modeBtn,
-              ...(entryMode === "single" ? modalStyles.modeBtnActive : {}),
-            }}
-            onClick={() => setEntryMode("single")}
-          >
-            Single Match
-          </button>
-          <button
-            type="button"
-            style={{
-              ...modalStyles.modeBtn,
-              ...(entryMode === "bulk" ? modalStyles.modeBtnActive : {}),
-            }}
-            onClick={() => {
-              setEntryMode("bulk");
-              setRecordingMode("self");
-              setOpponentMode("guest");
-              setSelectedOpponent(null);
-            }}
-          >
-            Bulk Add
-          </button>
-        </div>
+    <Dialog
+      open
+      onClose={onClose}
+      title="Record a result"
+      description="For a match you've already played."
+      dirty={dirty}
+      dismissible={!submitting}
+      footer={
+        <>
+          <CancelButton disabled={submitting} />
+          <Button type="submit" form={formId} pending={submitting} pendingLabel="Recording…">
+            {entryMode === "bulk" ? "Record all results" : "Record result"}
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} noValidate>
+        <SegmentedControl
+          label="What are you recording?"
+          value={entryMode}
+          options={[
+            { value: "single", label: "One match" },
+            { value: "bulk", label: "Several guest matches" },
+          ]}
+          onChange={(value) => {
+            setEntryMode(value);
+            setError("");
+          }}
+        />
 
         {entryMode === "single" && (
           <>
-            <div style={modalStyles.modeToggle}>
-              <button
-                type="button"
-                style={{
-                  ...modalStyles.modeBtn,
-                  ...(opponentMode === "search"
-                    ? modalStyles.modeBtnActive
-                    : {}),
+            {canRecordOnBehalf && (
+              <SegmentedControl
+                label="Who played?"
+                value={recordingMode}
+                options={[
+                  { value: "self", label: "I played" },
+                  { value: "onBehalf", label: "Two other players" },
+                ]}
+                onChange={(value) => {
+                  setRecordingMode(value);
+                  setSelectedPlayer1(null);
+                  setSelectedOpponent(null);
+                  setError("");
                 }}
-                onClick={() => {
-                  setOpponentMode("search");
-                  setGuestName("");
-                }}
-              >
-                Search Player
-              </button>
-              {recordingMode === "self" && (
-                <button
-                  type="button"
-                  style={{
-                    ...modalStyles.modeBtn,
-                    ...(opponentMode === "guest"
-                      ? modalStyles.modeBtnActive
-                      : {}),
-                  }}
-                  onClick={() => {
-                    setOpponentMode("guest");
-                    setSelectedOpponent(null);
-                    setSearchText("");
-                    setSearchResults([]);
-                  }}
-                >
-                  Guest / No Account
-                </button>
-              )}
-            </div>
+              />
+            )}
 
-            {opponentMode === "guest" ? (
+            {onBehalf ? (
               <>
-                <label htmlFor="record-match-guest-name" style={modalStyles.label}>
-                  Guest name
-                </label>
-                <input
-                  id="record-match-guest-name"
-                  style={modalStyles.input}
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="Guest name…"
+                <PlayerSlotPicker
+                  label="First player"
+                  inputId="record-match-player1-search"
+                  divisionId={divisionId}
+                  excludeIds={selectedOpponent ? [selectedOpponent.id] : []}
+                  selected={selectedPlayer1}
+                  onSelect={setSelectedPlayer1}
+                  onClear={() => setSelectedPlayer1(null)}
+                />
+                <PlayerSlotPicker
+                  label="Second player"
+                  inputId="record-match-opponent-search"
+                  divisionId={divisionId}
+                  excludeIds={selectedPlayer1 ? [selectedPlayer1.id] : []}
+                  selected={selectedOpponent}
+                  onSelect={setSelectedOpponent}
+                  onClear={() => setSelectedOpponent(null)}
                 />
               </>
-            ) : selectedOpponent ? (
-              <div style={modalStyles.selectedRow}>
-                <div>
-                  <div style={modalStyles.selectedName}>
-                    {selectedOpponent.displayName}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  style={modalStyles.changeBtn}
-                  onClick={() => {
-                    setSelectedOpponent(null);
-                    setSearchText("");
-                  }}
-                >
-                  Change
-                </button>
-              </div>
             ) : (
               <>
-                <label htmlFor="record-match-opponent-search" style={modalStyles.label}>
-                  {recordingMode === "onBehalf" ? "Search second player" : "Search opponent"}
-                </label>
-                <input
-                  id="record-match-opponent-search"
-                  style={modalStyles.input}
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder={
-                    recordingMode === "onBehalf"
-                      ? "Search second player by name…"
-                      : "Search opponent by name…"
-                  }
+                <SegmentedControl
+                  label="Your opponent"
+                  value={opponentMode}
+                  options={[
+                    { value: "search", label: "Division player" },
+                    { value: "guest", label: "Guest (no account)" },
+                  ]}
+                  onChange={(value) => {
+                    setOpponentMode(value);
+                    setError("");
+                  }}
                 />
-                {searching && <div style={modalStyles.muted}>Searching…</div>}
-                {searchResults.length > 0 && (
-                  <div style={modalStyles.results}>
-                    {searchResults.map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        aria-label={`Select ${u.displayName}`}
-                        style={modalStyles.resultRow}
-                        onClick={() => {
-                          setSelectedOpponent(u);
-                          setSearchResults([]);
-                        }}
-                      >
-                        <div style={modalStyles.resultName}>
-                          {u.displayName}
-                        </div>
-                      </button>
-                    ))}
+                {guestOpponent ? (
+                  <div style={styles.fieldBlock}>
+                    <label htmlFor="record-match-guest-name" style={fieldLabelStyle}>
+                      Guest&apos;s name
+                    </label>
+                    <input
+                      id="record-match-guest-name"
+                      style={inputStyle}
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      autoComplete="off"
+                    />
                   </div>
+                ) : (
+                  <PlayerSlotPicker
+                    label="Opponent"
+                    inputId="record-match-opponent-search"
+                    divisionId={divisionId}
+                    excludeIds={[currentUser.id]}
+                    selected={selectedOpponent}
+                    onSelect={setSelectedOpponent}
+                    onClear={() => setSelectedOpponent(null)}
+                  />
                 )}
-                {searchText.trim().length > 0 &&
-                  !searching &&
-                  searchResults.length === 0 && (
-                    <div style={modalStyles.muted}>No players found.</div>
-                  )}
               </>
             )}
 
-            {entryMode === "single" && player1Ready && opponentReady && (
-              <div style={modalStyles.toggleSection}>
-                <label style={modalStyles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={isDivisionMatch}
-                    onChange={(e) => setIsDivisionMatch(e.target.checked)}
-                    style={modalStyles.checkbox}
-                  />
-                  <span>Include in division rankings</span>
-                </label>
-                <div style={modalStyles.checkboxHint}>
-                  {isDivisionMatch
-                    ? "This match will count toward the division standings."
-                    : "This match will be recorded but won't affect rankings."}
-                </div>
-              </div>
-            )}
-
-            {entryMode === "single" && player1Ready && opponentReady && (
-              <div style={modalStyles.setsBlock}>
-                <div style={modalStyles.label}>
-                  Set scores ({recordingMode === "onBehalf" ? "first player's" : "your"} games first)
-                </div>
-                {sets.map((s, i) => (
-                  <div key={i}>
-                    <div style={modalStyles.setRow}>
-                      <span style={modalStyles.setLabel}>
-                        {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
-                      </span>
+            <fieldset style={styles.fieldset}>
+              <legend style={styles.legend}>Score, with {firstLabel} games first</legend>
+              {sets.map((s, i) => {
+                const unit = s.matchTiebreak ? "points" : "games";
+                return (
+                  <div key={i} style={styles.setBlock}>
+                    <div style={styles.setRow}>
+                      <span style={styles.setLabel}>{s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`}</span>
                       <input
-                        aria-label={`Set ${i + 1} ${recordingMode === "onBehalf" ? "first player's" : "your"} ${s.matchTiebreak ? "tiebreak points" : "games"}`}
-                        style={modalStyles.setInput}
+                        aria-label={`Set ${i + 1}: ${firstLabel} ${unit}`}
+                        style={styles.setInput}
                         value={s.p1}
-                        onChange={(e) => {
-                          const next = [...sets];
-                          next[i] = {
-                            ...next[i],
-                            p1: e.target.value.replace(/[^0-9]/g, ""),
-                          };
-                          setSets(next);
-                        }}
-                        placeholder={recordingMode === "onBehalf" ? "P1" : "You"}
+                        onChange={(e) => updateSet(i, { p1: e.target.value.replace(/[^0-9]/g, "") })}
                         inputMode="numeric"
                         maxLength={2}
                       />
-                      <span style={modalStyles.setDash}>–</span>
+                      <span style={styles.setDash} aria-hidden="true">–</span>
                       <input
-                        aria-label={`Set ${i + 1} opponent ${s.matchTiebreak ? "tiebreak points" : "games"}`}
-                        style={modalStyles.setInput}
+                        aria-label={`Set ${i + 1}: ${opponentLabel}'s ${unit}`}
+                        style={styles.setInput}
                         value={s.p2}
-                        onChange={(e) => {
-                          const next = [...sets];
-                          next[i] = {
-                            ...next[i],
-                            p2: e.target.value.replace(/[^0-9]/g, ""),
-                          };
-                          setSets(next);
-                        }}
-                        placeholder={recordingMode === "onBehalf" ? "P2" : "Opp"}
+                        onChange={(e) => updateSet(i, { p2: e.target.value.replace(/[^0-9]/g, "") })}
                         inputMode="numeric"
                         maxLength={2}
                       />
                       {sets.length > 1 && (
-                        <button
-                          type="button"
-                          style={modalStyles.removeSet}
+                        <Button
+                          variant="quiet-danger"
+                          size="sm"
                           aria-label={`Remove set ${i + 1}`}
-                          onClick={() =>
-                            setSets(withEligibleTiebreaks(sets.filter((_, j) => j !== i)))
-                          }
-                        >
-                          <IconX size={16} aria-hidden="true" />
-                        </button>
+                          icon={<IconX size={20} aria-hidden="true" />}
+                          style={styles.removeSet}
+                          onClick={() => setSets(withEligibleTiebreaks(sets.filter((_, j) => j !== i)))}
+                        />
                       )}
                     </div>
                     {canBeMatchTiebreak(i, sets.length) && (
-                      <label style={modalStyles.tiebreakToggle}>
+                      <label style={styles.tiebreakToggle}>
                         <input
                           type="checkbox"
                           checked={!!s.matchTiebreak}
-                          onChange={(e) => {
-                            const next = [...sets];
-                            next[i] = { ...next[i], matchTiebreak: e.target.checked };
-                            setSets(next);
-                          }}
-                          style={modalStyles.checkbox}
+                          onChange={(e) => updateSet(i, { matchTiebreak: e.target.checked })}
+                          style={styles.checkbox}
                         />
                         <span>Played as a 10-point match tiebreak (enter points)</span>
                       </label>
                     )}
                   </div>
-                ))}
-                {sets.length < 5 && (
-                  <button
-                    type="button"
-                    style={modalStyles.addSet}
-                    onClick={() =>
-                      setSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
-                    }
-                  >
-                    + Add Set
-                  </button>
-                )}
-              </div>
-            )}
+                );
+              })}
+              {sets.length < 5 && (
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  icon={<IconPlus size={18} aria-hidden="true" />}
+                  onClick={() => setSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))}
+                >
+                  Add a set
+                </Button>
+              )}
+            </fieldset>
           </>
         )}
 
         {entryMode === "bulk" && (
-          <>
-            <div style={modalStyles.toggleSection}>
-              <div style={modalStyles.checkboxHint}>
-                Format: <strong>Opponent Name, 6-4, 7-5</strong> (one match per
-                line; guest opponents only). Write a match tiebreak in brackets,
-                such as <strong>4-6, 6-3, [10-8]</strong>.
-              </div>
-            </div>
-            <label htmlFor="bulk-match-import" style={modalStyles.label}>
-              Bulk match lines
+          <div style={styles.fieldBlock}>
+            <label htmlFor="bulk-match-import" style={fieldLabelStyle}>
+              Results, one match per line
             </label>
+            <p id="bulk-match-format" style={styles.hint}>
+              Write the guest&apos;s name, then each set with your games first: <strong>Jane Doe, 6-3, 6-4</strong>. Write a
+              match tiebreak in brackets: <strong>Alex Smith, 4-6, 6-3, [10-8]</strong>. These are matches you played against
+              guests.
+            </p>
             <textarea
               id="bulk-match-import"
-              style={modalStyles.textarea}
+              aria-describedby="bulk-match-format"
+              style={styles.textarea}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               placeholder={"Jane Doe, 6-3, 6-4\nAlex Smith, 4-6, 7-5, 6-2"}
-              rows={7}
+              rows={6}
             />
-            <div style={modalStyles.toggleSection}>
-              <label style={modalStyles.checkboxLabel}>
-                <input
-                  type="checkbox"
-                  checked={isDivisionMatch}
-                  onChange={(e) => setIsDivisionMatch(e.target.checked)}
-                  style={modalStyles.checkbox}
-                />
-                <span>Include imported matches in division rankings</span>
-              </label>
-            </div>
-          </>
+          </div>
         )}
 
-        {error && <div role="alert" style={modalStyles.error}>{error}</div>}
+        <CompetitionFields
+          comp={comp}
+          idPrefix="record"
+          ownLevelLabel={onBehalf ? (selectedPlayer1 ? `${selectedPlayer1.displayName}'s` : "the first player's") : "your"}
+        />
 
-        <div style={modalStyles.actions}>
-          <button
-            type="button"
-            style={modalStyles.cancelBtn}
-            onClick={onClose}
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            style={{
-              ...modalStyles.submitBtn,
-              ...((entryMode === "single" && (!player1Ready || !opponentReady)) || submitting
-                ? modalStyles.btnDisabled
-                : {}),
-            }}
-            onClick={handleSubmit}
-            disabled={(entryMode === "single" && (!player1Ready || !opponentReady)) || submitting}
-          >
-            {submitting
-              ? "Recording…"
-              : entryMode === "bulk"
-                ? "Import Matches"
-                : "Record Match"}
-          </button>
-        </div>
-      </div>
-    </div>
+        <CheckboxField
+          checked={isDivisionMatch}
+          onChange={setIsDivisionMatch}
+          label={entryMode === "bulk" ? "Count these results in the standings" : "Count this result in the standings"}
+          hint={
+            isDivisionMatch
+              ? "Counts toward the division standings once confirmed."
+              : "Recorded for history only. It won't change the standings."
+          }
+        />
+
+        {error && <InlineAlert tone="error" style={styles.formAlert}>{error}</InlineAlert>}
+      </form>
+    </Dialog>
   );
 }
-function ProposeMatchModal({
+
+/* ------------------------------------------------------------------------ */
+/* Propose a match                                                            */
+/* ------------------------------------------------------------------------ */
+
+function ProposeMatchDialog({
   currentUser,
   divisionId,
-  seasonId,
-  divisionLevelId,
-  matchType,
+  levels,
   onClose,
 }: {
   currentUser: PublicProfile;
   divisionId: string;
-  seasonId: string;
-  divisionLevelId?: string;
-  matchType?: "singles" | "doubles";
+  levels: DivisionLevel[];
   onClose: () => void;
 }) {
-  const isDoubles = matchType === "doubles";
-  const [searchText, setSearchText] = useState("");
-  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
-  const [selectedOpponent, setSelectedOpponent] =
-    useState<PublicProfile | null>(null);
+  const announce = useAnnounce();
+  const comp = useCompetition(divisionId, levels, currentUser.id);
+  const isDoubles = comp.level?.matchType === "doubles";
+  const [selectedOpponent, setSelectedOpponent] = useState<PublicProfile | null>(null);
   // Doubles slots: the signed-in player always fills side 1's first seat.
   const [partner, setPartner] = useState<PublicProfile | null>(null);
   const [opponent1, setOpponent1] = useState<PublicProfile | null>(null);
   const [opponent2, setOpponent2] = useState<PublicProfile | null>(null);
-  const [searching, setSearching] = useState(false);
   const [scheduledAt, setScheduledAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [dateError, setDateError] = useState("");
+  const formId = "propose-match-form";
+  const minDate = useMemo(() => toLocalInputValue(Date.now()), []);
 
-  const doublesChosenIds = [
-    currentUser.id,
-    partner?.id,
-    opponent1?.id,
-    opponent2?.id,
-  ].filter((id): id is string => !!id);
-  const doublesReady = !!(partner && opponent1 && opponent2);
-  const opponentReady = isDoubles ? doublesReady : !!selectedOpponent;
-  useEffect(() => {
-    if (!searchText.trim() || selectedOpponent) {
-      setSearchResults([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const results = await searchDivisionPlayers(divisionId, searchText);
-        setSearchResults(results.filter((u) => u.id !== currentUser.id));
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchText, divisionId, selectedOpponent, currentUser.id]);
+  const doublesChosenIds = [currentUser.id, partner?.id, opponent1?.id, opponent2?.id].filter(
+    (id): id is string => !!id,
+  );
+  const dirty = comp.touched || !!(selectedOpponent || partner || opponent1 || opponent2 || scheduledAt);
 
-  async function handleSubmit() {
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
     setError("");
-    if (!opponentReady) {
-      setError(isDoubles ? "Choose a partner and both opponents." : "Select an opponent.");
+    setDateError("");
+    if (isDoubles ? !(partner && opponent1 && opponent2) : !selectedOpponent) {
+      setError(isDoubles ? "Choose your partner and both opponents." : "Choose an opponent.");
       return;
     }
     const ts = Date.parse(scheduledAt);
-    if (!ts || Number.isNaN(ts)) {
-      setError("Pick a valid date and time.");
+    if (!scheduledAt || Number.isNaN(ts)) {
+      setDateError("Pick a date and time.");
       return;
     }
     if (ts < Date.now()) {
-      setError("Pick a time in the future.");
+      setDateError("Pick a time in the future.");
       return;
     }
     setSubmitting(true);
@@ -1299,53 +1658,64 @@ function ProposeMatchModal({
           side1PlayerIds: [currentUser.id, partner!.id],
           side2PlayerIds: [opponent1!.id, opponent2!.id],
           divisionId,
-          seasonId,
-          divisionLevelId,
+          seasonId: comp.seasonId,
+          divisionLevelId: comp.level?.id,
           scheduledAt: ts,
         });
-        onClose();
-        return;
+        announce(
+          `Proposal sent. ${opponent1!.displayName} and ${opponent2!.displayName} will be asked to accept it.`,
+          { toast: true },
+        );
+      } else {
+        await proposeMatch({
+          player1Id: currentUser.id,
+          player2Id: selectedOpponent!.id,
+          player1Name: currentUser.displayName,
+          player2Name: selectedOpponent!.displayName,
+          divisionId,
+          seasonId: comp.seasonId,
+          divisionLevelId: comp.level?.id,
+          matchType: comp.level?.matchType,
+          createdBy: currentUser.id,
+          scheduledAt: ts,
+        });
+        announce(`Proposal sent. ${selectedOpponent!.displayName} will be asked to accept it.`, { toast: true });
       }
-      if (!selectedOpponent) {
-        setError("Select an opponent.");
-        return;
-      }
-      await proposeMatch({
-        player1Id: currentUser.id,
-        player2Id: selectedOpponent.id,
-        player1Name: currentUser.displayName,
-        player2Name: selectedOpponent.displayName,
-        divisionId,
-        seasonId,
-        divisionLevelId,
-        matchType,
-        createdBy: currentUser.id,
-        scheduledAt: ts,
-      });
       onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not send the proposal.");
+    } catch (caught) {
+      setError(describeError(caught, "Couldn't send the proposal. Try again."));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div style={modalStyles.overlay} onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="propose-match-title"
-        style={modalStyles.card}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 id="propose-match-title" style={modalStyles.title}>Propose a Match</h2>
+    <Dialog
+      open
+      onClose={onClose}
+      title="Propose a match"
+      description="Your opponent gets a notification and can accept or decline."
+      dirty={dirty}
+      dismissible={!submitting}
+      footer={
+        <>
+          <CancelButton disabled={submitting} />
+          <Button type="submit" form={formId} pending={submitting} pendingLabel="Sending…">
+            Send proposal
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} noValidate>
+        <CompetitionFields
+          comp={comp}
+          idPrefix="propose"
+          ownLevelLabel="your"
+          typeHint={isDoubles ? "You and a partner play another pair." : undefined}
+        />
 
         {isDoubles ? (
           <>
-            <p style={modalStyles.muted}>
-              Doubles — you and your partner against the opposing pair.
-            </p>
             <PlayerSlotPicker
               label="Your partner"
               inputId="proposal-partner-search"
@@ -1374,508 +1744,257 @@ function ProposeMatchModal({
               onClear={() => setOpponent2(null)}
             />
           </>
-        ) : selectedOpponent ? (
-          <>
-            <div style={modalStyles.selectedRow}>
-              <div>
-                <div style={modalStyles.selectedName}>
-                  {selectedOpponent.displayName}
-                </div>
-              </div>
-              <button
-                type="button"
-                style={modalStyles.changeBtn}
-                onClick={() => {
-                  setSelectedOpponent(null);
-                  setSearchText("");
-                }}
-              >
-                Change
-              </button>
-            </div>
-          </>
         ) : (
-          <>
-            <label htmlFor="proposal-opponent-search" style={modalStyles.label}>
-              Search opponent
-            </label>
-            <input
-              id="proposal-opponent-search"
-              style={modalStyles.input}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search opponent by name…"
-            />
-            {searching && <div style={modalStyles.muted}>Searching…</div>}
-            {searchResults.length > 0 && (
-              <div style={modalStyles.results}>
-                {searchResults.map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    aria-label={`Select ${u.displayName}`}
-                    style={modalStyles.resultRow}
-                    onClick={() => {
-                      setSelectedOpponent(u);
-                      setSearchResults([]);
-                    }}
-                  >
-                    <div style={modalStyles.resultName}>{u.displayName}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {searchText.trim().length > 0 &&
-              !searching &&
-              searchResults.length === 0 && (
-                <div style={modalStyles.muted}>No players found.</div>
-              )}
-          </>
+          <PlayerSlotPicker
+            label="Opponent"
+            inputId="proposal-opponent-search"
+            divisionId={divisionId}
+            excludeIds={[currentUser.id]}
+            selected={selectedOpponent}
+            onSelect={setSelectedOpponent}
+            onClear={() => setSelectedOpponent(null)}
+          />
         )}
 
-        {opponentReady && (
-          <div style={{ marginTop: 14 }}>
-            <label htmlFor="proposal-scheduled-at" style={modalStyles.label}>When?</label>
-            <input
-              id="proposal-scheduled-at"
-              aria-label="Match date and time"
-              style={modalStyles.input}
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
-            />
-          </div>
-        )}
-
-        {error && <div role="alert" style={modalStyles.error}>{error}</div>}
-
-        <div style={modalStyles.actions}>
-          <button
-            type="button"
-            style={modalStyles.cancelBtn}
-            onClick={onClose}
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            style={{
-              ...modalStyles.submitBtn,
-              ...(!opponentReady || !scheduledAt || submitting
-                ? modalStyles.btnDisabled
-                : {}),
+        <div style={styles.fieldBlock}>
+          <label htmlFor="proposal-scheduled-at" style={fieldLabelStyle}>
+            Date and time
+          </label>
+          <input
+            id="proposal-scheduled-at"
+            style={inputStyle}
+            type="datetime-local"
+            min={minDate}
+            value={scheduledAt}
+            onChange={(e) => {
+              setScheduledAt(e.target.value);
+              setDateError("");
             }}
-            onClick={handleSubmit}
-            disabled={!opponentReady || !scheduledAt || submitting}
-          >
-            {submitting ? "Sending…" : "Send Proposal"}
-          </button>
+            aria-invalid={dateError ? true : undefined}
+            aria-describedby={dateError ? "proposal-scheduled-at-error" : undefined}
+          />
+          {dateError && (
+            <p id="proposal-scheduled-at-error" role="alert" style={styles.fieldError}>
+              {dateError}
+            </p>
+          )}
         </div>
-      </div>
-    </div>
+
+        {error && <InlineAlert tone="error" style={styles.formAlert}>{error}</InlineAlert>}
+      </form>
+    </Dialog>
   );
 }
 
-const modalStyles: Record<string, React.CSSProperties> = {
-  overlay: {
-    position: "fixed" as const,
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 100,
-    padding: 16,
-  },
-  card: {
-    background: "#fff",
-    borderRadius: 16,
-    padding: 28,
-    maxWidth: 460,
-    width: "100%",
-    maxHeight: "90vh",
-    overflowY: "auto" as const,
-  },
-  title: { fontSize: 20, fontWeight: 700, color: "#1a472a", marginBottom: 16 },
-  hint: { fontSize: 14, color: "#556", margin: "0 0 12px" },
-  label: { display: "grid", gap: 8, fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 8 },
-  modeToggle: {
-    display: "flex",
-    borderRadius: 10,
-    border: "1px solid #ddd",
-    overflow: "hidden",
-    marginBottom: 14,
-  },
-  modeBtn: {
-    flex: 1,
-    padding: "10px 0",
-    background: "#f9f9f9",
-    border: "none",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#888",
-    cursor: "pointer",
-  },
-  modeBtnActive: { background: "#1a472a", color: "#fff" },
-  input: {
-    width: "100%",
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: "10px 14px",
-    fontSize: 14,
-    marginBottom: 12,
-    boxSizing: "border-box" as const,
-  },
-  textarea: {
-    width: "100%",
-    border: "1px solid #ddd",
-    borderRadius: 10,
-    padding: "10px 14px",
-    fontSize: 14,
-    marginBottom: 12,
-    boxSizing: "border-box" as const,
-    resize: "vertical" as const,
-  },
-  results: {
-    maxHeight: 200,
-    overflowY: "auto" as const,
-    border: "1px solid #eee",
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  resultRow: {
-    display: "block",
-    width: "100%",
-    textAlign: "left" as const,
-    padding: "10px 14px",
-    background: "#fff",
-    border: "none",
-    borderBottom: "1px solid #f5f5f5",
-    cursor: "pointer",
-  },
-  resultName: { fontSize: 14, fontWeight: 600, color: "#222" },
-  resultEmail: { fontSize: 12, color: "#888", marginTop: 2 },
-  selectedRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    background: "#f0f9f0",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  selectedName: { fontSize: 15, fontWeight: 700, color: "#1a472a" },
-  selectedEmail: { fontSize: 12, color: "#666", marginTop: 2 },
-  changeBtn: {
-    background: "transparent",
-    border: "none",
-    color: "#1a472a",
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-  },
-  setsBlock: { marginBottom: 14 },
-  setRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 },
-  setLabel: { fontSize: 13, color: "#666", width: 48 },
-  setInput: {
-    width: 56,
-    padding: "8px 0",
-    border: "1px solid #ddd",
-    borderRadius: 8,
-    fontSize: 16,
-    fontWeight: 700,
-    textAlign: "center" as const,
-    color: "#1a472a",
-  },
-  setDash: { color: "#999", fontWeight: 600 },
-  tiebreakToggle: {
-    display: "flex" as const,
-    alignItems: "center",
-    gap: 8,
-    margin: "0 0 8px 56px",
-    fontSize: 13,
-    color: "#666",
-    cursor: "pointer",
-  } as const,
-  removeSet: {
-    marginLeft: "auto",
-    background: "transparent",
-    border: "none",
-    color: "#c0392b",
-    fontSize: 16,
-    cursor: "pointer",
-  },
-  addSet: {
-    background: "transparent",
-    border: "none",
-    color: "#1a472a",
-    fontWeight: 600,
-    fontSize: 13,
-    padding: "4px 0",
-    cursor: "pointer",
-  },
-  actions: { display: "flex", gap: 10, marginTop: 12 },
-  cancelBtn: {
-    flex: 1,
-    padding: "12px 0",
-    background: "#f0f0f0",
-    border: "none",
-    borderRadius: 10,
-    fontWeight: 600,
-    color: "#333",
-    cursor: "pointer",
-  },
-  submitBtn: {
-    flex: 1,
-    padding: "12px 0",
-    background: "#1a472a",
-    border: "none",
-    borderRadius: 10,
-    fontWeight: 700,
-    color: "#fff",
-    cursor: "pointer",
-  },
-  btnDisabled: { opacity: 0.5, cursor: "not-allowed" as const },
-  error: { color: "#c0392b", fontSize: 13, marginBottom: 12 },
-  muted: { color: "#999", fontSize: 13, marginBottom: 12 },
-  availability: {
-    background: "#f7f7f0",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  availabilityTitle: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#1a472a",
-    marginBottom: 6,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
-  },
-  availabilityRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    fontSize: 13,
-    color: "#333",
-    padding: "2px 0",
-  },
-  availabilityDay: { fontWeight: 600, color: "#1a472a", minWidth: 32 },
-  availabilityTime: { color: "#444" },
-  availabilityNote: {
-    fontSize: 12,
-    color: "#666",
-    fontStyle: "italic" as const,
-    marginTop: 6,
-    paddingTop: 6,
-    borderTop: "1px solid #e7e7d8",
-  },
-  toggleSection: {
-    marginBottom: 14,
-    background: "#f0f9f0",
-    borderRadius: 10,
-    padding: 12,
-  } as const,
-  checkboxLabel: {
-    display: "flex" as const,
-    alignItems: "center",
-    gap: 10,
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#1a472a",
-  } as const,
-  checkbox: {
-    cursor: "pointer" as const,
-    width: 18,
-    height: 18,
-  } as const,
-  checkboxHint: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 8,
-    fontStyle: "italic" as const,
-  } as const,
-};
+// Native <details> needs these two rules, which inline styles cannot express:
+// Safari's marker and the chevron turning when the group opens.
+const collapsedGroupCss = `
+details[data-matches-group] > summary::-webkit-details-marker { display: none; }
+details[data-matches-group][open] .matches-group-chevron { transform: rotate(180deg); }
+`;
 
-const styles: Record<string, React.CSSProperties> = {
+/* ------------------------------------------------------------------------ */
+/* Styles                                                                     */
+/* ------------------------------------------------------------------------ */
+
+const styles: Record<string, CSSProperties> = {
   page: appNavStyles.page,
   iosPage: { minHeight: "100dvh" },
-  filterBar: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 24 },
-  filterLabel: { display: "grid", gap: 6, fontSize: 12, fontWeight: 700, color: "#555", textTransform: "uppercase" as const, letterSpacing: 0.4 },
-  select: { minWidth: 180, border: "1px solid #ddd", borderRadius: 10, padding: "10px 12px", background: "#fff", color: "var(--text)", fontSize: 14, textTransform: "none" as const, letterSpacing: 0 },
-  main: { maxWidth: 960, margin: "0 auto", padding: "40px 24px" },
-  iosMain: { padding: "24px 12px calc(24px + env(safe-area-inset-bottom))" },
+  main: { maxWidth: width.list, margin: "0 auto", padding: "40px 24px" },
+  iosMain: { padding: `${space.xl}px ${space.lg}px calc(${space.xl}px + env(safe-area-inset-bottom))` },
   titleRow: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
-    gap: 16,
-    flexWrap: "wrap" as const,
+    marginBottom: space.xl,
+    gap: space.lg,
+    flexWrap: "wrap",
   },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: 800,
-    color: "var(--green-dark)",
-    margin: 0,
-  },
-  recordBtn: {
-    minHeight: 44,
-    background: "#fff",
-    border: "1.5px solid var(--green-dark)",
-    color: "var(--green-dark)",
-    borderRadius: 10,
-    padding: "10px 18px",
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  historicBadge: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: "#1a472a",
-    background: "#ffdc60",
-    padding: "2px 8px",
-    borderRadius: 12,
-  },
-  placeholder: { padding: "8px 0" },
-  emptyCard: {
-    background: "#fff",
-    borderRadius: 14,
-    padding: 40,
-    textAlign: "center" as const,
-    color: "var(--muted)",
-  },
+  pageTitle: { ...type.display, color: color.clubhouseGreen, margin: 0 },
+  titleActions: { display: "flex", gap: space.md, flexWrap: "wrap" },
+  iosTitleActions: { width: "100%" },
 
-  liveSection: { marginBottom: 32 },
-  liveSectionHeader: {
+  filterBar: { display: "flex", gap: space.md, flexWrap: "wrap", marginBottom: space.xxl },
+  filterField: { flex: "1 1 200px", maxWidth: 280 },
+  select: inputStyle,
+
+  emptyCard: { ...cardStyle, padding: 0 },
+  quietLine: { ...type.bodySmall, color: color.textMuted, margin: 0 },
+  inlineEmpty: {
+    ...cardStyle,
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 14,
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: space.md,
   },
+
+  section: { marginBottom: space.xxl },
+  sectionHeader: { display: "flex", alignItems: "center", gap: space.sm, marginBottom: space.md },
+  sectionTitle: { ...type.headline, color: color.clubhouseGreen, margin: 0 },
+  sectionCount: { ...type.label, fontFamily: "var(--font-body)", color: color.textMuted, fontWeight: 500 },
+  sectionDescription: { ...type.bodySmall, color: color.textMuted, margin: `-${space.xs}px 0 ${space.md}px` },
   livePulse: {
     width: 10,
     height: 10,
-    borderRadius: "50%",
-    background: "#27ae60",
+    borderRadius: radius.pill,
+    background: color.liveGreen,
     boxShadow: "0 0 0 3px rgba(39,174,96,0.3)",
     animation: "pulse 1.5s infinite",
+    flex: "0 0 auto",
   },
-  liveSectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#1a472a",
-    margin: 0,
+  collapsedGroup: { display: "grid", gap: space.md },
+  details: { ...cardStyle, padding: 0 },
+  summary: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: target.control + 8,
+    padding: `0 ${space.lg}px`,
+    cursor: "pointer",
+    listStyle: "none",
+    borderRadius: radius.card,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#666",
-    marginBottom: 14,
-  },
+  summaryTitle: { ...type.title, color: color.clubhouseGreen },
+  detailsBody: { padding: `0 ${space.lg}px ${space.lg}px` },
 
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-    gap: 16,
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
+    gap: space.lg,
   },
   card: {
-    background: "#fff",
-    borderRadius: 14,
-    padding: 20,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-    display: "block",
-    cursor: "pointer",
+    ...cardStyle,
+    display: "flex",
+    flexDirection: "column",
+    gap: space.sm,
+    minWidth: 0,
   },
+  cardFeatured: { gridColumn: "1 / -1" },
   cardLive: {
-    borderLeft: "4px solid #27ae60",
-    boxShadow: "0 4px 16px rgba(39,174,96,0.15)",
+    borderLeft: `4px solid ${color.liveGreen}`,
+    boxShadow: shadow.live,
   },
   cardTop: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    gap: space.sm,
+    flexWrap: "wrap",
+  },
+  badges: { display: "flex", gap: space.xs, alignItems: "center", flexWrap: "wrap" },
+  recordedBadge: {
+    ...type.caption,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: space.xs,
+    color: color.ink,
+    background: color.surfaceMuted,
+    padding: "2px 8px",
+    borderRadius: radius.pill,
   },
   winnerBadge: {
-    fontSize: 12,
+    ...type.caption,
     fontWeight: 600,
-    color: "var(--green-dark)",
-    background: "#e8f5e9",
+    color: color.clubhouseGreen,
+    background: color.greenSoft,
     padding: "2px 8px",
-    borderRadius: 20,
+    borderRadius: radius.pill,
   },
-  scoreBlock: { marginBottom: 8 },
-  setScore: { fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 700, color: "#222", letterSpacing: 1 },
-  gameScore: {
-    fontSize: 15,
-    fontWeight: 600,
-    color: "#27ae60",
-    marginLeft: 10,
-  },
-  players: {
+  cardTitle: { ...type.label, fontSize: 16, color: color.ink, margin: 0, overflowWrap: "anywhere" },
+  cardTitleFeatured: { ...type.title, color: color.ink, margin: 0, overflowWrap: "anywhere" },
+  winnerName: { color: color.clubhouseGreen, fontWeight: 700 },
+  vs: { color: color.textMuted, fontWeight: 400 },
+  scoreBlock: { margin: 0, display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: space.sm },
+  setScore: { fontFamily: "var(--font-display)", fontSize: 26, fontWeight: 700, color: color.ink, letterSpacing: 1 },
+  gameScore: { ...type.label, fontSize: 15, color: color.liveText },
+  whenLine: {
+    ...type.label,
     display: "flex",
     alignItems: "center",
-    gap: 10,
+    gap: space.xs,
+    color: color.clubhouseGreen,
+    margin: 0,
   },
-  playerName: { fontSize: 15, fontWeight: 500, color: "#555" },
-  winnerName: { fontSize: 15, fontWeight: 700, color: "var(--green-dark)" },
-  vs: { fontSize: 12, color: "#bbb" },
-  serverLine: { fontSize: 12, color: "#888", marginTop: 8 },
-  scheduledLine: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#1a472a",
-    marginBottom: 8,
+  metaLine: { ...type.caption, color: color.textMuted, margin: 0 },
+  contextLine: { ...type.bodySmall, color: color.ink, margin: 0 },
+  actionsRow: { display: "flex", flexWrap: "wrap", gap: space.sm, marginTop: "auto", paddingTop: space.xs },
+  decisionRow: { display: "flex", gap: space.md, flex: "1 1 100%" },
+  decisionBtn: { flex: 1 },
+  cardAlert: { flex: "1 1 100%" },
+
+  // Forms
+  fieldset: { border: "none", padding: 0, margin: `0 0 ${space.lg}px`, minWidth: 0 },
+  legend: { ...type.label, color: color.ink, padding: 0, marginBottom: space.sm },
+  twoCol: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+    gap: space.md,
   },
-  section: { marginBottom: 28 },
-  titleActions: { display: "flex", gap: 10, flexWrap: "wrap" as const },
-  iosTitleActions: { width: "100%", justifyContent: "stretch" as const },
-  liveBtn: {
-    minHeight: 44,
-    background: "#27ae60",
-    color: "#fff",
+  hint: { ...type.bodySmall, color: color.textMuted, margin: `${space.sm}px 0 0` },
+  fieldBlock: { marginBottom: space.lg },
+  fieldError: { ...type.caption, color: color.destructivePressed, margin: `${space.xs}px 0 0` },
+  formAlert: { marginTop: space.lg },
+  segmentBlock: { marginBottom: space.lg },
+  segment: {
+    display: "flex",
+    flexWrap: "wrap",
+    borderRadius: radius.md,
+    border: `1px solid ${color.borderStrong}`,
+    overflow: "hidden",
+    background: color.surface,
+  },
+  segmentBtn: {
+    ...type.label,
+    flex: "1 1 120px",
+    minHeight: target.control,
+    padding: "0 12px",
+    background: color.surface,
     border: "none",
-    borderRadius: 999,
-    padding: "10px 16px",
+    color: color.ink,
+    cursor: "pointer",
+  },
+  segmentBtnActive: { background: color.clubhouseGreen, color: color.surface },
+  textarea: {
+    ...inputStyle,
+    minHeight: 160,
+    padding: "10px 12px",
+    resize: "vertical",
+    marginTop: space.sm,
+  },
+  setBlock: { marginBottom: space.sm },
+  setRow: { display: "flex", alignItems: "center", gap: space.sm },
+  setLabel: { ...type.bodySmall, color: color.textMuted, width: 72, flex: "0 0 auto" },
+  setInput: {
+    ...inputStyle,
+    width: 64,
+    padding: 0,
     fontWeight: 700,
+    textAlign: "center",
+    color: color.clubhouseGreen,
+  },
+  setDash: { color: color.textMuted, fontWeight: 600 },
+  removeSet: { marginLeft: "auto" },
+  tiebreakToggle: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: target.min,
+    marginLeft: 80,
+    ...type.bodySmall,
+    color: color.ink,
     cursor: "pointer",
   },
-  proposeBtn: {
-    minHeight: 44,
-    background: "var(--green-dark)",
-    border: "none",
-    color: "#fff",
-    borderRadius: 10,
-    padding: "10px 18px",
-    fontWeight: 700,
-    fontSize: 14,
+  checkboxBlock: { marginBottom: space.sm },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.md,
+    minHeight: target.min,
     cursor: "pointer",
+    ...type.label,
+    color: color.ink,
   },
-  actionsRow: { display: "flex", gap: 8, marginTop: 12 },
-  acceptBtn: {
-    flex: 1,
-    padding: "8px 12px",
-    background: "#1a472a",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    fontWeight: 700,
-    fontSize: 13,
-    cursor: "pointer",
-  },
-  declineBtn: {
-    flex: 1,
-    padding: "8px 12px",
-    background: "#fff",
-    color: "#c0392b",
-    border: "1px solid #c0392b",
-    borderRadius: 8,
-    fontWeight: 600,
-    fontSize: 13,
-    cursor: "pointer",
-  },
+  checkbox: { cursor: "pointer", width: 20, height: 20, flex: "0 0 auto", accentColor: "var(--clubhouse-green)" },
+  checkboxHint: { ...type.bodySmall, color: color.textMuted, margin: `0 0 0 ${space.xxl}px` },
 };
