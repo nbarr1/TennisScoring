@@ -2,64 +2,75 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthUser, updateUserProfile } from '@tennis/firebase-client';
 import {
-  IconBallTennis, IconCircleCheck, IconClipboardList, IconMessageCircle, IconTarget, IconTrophy,
+  IconArrowLeft, IconBallTennis, IconCircleCheck, IconClipboardList, IconMessageCircle, IconTarget, IconTrophy,
 } from '@tabler/icons-react';
+import { Button, InlineAlert, color, describeError, radius, space, target, type } from '../../shared/ui';
 
 const SLIDES = [
   {
     Icon: IconBallTennis,
     title: 'Welcome to Tennis League',
-    body: 'Track every match, climb the rankings, and stay connected with your division — all in one place.',
-    bg: '#1a472a',
+    body: 'Schedule matches, keep score, and follow your division’s standings, all in one place.',
   },
   {
     Icon: IconTarget,
-    title: 'Score Live Matches',
-    body: 'Players score live matches in the mobile app — tap to record each point. Web shows the live score in real time.',
-    bg: '#2d6a4f',
+    title: 'Score matches live',
+    body: 'In the mobile app, tap to record each point as you play. Anyone following on the web sees the score update in real time.',
   },
   {
     Icon: IconClipboardList,
-    title: 'Record Past Matches',
-    body: 'Already played? Log the set scores after the fact. Your opponent confirms, and rankings update instantly.',
-    bg: '#1b4332',
+    title: 'Record past matches',
+    body: 'Already played? Enter the set scores afterward. Your opponent confirms the result, then the standings update.',
   },
   {
     Icon: IconCircleCheck,
-    title: 'Confirm Match Reports',
-    body: 'After a match ends, one player submits the score. The other confirms or disputes — keeping everything fair.',
-    bg: '#134a22',
+    title: 'Confirm every result',
+    body: 'After a match, one player reports the score and the other side confirms or disputes it, so every result is agreed.',
   },
   {
     Icon: IconMessageCircle,
-    title: 'Message Teammates',
-    body: 'Chat in the division channel or start a direct message. Share your contact info with a single tap.',
-    bg: '#0d3b1e',
+    title: 'Message other players',
+    body: 'Chat in your division’s channel or start a direct message to set up your next match.',
   },
   {
     Icon: IconTrophy,
-    title: "You're All Set!",
-    body: 'Win matches, earn ranking points, and claim the top spot. Good luck on the court!',
-    bg: '#1a472a',
+    title: 'You’re all set',
+    body: 'Propose your first match and start climbing the standings. Good luck on the court!',
   },
 ] as const;
 
 export default function WebTutorialPage(): React.JSX.Element {
   const router = useRouter();
-  const { firebaseUser } = useAuthUser();
+  const { firebaseUser, loading: authLoading } = useAuthUser();
   const [index, setIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
 
   const slide = SLIDES[index];
+  const isFirst = index === 0;
   const isLast = index === SLIDES.length - 1;
 
-  async function finish() {
-    if (!firebaseUser) return;
+  // Keyboard and screen-reader users land on the new step's heading.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    headingRef.current?.focus();
+  }, [index]);
+
+  const finish = useCallback(async () => {
+    if (finishing) return;
+    if (!firebaseUser) {
+      setError(authLoading ? 'Still signing you in. Try again in a moment.' : 'Your session has expired. Sign in again to continue.');
+      return;
+    }
 
     setFinishing(true);
     setError(null);
@@ -69,63 +80,149 @@ export default function WebTutorialPage(): React.JSX.Element {
       // division onboarding itself to anyone who reaches it without one.
       router.replace('/dashboard');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not finish tutorial. Please try again.');
+      setError(describeError(err, 'Couldn’t finish the tutorial. Try again.'));
       setFinishing(false);
     }
-  }
+  }, [authLoading, finishing, firebaseUser, router]);
 
-  function next() {
+  const next = useCallback(() => {
     if (isLast) {
       void finish();
     } else {
-      setIndex(index + 1);
+      setIndex((i) => Math.min(i + 1, SLIDES.length - 1));
     }
-  }
+  }, [finish, isLast]);
+
+  const back = useCallback(() => {
+    setIndex((i) => Math.max(i - 1, 0));
+  }, []);
+
+  // Arrow keys step through the slides, unless focus is in a field.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (finishing || event.altKey || event.ctrlKey || event.metaKey) return;
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (event.key === 'ArrowRight' && !isLast) {
+        event.preventDefault();
+        next();
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        back();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [back, finishing, isLast, next]);
 
   return (
-    <div style={{ ...styles.root, background: slide.bg }}>
-      <div style={styles.content}>
-        <div style={styles.icon}>
-          <slide.Icon size={80} stroke={1.5} color="var(--gold)" aria-hidden="true" />
-        </div>
-        <h1 style={styles.title}>{slide.title}</h1>
-        <p style={styles.body}>{slide.body}</p>
-        {error ? <p style={styles.error}>{error}</p> : null}
+    <main style={styles.root}>
+      <div style={styles.topBar}>
+        <span style={styles.counter}>Step {index + 1} of {SLIDES.length}</span>
+        {!isLast ? (
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => void finish()}
+            pending={finishing}
+            pendingLabel="Skipping…"
+            style={styles.skipBtn}
+          >
+            Skip tutorial
+          </Button>
+        ) : null}
       </div>
 
-      <div style={styles.dots}>
+      <div style={styles.content}>
+        <div style={styles.icon}>
+          <slide.Icon size={80} stroke={1.5} color={color.ballYellow} aria-hidden="true" />
+        </div>
+        <h1 ref={headingRef} tabIndex={-1} style={styles.title}>{slide.title}</h1>
+        <p style={styles.body}>{slide.body}</p>
+        {error ? <InlineAlert tone="error" style={styles.error}>{error}</InlineAlert> : null}
+      </div>
+
+      <div style={styles.dots} aria-hidden="true">
         {SLIDES.map((_, i) => (
           <span key={i} style={{ ...styles.dot, ...(i === index ? styles.dotActive : {}) }} />
         ))}
       </div>
 
       <div style={styles.actions}>
-        {!isLast ? (
-          <button style={styles.skipBtn} onClick={() => void finish()} disabled={finishing}>
-            {finishing ? 'Loading…' : 'Skip'}
-          </button>
+        {!isFirst ? (
+          <Button
+            variant="quiet"
+            onClick={back}
+            disabled={finishing}
+            icon={<IconArrowLeft size={18} aria-hidden="true" />}
+            style={styles.backBtn}
+          >
+            Back
+          </Button>
         ) : (
           <span />
         )}
-        <button style={styles.nextBtn} onClick={next} disabled={finishing}>
-          {finishing ? 'Loading…' : isLast ? 'Get Started' : 'Next'}
-        </button>
+        <Button
+          onClick={next}
+          pending={finishing && isLast}
+          pendingLabel="Starting…"
+          disabled={finishing && !isLast}
+          style={styles.nextBtn}
+        >
+          {isLast ? 'Get started' : 'Next'}
+        </Button>
       </div>
-    </div>
+    </main>
   );
 }
 
+// The tutorial sits on Clubhouse Green: white text, Ball Yellow for the icon,
+// the current-step dot, and the main action (yellow carries text only on green).
+const ON_GREEN_MUTED = 'rgba(255, 255, 255, 0.85)';
+
 const styles: Record<string, React.CSSProperties> = {
-  root: { minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, transition: 'background 0.3s' },
-  content: { textAlign: 'center', maxWidth: 480 },
-  icon: { fontSize: 80, marginBottom: 24 },
-  title: { fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 16, lineHeight: 1.2 },
-  body: { fontSize: 17, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5 },
-  error: { marginTop: 14, color: '#ffe4e1', fontWeight: 600 },
-  dots: { display: 'flex', gap: 8, marginTop: 40, marginBottom: 40 },
-  dot: { width: 8, height: 8, borderRadius: 4, background: 'rgba(255,220,96,0.4)', transition: 'all 0.3s' },
-  dotActive: { width: 24, background: '#ffdc60' },
-  actions: { display: 'flex', alignItems: 'center', gap: 24, justifyContent: 'space-between', width: '100%', maxWidth: 480 },
-  skipBtn: { background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 15, fontWeight: 500, cursor: 'pointer', padding: 12 },
-  nextBtn: { background: '#ffdc60', color: '#1a472a', border: 'none', borderRadius: 28, padding: '14px 36px', fontWeight: 800, fontSize: 16, cursor: 'pointer', marginLeft: 'auto' },
+  root: {
+    position: 'relative',
+    minHeight: '100dvh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: `${space.xl}px ${space.lg}px`,
+    background: color.clubhouseGreen,
+    color: color.surface,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.md,
+    padding: `${space.sm}px ${space.lg}px`,
+  },
+  counter: { ...type.label, color: ON_GREEN_MUTED, fontVariantNumeric: 'tabular-nums' },
+  skipBtn: { color: color.surface, textDecoration: 'underline', textUnderlineOffset: 3 },
+  content: { textAlign: 'center', maxWidth: 480, width: '100%', marginTop: space.xxxl },
+  icon: { marginBottom: space.xl, display: 'flex', justifyContent: 'center' },
+  title: { ...type.display, color: color.surface, margin: `0 0 ${space.lg}px` },
+  body: { ...type.body, fontSize: 17, color: ON_GREEN_MUTED, margin: 0 },
+  error: { marginTop: space.lg, textAlign: 'left' },
+  dots: { display: 'flex', gap: space.sm, marginTop: space.xxl, marginBottom: space.xxl },
+  dot: { width: 8, height: 8, borderRadius: radius.pill, background: 'rgba(255, 220, 96, 0.4)', transition: 'width 150ms ease-out, background-color 150ms ease-out' },
+  dotActive: { width: 24, background: color.ballYellow },
+  actions: { display: 'flex', alignItems: 'center', gap: space.lg, justifyContent: 'space-between', width: '100%', maxWidth: 480 },
+  backBtn: { color: color.surface },
+  nextBtn: {
+    background: color.ballYellow,
+    color: color.clubhouseGreen,
+    borderRadius: radius.pill,
+    minWidth: 160,
+    minHeight: target.control,
+    padding: `${space.md}px ${space.xxl}px`,
+    fontSize: 16,
+    fontWeight: 700,
+  },
 };
