@@ -1,18 +1,15 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Stack } from 'expo-router';
-import { View, ActivityIndicator, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { signOutReleasingPushToken, useAuthUser, usePrivateUser } from '@tennis/firebase-client';
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
+import { Button, LoadingState, colors, spacing, typography } from '../theme';
 function LoadingScreen() {
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f0' }}>
-      <ActivityIndicator color="#1a472a" size="large" />
-    </View>
-  );
+  return <LoadingState label="Loading your account" showLabel={false} />;
 }
 
 // Release builds have no red-box/dev overlay, so an uncaught render error here
@@ -34,23 +31,18 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
   render() {
     if (this.state.error) {
       return (
-        <ScrollView
-          style={{ flex: 1, backgroundColor: '#f5f5f0' }}
-          contentContainerStyle={{ padding: 24, paddingTop: 64 }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '700', color: '#b00020', marginBottom: 12 }}>
+        <ScrollView style={styles.diagScreen} contentContainerStyle={styles.diagContent}>
+          <Text style={styles.diagTitle} accessibilityRole="header">
             Something went wrong
           </Text>
           {__DEV__ ? (
             <>
-              <Text style={{ fontSize: 14, color: '#333', marginBottom: 12 }}>
-                {this.state.error.message}
-              </Text>
-              <Text style={{ fontSize: 12, color: '#666' }}>{this.state.error.stack}</Text>
+              <Text style={styles.diagMessage}>{this.state.error.message}</Text>
+              <Text style={styles.diagDetails}>{this.state.error.stack}</Text>
             </>
           ) : (
-            <Text style={{ fontSize: 14, color: '#333' }}>
-              The app hit an unexpected error. Close the app and open it again. If this keeps happening, contact your league organizer.
+            <Text style={styles.diagMessage}>
+              The app hit an unexpected error. Close the app and open it again. If this keeps happening, tell your division leader.
             </Text>
           )}
         </ScrollView>
@@ -75,41 +67,18 @@ function DiagnosticScreen({
   onSignOut?: () => void;
 }) {
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: '#f5f5f0' }}
-      contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}
-    >
-      <Text style={{ fontSize: 20, fontWeight: '700', color: '#1a472a', marginBottom: 12 }}>
+    <ScrollView style={styles.diagScreen} contentContainerStyle={[styles.diagContent, styles.diagCentered]}>
+      <Text style={styles.diagTitle} accessibilityRole="header">
         {title}
       </Text>
-      <Text style={{ fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 16 }}>
-        {message}
-      </Text>
-      {details && __DEV__ ? (
-        <Text style={{ fontSize: 12, color: '#666', lineHeight: 18, marginBottom: 18 }}>
-          {details}
-        </Text>
-      ) : null}
-      <View style={{ gap: 12 }}>
+      <Text style={styles.diagMessage}>{message}</Text>
+      {details && __DEV__ ? <Text style={styles.diagDetails}>{details}</Text> : null}
+      <View style={styles.diagActions}>
         {onRetry ? (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Retry loading the app"
-            onPress={onRetry}
-            style={{ backgroundColor: '#1a472a', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Retry</Text>
-          </TouchableOpacity>
+          <Button label="Try again" accessibilityLabel="Try loading the app again" icon="arrow.clockwise" fullWidth onPress={onRetry} />
         ) : null}
         {onSignOut ? (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Sign out and return to login"
-            onPress={onSignOut}
-            style={{ borderColor: '#1a472a', borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#1a472a', fontWeight: '700' }}>Sign out</Text>
-          </TouchableOpacity>
+          <Button label="Sign out" accessibilityLabel="Sign out and return to sign in" variant="secondary" fullWidth onPress={onSignOut} />
         ) : null}
       </View>
     </ScrollView>
@@ -246,8 +215,8 @@ function AuthGate() {
     return (
       <GateOverlay>
         <DiagnosticScreen
-          title="Could not finish loading"
-          message="The app could not load your account data. This is usually caused by a temporary network issue, a Firebase configuration problem, or missing account data."
+          title="Couldn't load your account"
+          message="This is usually a brief connection problem. Check your connection and try again. If it keeps happening, sign out and sign back in."
           details={`uid=${firebaseUser?.uid ?? 'none'}\nerror=${error.message ?? 'unknown'}`}
           onRetry={() => setRetryKey((key) => key + 1)}
           onSignOut={firebaseUser ? () => { void signOutReleasingPushToken(); setUser(null); } : undefined}
@@ -262,7 +231,7 @@ function AuthGate() {
         <GateOverlay>
           <DiagnosticScreen
             title="Still loading"
-            message="Loading is taking longer than expected. You can keep waiting, retry the account listener, or sign out and try again."
+            message="This is taking longer than usual. Keep waiting, try again, or sign out and sign back in."
             details={`authLoading=${authLoading}\nprofileLoading=${profileLoading}\nrouteMismatch=${routeMismatch}\nsegments=${segments.join('/') || '(none)'}\nuid=${firebaseUser?.uid ?? 'none'}`}
             onRetry={() => setRetryKey((key) => key + 1)}
             onSignOut={firebaseUser ? () => { void signOutReleasingPushToken(); setUser(null); } : undefined}
@@ -286,11 +255,19 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <View style={{ flex: 1 }}>
-            <Stack screenOptions={{ headerShown: false }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                headerStyle: { backgroundColor: colors.primary },
+                headerTintColor: colors.onPrimary,
+                headerTitleStyle: { color: colors.onPrimary },
+                contentStyle: { backgroundColor: colors.canvas },
+              }}
+            >
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(onboarding)" />
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Provide Feedback' }} />
+              <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Send Feedback' }} />
               <Stack.Screen name="round-robin-scheduler" options={{ headerShown: true, title: 'Round-Robin Scheduler' }} />
               <Stack.Screen name="privacy-policy" options={{ headerShown: true, title: 'Privacy Policy' }} />
               <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
@@ -305,10 +282,17 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   overlay: {
-    backgroundColor: '#f5f5f0',
+    backgroundColor: colors.canvas,
     // The navigator below is a native (react-native-screens) view, so JS sibling
     // order alone is not enough to guarantee the overlay draws on top of it.
     zIndex: 1000,
     elevation: 24,
   },
+  diagScreen: { flex: 1, backgroundColor: colors.canvas },
+  diagContent: { padding: spacing.xl, paddingTop: spacing.xxxl + spacing.lg },
+  diagCentered: { flexGrow: 1, justifyContent: 'center', paddingTop: spacing.xl },
+  diagTitle: { ...typography.heading, color: colors.primary, marginBottom: spacing.md },
+  diagMessage: { ...typography.body, color: colors.text, marginBottom: spacing.lg },
+  diagDetails: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.lg },
+  diagActions: { gap: spacing.md },
 });
