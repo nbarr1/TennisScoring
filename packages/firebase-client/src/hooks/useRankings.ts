@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react';
 import { onSnapshot, query, where } from 'firebase/firestore';
-import { rankingsQuery, completedDivisionMatchesQuery, profilesCol } from '../collections';
+import {
+  rankingsQuery,
+  completedDivisionMatchesQuery,
+  divisionMembershipsQuery,
+  profilesCol,
+} from '../collections';
 import { computeRankings, extractMatchTotals, isDoublesMatch } from '@tennis/shared';
-import type { PlayerRanking, Match, HeadToHead, PublicProfile } from '@tennis/shared';
+import type { PlayerRanking, Match, HeadToHead, PublicProfile, DivisionMembership } from '@tennis/shared';
 
 function hasRankingStats(ranking: PlayerRanking): boolean {
   return (
@@ -26,9 +31,29 @@ function hasRankingStats(ranking: PlayerRanking): boolean {
  * owner may have results in other seasons, and those must not leak into this one.
  */
 function rankingFromRosterProfile(profile: PublicProfile, divisionId: string): PlayerRanking {
+  return zeroStatRanking(profile.id, profile.displayName, divisionId);
+}
+
+/**
+ * A zero-stat standings row for a player rostered in the selected season.
+ *
+ * Players move between divisions from one season to the next, so a season's
+ * table takes its unplayed rows from that season's memberships. Reading them
+ * from every profile whose active division is this one listed Fall-only
+ * players in the Spring table and Spring-only players in the Fall one.
+ */
+function rankingFromMembership(membership: DivisionMembership, divisionId: string): PlayerRanking {
   return {
-    userId: profile.id,
-    displayName: profile.displayName || profile.id,
+    ...zeroStatRanking(membership.userId, membership.displayNameSnapshot, divisionId),
+    seasonId: membership.seasonId,
+    divisionLevelId: membership.divisionLevelId,
+  };
+}
+
+function zeroStatRanking(userId: string, displayName: string | undefined, divisionId: string): PlayerRanking {
+  return {
+    userId,
+    displayName: displayName || userId,
     divisionId,
     season: 'current',
     rank: 0,
@@ -362,24 +387,52 @@ export function useRankings(
       },
     );
 
-    const unsubRoster = onSnapshot(
-      query(profilesCol(), where('divisionId', '==', divisionId)),
-      (snap) => {
-        rosterRankings = snap.docs.map((d) =>
-          rankingFromRosterProfile({ ...d.data(), id: d.id }, divisionId),
+    const onRosterError = () => {
+      // The roster only adds zero-match rows. A viewer who cannot read it (for
+      // example one active in another division) still gets the standings.
+      rosterRankings = [];
+      rosterReady = true;
+      syncRankings();
+    };
+    // With a season selected, unplayed rows come from that season's active
+    // memberships (narrowed to the level when one is set). Without one there
+    // is no season to scope to, so every profile in the division is listed.
+    const unsubRoster = filters?.seasonId
+      ? onSnapshot(
+          divisionMembershipsQuery(
+            divisionId,
+            filters.seasonId,
+            where('status', '==', 'active'),
+            ...(filters.divisionLevelId
+              ? [where('divisionLevelId', '==', filters.divisionLevelId)]
+              : []),
+          ),
+          (snap) => {
+            // One row per player, even if legacy data holds two memberships.
+            const byUserId = new Map<string, PlayerRanking>();
+            snap.docs.forEach((d) => {
+              const membership = d.data();
+              if (!byUserId.has(membership.userId)) {
+                byUserId.set(membership.userId, rankingFromMembership(membership, divisionId));
+              }
+            });
+            rosterRankings = [...byUserId.values()];
+            rosterReady = true;
+            syncRankings();
+          },
+          onRosterError,
+        )
+      : onSnapshot(
+          query(profilesCol(), where('divisionId', '==', divisionId)),
+          (snap) => {
+            rosterRankings = snap.docs.map((d) =>
+              rankingFromRosterProfile({ ...d.data(), id: d.id }, divisionId),
+            );
+            rosterReady = true;
+            syncRankings();
+          },
+          onRosterError,
         );
-        rosterReady = true;
-        syncRankings();
-      },
-      () => {
-        // The roster only adds zero-match rows. Profiles are readable by members
-        // whose active division is this one, so a viewer active elsewhere is
-        // denied; that is expected and leaves the standings themselves intact.
-        rosterRankings = [];
-        rosterReady = true;
-        syncRankings();
-      },
-    );
 
     return () => {
       unsubRankings();
