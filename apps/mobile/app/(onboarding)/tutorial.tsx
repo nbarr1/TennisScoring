@@ -4,46 +4,50 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TouchableOpacity,
-  AccessibilityInfo,
+  Pressable,
   Animated,
-  Platform,
+  ActivityIndicator,
   useWindowDimensions,
+  type PressableProps,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { auth, updateUserProfile } from "@tennis/firebase-client";
-import { colors, spacing } from "../../theme";
+import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
+import {
+  announce,
+  colors,
+  hitSlopFor,
+  MIN_TOUCH_TARGET,
+  radii,
+  spacing,
+  typography,
+  useReduceMotion,
+} from "../../theme";
 
 const SLIDES = [
   {
-    key: "division",
-    icon: "🎾",
-    title: "Find Your Division",
-    body: "Create a division for your group or join an existing one with an invite code.",
-    bg: "#1a472a",
-  },
-  {
     key: "arrange",
-    icon: "📅",
-    title: "Arrange Your Matches",
-    body: "Schedule matches with players in your division and keep your season moving.",
-    bg: "#2d6a4f",
+    icon: "calendar",
+    title: "Propose your matches",
+    body: "Pick an opponent in your division and propose a time. They accept, and the match is on your schedule.",
   },
   {
     key: "score",
-    icon: "📋",
-    title: "Score or Record Results",
-    body: "Score point by point on court, or enter the final set scores after you play.",
-    bg: "#1b4332",
+    icon: "figure.tennis",
+    title: "Score it or record it",
+    body: "Score point by point on court, from your phone or watch, or enter the final set scores after you play.",
   },
   {
     key: "standings",
-    icon: "🏆",
-    title: "Climb the Standings",
-    body: "Every confirmed result updates the rankings. Win matches, earn points, and chase the top spot.",
-    bg: "#1a472a",
+    icon: "trophy.fill",
+    title: "Confirm and climb",
+    body: "Your opponent confirms each result, and every confirmed result updates the standings.",
   },
 ] as const;
+
+/** Text on Clubhouse Green: white body at 90% stays above 9:1. */
+const ON_PRIMARY_MUTED = "rgba(255,255,255,0.9)";
 
 export async function markTutorialDone() {
   const uid = auth.currentUser?.uid;
@@ -51,8 +55,42 @@ export async function markTutorialDone() {
   await updateUserProfile(uid, { tutorialDone: true });
 }
 
+function DarkButton({
+  label,
+  filled = false,
+  style,
+  ...props
+}: PressableProps & { label: string; filled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={props.accessibilityLabel ?? label}
+      hitSlop={hitSlopFor(MIN_TOUCH_TARGET)}
+      android_ripple={{
+        color: filled ? "rgba(26,71,42,0.2)" : "rgba(255,255,255,0.2)",
+        foreground: true,
+      }}
+      style={(state) => [
+        styles.darkButton,
+        filled && styles.darkButtonFilled,
+        state.pressed && styles.darkButtonPressed,
+        typeof style === "function" ? style(state) : style,
+      ]}
+      {...props}
+    >
+      <Text
+        style={[styles.darkButtonText, filled && styles.darkButtonTextFilled]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function TutorialScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
   const { width: pageWidth, height } = useWindowDimensions();
   const compact = pageWidth < 380 || height < 700;
   const listRef = useRef<FlatList>(null);
@@ -78,6 +116,7 @@ export default function TutorialScreen() {
         await markTutorialDone();
       } catch {
         setSaveError(true);
+        announce("Couldn't save your progress. Try again, or continue anyway.");
         return;
       } finally {
         setIsSaving(false);
@@ -87,21 +126,39 @@ export default function TutorialScreen() {
     router.replace("/(tabs)");
   }
 
+  function goTo(index: number) {
+    listRef.current?.scrollToIndex({ index, animated: !reduceMotion });
+    // Without animation there is no momentum-end event to update the index.
+    if (reduceMotion) {
+      setCurrentIndex(index);
+      announce(SLIDES[index].title);
+    }
+  }
+
   function next() {
     if (currentIndex < SLIDES.length - 1) {
-      listRef.current?.scrollToIndex({
-        index: currentIndex + 1,
-        animated: true,
-      });
+      goTo(currentIndex + 1);
     } else {
-      finish();
+      void finish();
     }
   }
 
   const isLast = currentIndex === SLIDES.length - 1;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        {!isLast && (
+          <DarkButton
+            label="Skip"
+            accessibilityLabel="Skip tutorial"
+            accessibilityHint="Goes straight to the app"
+            disabled={isSaving}
+            onPress={() => void finish()}
+          />
+        )}
+      </View>
+
       <Animated.FlatList
         ref={listRef}
         data={SLIDES}
@@ -110,6 +167,12 @@ export default function TutorialScreen() {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
+        style={styles.list}
+        getItemLayout={(_, index) => ({
+          length: pageWidth,
+          offset: pageWidth * index,
+          index,
+        })}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],
           { useNativeDriver: false },
@@ -120,24 +183,28 @@ export default function TutorialScreen() {
             Math.max(0, Math.round(e.nativeEvent.contentOffset.x / pageWidth)),
           );
           setCurrentIndex(nextIndex);
-          AccessibilityInfo.announceForAccessibility(SLIDES[nextIndex].title);
+          announce(SLIDES[nextIndex].title);
         }}
         renderItem={({ item }) => (
           <View
             style={[
               styles.slide,
               compact && styles.slideCompact,
-              { backgroundColor: item.bg, width: pageWidth },
+              { width: pageWidth },
             ]}
           >
+            <View style={[styles.iconBadge, compact && styles.iconBadgeCompact]}>
+              <AppIcon
+                name={item.icon}
+                size={compact ? ICON_SIZE.feature : ICON_SIZE.brand}
+                color={colors.primary}
+                emphasized
+              />
+            </View>
             <Text
-              accessible={false}
-              importantForAccessibility="no-hide-descendants"
-              style={[styles.icon, compact && styles.iconCompact]}
+              accessibilityRole="header"
+              style={[styles.title, compact && styles.titleCompact]}
             >
-              {item.icon}
-            </Text>
-            <Text style={[styles.title, compact && styles.titleCompact]}>
               {item.title}
             </Text>
             <Text style={[styles.body, compact && styles.bodyCompact]}>
@@ -147,75 +214,85 @@ export default function TutorialScreen() {
         )}
       />
 
-      {/* Progress dots */}
-      <View style={styles.dots}>
-        {SLIDES.map((_, i) => {
-          const inputRange = [
-            (i - 1) * pageWidth,
-            i * pageWidth,
-            (i + 1) * pageWidth,
-          ];
-          const width = scrollX.interpolate({
-            inputRange,
-            outputRange: [8, 24, 8],
-            extrapolate: "clamp",
-          });
-          const opacity = scrollX.interpolate({
-            inputRange,
-            outputRange: [0.35, 1, 0.35],
-            extrapolate: "clamp",
-          });
-          return (
-            <Animated.View key={i} style={[styles.dot, { width, opacity }]} />
-          );
-        })}
-      </View>
-
-      <Text accessibilityLiveRegion="polite" style={styles.progressText}>
-        Step {currentIndex + 1} of {SLIDES.length}
-      </Text>
-
-      {saveError && (
-        <View accessibilityLiveRegion="polite" style={styles.saveStatus}>
-          <Text style={styles.saveStatusText}>
-            We couldn't save your progress.
-          </Text>
-          <TouchableOpacity accessibilityRole="button" onPress={() => finish()}>
-            <Text style={styles.statusAction}>Retry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            accessibilityRole="button"
-            onPress={() => finish(true)}
-          >
-            <Text style={styles.statusAction}>Continue anyway</Text>
-          </TouchableOpacity>
+      <View
+        style={[
+          styles.footer,
+          compact && styles.footerCompact,
+          { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.sm },
+        ]}
+      >
+        <View
+          style={styles.dots}
+          accessible
+          accessibilityLabel={`Step ${currentIndex + 1} of ${SLIDES.length}`}
+        >
+          {SLIDES.map((slide, i) => {
+            const inputRange = [
+              (i - 1) * pageWidth,
+              i * pageWidth,
+              (i + 1) * pageWidth,
+            ];
+            const width = scrollX.interpolate({
+              inputRange,
+              outputRange: [8, 24, 8],
+              extrapolate: "clamp",
+            });
+            const opacity = scrollX.interpolate({
+              inputRange,
+              outputRange: [0.4, 1, 0.4],
+              extrapolate: "clamp",
+            });
+            return (
+              <Animated.View
+                key={slide.key}
+                style={[styles.dot, { width, opacity }]}
+              />
+            );
+          })}
         </View>
-      )}
+        <Text style={styles.progressText} importantForAccessibility="no" accessibilityElementsHidden>
+          Step {currentIndex + 1} of {SLIDES.length}
+        </Text>
 
-      {/* Actions */}
-      <View style={[styles.actions, compact && styles.actionsCompact]}>
-        {!isLast && (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Skip tutorial"
-            onPress={() => finish()}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.skip}>Skip</Text>
-          </TouchableOpacity>
+        {saveError && (
+          <View accessibilityRole="alert" style={styles.saveStatus}>
+            <Text style={styles.saveStatusText}>
+              Couldn&apos;t save that you finished the tutorial. It may show
+              again next time you sign in.
+            </Text>
+            <View style={styles.saveActions}>
+              <DarkButton label="Try again" onPress={() => void finish()} />
+              <DarkButton
+                label="Continue anyway"
+                onPress={() => void finish(true)}
+              />
+            </View>
+          </View>
         )}
-        <TouchableOpacity
+
+        <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isLast ? "Get started" : "Next tutorial slide"}
-          accessibilityState={{ disabled: isSaving }}
+          accessibilityLabel={isLast ? "Get started" : "Next"}
+          accessibilityHint={
+            isLast ? "Opens the app" : `Shows step ${currentIndex + 2} of ${SLIDES.length}`
+          }
+          accessibilityState={{ disabled: isSaving, busy: isSaving }}
           disabled={isSaving}
-          style={[styles.nextBtn, isLast && styles.nextBtnLast]}
+          android_ripple={{ color: "rgba(26,71,42,0.2)", foreground: true }}
+          style={({ pressed }) => [
+            styles.nextBtn,
+            pressed && styles.darkButtonPressed,
+          ]}
           onPress={next}
         >
-          <Text style={styles.nextText}>
-            {isSaving ? "Saving…" : isLast ? "Get Started" : "Next"}
-          </Text>
-        </TouchableOpacity>
+          {isSaving ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <Text style={styles.nextText}>
+              {isLast ? "Get started" : "Next"}
+            </Text>
+          )}
+        </Pressable>
       </View>
     </View>
   );
@@ -223,39 +300,64 @@ export default function TutorialScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.primary },
+  topBar: {
+    minHeight: MIN_TOUCH_TARGET + spacing.sm,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  list: { flex: 1 },
 
   slide: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 40,
-    paddingBottom: 140,
+    paddingHorizontal: spacing.xxl + spacing.sm,
   },
-  slideCompact: { paddingHorizontal: spacing.xl, paddingBottom: 120 },
-  icon: { fontSize: 80, marginBottom: 32 },
-  iconCompact: { fontSize: 56, marginBottom: spacing.lg },
+  slideCompact: { paddingHorizontal: spacing.xl },
+  iconBadge: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.xxl,
+  },
+  iconBadgeCompact: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: spacing.xl,
+  },
   title: {
+    ...typography.title,
     fontSize: 28,
-    fontWeight: "800",
-    color: "#fff",
+    lineHeight: 34,
+    color: colors.onPrimary,
     textAlign: "center",
-    marginBottom: 20,
-    lineHeight: 36,
+    marginBottom: spacing.lg,
   },
   titleCompact: { fontSize: 24, lineHeight: 30, marginBottom: spacing.md },
   body: {
+    ...typography.body,
     fontSize: 17,
-    color: "rgba(255,255,255,0.8)",
-    textAlign: "center",
     lineHeight: 26,
+    color: ON_PRIMARY_MUTED,
+    textAlign: "center",
+    maxWidth: 440,
   },
   bodyCompact: { fontSize: 15, lineHeight: 22 },
 
+  footer: {
+    paddingHorizontal: spacing.xxl,
+    paddingTop: spacing.lg,
+    gap: spacing.md,
+    alignItems: "center",
+  },
+  footerCompact: { paddingHorizontal: spacing.lg },
   dots: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 110 : 100,
-    left: 0,
-    right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
@@ -264,64 +366,60 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#ffdc60",
+    backgroundColor: colors.accent,
   },
   progressText: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 86 : 76,
-    alignSelf: "center",
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 14,
-    fontWeight: "600",
+    ...typography.label,
+    color: ON_PRIMARY_MUTED,
   },
   saveStatus: {
-    position: "absolute",
-    bottom: Platform.OS === "ios" ? 166 : 150,
-    left: 24,
-    right: 24,
+    alignSelf: "stretch",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  saveStatusText: {
+    ...typography.bodySmall,
+    color: colors.onPrimary,
+    textAlign: "center",
+  },
+  saveActions: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    gap: 12,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: "rgba(0,0,0,0.72)",
+    gap: spacing.sm,
   },
-  saveStatusText: { width: "100%", color: "#fff", textAlign: "center" },
-  statusAction: { color: "#ffdc60", fontWeight: "700" },
 
-  actions: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
+  darkButton: {
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.pill,
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 32,
-    paddingBottom: Platform.OS === "ios" ? 48 : 32,
-    paddingTop: 16,
-    backgroundColor: "rgba(0,0,0,0.15)",
+    justifyContent: "center",
+    overflow: "hidden",
   },
-  actionsCompact: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
-  skip: {
-    color: "rgba(255,255,255,0.6)",
+  darkButtonFilled: { backgroundColor: colors.accent },
+  darkButtonPressed: { opacity: 0.8 },
+  darkButtonText: {
+    ...typography.label,
     fontSize: 16,
-    fontWeight: "500",
+    color: colors.onPrimary,
   },
+  darkButtonTextFilled: { color: colors.primary },
+
   nextBtn: {
-    backgroundColor: "#ffdc60",
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 28,
-    marginLeft: "auto",
-  },
-  nextBtnLast: {
-    paddingHorizontal: 40,
+    alignSelf: "stretch",
+    minHeight: 52,
+    backgroundColor: colors.accent,
+    borderRadius: radii.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   nextText: {
-    color: "#1a472a",
+    ...typography.subheading,
     fontWeight: "800",
-    fontSize: 16,
+    color: colors.primary,
   },
 });

@@ -1,13 +1,13 @@
 import React, { useRef, useState } from "react";
-import { colors } from "../../theme";
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Alert,
-  ActivityIndicator,
+  Platform,
 } from "react-native";
+import type { TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import {
@@ -20,7 +20,18 @@ import {
 import { useAppStore } from "../../store/appStore";
 import { FormErrorSummary, FormField } from "../../components/FormField";
 import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
-import type { TextInput } from "react-native";
+import {
+  Button,
+  InlineAlert,
+  colors,
+  confirmAction,
+  describeError,
+  elevations,
+  radii,
+  spacing,
+  typography,
+  useAsyncAction,
+} from "../../theme";
 
 type Mode = "choose" | "create" | "join";
 
@@ -28,7 +39,6 @@ export default function DivisionOnboardingScreen() {
   const [mode, setMode] = useState<Mode>("choose");
   const [divisionName, setDivisionName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const divisionNameRef = useRef<TextInput>(null);
   const inviteCodeRef = useRef<TextInput>(null);
@@ -37,82 +47,101 @@ export default function DivisionOnboardingScreen() {
   const setUser = useAppStore((s) => s.setUser);
   const setDivisionId = useAppStore((s) => s.setDivisionId);
 
-  function handleSignOut() {
-    Alert.alert(
-      "Sign Out",
-      `Sign out of ${firebaseUser?.email ?? "this account"}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            await signOutReleasingPushToken();
-            setUser(null);
-          },
-        },
-      ],
-    );
+  const signOut = useAsyncAction(async () => {
+    try {
+      await signOutReleasingPushToken();
+    } finally {
+      setUser(null);
+    }
+  });
+
+  async function handleSignOut() {
+    const ok = await confirmAction({
+      title: "Sign out?",
+      message: `You're signed in as ${firebaseUser?.email ?? "this account"}. You can sign back in at any time.`,
+      confirmLabel: "Sign out",
+    });
+    if (ok) void signOut.run();
   }
 
-  async function handleCreate() {
+  const create = useAsyncAction(
+    async (name: string, uid: string) => {
+      const divId = await createDivision(name, uid, {
+        displayName: firebaseUser?.displayName ?? undefined,
+        email: firebaseUser?.email ?? undefined,
+      });
+      const division = await getDivision(divId);
+      return { divId, code: division?.inviteCode ?? "" };
+    },
+    {
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't create the division. Check your connection and try again.",
+        ),
+      onSuccess: ({ divId, code }) => {
+        setDivisionId(divId);
+        Alert.alert(
+          "Division created",
+          code
+            ? `Share invite code ${code} with players so they can join. You can find it again on the Admin tab.`
+            : "Invite players from the Admin tab.",
+          [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
+        );
+      },
+    },
+  );
+
+  const join = useAsyncAction(
+    (code: string, uid: string) => joinDivisionByCode(code, uid),
+    {
+      errorMessage: (err) =>
+        describeError(
+          err,
+          "Couldn't join with that code. Check it with your division leader and try again.",
+        ),
+      onSuccess: ({ divisionId, divisionName: name }) => {
+        setDivisionId(divisionId);
+        Alert.alert(
+          `You joined ${name}`,
+          "You can now see standings, propose matches, and message players.",
+          [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
+        );
+      },
+    },
+  );
+
+  function handleCreate() {
     if (!divisionName.trim()) {
-      setErrors({ divisionName: "Enter a division name." });
+      setErrors({ divisionName: "Enter a name for the division." });
       divisionNameRef.current?.focus();
       return;
     }
     if (!firebaseUser) return;
-    setLoading(true);
-    try {
-      const divId = await createDivision(
-        divisionName.trim(),
-        firebaseUser.uid,
-        {
-          displayName: firebaseUser.displayName ?? undefined,
-          email: firebaseUser.email ?? undefined,
-        },
-      );
-      const division = await getDivision(divId);
-      setDivisionId(divId);
-      Alert.alert(
-        "Division Created!",
-        `Invite others with code: ${division?.inviteCode ?? ""}`,
-        [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
-      );
-    } catch {
-      Alert.alert("Error", "Could not create division. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    void create.run(divisionName.trim(), firebaseUser.uid);
   }
 
-  async function handleJoin() {
+  function handleJoin() {
     if (inviteCode.length !== 6) {
-      setErrors({ inviteCode: "Enter the 6-character invite code." });
+      setErrors({ inviteCode: "Enter all 6 characters of the invite code." });
       inviteCodeRef.current?.focus();
       return;
     }
     if (!firebaseUser) return;
-    setLoading(true);
-    try {
-      const { divisionId, divisionName: name } = await joinDivisionByCode(
-        inviteCode.trim(),
-        firebaseUser.uid,
-      );
-      setDivisionId(divisionId);
-      Alert.alert(
-        `Joined ${name}!`,
-        "You can now see rankings and create matches.",
-        [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
-      );
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Could not join division.";
-      Alert.alert("Error", msg);
-    } finally {
-      setLoading(false);
-    }
+    void join.run(inviteCode.trim(), firebaseUser.uid);
   }
+
+  function choose(next: Mode) {
+    setErrors({});
+    create.reset();
+    join.reset();
+    setMode(next);
+  }
+
+  const cardStyle = ({ pressed }: { pressed: boolean }) => [
+    styles.choiceCard,
+    pressed && Platform.OS === "ios" && styles.choicePressed,
+  ];
 
   return (
     <KeyboardAwareScrollView
@@ -126,46 +155,61 @@ export default function DivisionOnboardingScreen() {
           color={ICON_COLOR.active}
           emphasized
         />
-        <Text style={styles.title}>Join a Division</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          {mode === "create"
+            ? "Create a division"
+            : mode === "join"
+              ? "Join a division"
+              : "Find your division"}
+        </Text>
         <Text style={styles.subtitle}>
-          Create a new division or join an existing one with an invite code.
+          {mode === "create"
+            ? "You'll be its leader: you run the roster, seasons, and schedule."
+            : mode === "join"
+              ? "Ask your division leader for the code. It's also in your invite email."
+              : "Your division is the group of players you schedule matches and share standings with."}
         </Text>
       </View>
 
       {mode === "choose" && (
         <View style={styles.choices}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Create a division"
-            style={styles.choiceCard}
-            onPress={() => setMode("create")}
-          >
-            <AppIcon
-              name="trophy.fill"
-              size={ICON_SIZE.feature}
-              color={ICON_COLOR.active}
-            />
-            <Text style={styles.choiceTitle}>Create Division</Text>
-            <Text style={styles.choiceBody}>
-              Start a new league division and invite players.
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel="Join a division"
-            style={styles.choiceCard}
-            onPress={() => setMode("join")}
+            accessibilityHint="Enter an invite code from your division leader"
+            android_ripple={{ color: colors.primarySoft, foreground: true }}
+            style={cardStyle}
+            onPress={() => choose("join")}
           >
             <AppIcon
               name="link"
               size={ICON_SIZE.feature}
               color={ICON_COLOR.active}
             />
-            <Text style={styles.choiceTitle}>Join Division</Text>
+            <Text style={styles.choiceTitle}>I have an invite code</Text>
             <Text style={styles.choiceBody}>
-              Enter an invite code from your division leader.
+              Join the division your leader set up. Most players start here.
             </Text>
-          </TouchableOpacity>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Create a division"
+            accessibilityHint="Start a new division and become its leader"
+            android_ripple={{ color: colors.primarySoft, foreground: true }}
+            style={cardStyle}
+            onPress={() => choose("create")}
+          >
+            <AppIcon
+              name="trophy.fill"
+              size={ICON_SIZE.feature}
+              color={ICON_COLOR.active}
+            />
+            <Text style={styles.choiceTitle}>Start a new division</Text>
+            <Text style={styles.choiceBody}>
+              For leaders setting up a league. You&apos;ll get a code to invite
+              players.
+            </Text>
+          </Pressable>
         </View>
       )}
 
@@ -173,41 +217,48 @@ export default function DivisionOnboardingScreen() {
         <View style={styles.form}>
           <FormField
             ref={divisionNameRef}
-            label="Division Name"
+            label="Division name"
             required
             error={errors.divisionName}
             value={divisionName}
-            onChangeText={setDivisionName}
+            onChangeText={(value) => {
+              setDivisionName(value);
+              if (errors.divisionName) setErrors({});
+              if (create.error) create.reset();
+            }}
             onBlur={() =>
               setErrors({
                 divisionName: divisionName.trim()
                   ? ""
-                  : "Enter a division name.",
+                  : "Enter a name for the division.",
               })
             }
-            placeholder="e.g. Company Tennis League"
+            placeholder="e.g. Lunchtime Tennis League"
             autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={handleCreate}
           />
           <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+          {create.error && (
+            <InlineAlert
+              tone="error"
+              title="Couldn't create the division"
+              message={create.error}
+            />
+          )}
+          <Button
+            label="Create division"
+            pending={create.pending}
+            fullWidth
             onPress={handleCreate}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.surface} />
-            ) : (
-              <Text style={styles.buttonText}>Create Division</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => setMode("choose")}
-          >
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          />
+          <Button
+            label="Back"
+            accessibilityLabel="Back to division options"
+            variant="quiet"
+            disabled={create.pending}
+            onPress={() => choose("choose")}
+          />
         </View>
       )}
 
@@ -215,114 +266,136 @@ export default function DivisionOnboardingScreen() {
         <View style={styles.form}>
           <FormField
             ref={inviteCodeRef}
-            label="Invite Code"
+            label="Invite code"
             required
             error={errors.inviteCode}
-            helperText="Codes contain 6 letters or numbers; spaces and dashes are removed."
+            helperText="6 letters or numbers. Spaces and dashes are removed for you."
             inputStyle={styles.codeInput}
             value={inviteCode}
-            onChangeText={(t) =>
+            onChangeText={(t) => {
               setInviteCode(
                 t
                   .toUpperCase()
                   .replace(/[^A-Z0-9]/g, "")
                   .slice(0, 6),
-              )
-            }
+              );
+              if (errors.inviteCode) setErrors({});
+              if (join.error) join.reset();
+            }}
             onBlur={() =>
               setErrors({
                 inviteCode:
                   inviteCode.length === 6
                     ? ""
-                    : "Enter the 6-character invite code.",
+                    : "Enter all 6 characters of the invite code.",
               })
             }
             placeholder="ABC123"
             autoCapitalize="characters"
             autoCorrect={false}
+            autoComplete="off"
             maxLength={6}
-            returnKeyType="done"
+            returnKeyType="go"
             onSubmitEditing={handleJoin}
           />
           <FormErrorSummary errors={Object.values(errors).filter(Boolean)} />
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+          {join.error && (
+            <InlineAlert
+              tone="error"
+              title="Couldn't join the division"
+              message={join.error}
+            />
+          )}
+          <Button
+            label="Join division"
+            pending={join.pending}
+            fullWidth
             onPress={handleJoin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.surface} />
-            ) : (
-              <Text style={styles.buttonText}>Join Division</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => setMode("choose")}
-          >
-            <Text style={styles.backText}>Back</Text>
-          </TouchableOpacity>
+          />
+          <Button
+            label="Back"
+            accessibilityLabel="Back to division options"
+            variant="quiet"
+            disabled={join.pending}
+            onPress={() => choose("choose")}
+          />
         </View>
       )}
 
-      <TouchableOpacity style={styles.signOutLink} onPress={handleSignOut}>
-        <Text style={styles.signOutLinkText}>
-          Not you? Signed in as {firebaseUser?.email ?? "unknown"} — Sign out
+      <View style={styles.signOutRow}>
+        <Text style={styles.signOutText}>
+          Signed in as {firebaseUser?.email ?? "an unknown account"}
         </Text>
-      </TouchableOpacity>
+        {signOut.error && (
+          <InlineAlert
+            tone="error"
+            title="Couldn't sign out"
+            message={signOut.error}
+          />
+        )}
+        <Button
+          label="Not you? Sign out"
+          variant="quiet"
+          size="compact"
+          pending={signOut.pending}
+          disabled={create.pending || join.pending}
+          onPress={() => void handleSignOut()}
+        />
+      </View>
     </KeyboardAwareScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
-  inner: { flexGrow: 1, justifyContent: "center", padding: 32 },
-  header: { alignItems: "center", marginBottom: 40 },
-  logo: { fontSize: 56, marginBottom: 12 },
+  inner: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+  },
+  header: { alignItems: "center", marginBottom: spacing.xxl, gap: spacing.sm },
   title: {
-    fontSize: 26,
-    fontWeight: "700",
+    ...typography.title,
     color: colors.primary,
-    marginBottom: 8,
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 15,
+    ...typography.body,
     color: colors.textMuted,
     textAlign: "center",
-    lineHeight: 22,
   },
 
-  choices: { gap: 16 },
+  choices: { gap: spacing.lg },
   choiceCard: {
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
-    elevation: 3,
+    gap: spacing.xs,
+    // Clips the ripple to the rounded corners on Android; on iOS it would
+    // also clip the shadow.
+    overflow: Platform.OS === "android" ? "hidden" : "visible",
+    ...elevations.low,
   },
-  choiceIcon: { fontSize: 36, marginBottom: 12 },
+  choicePressed: { backgroundColor: colors.surfaceMuted },
   choiceTitle: {
+    ...typography.heading,
     fontSize: 18,
-    fontWeight: "700",
     color: colors.primary,
-    marginBottom: 6,
+    marginTop: spacing.sm,
+    textAlign: "center",
   },
-  choiceBody: { fontSize: 14, color: colors.textMuted, textAlign: "center" },
+  choiceBody: {
+    ...typography.bodySmall,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
 
-  form: { gap: 14 },
-  label: { fontSize: 14, fontWeight: "600", color: "#444" },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 15,
-    color: "#111",
-  },
+  form: { gap: spacing.md },
   codeInput: {
     fontSize: 24,
     fontWeight: "700",
@@ -330,18 +403,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: colors.primary,
   },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.surface, fontSize: 16, fontWeight: "700" },
-  backBtn: { alignItems: "center", paddingVertical: 12 },
-  backText: { color: colors.primary, fontSize: 14, fontWeight: "500" },
 
-  signOutLink: { alignItems: "center", marginTop: 32, padding: 8 },
-  signOutLinkText: { color: colors.textSubtle, fontSize: 13 },
+  signOutRow: {
+    alignItems: "center",
+    marginTop: spacing.xxl,
+    gap: spacing.xs,
+  },
+  signOutText: { ...typography.caption, color: colors.textMuted },
 });
