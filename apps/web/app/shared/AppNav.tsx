@@ -1,10 +1,13 @@
 'use client';
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { signOutReleasingPushToken } from "@tennis/firebase-client";
 import { ViewModeToggle } from "./ViewModeToggle";
-import { IconBallTennis } from "@tabler/icons-react";
+import { IconBallTennis, IconMenu2, IconX } from "@tabler/icons-react";
+import { color, radius } from "./tokens";
 
 export type AppNavSection =
   | "dashboard"
@@ -34,9 +37,10 @@ const NAV_ITEMS: Array<{
  * browser kept receiving its notifications. The form still posts without
  * JavaScript, and still posts if either step fails.
  */
-async function handleSignOut(event: FormEvent<HTMLFormElement>) {
+async function handleSignOut(event: FormEvent<HTMLFormElement>, onStart: () => void) {
   event.preventDefault();
   const form = event.currentTarget;
+  onStart();
   try {
     await signOutReleasingPushToken();
   } catch (error) {
@@ -45,49 +49,111 @@ async function handleSignOut(event: FormEvent<HTMLFormElement>) {
   form.submit();
 }
 
+/**
+ * The green top bar. On wide screens every link sits in one row; at 1080px and
+ * below the links, the view switch, and Sign out collapse behind a Menu
+ * button (a disclosure, so nothing is ever more than one tap away) instead of
+ * wrapping the bar to three or four rows.
+ */
 export function AppNav({
   active,
 }: {
   active?: AppNavSection;
 }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const menuId = useId();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
+
+  // A navigation closes the menu.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // Escape closes the open menu and returns focus to its button.
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   return (
-    <nav aria-label="Primary" style={styles.nav}>
-      <span style={styles.navBrand}><IconBallTennis size={22} aria-hidden="true" color="var(--gold)" /> Tennis League</span>
-      <div style={styles.navLinks}>
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.section}
-            href={item.href}
-            aria-current={active === item.section ? "page" : undefined}
-            style={{
-              ...styles.navLink,
-              ...(active === item.section ? styles.navLinkActive : {}),
-            }}
+    <nav aria-label="Primary" className="tl-nav">
+      <Link href="/dashboard" className="tl-nav__brand" aria-label="Tennis League, go to Rankings">
+        <IconBallTennis size={22} aria-hidden="true" color="var(--ball-yellow)" />
+        <span>Tennis League</span>
+      </Link>
+
+      <button
+        ref={toggleRef}
+        type="button"
+        className="tl-nav__toggle"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => setOpen((value) => !value)}
+        style={styles.toggle}
+      >
+        {open ? <IconX size={22} aria-hidden="true" /> : <IconMenu2 size={22} aria-hidden="true" />}
+        <span>Menu</span>
+      </button>
+
+      <div id={menuId} className={open ? "tl-nav__menu is-open" : "tl-nav__menu"}>
+        <ul className="tl-nav__list">
+          {NAV_ITEMS.map((item) => (
+            <li key={item.section}>
+              <Link
+                href={item.href}
+                className="tl-nav__link"
+                aria-current={active === item.section ? "page" : undefined}
+                onClick={() => setOpen(false)}
+              >
+                {item.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <div className="tl-nav__extras">
+          <ViewModeToggle />
+          <form
+            method="post"
+            action="/api/auth/logout"
+            style={styles.logoutForm}
+            onSubmit={(event) => void handleSignOut(event, () => setSigningOut(true))}
           >
-            {item.label}
-          </Link>
-        ))}
-        <ViewModeToggle />
-        <form
-          method="post"
-          action="/api/auth/logout"
-          style={styles.logoutForm}
-          onSubmit={(event) => void handleSignOut(event)}
-        >
-          <button type="submit" style={styles.logoutButton}>
-            Sign out
-          </button>
-        </form>
+            <button
+              type="submit"
+              style={styles.logoutButton}
+              aria-busy={signingOut || undefined}
+              aria-disabled={signingOut || undefined}
+              onClick={(event) => {
+                if (signingOut) event.preventDefault();
+              }}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </form>
+        </div>
       </div>
     </nav>
   );
 }
 
+/**
+ * Kept for the pages that spread these into their own style objects
+ * (`appNavStyles.page`). The nav itself is styled by the `tl-nav*` classes in
+ * globals.css, because it needs a media query.
+ */
 export const appNavStyles = {
-  page: { minHeight: "100vh", background: "var(--bg)" },
+  page: { minHeight: "100vh", background: color.canvas },
   nav: {
-    background: "var(--green-dark)",
-    padding: "16px 32px",
+    background: color.clubhouseGreen,
+    padding: "10px 32px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -95,22 +161,36 @@ export const appNavStyles = {
     flexWrap: "wrap",
   },
   navBrand: { fontFamily: "var(--font-display)", color: "#fff", fontWeight: 700, fontSize: 22 },
-  navLinks: { display: "flex", gap: 24, flexWrap: "wrap" },
-  navLink: { color: "rgba(255,255,255,0.75)", fontWeight: 500, fontSize: 15 },
+  navLinks: { display: "flex", gap: 20, flexWrap: "wrap" },
+  navLink: { color: "rgba(255,255,255,0.82)", fontWeight: 500, fontSize: 15 },
   navLinkActive: {
     color: "#fff",
-    borderBottom: "2px solid #ffdc60",
+    borderBottom: `2px solid ${color.ballYellow}`,
     paddingBottom: 2,
   },
   logoutForm: { margin: 0 },
   logoutButton: {
     background: "rgba(255,255,255,0.12)",
     color: "#fff",
-    border: "1px solid rgba(255,255,255,0.35)",
-    borderRadius: 999,
-    padding: "6px 12px",
+    border: "1px solid rgba(255,255,255,0.45)",
+    borderRadius: radius.pill,
+    minHeight: 44,
+    padding: "0 16px",
+    fontSize: 14,
     fontWeight: 700,
     cursor: "pointer",
+  },
+  toggle: {
+    alignItems: "center",
+    gap: 8,
+    minHeight: 44,
+    padding: "0 12px",
+    background: "rgba(255,255,255,0.12)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.45)",
+    borderRadius: radius.md,
+    fontSize: 15,
+    fontWeight: 600,
   },
 } satisfies Record<string, React.CSSProperties>;
 
