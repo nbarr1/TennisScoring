@@ -58,7 +58,14 @@ type NotificationState = "unsupported" | "default" | "granted" | "denied";
 
 function readNotificationState(): NotificationState {
   if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
-  return Notification.permission as NotificationState;
+  const permission = Notification.permission as NotificationState;
+  if (permission !== "granted") return permission;
+  // FcmProvider only registers this device once the player has opted in here.
+  try {
+    return window.localStorage.getItem(NOTIFICATION_OPT_IN_KEY) === "true" ? "granted" : "default";
+  } catch {
+    return "default";
+  }
 }
 
 export default function ProfilePage(): React.JSX.Element {
