@@ -54,12 +54,14 @@ struct RankingsView: View {
 
 private struct StandingsRowView: View {
   let row: StandingsRow
+  /// Grows with Dynamic Type, so two-digit ranks don't clip at large sizes.
+  @ScaledMetric(relativeTo: .headline) private var rankWidth: CGFloat = 28
 
   var body: some View {
     HStack(spacing: 12) {
       Text(row.rank > 0 ? "\(row.rank)" : "–")
         .font(.headline.monospacedDigit())
-        .frame(width: 28, alignment: .trailing)
+        .frame(width: rankWidth, alignment: .trailing)
       VStack(alignment: .leading, spacing: 2) {
         Text(row.name)
           .font(.body.weight(row.isCurrentUser ? .semibold : .regular))
@@ -75,7 +77,7 @@ private struct StandingsRowView: View {
     .listRowBackground(row.isCurrentUser ? Color.league.opacity(0.1) : nil)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      "\(row.rank > 0 ? "Rank \(row.rank), " : "")\(row.name)\(row.isCurrentUser ? " (you)" : ""), \(row.won) won, \(row.lost) lost"
+      "\(row.rank > 0 ? "Rank \(row.rank), " : "")\(row.name)\(row.isCurrentUser ? " (you)" : ""), \(row.won) won, \(row.lost) lost, sets \(row.setsWon) to \(row.setsLost), game difference \(row.gameDifferential >= 0 ? "plus" : "minus") \(abs(row.gameDifferential))"
     )
   }
 }
