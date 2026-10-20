@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import type { TextInput } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import {
   useAuthUser,
@@ -46,6 +47,11 @@ export default function DivisionOnboardingScreen() {
   const { firebaseUser } = useAuthUser();
   const setUser = useAppStore((s) => s.setUser);
   const setDivisionId = useAppStore((s) => s.setDivisionId);
+  const tutorialDone = useAppStore((s) => !!s.user?.tutorialDone);
+  const insets = useSafeAreaInsets();
+  // A new player goes on to the tutorial; replacing straight to the tabs here
+  // used to skip it for good.
+  const nextRoute = tutorialDone ? "/(tabs)" : "/(onboarding)/tutorial";
 
   const signOut = useAsyncAction(async () => {
     try {
@@ -86,7 +92,7 @@ export default function DivisionOnboardingScreen() {
           code
             ? `Share invite code ${code} with players so they can join. You can find it again on the Admin tab.`
             : "Invite players from the Admin tab.",
-          [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
+          [{ text: "Continue", onPress: () => router.replace(nextRoute) }],
         );
       },
     },
@@ -105,7 +111,7 @@ export default function DivisionOnboardingScreen() {
         Alert.alert(
           `You joined ${name}`,
           "You can now see standings, propose matches, and message players.",
-          [{ text: "Continue", onPress: () => router.replace("/(tabs)") }],
+          [{ text: "Continue", onPress: () => router.replace(nextRoute) }],
         );
       },
     },
@@ -146,7 +152,10 @@ export default function DivisionOnboardingScreen() {
   return (
     <KeyboardAwareScrollView
       keyboardViewStyle={styles.container}
-      contentContainerStyle={styles.inner}
+      contentContainerStyle={[
+        styles.inner,
+        { paddingTop: insets.top + spacing.xxl },
+      ]}
     >
       <View style={styles.header}>
         <AppIcon

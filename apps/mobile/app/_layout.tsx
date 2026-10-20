@@ -42,9 +42,16 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
             </>
           ) : (
             <Text style={styles.diagMessage}>
-              The app hit an unexpected error. Close the app and open it again. If this keeps happening, tell your division leader.
+              The app hit an unexpected error. Try again. If it happens again, close the app and reopen it, and tell your division leader if it keeps happening.
             </Text>
           )}
+          <Button
+            label="Try again"
+            accessibilityLabel="Try loading the app again"
+            icon="arrow.clockwise"
+            fullWidth
+            onPress={() => this.setState({ error: null })}
+          />
         </ScrollView>
       );
     }

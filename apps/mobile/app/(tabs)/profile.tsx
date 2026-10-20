@@ -30,6 +30,7 @@ import {
   DAYS_OF_WEEK,
   addAvailabilitySlot,
   buildUserProfileUpdates,
+  isAdminRole,
   removeAvailabilitySlot,
   updateAvailabilitySlot,
   validateAvailabilitySlots,
@@ -159,6 +160,9 @@ export default function ProfileScreen() {
   );
   const setUser = useAppStore((state) => state.setUser);
   const router = useRouter();
+  // The rules refuse a self-update that changes email or divisionId unless the
+  // account is an admin, so only admins get those as editable fields.
+  const canEditAccountFields = isAdminRole(user?.role);
 
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState("");
@@ -276,21 +280,29 @@ export default function ProfileScreen() {
 
   const save = useAsyncAction(
     async (uid: string) => {
-      await updateUserProfile(
-        uid,
-        buildUserProfileUpdates({
-          displayName,
-          email,
-          phone,
-          allowEmail,
-          allowSMS,
-          allowInApp,
-          tipsEnabled,
-          availabilitySlots,
-          availabilityNote,
-          selectedDivisionId,
-        }),
-      );
+      const updates = buildUserProfileUpdates({
+        displayName,
+        email,
+        phone,
+        allowEmail,
+        allowSMS,
+        allowInApp,
+        tipsEnabled,
+        availabilitySlots,
+        availabilityNote,
+        selectedDivisionId,
+      });
+      // Send email and divisionId only when an admin actually changed them.
+      // For anyone else the rules reject the whole write, and the builder
+      // lowercases email, so even an untouched mixed-case address reads as a
+      // change.
+      if (!canEditAccountFields || updates.email === user?.email) {
+        delete updates.email;
+      }
+      if (!canEditAccountFields || updates.divisionId === user?.divisionId) {
+        delete updates.divisionId;
+      }
+      await updateUserProfile(uid, updates);
     },
     {
       successMessage: "Profile saved",
@@ -321,15 +333,16 @@ export default function ProfileScreen() {
     setEditing(false);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!firebaseUser) return;
     const contactErrors = {
       displayName: displayName.trim()
         ? ""
         : "Enter your name. Other players see it in standings and messages.",
-      email: EMAIL_PATTERN.test(email.trim())
-        ? ""
-        : "Enter an email address like name@example.com.",
+      email:
+        !canEditAccountFields || EMAIL_PATTERN.test(email.trim())
+          ? ""
+          : "Enter an email address like name@example.com.",
     };
     const validation = validateAvailabilitySlots(availabilitySlots);
     const nextErrors = {
@@ -345,6 +358,18 @@ export default function ProfileScreen() {
           : null
       )?.current?.focus();
       return;
+    }
+    // Without an active division the app returns to the join screen, which
+    // only takes an invite code, so a slip here is hard to undo.
+    if (canEditAccountFields && !selectedDivisionId && user?.divisionId) {
+      const ok = await confirmAction({
+        title: "Save with no active division?",
+        message:
+          "You'll leave the app's standings, matches, and messages and go to the join screen. To come back, you'll need your division's invite code.",
+        confirmLabel: "Save anyway",
+        cancelLabel: "Keep my division",
+      });
+      if (!ok) return;
     }
     void save.run(firebaseUser.uid);
   }
@@ -519,7 +544,13 @@ export default function ProfileScreen() {
             <FormField
               ref={emailRef}
               label="Email"
-              required
+              required={canEditAccountFields}
+              disabled={!canEditAccountFields}
+              helperText={
+                canEditAccountFields
+                  ? undefined
+                  : "This is your sign-in email. A league admin can change it."
+              }
               error={formErrors.email}
               value={email}
               onChangeText={(value) => {
@@ -579,7 +610,7 @@ export default function ProfileScreen() {
           title="Active division"
           subtitle="Standings, matches, and messages show this division."
         />
-        {editing ? (
+        {editing && canEditAccountFields ? (
           <View
             style={styles.divisionList}
             accessibilityRole="radiogroup"
@@ -623,7 +654,14 @@ export default function ProfileScreen() {
             )}
           </View>
         ) : (
-          <Text style={styles.valueText}>{activeDivisionName}</Text>
+          <>
+            <Text style={styles.valueText}>{activeDivisionName}</Text>
+            {editing ? (
+              <Text style={styles.fieldNote}>
+                To play in another division, join it with its invite code.
+              </Text>
+            ) : null}
+          </>
         )}
       </View>
 
@@ -802,7 +840,7 @@ export default function ProfileScreen() {
               pending={save.pending}
               pendingLabel="Saving…"
               fullWidth
-              onPress={handleSave}
+              onPress={() => void handleSave()}
             />
             <Button
               label="Cancel"
@@ -1047,6 +1085,11 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   valueText: { ...typography.body, color: colors.text },
+  fieldNote: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+  },
   blockedRow: { justifyContent: "space-between" },
   blockedName: { textAlign: "left", flex: 1 },
   toggleRow: {
