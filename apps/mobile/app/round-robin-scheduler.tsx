@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Switch, Text, View, type TextInput } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   publishRoundRobinSchedule,
@@ -26,6 +26,7 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
+  announce,
   colors,
   confirmAction,
   confirmDestructive,
@@ -38,17 +39,33 @@ import {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const INTERVAL_OPTIONS = [3, 7, 14];
 
-/** Parses YYYY-MM-DD as 6:00 PM local time, or returns null with a reason. */
+/** Parses YYYY-MM-DD as 6:00 PM local time, or returns a reason it can't. */
 function parseStartDate(value: string): { startAt: number } | { error: string } {
   if (!value.trim()) return { error: "Enter the date round 1 starts." };
   if (!DATE_RE.test(value)) {
     return { error: "Use the format YYYY-MM-DD, for example 2026-11-02." };
   }
-  const startAt = Date.parse(`${value}T18:00:00`);
-  if (!startAt || Number.isNaN(startAt)) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 18, 0, 0, 0);
+  // Date rolls an impossible day over (2026-02-30 becomes March 2), so check
+  // that the parts come back unchanged.
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
     return { error: "That isn't a real date. Check the month and day." };
   }
-  return { startAt };
+  return { startAt: date.getTime() };
+}
+
+function formatRoundDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 type PublishResult = { matchesCreated: number; roundsCreated: number };
@@ -98,6 +115,7 @@ export default function RoundRobinSchedulerScreen() {
   const [intervalDays, setIntervalDays] = useState(7);
   const [startDate, setStartDate] = useState("");
   const [startDateError, setStartDateError] = useState<string | undefined>();
+  const startDateRef = useRef<TextInput>(null);
   const [seedByRankings, setSeedByRankings] = useState(true);
   const [clearExisting, setClearExisting] = useState(false);
 
@@ -178,7 +196,11 @@ export default function RoundRobinSchedulerScreen() {
     if (selectedLevelIsDoubles) return;
     const parsed = parseStartDate(startDate);
     if ("error" in parsed) {
+      // The field is two cards above this button: say it, and take the
+      // player there.
       setStartDateError(parsed.error);
+      announce(`Round 1 start date: ${parsed.error}`);
+      startDateRef.current?.focus();
       return;
     }
     setStartDateError(undefined);
@@ -221,6 +243,16 @@ export default function RoundRobinSchedulerScreen() {
   }
 
   const rounds = preview ? Array.from(new Set(preview.map((m) => m.round))) : [];
+  const parsedStart = parseStartDate(startDate);
+  const startAt = "startAt" in parsedStart ? parsedStart.startAt : null;
+  const startsInPast =
+    startAt !== null && startAt < new Date().setHours(0, 0, 0, 0);
+  // Same arithmetic as publishRoundRobinSchedule, so the preview shows the
+  // dates the matches will get.
+  const roundDate = (round: number) =>
+    startAt === null
+      ? null
+      : formatRoundDate(startAt + (round - 1) * intervalDays * 86400000);
 
   return (
     <KeyboardAwareScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -396,6 +428,7 @@ export default function RoundRobinSchedulerScreen() {
             </View>
 
             <FormField
+              ref={startDateRef}
               label="Round 1 start date"
               required
               containerStyle={styles.field}
@@ -411,6 +444,12 @@ export default function RoundRobinSchedulerScreen() {
               autoCorrect={false}
               maxLength={10}
             />
+            {startsInPast && !startDateError ? (
+              <InlineAlert
+                tone="warning"
+                message="That date is in the past. Matches will be scheduled on dates that have already gone by."
+              />
+            ) : null}
 
             <View style={styles.toggleRow}>
               <View style={styles.toggleText}>
@@ -493,7 +532,10 @@ export default function RoundRobinSchedulerScreen() {
           />
           {rounds.map((round) => (
             <View key={round} style={styles.roundBlock}>
-              <Text style={styles.roundLabel}>Round {round}</Text>
+              <Text style={styles.roundLabel}>
+                Round {round}
+                {roundDate(round) ? ` · ${roundDate(round)}` : ""}
+              </Text>
               {preview
                 .filter((m) => m.round === round)
                 .map((m, idx) => (
@@ -504,6 +546,19 @@ export default function RoundRobinSchedulerScreen() {
             </View>
           ))}
 
+          {startDate.trim() === "" ? (
+            <Text style={styles.hint}>
+              Enter the round 1 start date above to see each round's date and
+              publish.
+            </Text>
+          ) : null}
+          {startDateError ? (
+            <InlineAlert
+              tone="error"
+              title="Check the start date"
+              message={startDateError}
+            />
+          ) : null}
           {publish.error ? (
             <InlineAlert
               tone="error"
