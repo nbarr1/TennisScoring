@@ -321,7 +321,7 @@ export default function ProfileScreen() {
     setEditing(false);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!firebaseUser) return;
     const contactErrors = {
       displayName: displayName.trim()
@@ -345,6 +345,18 @@ export default function ProfileScreen() {
           : null
       )?.current?.focus();
       return;
+    }
+    // Without an active division the app returns to the join screen, which
+    // only takes an invite code, so a slip here is hard to undo.
+    if (!selectedDivisionId && user?.divisionId) {
+      const ok = await confirmAction({
+        title: "Save with no active division?",
+        message:
+          "You'll leave the app's standings, matches, and messages and go to the join screen. To come back, you'll need your division's invite code.",
+        confirmLabel: "Save anyway",
+        cancelLabel: "Keep my division",
+      });
+      if (!ok) return;
     }
     void save.run(firebaseUser.uid);
   }
@@ -802,7 +814,7 @@ export default function ProfileScreen() {
               pending={save.pending}
               pendingLabel="Saving…"
               fullWidth
-              onPress={handleSave}
+              onPress={() => void handleSave()}
             />
             <Button
               label="Cancel"
