@@ -25,7 +25,7 @@ TennisScoringWatch/        watchOS app target: scoreboard and point buttons
 - **Standings** tab: shows singles and doubles standings, split by season and division level, with the player's own table first.
 - **Profile** tab: shows the account details, lists blocked players with an unblock button, and has the sign-out button.
 - Opens `tennisleague://match/<id>` and `com.companytennisleague.app://match/<id>` links after sign-in.
-- **Apple Watch**: shows the open match's score and sends points back. Every command carries the match id, and the phone discards commands for any match other than the one on screen. Leaving the match screen leaves the watch read-only.
+- **Apple Watch**: shows the open match's score and sends points back. Every command carries the match id, and the phone discards commands for any match other than the one on screen. Leaving the match screen leaves the watch read-only. While a match is live, the watch runs a tennis workout session (`MatchWorkoutSession`) so the scoreboard stays on screen when the wrist drops, instead of returning to the watch face. The session saves nothing to Health, and it ends when the match stops being live or after five minutes without a score update.
 
 Admin tools (including the reported-message queue), feedback, push notifications, read receipts, profile editing, proposing or recording matches, account deletion, and the tutorial are not built yet. The Expo client remains the reference for all of them.
 
@@ -47,7 +47,7 @@ The project, signing, and archives have to be made on macOS. They cannot be gene
 3. Add `https://github.com/firebase/firebase-ios-sdk` (version 11 or later; the adapters use its async/await APIs and `Codable` document decoding) and link `FirebaseAuth`, `FirebaseFirestore`, and `FirebaseFunctions` to the app target. Messaging and Storage come later, with notifications and report PDFs.
 4. Add `GoogleService-Info.plist` from the release credential workflow to the app target. It is not committed. Without it, a debug build runs on demo data, and a release build shows a configuration error instead of starting.
 5. Add the URL schemes `tennisleague` and `com.companytennisleague.app`, plus the remote-notification and associated-domains entitlements from the release credential workflow.
-6. Add a watchOS App target named `TennisScoringWatch` (watchOS 10 minimum) embedded in the iOS app. Add the `TennisScoringWatch/` folder to it and link `TennisCore`.
+6. Add a watchOS App target named `TennisScoringWatch` (watchOS 10 minimum) embedded in the iOS app. Add the `TennisScoringWatch/` folder to it and link `TennisCore`. On the watch target, add the **HealthKit** capability, the **Background Modes** capability with **Workout processing** checked (`WKBackgroundModes`: `workout-processing`), and an `NSHealthUpdateUsageDescription` such as "Tennis League runs a tennis workout during a live match so the scoreboard stays on screen." Without them, `MatchWorkoutSession` can't start a session and the watch returns to the watch face between points.
 7. Add a unit test target that depends on the `TennisKit` test targets, or run `swift test` as CI does. Then replace `scripts/ios-typecheck.sh` in `.github/workflows/native-mobile.yml` with `xcodebuild test`.
 
 ## Demo mode
