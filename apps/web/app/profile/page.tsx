@@ -6,7 +6,7 @@ import { AppNav, appNavStyles } from "../shared/AppNav";
 import { IconBellRinging, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cloneElement, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getDoc } from "firebase/firestore";
+import { deleteField, getDoc } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import {
   useAuthUser,
@@ -22,12 +22,14 @@ import {
   DAYS_OF_WEEK,
   DAY_LABELS,
   addAvailabilitySlot,
+  isAdminRole,
   buildUserProfileUpdates,
   removeAvailabilitySlot,
   updateAvailabilitySlot,
   validateAvailabilitySlots,
   type AvailabilitySlot,
   type DayOfWeek,
+  type User,
 } from "@tennis/shared";
 import {
   Button,
@@ -66,6 +68,39 @@ function readNotificationState(): NotificationState {
   } catch {
     return "default";
   }
+}
+
+/**
+ * The fields of `buildUserProfileUpdates()` that this account may actually
+ * write, in a form Firestore accepts.
+ *
+ * - The builder turns an empty phone, contact email, or division into
+ *   `undefined`, and `WriteBatch.update` rejects any `undefined` field, so a
+ *   player with no phone number could never save. Undefined fields are
+ *   dropped; a phone number the player cleared is deleted.
+ * - The security rules let a player change neither `email` nor `divisionId`
+ *   on their own user document (only an app administrator can), so sending
+ *   either, even an unchanged email that differs only in case, failed the
+ *   whole save. They are sent only for administrators, and only when changed.
+ */
+function writableProfileUpdates(updates: Partial<User>, user: User): Partial<User> {
+  const canEditRestricted = isAdminRole(user.role);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (key === "email" || key === "divisionId") {
+      if (!canEditRestricted) continue;
+      const before = (user as unknown as Record<string, unknown>)[key];
+      if (value === before || (value === undefined && !before)) continue;
+      result[key] = value === undefined ? deleteField() : value;
+      continue;
+    }
+    if (value === undefined) {
+      if (key === "phone" && user.phone) result[key] = deleteField();
+      continue;
+    }
+    result[key] = value;
+  }
+  return result as Partial<User>;
 }
 
 export default function ProfilePage(): React.JSX.Element {
@@ -135,8 +170,20 @@ export default function ProfilePage(): React.JSX.Element {
   });
   const dirty = !!user && initial !== current;
 
+  // The form values the fields were last seeded from, and the latest form
+  // values, so a later snapshot of the user document re-seeds the form only
+  // when the player has no unsaved edits. Cloud Functions write to this
+  // document on every confirmed result in the division (rankingSummary), and
+  // re-seeding on each of those wiped half-entered play times.
+  const seededFrom = useRef<string | null>(null);
+  const latestForm = useRef(current);
+  latestForm.current = current;
+
   useEffect(() => {
     if (!user) return;
+    const untouched = seededFrom.current === null || latestForm.current === seededFrom.current;
+    if (!untouched && latestForm.current !== initial) return;
+    seededFrom.current = initial;
     setDisplayName(user.displayName ?? "");
     setEmail(user.email ?? "");
     setPhone(user.phone ?? "");
@@ -147,7 +194,18 @@ export default function ProfilePage(): React.JSX.Element {
     setAvailabilitySlots(user.availability?.slots ?? []);
     setAvailabilityNote(user.availability?.note ?? "");
     setSelectedDivisionId(user.divisionId ?? "");
-  }, [user]);
+  }, [user, initial]);
+
+  // Leaving the page (reload, close, typed address) with unsaved edits asks first.
+  useEffect(() => {
+    if (!dirty) return undefined;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   useEffect(() => {
     setNotificationState(readNotificationState());
@@ -203,7 +261,7 @@ export default function ProfilePage(): React.JSX.Element {
       if (!firebaseUser || !user) return;
       await updateUserProfile(
         firebaseUser.uid,
-        buildUserProfileUpdates({
+        writableProfileUpdates(buildUserProfileUpdates({
           displayName,
           email,
           phone,
@@ -214,20 +272,23 @@ export default function ProfilePage(): React.JSX.Element {
           availabilitySlots,
           availabilityNote,
           selectedDivisionId,
-        }),
+        }), user),
       );
       setSavedAt(Date.now());
     },
     { successMessage: "Profile saved", errorMessage: "Couldn't save your profile. Please try again." },
   );
 
+  const canEditRestrictedFields = isAdminRole(user?.role);
+
   function handleSave() {
     const validation = validateAvailabilitySlots(availabilitySlots);
-    if (nameError || emailError || !validation.valid) {
+    const blockingEmailError = canEditRestrictedFields ? emailError : null;
+    if (nameError || blockingEmailError || !validation.valid) {
       setShowErrors(true);
       save.setError(
         nameError ??
-          emailError ??
+          blockingEmailError ??
           (!validation.valid ? `Check your preferred play times. ${validation.message}` : null),
       );
       return;
@@ -374,6 +435,11 @@ export default function ProfilePage(): React.JSX.Element {
   }
 
   const notificationsOn = notificationState === "granted";
+  // Only an app administrator may change these two on their own account
+  // (firestore.rules); for everyone else the save would be refused.
+  const canEditRestricted = isAdminRole(user.role);
+  const activeDivisionName =
+    divisionOptions.find((d) => d.id === user.divisionId)?.name ?? (user.divisionId ? "Your division" : "No division yet");
 
   return (
     <div style={styles.page}>
@@ -412,11 +478,13 @@ export default function ProfilePage(): React.JSX.Element {
             <Field
               label="Contact email"
               id="profile-email"
-              error={showErrors ? emailError : null}
+              error={canEditRestricted && showErrors ? emailError : null}
               hint={
-                firebaseUser?.email
-                  ? `Changing this doesn't change the email you sign in with (${firebaseUser.email}).`
-                  : "Changing this doesn't change the email you sign in with."
+                canEditRestricted
+                  ? firebaseUser?.email
+                    ? `Changing this doesn't change the email you sign in with (${firebaseUser.email}).`
+                    : "Changing this doesn't change the email you sign in with."
+                  : "Shown on your contact card when you share it. To change it, ask an app administrator."
               }
             >
               <input
@@ -424,9 +492,10 @@ export default function ProfilePage(): React.JSX.Element {
                 type="email"
                 inputMode="email"
                 autoComplete="email"
-                style={inputFieldStyle(showErrors && !!emailError)}
+                readOnly={!canEditRestricted}
+                style={canEditRestricted ? inputFieldStyle(showErrors && !!emailError) : styles.readOnlyInput}
                 value={email}
-                aria-invalid={showErrors && !!emailError}
+                aria-invalid={canEditRestricted && showErrors && !!emailError}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </Field>
@@ -440,25 +509,40 @@ export default function ProfilePage(): React.JSX.Element {
                 onChange={(e) => setPhone(e.target.value)}
               />
             </Field>
-            <Field
-              label="Active division"
-              id="profile-division"
-              hint="Your dashboard, matches, and division chat show this division."
-            >
-              <select
+            {canEditRestricted ? (
+              <Field
+                label="Active division"
                 id="profile-division"
-                style={inputFieldStyle(false)}
-                value={selectedDivisionId}
-                onChange={(e) => setSelectedDivisionId(e.target.value)}
+                hint="Your dashboard, matches, and division chat show this division."
               >
-                <option value="">No division</option>
-                {divisionOptions.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                <select
+                  id="profile-division"
+                  style={inputFieldStyle(false)}
+                  value={selectedDivisionId}
+                  onChange={(e) => setSelectedDivisionId(e.target.value)}
+                >
+                  {/* A division can't be cleared by saving, so "No division" is offered only while none is set. */}
+                  {!user.divisionId && <option value="">No division</option>}
+                  {divisionOptions.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field
+                label="Active division"
+                id="profile-division"
+                hint={
+                  divisionOptions.length > 1
+                    ? "Your dashboard, matches, and division chat show this division. To make another of your divisions the active one, ask an app administrator."
+                    : "Your dashboard, matches, and division chat show this division."
+                }
+              >
+                <input id="profile-division" readOnly value={activeDivisionName} style={styles.readOnlyInput} />
+              </Field>
+            )}
           </section>
 
           <section style={styles.card}>
@@ -825,6 +909,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: `1px solid ${color.border}`,
   },
   saved: { ...type.label, color: color.courtGreen },
+  readOnlyInput: { ...inputStyle, background: color.surfaceMuted, borderColor: color.border, color: color.ink },
   unsaved: { ...type.label, color: color.warningText },
   emptySlots: { ...type.bodySmall, color: color.textMuted, marginBottom: space.md },
   slotList: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: space.md, marginBottom: space.md },

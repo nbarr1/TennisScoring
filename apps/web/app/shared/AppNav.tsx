@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { signOutReleasingPushToken } from "@tennis/firebase-client";
+import { signOutReleasingPushToken, useAuthUser, useUserProfile } from "@tennis/firebase-client";
+import { isPrivilegedRole } from "@tennis/shared";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { IconBallTennis, IconMenu2, IconX } from "@tabler/icons-react";
 import { color, radius } from "./tokens";
@@ -65,6 +66,13 @@ export function AppNav({
   const menuId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
+  const { firebaseUser } = useAuthUser();
+  const { profile } = useUserProfile(firebaseUser?.uid ?? null);
+  // Admin is for leaders and administrators, as on the mobile tab bar. A
+  // player who opened it saw a page of permission errors. It stays listed
+  // on /admin itself so the current page is never missing from the nav.
+  const showAdmin = isPrivilegedRole(profile?.role) || active === "admin";
+  const items = NAV_ITEMS.filter((item) => item.section !== "admin" || showAdmin);
 
   // A navigation closes the menu.
   useEffect(() => {
@@ -105,7 +113,7 @@ export function AppNav({
 
       <div id={menuId} className={open ? "tl-nav__menu is-open" : "tl-nav__menu"}>
         <ul className="tl-nav__list">
-          {NAV_ITEMS.map((item) => (
+          {items.map((item) => (
             <li key={item.section}>
               <Link
                 href={item.href}

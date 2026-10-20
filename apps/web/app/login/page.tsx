@@ -37,6 +37,16 @@ const MIN_PASSWORD_LENGTH = 8;
 // A light check only: Firebase is the authority on what counts as an address.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Where to go after signing in: the `next` query parameter when it is a
+// same-site path (an invite link sends players here with one), else the
+// dashboard. Anything else is ignored so the page cannot redirect off-site.
+function nextPathFromLocation(): string {
+  if (typeof window === 'undefined') return '/dashboard';
+  const next = new URLSearchParams(window.location.search).get('next');
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/dashboard';
+  return next;
+}
+
 function authErrorCode(error: unknown): string {
   return String((error as { code?: string } | null)?.code ?? '');
 }
@@ -176,7 +186,14 @@ export default function LoginPage(): React.JSX.Element {
       }
 
       // Stay pending until the next page takes over, so the form cannot be sent twice.
-      router.replace(user.emailVerified ? '/dashboard' : '/verify-email');
+      const nextPath = nextPathFromLocation();
+      router.replace(
+        user.emailVerified
+          ? nextPath
+          : nextPath === '/dashboard'
+            ? '/verify-email'
+            : `/verify-email?next=${encodeURIComponent(nextPath)}`,
+      );
     } catch (err: unknown) {
       const code = authErrorCode(err);
       if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {

@@ -39,12 +39,19 @@ type Message = { tone: 'error' | 'warning' | 'success'; title?: string; text: st
 function VerifyEmailContent(): React.JSX.Element {
   const router = useRouter();
   const params = useSearchParams();
-  const { firebaseUser } = useAuthUser();
+  const { firebaseUser, loading: authLoading } = useAuthUser();
   const [pending, setPending] = useState<Pending>(null);
   const [message, setMessage] = useState<Message>(null);
   const [cooldown, setCooldown] = useState(0);
   const nextPath = safeNextPath(params.get('next'));
   const busy = pending !== null;
+
+  // Signed out (or the session expired): nothing here can work, so sign in
+  // first and come back to the same place.
+  useEffect(() => {
+    if (authLoading || firebaseUser || pending === 'signout') return;
+    router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+  }, [authLoading, firebaseUser, nextPath, pending, router]);
 
   useEffect(() => {
     if (cooldown <= 0) return;

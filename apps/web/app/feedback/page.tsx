@@ -133,7 +133,15 @@ export default function FeedbackPage(): React.JSX.Element {
   }
 
   if (authLoading || (firebaseUser && profileLoading)) {
-    return <LoadingBlock label="Loading feedback form…" rows={4} rowHeight={36} style={styles.loadingPage} />;
+    return (
+      <div style={styles.page}>
+        <AppNav active="feedback" />
+        <main style={styles.main}>
+          <h1 style={styles.pageTitle}>Feedback</h1>
+          <LoadingBlock label="Loading feedback form…" rows={4} rowHeight={36} />
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -262,7 +270,6 @@ export default function FeedbackPage(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  loadingPage: { maxWidth: width.reading, margin: "48px auto", padding: `0 ${space.xl}px` },
   page: appNavStyles.page,
   main: { maxWidth: width.reading, margin: "0 auto", padding: `40px ${space.lg}px` },
   pageTitle: { ...type.display, color: color.clubhouseGreen, margin: `0 0 ${space.sm}px` },

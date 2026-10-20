@@ -37,7 +37,8 @@ export default function PrivacyPolicyPage(): React.JSX.Element {
     <div style={styles.page}>
       <header style={styles.header}>
         <div style={styles.headerInner}>
-          <Link href="/login" style={styles.brand}>
+          {/* "/" takes a signed-in player into the app and a signed-out visitor to sign-in. */}
+          <Link href="/" style={styles.brand}>
             <IconBallTennis size={22} aria-hidden="true" color={color.ballYellow} />
             Tennis League
           </Link>
@@ -80,9 +81,9 @@ export default function PrivacyPolicyPage(): React.JSX.Element {
           ))}
         </article>
 
-        <Link href="/login" style={styles.backLink}>
+        <Link href="/" style={styles.backLink}>
           <IconArrowLeft size={18} aria-hidden="true" />
-          Back to sign in
+          Back to Tennis League
         </Link>
       </main>
     </div>

@@ -62,6 +62,13 @@ still work as aliases.
 `buttonClassName(variant)` style a `<Link>` or `<label>` as a button.
 `<Spinner label="Loading…" />` is a standalone spinner.
 
+Hover and press fills (Soft Green on secondary and quiet, the pressed shades
+on primary and danger) are drawn by `globals.css` as an inset `box-shadow`,
+because the variant background is an inline style and an inline background
+beats any class rule. Don't set `boxShadow` inline on a Button, or its states
+disappear. A button on Clubhouse Green, or one given its own background,
+takes `className="tl-btn--on-dark"` for a neutral light veil instead.
+
 ```tsx
 <Button pending={save.pending} pendingLabel="Saving…" onClick={() => void save.run()}>
   Save availability
@@ -214,14 +221,16 @@ reads as "No matches yet".
 ## Existing components
 
 - `AppNav` (`active`) and `appNavStyles.page`: unchanged API. At 1080px and
-  below the links, view switch, and Sign out collapse behind a Menu button;
-  the current page carries `aria-current="page"`.
+  below the links, layout switch, and Sign out collapse behind a Menu button;
+  the current page carries `aria-current="page"`. Admin is listed only for
+  privileged roles (as on the mobile tab bar), and always on `/admin` itself.
 - `StatusBadge` (`status`, `style`): glyph + label in a contrast-safe shade of
   the status color.
 - `PlayerSlotPicker`: unchanged props; 48px field, 44px results and Change
   button, focus follows selection, and a failed search says so with Try again.
-- `ViewModeToggle`, `AnimatedDiv`, `celebrateConfirmedScore`, `useViewMode`:
-  unchanged.
+- `ViewModeToggle`: labelled "Layout" with Auto, Compact (iPhone), and
+  Standard; the stored values (`auto`, `ios`, `standard`) are unchanged.
+- `AnimatedDiv`, `celebrateConfirmedScore`, `useViewMode`: unchanged.
 - `SkipLink` is mounted in `layout.tsx`; it focuses the page's first `<main>`.
 
 ## Global behavior from `globals.css`
