@@ -144,6 +144,37 @@ function formatScheduledAt(ts?: number): string {
   });
 }
 
+/** A local calendar day as the form's `YYYY-MM-DD` value. */
+function isoDay(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** One-tap days for a proposal: today and the six days after it. */
+function upcomingDays(
+  now = new Date(),
+): { value: string; label: string; spoken: string }[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    const spoken = d.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    const label =
+      i === 0
+        ? "Today"
+        : i === 1
+          ? "Tomorrow"
+          : d.toLocaleDateString(undefined, {
+              weekday: "short",
+              day: "numeric",
+            });
+    return { value: isoDay(d), label, spoken };
+  });
+}
+
 /** When the match was (or will be) played, for sorting history and fixtures. */
 function playDate(m: Match): number {
   return m.scheduledAt ?? m.startedAt ?? m.completedAt ?? m.createdAt ?? 0;
@@ -418,11 +449,14 @@ function MatchCard({
   uid,
   kind,
   onOpen,
+  onNotice,
 }: {
   match: Match;
   uid: string | undefined;
   kind: CardKind;
   onOpen: () => void;
+  /** Shows an action's outcome above the list, since the card moves or leaves. */
+  onNotice: (message: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const compact = width < 380;
@@ -435,16 +469,20 @@ function MatchCard({
   const opponent = opponentName(match, uid);
   const mine = !!uid && isMatchParticipant(match, uid);
 
+  const acceptMessage = `Match with ${opponent} accepted. It's now in your upcoming matches.`;
+  const declineMessage =
+    kind === "invite"
+      ? `Proposal from ${opponent} declined.`
+      : `Proposal to ${opponent} withdrawn.`;
   const accept = useAsyncAction(() => acceptMatchProposal(match.id), {
-    successMessage: `Match with ${opponent} accepted. It's now in your upcoming matches.`,
+    successMessage: acceptMessage,
+    onSuccess: () => onNotice(acceptMessage),
     errorMessage:
       "Couldn't accept the proposal. Check your connection and try again.",
   });
   const decline = useAsyncAction(() => declineMatchProposal(match.id), {
-    successMessage:
-      kind === "invite"
-        ? `Proposal from ${opponent} declined.`
-        : `Proposal to ${opponent} withdrawn.`,
+    successMessage: declineMessage,
+    onSuccess: () => onNotice(declineMessage),
     errorMessage:
       kind === "invite"
         ? "Couldn't decline the proposal. Check your connection and try again."
@@ -573,7 +611,7 @@ function MatchCard({
 
         {isLive && (
           <Text style={styles.serverLine}>
-            {`${serverName} serves · ${match.liveScore.serviceSide} side`}
+            {`${serverName} serves · ${match.liveScore.serviceSide === "advantage" ? "ad" : "deuce"} court`}
           </Text>
         )}
       </Pressable>
@@ -811,6 +849,7 @@ export default function MatchesScreen() {
             uid={uid}
             kind={item.kind}
             onOpen={() => router.push(`/match/${item.id}`)}
+            onNotice={setNotice}
           />
         )}
         renderSectionHeader={({ section }) =>
@@ -1508,6 +1547,12 @@ function ProposeMatchSheet({
   const [attempted, setAttempted] = useState(false);
   const dateRef = useRef<TextInput>(null);
   const timeRef = useRef<TextInput>(null);
+  const days = useMemo(() => upcomingDays(), []);
+  // The typed date and time read back in words, so a wrong day is visible.
+  const proposedTs =
+    DATE_RE.test(date.trim()) && TIME_RE.test(time.trim())
+      ? Date.parse(`${date.trim()}T${time.trim()}`)
+      : Number.NaN;
   const choice = useCompetitionChoice(divisionId, currentUser.id);
   // Follows the division level's match type until the player picks one.
   const isDoubles =
@@ -1671,12 +1716,35 @@ function ProposeMatchSheet({
         )}
       </View>
 
+      <View style={styles.fieldGroup}>
+        <Text style={styles.fieldLabel}>Day</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          {days.map((day) => (
+            <Chip
+              key={day.value}
+              label={day.label}
+              accessibilityLabel={`Play on ${day.spoken}`}
+              selected={date.trim() === day.value}
+              onPress={() => {
+                setDate(day.value);
+                if (!time.trim()) timeRef.current?.focus();
+              }}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
       <View style={styles.dateTimeRow}>
         <FormField
           ref={dateRef}
           label="Date"
           required
-          helperText="YYYY-MM-DD"
+          helperText="Pick a day above, or type YYYY-MM-DD"
           error={errors.date}
           containerStyle={styles.dateField}
           value={date}
@@ -1706,6 +1774,11 @@ function ProposeMatchSheet({
           returnKeyType="done"
         />
       </View>
+      {Number.isFinite(proposedTs) && (
+        <Text style={styles.whenSummary} accessibilityLiveRegion="polite">
+          {`Proposing ${formatScheduledAt(proposedTs)}.`}
+        </Text>
+      )}
 
       <FormErrorSummary errors={errorList} />
       {!!submit.error && (
@@ -1958,6 +2031,7 @@ const styles = StyleSheet.create({
   fieldLabel: { ...typography.label, color: colors.text },
   fieldLabelSpaced: { marginTop: spacing.sm },
   helperText: { ...typography.bodySmall, color: colors.textMuted },
+  whenSummary: { ...typography.label, color: colors.primary },
   errorText: {
     ...typography.caption,
     fontWeight: "600",
