@@ -7,6 +7,7 @@ export type FeedbackCategory =
   | "feature_request"
   | "match_scoring"
   | "account"
+  | "accessibility"
   | "general"
   | "other";
 
@@ -57,6 +58,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   feature_request: "Feature request",
   match_scoring: "Match scoring",
   account: "Account or division",
+  accessibility: "Accessibility",
   general: "General feedback",
   other: "Other feedback",
 };

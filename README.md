@@ -174,6 +174,7 @@ CI runs `lint_typecheck` (install → typecheck → lint → build) unconditiona
 - [VERSION_1_BASELINE.md](./VERSION_1_BASELINE.md) — v1 baseline snapshot, deployable components, validation commands, and extension notes.
 - [CHANGELOG.md](./CHANGELOG.md) — release history.
 - [SECURITY.md](./SECURITY.md) — how to report a vulnerability privately, supported versions, and scope.
+- [ACCESSIBILITY.md](./ACCESSIBILITY.md) — accessibility goals, supported platforms, known limitations, and how to report a barrier.
 - [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, and targeted deploy notes.
 - [SECURITY_REVIEW_2026-05-12.md](./SECURITY_REVIEW_2026-05-12.md) — point-in-time security review and deployment checklist.
 - [ui-ux-review.md](./ui-ux-review.md) — point-in-time UI/UX/accessibility review and remediation plan.

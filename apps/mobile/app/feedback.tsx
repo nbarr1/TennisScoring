@@ -41,6 +41,7 @@ const CATEGORY_OPTIONS = [
   { value: "feature_request", label: "Feature idea" },
   { value: "match_scoring", label: "Match scoring" },
   { value: "account", label: "Account or division" },
+  { value: "accessibility", label: "Accessibility" },
   { value: "general", label: "General" },
   { value: OTHER, label: "Something else" },
 ] as const;

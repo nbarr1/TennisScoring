@@ -11,3 +11,14 @@
 ## Risk and Rollback
 - Risk level: Low / Medium / High
 - Rollback plan:
+
+## Accessibility (UI changes only)
+- [ ] Not a UI change
+- [ ] Web: every new control works with the keyboard alone and shows a visible focus ring
+- [ ] New fields have labels, and errors are announced
+- [ ] State isn't shown by color alone
+- [ ] Animations respect reduced motion
+- [ ] Checked once with VoiceOver, TalkBack, or a desktop screen reader
+- [ ] Checked with an automated checker such as axe DevTools (web)
+
+See [ACCESSIBILITY.md](https://github.com/nbarr1/TennisScoring/blob/Main/ACCESSIBILITY.md) for the project's goals.

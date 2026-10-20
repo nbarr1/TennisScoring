@@ -1,4 +1,4 @@
-export type FeedbackCategory = 'bug' | 'feature_request' | 'general';
+export type FeedbackCategory = 'bug' | 'feature_request' | 'accessibility' | 'general';
 
 export interface SubmitFeedbackInput {
   message: string;
