@@ -292,7 +292,11 @@ table,
    carry what inline styles cannot: pseudo-classes, media queries, keyframes.
    ------------------------------------------------------------------------ */
 
-/* Buttons (shared/Button.tsx). Variant fills are inline; these add states. */
+/* Buttons (shared/Button.tsx). Variant fills are inline styles, and an
+   inline background beats any class rule, so a state fill set with
+   background-color here never showed. State fills are drawn instead as an
+   inset box-shadow, which paints above the background and below the label,
+   and which no button sets inline. */
 .tl-btn {
   -webkit-tap-highlight-color: transparent;
 }
@@ -300,20 +304,38 @@ table,
 .tl-btn--secondary:not(:disabled):not([aria-disabled='true']):hover,
 .tl-btn--quiet:not(:disabled):not([aria-disabled='true']):hover {
   filter: none;
-  background-color: var(--green-soft);
+  box-shadow: inset 0 0 0 100vmax var(--green-soft);
+}
+
+.tl-btn--secondary:not(:disabled):not([aria-disabled='true']):active,
+.tl-btn--quiet:not(:disabled):not([aria-disabled='true']):active {
+  box-shadow: inset 0 0 0 100vmax var(--green-soft);
 }
 
 .tl-btn--primary:not(:disabled):not([aria-disabled='true']):active {
-  background-color: var(--clubhouse-green-pressed);
+  box-shadow: inset 0 0 0 100vmax var(--clubhouse-green-pressed);
 }
 
 .tl-btn--danger:not(:disabled):not([aria-disabled='true']):active {
-  background-color: var(--destructive-pressed);
+  box-shadow: inset 0 0 0 100vmax var(--destructive-pressed);
 }
 
-.tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):hover {
+.tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):hover,
+.tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):active {
   filter: none;
-  background-color: var(--destructive-soft);
+  box-shadow: inset 0 0 0 100vmax var(--destructive-soft);
+}
+
+/* Buttons drawn on Clubhouse Green (the tutorial) or with their own fill:
+   a light veil instead of the clubhouse tints, which would hide a white
+   label or swap a custom fill for green. */
+.tl-btn.tl-btn--on-dark:not(:disabled):not([aria-disabled='true']):hover {
+  filter: none;
+  box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.12);
+}
+
+.tl-btn.tl-btn--on-dark:not(:disabled):not([aria-disabled='true']):active {
+  box-shadow: inset 0 0 0 100vmax rgba(0, 0, 0, 0.12);
 }
 
 .tl-spinner {

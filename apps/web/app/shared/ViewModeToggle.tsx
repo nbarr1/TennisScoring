@@ -6,18 +6,22 @@ import { color, radius } from './tokens';
 
 const OPTIONS: Array<{ label: string; value: ViewModePreference }> = [
   { label: 'Auto', value: 'auto' },
-  { label: 'iOS View', value: 'ios' },
+  { label: 'Compact (iPhone)', value: 'ios' },
   { label: 'Standard', value: 'standard' },
 ];
 
-/** The "View" select in the nav bar, styled for the Clubhouse Green bar. */
+/**
+ * The "Layout" select in the nav bar, styled for the Clubhouse Green bar.
+ * The stored values ('auto' | 'ios' | 'standard') are unchanged; only the
+ * labels moved from developer language to what the player sees.
+ */
 export function ViewModeToggle(): React.JSX.Element {
   const { preference, setPreference, showPrompt, dismissPrompt } = useViewMode();
   const selectId = useId();
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <label htmlFor={selectId} style={{ color: '#fff', fontSize: 14, fontWeight: 500 }}>View</label>
+      <label htmlFor={selectId} style={{ color: '#fff', fontSize: 14, fontWeight: 500 }}>Layout</label>
       <select
         id={selectId}
         value={preference}
