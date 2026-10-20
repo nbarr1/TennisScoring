@@ -13,7 +13,7 @@ dialogs. Use them instead of building controls by hand.
 
 | Export | What it holds |
 | --- | --- |
-| `colors` | The clubhouse palette. Text: `text`, `textMuted` (secondary, 5.4:1), `placeholder`. `textSubtle` is **3.4:1**, so use it only for decoration or large text. Status: `destructive`, `warning`/`warningText`, `success`/`successText`, `info`, `live`/`liveText`, `proposed`, `unassignedSoft`/`unassignedText`. Each has a `*Soft` tint. `warning`, `success`, and `live` are for fills and icons only. Text uses their `*Text` pair. |
+| `colors` | The clubhouse palette. Text: `text`, `textMuted` (secondary, 5.4:1), `placeholder`. `textSubtle` is **3.4:1**, so use it only for decoration or large text. Status: `destructive`, `warning`/`warningText`, `success`/`successText`, `info`, `live`/`liveText`, `proposed`, `unassignedSoft`/`unassignedText`. Each has a `*Soft` tint. Edges: `border` (hairline, dividers and chips) and `borderStrong` (text fields and other control outlines; the hairline is too faint to show where a field is). `warning`, `success`, and `live` are for fills and icons only. Text uses their `*Text` pair. |
 | `statusTextColors` | `Record<MatchStatus, string>`: contrast-safe text color for each match status on light surfaces. |
 | `spacing` | `xxs 2, xs 4, sm 8, md 12, lg 16, xl 24, xxl 32, xxxl 48` |
 | `radii` | `sm 6, md 10, card 10, lg 16, xl 24, pill 999` |

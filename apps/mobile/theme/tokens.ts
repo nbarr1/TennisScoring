@@ -31,7 +31,10 @@ export const colors = {
   textSubtle: "#888D8A",
   /** Placeholder text inside inputs. 5.0:1 on white. */
   placeholder: "#6B706D",
+  /** Hairline: dividers and chip strokes. 1.4:1, too faint to outline a field. */
   border: "#DADDD8",
+  /** Strong Hairline: text field and other control edges. 3.3:1 on white. */
+  borderStrong: "#8A8F8C",
   destructive: "#C0392B",
   destructivePressed: "#962D22",
   destructiveSoft: "#FBEAEA",

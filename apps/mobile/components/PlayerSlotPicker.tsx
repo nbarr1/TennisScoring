@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 48,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
