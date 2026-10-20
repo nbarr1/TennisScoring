@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   field: {
     minHeight: touchTargets.comfortable,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderRadius: radii.md,
     backgroundColor: colors.surface,
     color: colors.text,

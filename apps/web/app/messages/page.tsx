@@ -64,6 +64,10 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 
 const MAX_MESSAGE_LENGTH = 2000;
 
+// A stable empty list, so components keyed on the block list do not re-run
+// their effects on every render for a player who has blocked nobody.
+const NO_BLOCKED_IDS: string[] = [];
+
 /**
  * Layout rules inline styles can't express: the two-pane split, and below
  * 760px a list-or-thread toggle so a phone shows one pane at a time.
@@ -73,6 +77,7 @@ const LAYOUT_CSS = `
 .msg-sidebar { min-height: 0; overflow-y: auto; }
 .msg-thread { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .msg-back { display: none !important; }
+.msg-hide-narrow { display: inline; }
 .msg-channel:hover { background: var(--surface-muted); }
 @media (max-width: 760px) {
   .msg-layout { grid-template-columns: 1fr; }
@@ -80,6 +85,7 @@ const LAYOUT_CSS = `
   .msg-layout[data-view="list"] .msg-thread { display: none; }
   .msg-back { display: inline-flex !important; }
   .msg-sidebar { border-right: none !important; }
+  .msg-hide-narrow { display: none; }
 }
 `;
 
@@ -167,6 +173,8 @@ export default function MessagesPage(): React.JSX.Element {
   }
 
   const canStartDm = !!profile?.divisionId;
+  const blockedUserIds = profile?.blockedUserIds ?? NO_BLOCKED_IDS;
+  const blockedSenders = new Set(blockedUserIds);
 
   return (
     <div style={styles.page}>
@@ -247,12 +255,16 @@ export default function MessagesPage(): React.JSX.Element {
                           </span>
                           {last && <span style={styles.channelTime}>{formatTime(last.timestamp)}</span>}
                         </span>
-                        {last && (
-                          <span style={styles.preview}>
-                            {last.senderId === firebaseUser?.uid ? "You: " : ""}
-                            {last.content}
-                          </span>
-                        )}
+                        {last &&
+                          (last.senderId !== firebaseUser?.uid && blockedSenders.has(last.senderId) ? (
+                            // Blocking promises their messages are hidden everywhere, the preview included.
+                            <span style={{ ...styles.preview, fontStyle: "italic" }}>Message from a blocked player</span>
+                          ) : (
+                            <span style={styles.preview}>
+                              {last.senderId === firebaseUser?.uid ? "You: " : ""}
+                              {last.content}
+                            </span>
+                          ))}
                       </span>
                     </button>
                   </li>
@@ -272,7 +284,7 @@ export default function MessagesPage(): React.JSX.Element {
               currentUserId={firebaseUser?.uid ?? ""}
               currentUserName={profile?.displayName ?? firebaseUser?.displayName ?? "You"}
               divisionId={profile?.divisionId}
-              blockedUserIds={profile?.blockedUserIds ?? []}
+              blockedUserIds={blockedUserIds}
               title={channelLabel(active)}
               onBack={() => setActiveId(null)}
               onDeleted={() => setActiveId(null)}
@@ -293,7 +305,7 @@ export default function MessagesPage(): React.JSX.Element {
           open={showNewDm}
           currentUserId={firebaseUser.uid}
           divisionId={profile.divisionId}
-          blockedUserIds={profile.blockedUserIds ?? []}
+          blockedUserIds={blockedUserIds}
           onClose={() => setShowNewDm(false)}
           onCreated={(channel) => {
             openChannel(channel);
@@ -327,6 +339,9 @@ function NewDmDialog({
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // The text the current results answer, so "no players match" never shows
+  // while the search for newer text is still waiting to run.
+  const [searchedText, setSearchedText] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -351,7 +366,10 @@ function NewDmDialog({
         // A direct conversation needs a shared active division, which roster-only players lack.
         const r = await searchDivisionPlayers(divisionId, searchText, { profilesOnly: true });
         const blockedIds = new Set(blockedUserIds);
-        if (!cancelled) setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
+        if (!cancelled) {
+          setResults(r.filter((u) => u.id !== currentUserId && !blockedIds.has(u.id)));
+          setSearchedText(searchText.trim());
+        }
       } catch {
         if (!cancelled) {
           setResults([]);
@@ -408,9 +426,9 @@ function NewDmDialog({
       <div id="new-dm-status" role="status" style={styles.searchStatus}>
         {searching ? (
           <Spinner label="Searching…" />
-        ) : searchFailed ? null : query && results.length === 0 ? (
+        ) : searchFailed ? null : query && query === searchedText && results.length === 0 ? (
           `No players in your division match "${query}".`
-        ) : query ? (
+        ) : query && results.length > 0 ? (
           `${results.length} ${results.length === 1 ? "player" : "players"} found`
         ) : (
           ""
@@ -525,10 +543,19 @@ function ChatPane({
     headingRef.current?.focus();
   }, []);
 
+  // Follow new messages only while the reader is at the bottom; someone
+  // scrolled up into history keeps their place. Sending always follows.
+  const stickToBottom = useRef(true);
   useLayoutEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, visibleOutgoing.length]);
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    el.scrollTop = el.scrollHeight;
+  }, [visibleOutgoing.length]);
 
   // Grow the composer with its content, up to about five lines.
   useLayoutEffect(() => {
@@ -629,9 +656,11 @@ function ChatPane({
             icon={<IconTrash size={18} aria-hidden="true" />}
             pending={deleting}
             pendingLabel="Deleting…"
+            aria-label={deleting ? undefined : "Delete conversation"}
             onClick={() => void handleDeleteThread()}
           >
-            Delete conversation
+            {/* Icon only on a phone, so the name keeps the header row. */}
+            <span className="msg-hide-narrow">Delete conversation</span>
           </Button>
         )}
       </div>
@@ -647,6 +676,10 @@ function ChatPane({
         aria-label={`Messages with ${title}`}
         tabIndex={0}
         style={styles.messageList}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
       >
         <DataState
           loading={loading && allMessages.length === 0}

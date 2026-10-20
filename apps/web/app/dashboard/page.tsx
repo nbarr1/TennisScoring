@@ -3,13 +3,15 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav, appNavStyles } from "../shared/AppNav";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  IconAlertTriangle,
   IconCalendarEvent,
   IconChevronRight,
   IconClipboardCheck,
+  IconHourglass,
   IconPlayerPlay,
   IconTrophy,
   IconUsers,
@@ -21,6 +23,7 @@ import {
   useUserProfile,
   useActiveDivisionId,
   useDivisionLevels,
+  useDivisionMemberships,
   usePlayerMatches,
 } from "@tennis/firebase-client";
 import {
@@ -64,6 +67,12 @@ type StandingsRow = {
   gameDifferential: number;
 };
 
+/** Rostered statuses, so a waitlisted player's level is found too. */
+const ROSTERED_STATUSES = ["active", "waitlisted"] as const;
+
+/** Something the player is waiting on someone else for. */
+type WaitingItem = { key: string; icon: React.ReactNode; text: string; href: string };
+
 /** One thing this player has to do, newest-urgent first. */
 type TodoItem = {
   key: string;
@@ -99,6 +108,26 @@ export default function DashboardPage(): React.JSX.Element {
   const [standingsReloadKey, setStandingsReloadKey] = useState(0);
   const [matchesReloadKey, setMatchesReloadKey] = useState(0);
   const { levels: divisionLevels } = useDivisionLevels(divisionId);
+  const { memberships: seasonMemberships } = useDivisionMemberships(
+    divisionId,
+    selectedSeasonId,
+    undefined,
+    ROSTERED_STATUSES,
+  );
+  // Seasons where the player picked a format or level themselves, so the
+  // preselection below never overrides a choice.
+  const filterTouched = useRef(new Set<string>());
+
+  // Open on the player's own level. "All levels" pools every level of the
+  // season into one ranked table, which is not a table the league keeps.
+  useEffect(() => {
+    if (!uid || filterTouched.current.has(selectedSeasonId)) return;
+    const mine = seasonMemberships.find((m) => m.userId === uid && m.seasonId === selectedSeasonId);
+    const level = mine ? divisionLevels.find((l) => l.id === mine.divisionLevelId) : undefined;
+    if (!level) return;
+    setMatchTypeFilter(level.matchType);
+    setSelectedLevelId(level.id);
+  }, [uid, selectedSeasonId, seasonMemberships, divisionLevels]);
   // Only levels of the selected format, so picking Doubles cannot leave a
   // singles level selected underneath it.
   const seasonLevels = divisionLevels.filter(
@@ -121,6 +150,7 @@ export default function DashboardPage(): React.JSX.Element {
   }, [profileLoading, profile, router]);
 
   const todos: TodoItem[] = [];
+  const waiting: WaitingItem[] = [];
   let nextMatch: Match | undefined;
   if (uid) {
     for (const m of matches) {
@@ -153,6 +183,37 @@ export default function DashboardPage(): React.JSX.Element {
           detail: `${formatWhen(m.scheduledAt)}. Accept or decline the proposal on Matches.`,
           href: "/matches",
           actionLabel: "Respond to proposal",
+        });
+      } else if (m.status === "pending_report" && !m.reportSubmission) {
+        // Live scoring has finished, but nobody has submitted the result yet.
+        todos.push({
+          key: m.id,
+          icon: <IconClipboardCheck size={22} aria-hidden="true" />,
+          title: `Submit the score against ${opponent}`,
+          detail: `The match is over. Submit the result so ${opponent} can confirm it.`,
+          href: `/matches/${m.id}`,
+          actionLabel: "Submit score",
+        });
+      } else if (m.status === "pending_report") {
+        waiting.push({
+          key: m.id,
+          icon: <IconHourglass size={18} aria-hidden="true" />,
+          text: `Waiting for ${opponent} to confirm the score`,
+          href: `/matches/${m.id}`,
+        });
+      } else if (m.status === "disputed") {
+        waiting.push({
+          key: m.id,
+          icon: <IconAlertTriangle size={18} aria-hidden="true" />,
+          text: `Your result against ${opponent} is disputed. A division leader will resolve it.`,
+          href: `/matches/${m.id}`,
+        });
+      } else if (m.status === "proposed" && mySide === "player1") {
+        waiting.push({
+          key: m.id,
+          icon: <IconCalendarEvent size={18} aria-hidden="true" />,
+          text: `Waiting for ${opponent} to answer your proposal (${formatWhen(m.scheduledAt)})`,
+          href: "/matches",
         });
       }
     }
@@ -223,6 +284,22 @@ export default function DashboardPage(): React.JSX.Element {
                   ) : (
                     <p style={styles.allClear}>Nothing needs you right now.</p>
                   )}
+                  {waiting.length > 0 && (
+                    <div style={styles.waiting}>
+                      <h3 style={styles.subTitle}>Waiting on others</h3>
+                      <ul style={styles.waitingList}>
+                        {waiting.map((item) => (
+                          <li key={item.key}>
+                            <Link href={item.href} style={styles.waitingLink}>
+                              <span style={styles.waitingIcon}>{item.icon}</span>
+                              <span style={styles.waitingText}>{item.text}</span>
+                              <IconChevronRight size={18} aria-hidden="true" />
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div style={styles.nextMatch}>
                     <h3 style={styles.subTitle}>Your next match</h3>
                     {nextMatch && uid ? (
@@ -268,6 +345,7 @@ export default function DashboardPage(): React.JSX.Element {
                     style={styles.select}
                     value={matchTypeFilter}
                     onChange={(e) => {
+                      filterTouched.current.add(selectedSeasonId);
                       setMatchTypeFilter(e.target.value as DivisionMatchType);
                       setSelectedLevelId("all");
                     }}
@@ -298,7 +376,10 @@ export default function DashboardPage(): React.JSX.Element {
                   <select
                     style={styles.select}
                     value={activeLevelId ?? "all"}
-                    onChange={(e) => setSelectedLevelId(e.target.value)}
+                    onChange={(e) => {
+                      filterTouched.current.add(selectedSeasonId);
+                      setSelectedLevelId(e.target.value);
+                    }}
                   >
                     <option value="all">All levels</option>
                     {seasonLevels.map((level) => (
@@ -309,6 +390,12 @@ export default function DashboardPage(): React.JSX.Element {
                   </select>
                 </label>
               </fieldset>
+              {!activeLevelId && seasonLevels.length > 1 && (
+                <p style={styles.pooledNote}>
+                  &ldquo;All levels&rdquo; combines every {matchTypeFilter} level of this season into one table. The
+                  league keeps standings for each level separately; choose a level to see its table.
+                </p>
+              )}
 
               <StandingsSection
                 // A remount re-runs the ranking subscriptions after a failure.
@@ -416,8 +503,12 @@ function StandingsSection({
               <th scope="col" style={styles.th}>
                 <abbr title="Matches lost" style={styles.abbr}>L</abbr>
               </th>
-              <th scope="col" style={styles.th}>Sets won / played</th>
-              <th scope="col" style={styles.th}>Games won / played</th>
+              <th scope="col" style={styles.th}>
+                <abbr title="Sets won / sets played" style={styles.abbr}>Sets</abbr>
+              </th>
+              <th scope="col" style={styles.th}>
+                <abbr title="Games won / games played" style={styles.abbr}>Games</abbr>
+              </th>
               <th scope="col" style={styles.th}>
                 <abbr title="Game difference" style={styles.abbr}>+/−</abbr>
               </th>
@@ -557,7 +648,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   table: {
     width: "100%",
-    minWidth: 640,
+    minWidth: 520,
     borderCollapse: "collapse",
     fontVariantNumeric: "tabular-nums",
   },
@@ -589,6 +680,21 @@ const styles: Record<string, React.CSSProperties> = {
     overflowWrap: "anywhere",
   },
   rowMe: { background: color.greenSoft },
+  pooledNote: { ...type.bodySmall, color: color.textMuted, marginTop: -space.sm, marginBottom: space.lg, maxWidth: "70ch" },
+  waiting: { marginTop: space.lg },
+  waitingList: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: space.xs },
+  waitingLink: {
+    display: "flex",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: 44,
+    padding: `${space.xs}px ${space.sm}px`,
+    borderRadius: radius.md,
+    color: color.ink,
+    ...type.bodySmall,
+  },
+  waitingIcon: { color: color.textMuted, display: "flex", flexShrink: 0 },
+  waitingText: { flex: 1, minWidth: 0, overflowWrap: "anywhere" },
   leader: { display: "inline-flex", alignItems: "center", gap: space.xs, color: color.clubhouseGreen },
   youBadge: {
     ...type.caption,

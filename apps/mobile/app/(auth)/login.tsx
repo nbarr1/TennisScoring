@@ -10,6 +10,7 @@ import {
 import { auth, db } from "@tennis/firebase-client";
 import { doc, setDoc } from "firebase/firestore";
 import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
 import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
 import { FormErrorSummary, FormField } from "../../components/FormField";
@@ -62,6 +63,7 @@ export default function LoginScreen() {
   const nameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const insets = useSafeAreaInsets();
 
   const validate = (field: string) => {
     if (field === "displayName" && mode === "signup" && !displayName.trim())
@@ -198,7 +200,13 @@ export default function LoginScreen() {
   return (
     <KeyboardAwareScrollView
       keyboardViewStyle={styles.container}
-      contentContainerStyle={styles.inner}
+      contentContainerStyle={[
+        styles.inner,
+        {
+          paddingTop: insets.top + spacing.xxl,
+          paddingBottom: insets.bottom + spacing.xxl,
+        },
+      ]}
     >
       <View style={styles.header}>
         <View style={styles.brandMark} accessible={false}>

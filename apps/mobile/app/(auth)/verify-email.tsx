@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   refreshEmailVerification,
   sendVerificationEmail,
@@ -31,6 +32,7 @@ export default function VerifyEmailScreen() {
   const [notVerifiedYet, setNotVerifiedYet] = useState(false);
   const [resentAt, setResentAt] = useState<number | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -85,7 +87,13 @@ export default function VerifyEmailScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.container}
+      contentContainerStyle={[
+        styles.container,
+        {
+          paddingTop: insets.top + spacing.xxl,
+          paddingBottom: insets.bottom + spacing.xxl,
+        },
+      ]}
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.iconWrap}>

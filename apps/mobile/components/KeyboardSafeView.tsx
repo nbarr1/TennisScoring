@@ -11,6 +11,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors } from "../theme/tokens";
 
 type KeyboardSafeViewProps = Omit<KeyboardAvoidingViewProps, "behavior"> & {
   behavior?: KeyboardAvoidingViewProps["behavior"];
@@ -97,11 +98,13 @@ export function KeyboardAwareBottomSheet({
     };
   }, []);
 
-  const bottomInset =
-    keyboardHeight > 0 ? keyboardHeight : Math.max(insets.bottom, 24);
+  // The keyboard pushes the sheet up from outside. The home-indicator inset is
+  // painted inside the sheet instead (the filler below), so no strip of dimmed
+  // backdrop shows between the white sheet and the bottom edge.
+  const homeInset = keyboardHeight > 0 ? 0 : insets.bottom;
 
   return (
-    <View style={[{ flex: 1, paddingBottom: bottomInset }, style]}>
+    <View style={[{ flex: 1, paddingBottom: keyboardHeight }, style]}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[
@@ -114,6 +117,13 @@ export function KeyboardAwareBottomSheet({
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
         {children}
+        {homeInset > 0 ? (
+          <View
+            style={{ height: homeInset, backgroundColor: colors.surface }}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          />
+        ) : null}
       </ScrollView>
     </View>
   );

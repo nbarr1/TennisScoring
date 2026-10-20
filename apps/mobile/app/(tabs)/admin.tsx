@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Share } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useRouter } from "expo-router";
@@ -51,7 +51,9 @@ import {
   currentSeasonForDate,
   defaultSeasonOptions,
   formatDivisionLevelName,
+  formatScoreDisplay,
   type Division,
+  type DivisionLevel,
   type DivisionMatchType,
   type DivisionMembershipStatus,
   type DivisionSkillLevel,
@@ -96,6 +98,25 @@ function plural(n: number, word: string, many = `${word}s`) {
   return `${n} ${n === 1 ? word : many}`;
 }
 
+/** "Oct 12, 2026 · 6-4 3-6 [10-8]", so two results with the same names can be told apart. */
+function candidateMatchDetail(match: Match): string {
+  const when = match.completedAt ?? match.scheduledAt ?? match.createdAt;
+  const date = when
+    ? new Date(when).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+  let score: string | null = null;
+  try {
+    score = match.liveScore ? formatScoreDisplay(match.liveScore) : null;
+  } catch {
+    score = null;
+  }
+  return [date, score].filter(Boolean).join(" · ");
+}
+
 export default function AdminScreen() {
   const router = useRouter();
   const { user } = useAppStore();
@@ -111,6 +132,7 @@ export default function AdminScreen() {
   );
   const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
   const [candidateMatchRefreshKey, setCandidateMatchRefreshKey] = useState(0);
+  const [candidateLoadFailed, setCandidateLoadFailed] = useState(false);
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [editEmail, setEditEmail] = useState("");
   const [newDivisionName, setNewDivisionName] = useState("");
@@ -151,6 +173,8 @@ export default function AdminScreen() {
     formatDivisionLevelName("beginner", "singles"),
   );
   const [levelDescription, setLevelDescription] = useState("");
+  // The level being edited, or null when adding a new one.
+  const [editingLevelId, setEditingLevelId] = useState<string | null>(null);
 
   // Post-action feedback that stays on screen (also announced).
   const [addNotice, setAddNotice] = useState<string | null>(null);
@@ -414,13 +438,22 @@ export default function AdminScreen() {
         setSelectedMatchIds([]);
         return;
       }
-      const snap = await getDocs(
-        query(
-          matchesCol(),
-          where("divisionId", "==", division.id),
-          where("status", "==", "completed"),
-        ),
-      );
+      setCandidateLoadFailed(false);
+      let snap;
+      try {
+        snap = await getDocs(
+          query(
+            matchesCol(),
+            where("divisionId", "==", division.id),
+            where("status", "==", "completed"),
+          ),
+        );
+      } catch (err) {
+        console.error("[AdminScreen] failed to load recorded matches:", err);
+        setCandidateMatches([]);
+        setCandidateLoadFailed(true);
+        return;
+      }
       const matches = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }))
         .filter((match) => {
@@ -445,30 +478,77 @@ export default function AdminScreen() {
     void loadCandidateMatches();
   }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
 
+  const sameNamedLevel =
+    levelsForSeason.find(
+      (l) => l.name.trim().toLowerCase() === levelName.trim().toLowerCase(),
+    ) ?? null;
+  const levelBeingEdited =
+    levelsForSeason.find((l) => l.id === editingLevelId) ?? null;
+  // upsertDivisionLevel doesn't check names, so the editor blocks a name
+  // another level already has, whether adding or renaming. An update only
+  // ever targets a level loaded into the editor, never one matched by name,
+  // since its other values were never loaded.
+  const levelNameTaken =
+    sameNamedLevel && sameNamedLevel.id !== editingLevelId
+      ? sameNamedLevel
+      : null;
+
+  function loadLevelIntoEditor(level: DivisionLevel) {
+    setEditingLevelId(level.id);
+    setLevelSkill(level.skillLevel);
+    setLevelMatchType(level.matchType);
+    setLevelName(level.name);
+    setLevelDescription(level.description ?? "");
+    setLevelNotice(null);
+    saveLevel.reset();
+  }
+
+  function resetLevelEditor() {
+    setEditingLevelId(null);
+    setLevelSkill("beginner");
+    setLevelMatchType("singles");
+    setLevelName(formatDivisionLevelName("beginner", "singles"));
+    setLevelDescription("");
+    saveLevel.reset();
+  }
+
   const saveLevel = useAsyncAction(
     async () => {
       if (!division) throw new Error("No division loaded.");
+      const existing = levelBeingEdited;
       await upsertDivisionLevel({
         divisionId: division.id,
+        levelId: existing?.id,
         seasonId: selectedSeason.id,
         year: selectedSeason.year,
         seasonHalf: selectedSeason.half,
         name: levelName,
         skillLevel: levelSkill,
-        matchType: levelMatchType,
+        // A level's format is fixed once it exists: its matches already have
+        // a two- or four-player shape, and the standings read one format.
+        matchType: existing?.matchType ?? levelMatchType,
         description: levelDescription,
-        rankingsEnabled: true,
-        active: true,
-        sortOrder: divisionLevels.length + 1,
+        rankingsEnabled: existing?.rankingsEnabled ?? true,
+        active: existing?.active ?? true,
+        sortOrder: existing?.sortOrder ?? divisionLevels.length + 1,
       });
+      return existing ? "updated" : "added";
     },
     {
       successMessage: () => `${levelName} saved`,
       errorMessage: (e) =>
         (e as { message?: string }).message ||
         "Couldn't save the division level. Try again.",
-      onSuccess: () => {
-        setLevelNotice(`${levelName} is saved for ${selectedSeason.name}.`);
+      onSuccess: (outcome) => {
+        setLevelNotice(
+          outcome === "updated"
+            ? `${levelName} is updated for ${selectedSeason.name}.`
+            : `${levelName} is added to ${selectedSeason.name}.`,
+        );
+        // Clear the name too: left in place it matches the level just
+        // saved, and the form would read as a duplicate.
+        setEditingLevelId(null);
+        setLevelName("");
         setLevelDescription("");
       },
     },
@@ -704,6 +784,7 @@ export default function AdminScreen() {
                 setSeasonId(season.id);
                 setLevelNotice(null);
                 setExportNotice(null);
+                setEditingLevelId(null);
               }}
             />
           ))}
@@ -907,6 +988,41 @@ export default function AdminScreen() {
 
         <View style={styles.subsection}>
           <Text style={styles.subTitle} accessibilityRole="header">
+            Invite with a code
+          </Text>
+          {division.inviteCode ? (
+            <>
+              <Text style={styles.hint}>
+                Players enter this code when they sign up, or under Join a
+                division. It adds them to {division.name}.
+              </Text>
+              <Text
+                style={styles.inviteCode}
+                selectable
+                accessibilityLabel={`Invite code ${division.inviteCode.split("").join(" ")}`}
+              >
+                {division.inviteCode}
+              </Text>
+              <Button
+                label="Share invite code"
+                icon="square.and.arrow.up"
+                variant="secondary"
+                onPress={() =>
+                  void Share.share({
+                    message: `Join ${division.name} on Tennis League with invite code ${division.inviteCode}.`,
+                  }).catch(() => undefined)
+                }
+              />
+            </>
+          ) : (
+            <Text style={styles.hint}>
+              This division has no invite code yet. Add players by name below.
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.subsection}>
+          <Text style={styles.subTitle} accessibilityRole="header">
             Add a player
           </Text>
           <Text style={styles.hint}>
@@ -1032,14 +1148,22 @@ export default function AdminScreen() {
               Matches {addedPlayerName} played
               {selectedMatchIds.length > 0 ? ` (${selectedMatchIds.length} selected)` : ""}
             </Text>
-            {candidateMatches.length > 0 ? (
+            {candidateLoadFailed ? (
+              <InlineAlert
+                tone="error"
+                message="Couldn't load recorded matches. Check your connection and try again."
+                actionLabel="Try again"
+                onAction={() => setCandidateMatchRefreshKey((key) => key + 1)}
+              />
+            ) : candidateMatches.length > 0 ? (
               candidateMatches.map((match) => {
                 const selected = selectedMatchIds.includes(match.id);
+                const detail = candidateMatchDetail(match);
                 return (
                   <Pressable
                     key={match.id}
                     accessibilityRole="checkbox"
-                    accessibilityLabel={`${match.player1Name || "Player 1"} versus ${match.player2Name || "Player 2"}`}
+                    accessibilityLabel={`${match.player1Name || "Player 1"} versus ${match.player2Name || "Player 2"}${detail ? `, ${detail}` : ""}`}
                     accessibilityState={{ checked: selected }}
                     android_ripple={{ color: colors.primarySoft }}
                     style={[styles.selectRow, selected && styles.selectRowActive]}
@@ -1060,10 +1184,15 @@ export default function AdminScreen() {
                         />
                       ) : null}
                     </View>
-                    <Text style={styles.selectRowText}>
-                      {match.player1Name || "Player 1"} vs{" "}
-                      {match.player2Name || "Player 2"}
-                    </Text>
+                    <View style={styles.selectRowBody}>
+                      <Text style={styles.selectRowText}>
+                        {match.player1Name || "Player 1"} vs{" "}
+                        {match.player2Name || "Player 2"}
+                      </Text>
+                      {detail ? (
+                        <Text style={styles.playerContact}>{detail}</Text>
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })
@@ -1115,15 +1244,38 @@ export default function AdminScreen() {
         </Text>
         {levelsForSeason.length > 0 ? (
           <View style={styles.levelList}>
-            {levelsForSeason.map((level) => (
-              <View key={level.id} style={styles.levelItem}>
-                <Text style={styles.playerName}>{level.name}</Text>
-                <Text style={styles.playerContact}>
-                  {level.matchType === "doubles" ? "Doubles" : "Singles"}
-                  {level.description ? ` · ${level.description}` : ""}
-                </Text>
-              </View>
-            ))}
+            {levelsForSeason.map((level) => {
+              const editingThis = editingLevelId === level.id;
+              return (
+                <Pressable
+                  key={level.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${level.name}, ${level.matchType === "doubles" ? "doubles" : "singles"}`}
+                  accessibilityHint="Loads this level into the editor below"
+                  accessibilityState={{ selected: editingThis }}
+                  android_ripple={{ color: colors.primarySoft }}
+                  style={({ pressed }) => [
+                    styles.levelItem,
+                    editingThis && styles.selectRowActive,
+                    pressed && styles.listRowPressed,
+                  ]}
+                  onPress={() => loadLevelIntoEditor(level)}
+                >
+                  <View style={styles.flexFill}>
+                    <Text style={styles.playerName}>{level.name}</Text>
+                    <Text style={styles.playerContact}>
+                      {level.matchType === "doubles" ? "Doubles" : "Singles"}
+                      {level.description ? ` · ${level.description}` : ""}
+                    </Text>
+                  </View>
+                  <AppIcon
+                    name="pencil"
+                    size={ICON_SIZE.small}
+                    color={colors.textMuted}
+                  />
+                </Pressable>
+              );
+            })}
           </View>
         ) : (
           <Text style={styles.hint}>
@@ -1134,8 +1286,15 @@ export default function AdminScreen() {
 
         <View style={styles.subsection}>
           <Text style={styles.subTitle} accessibilityRole="header">
-            Add or update a level
+            {editingLevelId && levelBeingEdited
+              ? `Edit ${levelBeingEdited.name}`
+              : "Add a level"}
           </Text>
+          {!editingLevelId ? (
+            <Text style={styles.hint}>
+              To change a level, tap it in the list above.
+            </Text>
+          ) : null}
           <Text style={styles.fieldLabel}>Skill level</Text>
           <View style={styles.chipRow}>
             {SKILL_LEVELS.map((skill) => (
@@ -1152,6 +1311,12 @@ export default function AdminScreen() {
             ))}
           </View>
           <Text style={styles.fieldLabel}>Format</Text>
+          {levelBeingEdited ? (
+            <Text style={styles.hint}>
+              {levelBeingEdited.matchType === "doubles" ? "Doubles" : "Singles"}. A level's format
+              can't change once it exists.
+            </Text>
+          ) : (
           <View style={styles.chipRow}>
             {(["singles", "doubles"] as DivisionMatchType[]).map((matchType) => (
               <Chip
@@ -1166,6 +1331,7 @@ export default function AdminScreen() {
               />
             ))}
           </View>
+          )}
           <FormField
             label="Level name"
             required
@@ -1192,17 +1358,43 @@ export default function AdminScreen() {
             />
           ) : null}
           {levelNotice ? <InlineAlert tone="success" message={levelNotice} /> : null}
+          {levelNameTaken && editingLevelId ? (
+            <InlineAlert
+              tone="error"
+              message={`${selectedSeason.name} already has a level named ${levelNameTaken.name}. Choose another name.`}
+            />
+          ) : null}
+          {levelNameTaken && !editingLevelId ? (
+            <InlineAlert
+              tone="info"
+              message={`${selectedSeason.name} already has a level named ${levelNameTaken.name}. Choose another name, or edit that level.`}
+              actionLabel={`Edit ${levelNameTaken.name}`}
+              onAction={() => loadLevelIntoEditor(levelNameTaken)}
+            />
+          ) : null}
           <Button
-            label={`Save level for ${selectedSeason.name}`}
+            label={
+              levelBeingEdited
+                ? "Save changes"
+                : `Add level to ${selectedSeason.name}`
+            }
             variant="secondary"
             pending={saveLevel.pending}
             pendingLabel="Saving level"
-            disabled={!levelName.trim()}
+            disabled={!levelName.trim() || Boolean(levelNameTaken)}
             onPress={() => {
               setLevelNotice(null);
               void saveLevel.run();
             }}
           />
+          {editingLevelId ? (
+            <Button
+              label="Cancel editing"
+              variant="quiet"
+              disabled={saveLevel.pending}
+              onPress={resetLevelEditor}
+            />
+          ) : null}
         </View>
       </Card>
 
@@ -1382,7 +1574,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   levelList: { gap: spacing.sm },
+  flexFill: { flex: 1, gap: spacing.xxs },
+  selectRowBody: { flex: 1, gap: spacing.xxs },
+  inviteCode: {
+    ...typography.title,
+    color: colors.primary,
+    letterSpacing: 4,
+    fontVariant: ["tabular-nums"],
+  },
   levelItem: {
+    minHeight: MIN_TOUCH_TARGET,
+    flexDirection: "row",
+    alignItems: "center",
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.md,

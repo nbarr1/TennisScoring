@@ -10,6 +10,8 @@ type Props = {
   server: Player;
   onPickServer: (player: Player) => void;
   formatLabel: string;
+  /** When the match is booked for, so opening it early doesn't read as "start now". */
+  scheduledLabel?: string;
   advancedStats: boolean;
   onToggleAdvancedStats: (value: boolean) => void;
   onStart: () => void;
@@ -29,6 +31,7 @@ export function ScoreboardSetup({
   server,
   onPickServer,
   formatLabel,
+  scheduledLabel,
   advancedStats,
   onToggleAdvancedStats,
   onStart,
@@ -107,6 +110,12 @@ export function ScoreboardSetup({
       </View>
 
       <View style={styles.options}>
+          {scheduledLabel ? (
+          <View style={[styles.optionRow, styles.optionDivider]}>
+            <Text style={styles.optionTitle}>Scheduled</Text>
+            <Text style={styles.optionValue}>{scheduledLabel}</Text>
+          </View>
+        ) : null}
         <View style={[styles.optionRow, styles.optionDivider]}>
           <Text style={styles.optionTitle}>Format</Text>
           <Text style={styles.optionValue}>{formatLabel}</Text>
@@ -133,7 +142,10 @@ export function ScoreboardSetup({
         <Pressable
           onPress={onLaunchWatch}
           disabled={launchingWatch}
-          style={styles.watch}
+          style={({ pressed }) => [
+            styles.watch,
+            pressed && { backgroundColor: SB.control },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Open Tennis Score on your watch"
           accessibilityState={{ disabled: launchingWatch, busy: launchingWatch }}
@@ -229,7 +241,7 @@ const styles = StyleSheet.create({
   optionDivider: { borderBottomWidth: 1, borderBottomColor: SB.line },
   optionCopy: { flex: 1, gap: 2 },
   optionTitle: { color: SB.text, fontSize: 16, fontWeight: "600" },
-  optionValue: { color: SB.muted, fontSize: 16 },
+  optionValue: { color: SB.muted, fontSize: 16, flexShrink: 1, textAlign: "right" },
   optionHint: { color: SB.muted, fontSize: 13 },
   watch: {
     minHeight: 52,

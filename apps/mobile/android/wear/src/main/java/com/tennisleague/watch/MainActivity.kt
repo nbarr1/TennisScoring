@@ -8,12 +8,16 @@ import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
@@ -28,11 +32,8 @@ import java.util.UUID
 class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   private lateinit var statusTitle: TextView
   private lateinit var scoreboard: LinearLayout
-  private lateinit var player1Name: TextView
-  private lateinit var player2Name: TextView
   private lateinit var setsScore: TextView
   private lateinit var gamesScore: TextView
-  private lateinit var pointScore: TextView
   private lateinit var serverText: TextView
   private lateinit var feedbackTitle: TextView
   private lateinit var feedbackBody: TextView
@@ -42,6 +43,12 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private val buttonHandler = Handler(Looper.getMainLooper())
   private val pendingButtonPoints = mutableMapOf<Int, Runnable>()
+
+  /**
+   * Lets the screen sleep again once no snapshot has arrived for a while, so a
+   * match the phone has stopped sending can't keep the display on indefinitely.
+   */
+  private val releaseScreen = Runnable { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
 
   private var matchFinished = false
   private var activeMatchId: String? = null
@@ -73,6 +80,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     Wearable.getMessageClient(this).removeListener(this)
     pendingButtonPoints.values.forEach { buttonHandler.removeCallbacks(it) }
     pendingButtonPoints.clear()
+    keepScreenOn(false)
     super.onPause()
   }
 
@@ -85,7 +93,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
     if (!isScoreButton(keyCode)) return super.onKeyLongPress(keyCode, event)
     cancelPendingButtonPoint(keyCode)
-    sendCommand("undo")
+    sendCommand("undo") { showUndoSent() }
     return true
   }
 
@@ -96,7 +104,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     val pendingPoint = pendingButtonPoints.remove(keyCode)
     if (pendingPoint != null) {
       buttonHandler.removeCallbacks(pendingPoint)
-      sendCommand("undo")
+      sendCommand("undo") { showUndoSent() }
       return true
     }
 
@@ -117,7 +125,14 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     }
   }
 
+  /**
+   * Laid out for the first viewport of a 192dp round watch: the status line, a
+   * compact sets-and-games plate, and the two player tiles, which carry each
+   * player's points and are themselves the tap targets (the phone's split
+   * scoreboard, side by side). Undo and the help text sit below, one scroll away.
+   */
   private fun buildLayout() {
+    val round = resources.configuration.isScreenRound
     val scroll = ScrollView(this).apply {
       setBackgroundColor(BACKGROUND)
       isFillViewport = true
@@ -125,60 +140,57 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(dp(12), dp(10), dp(12), dp(12))
+      // A round display clips the corners, so content is inset further and the
+      // last rows can scroll up into the readable middle of the circle.
+      if (round) setPadding(dp(20), dp(16), dp(20), dp(36)) else setPadding(dp(10), dp(8), dp(10), dp(12))
     }
 
-    statusTitle = label("WAITING", 12, AMBER, true)
-    statusTitle.letterSpacing = 0.18f
-    root.addView(statusTitle)
+    statusTitle = singleLine(label("WAITING", 12, AMBER, true))
+    statusTitle.typeface = CONDENSED_BOLD
+    statusTitle.letterSpacing = 0.08f
+    root.addView(statusTitle, fullWidth())
 
     // TalkBack reads the scoreboard as one sentence (its contentDescription, set
-    // in renderScore) rather than four fragments such as "AD-40".
+    // in renderScore) rather than fragments such as "Games 5-4".
     scoreboard = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      background = rounded(SCOREBOARD, dp(18), LINE_SUBTLE, dp(1))
-      setPadding(dp(10), dp(8), dp(10), dp(8))
+      background = rounded(SCOREBOARD, dp(14), LINE_SUBTLE, dp(1))
+      setPadding(dp(8), dp(4), dp(8), dp(5))
       isFocusable = true
       importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
     }
-    setsScore = label("Sets 0-0", 18, LINE, true)
+    val tally = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER
+    }
+    setsScore = label("Sets 0-0", 15, LINE, true)
     gamesScore = label("Games 0-0", 15, AMBER, true)
-    pointScore = label("0-0", 32, LINE, true)
-    pointScore.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-    serverText = label("Waiting for phone", 13, MUTED, false)
-    for (child in listOf(setsScore, gamesScore, pointScore, serverText)) {
-      child.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    for (view in listOf(setsScore, gamesScore)) {
+      view.typeface = CONDENSED_BOLD
+      view.setPadding(dp(4), 0, dp(4), 0)
+    }
+    tally.addView(setsScore)
+    tally.addView(gamesScore)
+    serverText = singleLine(label("Waiting for your phone", 12, MUTED, false))
+    for (child in listOf(tally, serverText)) {
+      child.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
       scoreboard.addView(child)
     }
     root.addView(scoreboard, fullWidth())
-
-    val names = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER
-      setPadding(0, dp(6), 0, dp(2))
-    }
-    // The point buttons already name each player, so TalkBack skips this row.
-    player1Name = singleLine(label("Player 1", 12, LINE, true))
-    player2Name = singleLine(label("Player 2", 12, LINE, true))
-    player1Name.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-    player2Name.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-    names.addView(player1Name, rowWeight())
-    names.addView(player2Name, rowWeight())
-    root.addView(names, fullWidth())
 
     val buttons = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
     }
-    player1Button = pointButton("P1", PA)
+    player1Button = pointButton(pointTileLabel("Player 1", "–"), PA)
     player1Button.contentDescription = "Point to player 1"
-    player1Button.setOnClickListener { view -> if (sendCommand("player1")) confirmTap(view) }
-    player1Button.setOnLongClickListener { sendCommand("undo"); true }
-    player2Button = pointButton("P2", PB)
+    player1Button.setOnClickListener { view -> sendCommand("player1") { confirmTap(view) } }
+    player1Button.setOnLongClickListener { sendCommand("undo") { showUndoSent() }; true }
+    player2Button = pointButton(pointTileLabel("Player 2", "–"), PB)
     player2Button.contentDescription = "Point to player 2"
-    player2Button.setOnClickListener { view -> if (sendCommand("player2")) confirmTap(view) }
-    player2Button.setOnLongClickListener { sendCommand("undo"); true }
+    player2Button.setOnClickListener { view -> sendCommand("player2") { confirmTap(view) } }
+    player2Button.setOnLongClickListener { sendCommand("undo") { showUndoSent() }; true }
     buttons.addView(player1Button, rowWeight())
     buttons.addView(player2Button, rowWeight())
     root.addView(buttons, fullWidth())
@@ -194,7 +206,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       minimumHeight = dp(48)
       // TalkBack appends its own "double-tap and hold" hint for a long-press action.
       contentDescription = "Undo last point"
-      setOnLongClickListener { sendCommand("undo"); true }
+      setOnLongClickListener { sendCommand("undo") { showUndoSent() }; true }
     }
     root.addView(undoButton, fullWidth())
 
@@ -219,15 +231,18 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
 
   private fun renderWaitingState() {
     matchFinished = false
-    setScoreButtonsEnabled(true)
-    undoButton.isEnabled = true
+    // Nothing to score yet, so the tiles and undo read as inactive rather than
+    // inviting a tap that can only answer "waiting".
+    setScoreButtonsEnabled(false)
+    setUndoEnabled(false)
+    keepScreenOn(false)
     statusTitle.text = "WAITING"
-    setsScore.text = "Tennis League"
-    gamesScore.text = "No live match"
-    pointScore.text = "--"
+    setsScore.text = "No live match"
+    gamesScore.text = ""
+    serverText.text = "Waiting for your phone"
     scoreboard.contentDescription = "No live match yet."
     feedbackTitle.text = "Ready"
-    feedbackBody.text = "Open a live match on your phone."
+    feedbackBody.text = "Open a live match on your phone. The score appears here."
   }
 
   /** Handles a v1 envelope: session reset, then ordering, then the score inside it. */
@@ -307,21 +322,13 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     val serverName = if (server == "player1") p1Name else p2Name
     val court = if (serviceSide == "advantage") "ad" else "deuce"
 
-    player1Name.text = p1Name
-    player2Name.text = p2Name
-    player1Button.text = pointButtonLabel(p1Name, p1Point)
-    player2Button.text = pointButtonLabel(p2Name, p2Point)
+    player1Button.text = pointTileLabel(shortName(p1Name), p1Point)
+    player2Button.text = pointTileLabel(shortName(p2Name), p2Point)
     player1Button.contentDescription = "Point to $p1Name, now on $p1Point"
     player2Button.contentDescription = "Point to $p2Name, now on $p2Point"
     setsScore.text = "Sets $p1Sets-$p2Sets"
     gamesScore.text = "Games $p1Games-$p2Games"
-    pointScore.text =
-      if (isTiebreak && tiebreak != null) {
-        "TB ${tiebreak.optInt("player1Points", 0)}-${tiebreak.optInt("player2Points", 0)}"
-      } else {
-        "$p1Point-$p2Point"
-      }
-    serverText.text = "$serverName serves · $court court"
+    serverText.text = "${shortName(serverName)} serves · $court court"
     scoreboard.contentDescription =
       "Sets $p1Sets to $p2Sets. Games $p1Games to $p2Games. " +
         "${if (isTiebreak) "Tiebreak. " else ""}$p1Name $p1Point, $p2Name $p2Point. " +
@@ -333,16 +340,25 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
         root.optString("feedbackTitle") == "Match complete" ||
         winnerName.isNotBlank()
     setScoreButtonsEnabled(!matchFinished)
-    statusTitle.text = if (matchFinished) "FINAL" else "LIVE"
+    setUndoEnabled(true)
+    keepScreenOn(!matchFinished)
 
     if (matchFinished) {
-      feedbackTitle.text = "Match complete"
-      feedbackBody.text =
-        if (winnerName.isNotBlank()) "$winnerName wins. Finish the report on your phone."
-        else "Finish the report on your phone."
+      statusTitle.text = "FINAL"
+      feedbackTitle.text = if (winnerName.isNotBlank()) "$winnerName wins" else "Match complete"
+      feedbackBody.text = "Finish the report on your phone."
     } else {
+      // The moment the phone names for this point (a tip title such as "Match
+      // Point" or "Deuce") goes in the status line, the one place always in view.
+      val moment = root.optString("feedbackTitle", "").trim().trimEnd('!')
+      statusTitle.text =
+        when {
+          moment.isNotBlank() -> "LIVE · ${moment.uppercase()}"
+          isTiebreak -> "LIVE · TIEBREAK"
+          else -> "LIVE"
+        }
       feedbackTitle.text = root.optString("feedbackTitle", "Score a point")
-      feedbackBody.text = root.optString("feedbackBody", "Tap the player who won it. Hold to undo.")
+      feedbackBody.text = root.optString("feedbackBody", "Tap the player who won it. Hold a player to undo.")
     }
 
     hasRenderedScore = true
@@ -354,25 +370,28 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     feedbackBody.text = "Couldn't read the latest score from your phone. Check the score there."
   }
 
-  /** Returns whether the command was handed to the Data Layer; the tap haptic depends on it. */
-  private fun sendCommand(command: String): Boolean {
-    if (matchFinished && command != "undo") return false
+  /**
+   * Hands a command to the Data Layer. [onSent] runs once the phone has accepted
+   * the message, so the tap haptic means the point actually left the watch.
+   */
+  private fun sendCommand(command: String, onSent: () -> Unit = {}) {
+    if (matchFinished && command != "undo") return
     if (!hasRenderedScore) {
       showWaitingForMatch()
-      return false
+      return
     }
 
     if (!speaksV1) {
       // A pre-v1 phone understands a bare action string on the old path only.
-      sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone)
-      return true
+      sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone, onSent, ::reportNotSent)
+      return
     }
 
     val sessionId = activeSessionId
     val matchId = activeMatchId
     if (sessionId == null || matchId == null) {
       showWaitingForMatch()
-      return false
+      return
     }
     commandSequence += 1
     val payload = JSONObject()
@@ -383,8 +402,7 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
       .put("sequence", commandSequence)
       .put("action", command)
       .toString().toByteArray()
-    sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone)
-    return true
+    sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone, onSent, ::reportNotSent)
   }
 
   /** A short tick confirming the tap registered, so the player need not look down between points. */
@@ -400,37 +418,98 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     }
   }
 
+  private fun setUndoEnabled(enabled: Boolean) {
+    undoButton.isEnabled = enabled
+    undoButton.alpha = if (enabled) 1f else 0.45f
+  }
+
+  /**
+   * Keeps the scoreboard on screen between points instead of dropping to the
+   * watch face. Each snapshot restarts the timer, and it lapses after
+   * [KEEP_SCREEN_ON_MS] without one, when the match ends, or when the app leaves
+   * the screen.
+   */
+  private fun keepScreenOn(live: Boolean) {
+    buttonHandler.removeCallbacks(releaseScreen)
+    if (live) {
+      window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+      buttonHandler.postDelayed(releaseScreen, KEEP_SCREEN_ON_MS)
+    } else {
+      window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+  }
+
   private fun showWaitingForMatch() {
     feedbackTitle.text = "Waiting for match"
     feedbackBody.text = "Open a live match on your phone before scoring."
   }
 
+  private fun showUndoSent() {
+    feedbackTitle.text = "Undo sent"
+    feedbackBody.text = "The last point comes off once your phone confirms."
+  }
+
   private fun reportMissingPhone(hasNodes: Boolean) {
     if (hasNodes) return
+    statusTitle.text = "NO PHONE"
     feedbackTitle.text = "Phone not found"
-    feedbackBody.text = "Point not sent. Pair this watch and open the live match on your phone."
+    feedbackBody.text = "Nothing was sent. Keep your phone nearby with the live match open."
+  }
+
+  private fun reportNotSent() {
+    statusTitle.text = "NOT SENT"
+    feedbackTitle.text = "Not sent"
+    feedbackBody.text = "Your phone didn't receive that. Check the score there, then tap again."
   }
 
   private fun requestScoreSync() {
-    sendToConnectedNodes(SYNC_REQUEST_PATH, ByteArray(0)) { hasNodes ->
-      feedbackTitle.text = if (hasNodes) "Sync requested" else "Phone not found"
-      feedbackBody.text =
-        if (hasNodes) "Open the live match on your phone if the score does not appear."
-        else "Install and open Tennis League on your paired phone."
-    }
+    sendToConnectedNodes(SYNC_REQUEST_PATH, ByteArray(0), { hasNodes ->
+      if (!hasNodes) {
+        statusTitle.text = "NO PHONE"
+        feedbackTitle.text = "Phone not found"
+        feedbackBody.text = "Install and open Tennis League on your paired phone."
+      } else if (!hasRenderedScore) {
+        // Mid-match, the snapshot this asks for replaces the score on its own;
+        // only an empty scoreboard needs to say what's happening.
+        feedbackTitle.text = "Looking for a match"
+        feedbackBody.text = "Open the live match on your phone if the score doesn't appear."
+      }
+    })
     // A pre-v1 phone listens on the old path only. Stop asking there once the
     // paired phone has answered on v1.
     if (!speaksV1) sendToConnectedNodes(LEGACY_SYNC_REQUEST_PATH, ByteArray(0))
   }
 
-  private fun sendToConnectedNodes(path: String, data: ByteArray, onNodesChecked: (Boolean) -> Unit = {}) {
+  /**
+   * Sends [data] to every connected node. [onSent] runs once, on the first node
+   * that accepts the message; [onFailed] runs only if every node rejects it.
+   */
+  private fun sendToConnectedNodes(
+    path: String,
+    data: ByteArray,
+    onNodesChecked: (Boolean) -> Unit = {},
+    onSent: () -> Unit = {},
+    onFailed: () -> Unit = {},
+  ) {
     Wearable.getNodeClient(this).connectedNodes
       .addOnSuccessListener(this) { nodes ->
         onNodesChecked(nodes.isNotEmpty())
         val client = Wearable.getMessageClient(this)
+        var sent = false
+        var failures = 0
         for (node in nodes) {
           client.sendMessage(node.id, path, data)
-            .addOnFailureListener { error -> Log.e(TAG, "Failed to send $path to ${node.displayName}", error) }
+            .addOnSuccessListener {
+              if (!sent) {
+                sent = true
+                onSent()
+              }
+            }
+            .addOnFailureListener { error ->
+              Log.e(TAG, "Failed to send $path to ${node.displayName}", error)
+              failures += 1
+              if (failures == nodes.size) onFailed()
+            }
         }
       }
       .addOnFailureListener(this) { error ->
@@ -461,9 +540,28 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     buttonHandler.removeCallbacks(pendingPoint)
   }
 
-  private fun pointButtonLabel(name: String, score: String): String {
-    val first = name.trim().split(" ").firstOrNull()?.take(7)
-    return "${if (first.isNullOrBlank()) "Point" else first}\n$score"
+  /** The tile's two lines: a short name, then the points, drawn large. */
+  private fun pointTileLabel(name: String, points: String): CharSequence {
+    val text = SpannableString("$name\n$points")
+    text.setSpan(RelativeSizeSpan(POINTS_SCALE), name.length + 1, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    return text
+  }
+
+  /**
+   * A name that fits half a watch face and still tells two players apart:
+   * "Chris Lee" → "Chris L", "Ann Smith / Bob Jones" → "Ann/Bob".
+   */
+  private fun shortName(name: String): String {
+    val people = name.split(" / ").map { it.trim() }.filter { it.isNotEmpty() }
+    if (people.isEmpty()) return "Player"
+    if (people.size > 1) {
+      return people.joinToString("/") { person -> person.split(WHITESPACE).first().take(4) }
+    }
+    val parts = people.first().split(WHITESPACE)
+    val first = parts.first()
+    val initial = if (parts.size > 1) parts.last().firstOrNull() else null
+    val withInitial = if (initial != null) "$first $initial" else first
+    return if (withInitial.length <= SHORT_NAME_MAX) withInitial else first.take(SHORT_NAME_MAX)
   }
 
   private fun formatPoint(point: String?): String {
@@ -475,25 +573,25 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
   }
 
   /**
-   * A dark scoreboard plate edged in the player's color, with white text, so the
-   * label stays readable in sunlight. Pressing fills it with that color.
+   * A dark scoreboard tile edged in the player's color, with white text, so the
+   * points stay readable in sunlight. Pressing fills it with that color.
    */
-  private fun pointButton(text: String, color: Int): Button {
+  private fun pointButton(text: CharSequence, color: Int): Button {
     val pressed = rounded(color, dp(20), color, dp(3))
     val resting = rounded(SCOREBOARD_CONTROL, dp(20), color, dp(3))
     return Button(this).apply {
       this.text = text
-      textSize = 16f
+      textSize = 13f
       setAllCaps(false)
       setTextColor(Color.WHITE)
-      setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD))
+      typeface = CONDENSED_BOLD
       background = StateListDrawable().apply {
         addState(intArrayOf(android.R.attr.state_pressed), pressed)
         addState(intArrayOf(), resting)
       }
       minHeight = dp(78)
       minimumHeight = dp(78)
-      setPadding(dp(4), 0, dp(4), 0)
+      setPadding(dp(4), dp(2), dp(4), dp(4))
     }
   }
 
@@ -555,6 +653,16 @@ class MainActivity : Activity(), MessageClient.OnMessageReceivedListener {
     private const val UNKNOWN_SESSION = "unknown-session"
     private const val DOUBLE_PRESS_MS = 300L
     private const val PROTOCOL_VERSION = 1
+    // Long enough for a changeover or a set break, short enough that a match the
+    // phone stopped sending doesn't hold the display on.
+    private const val KEEP_SCREEN_ON_MS = 5 * 60 * 1000L
+    // 13sp names over 30sp points on the player tiles.
+    private const val POINTS_SCALE = 2.3f
+    private const val SHORT_NAME_MAX = 9
+    private val WHITESPACE = Regex("\\s+")
+    // Android's condensed sans: the closest system face to the scoreboard's
+    // Barlow Condensed, which this module doesn't ship.
+    private val CONDENSED_BOLD: Typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)
     // The scoreboard palette in DESIGN.md: scoreboard-*, player-blue, player-orange.
     private val BACKGROUND = Color.BLACK
     private val SCOREBOARD = Color.rgb(0x14, 0x14, 0x14)

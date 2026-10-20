@@ -14,6 +14,9 @@ struct ScoreView: View {
   var body: some View {
     if let snapshot = session.snapshot {
       scoreboard(snapshot)
+        .onChange(of: session.lastSendFailed) { _, failed in
+          if failed { WKInterfaceDevice.current().play(.failure) }
+        }
     } else {
       VStack(spacing: 8) {
         Image(systemName: "tennisball")
@@ -31,16 +34,18 @@ struct ScoreView: View {
     }
   }
 
+  /// Built for a glance between points: each row leads with the points in large
+  /// numerals, the current set's games beside them, and the set history below.
   private func scoreboard(_ snapshot: WatchScoreSnapshot) -> some View {
     let score = snapshot.score
     return ScrollView {
-      VStack(spacing: 6) {
+      VStack(spacing: 4) {
         ForEach(Player.allCases, id: \.self) { side in
           let isServing = snapshot.status == .inProgress && score.server == side
           HStack(spacing: 4) {
             Capsule()
               .fill(color(for: side))
-              .frame(width: 4, height: 16)
+              .frame(width: 4, height: 22)
               .accessibilityHidden(true)
             Image(systemName: "tennisball.fill")
               .font(.system(size: 8))
@@ -51,25 +56,26 @@ struct ScoreView: View {
               .font(.footnote)
               .lineLimit(1)
             Spacer(minLength: 2)
-            Text("\(score.setsWon(by: side))")
-              .font(.footnote.monospacedDigit())
+            Text("\(games(score, side))")
+              .font(.body.monospacedDigit())
               .foregroundStyle(.secondary)
-            Text(points(score, side))
-              .font(.headline.monospacedDigit())
-              .foregroundStyle(score.isTiebreak ? Color.yellow : Color.green)
-              .frame(minWidth: 26, alignment: .trailing)
+            if snapshot.status == .inProgress {
+              Text(points(score, side))
+                .font(.title2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(score.isTiebreak ? Color.yellow : Color.primary)
+                .frame(minWidth: 34, alignment: .trailing)
+            }
           }
           // One sentence per player, instead of bare numbers with no context.
           .accessibilityElement(children: .ignore)
           .accessibilityLabel(rowAccessibilityLabel(snapshot, side, isServing: isServing))
         }
 
-        Text(score.isTiebreak ? "Tiebreak" : ScoreEngine.formatGameScore(score))
-          .font(.caption2)
-          .foregroundStyle(score.isTiebreak ? Color.yellow : Color.secondary)
-        Text(ScoreEngine.formatScoreDisplay(score))
+        Text(summaryLine(snapshot))
           .font(.caption2.monospacedDigit())
-          .foregroundStyle(.secondary)
+          .foregroundStyle(score.isTiebreak ? Color.yellow : Color.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
 
         if snapshot.status == .inProgress {
           HStack(spacing: 8) {
@@ -78,10 +84,20 @@ struct ScoreView: View {
           }
           .disabled(!session.canScore)
           .padding(.top, 4)
-          if !session.canScore {
+          if session.lastSendFailed {
+            Text("Point not sent. Check the score on your iPhone.")
+              .font(.caption2)
+              .foregroundStyle(.red)
+              .multilineTextAlignment(.center)
+          } else if !session.canScore {
             Text(session.isReachable
               ? "Open this match on your iPhone to score from here."
               : "iPhone not reachable. Keep it nearby to score.")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .multilineTextAlignment(.center)
+          } else {
+            Text("Tap who won the point. Undo on your iPhone.")
               .font(.caption2)
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.center)
@@ -90,8 +106,13 @@ struct ScoreView: View {
           Text(snapshot.status.metadata.label)
             .font(.caption)
             .foregroundStyle(.secondary)
-          if snapshot.status == .pendingReport {
-            Text("Finish the report on your iPhone.")
+          if let winner = leader(score), snapshot.status == .pendingReport || snapshot.status == .completed {
+            Text("\(name(snapshot, winner)) wins")
+              .font(.headline)
+              .multilineTextAlignment(.center)
+          }
+          if let next = nextStep(snapshot.status) {
+            Text(next)
               .font(.caption2)
               .foregroundStyle(.secondary)
               .multilineTextAlignment(.center)
@@ -108,8 +129,10 @@ struct ScoreView: View {
       WKInterfaceDevice.current().play(.click)
       session.sendPoint(side)
     } label: {
-      Text(initials(name))
+      Text(firstNames(name))
         .font(.headline)
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
         // Black on the bright player colors reads at 6:1 or better in sunlight;
         // the default white label does not.
         .foregroundStyle(.black)
@@ -131,7 +154,12 @@ struct ScoreView: View {
   private func rowAccessibilityLabel(_ snapshot: WatchScoreSnapshot, _ side: Player, isServing: Bool) -> String {
     let score = snapshot.score
     let sets = score.setsWon(by: side)
-    var parts = [name(snapshot, side), "\(sets) \(sets == 1 ? "set" : "sets")"]
+    let gamesWon = games(score, side)
+    var parts = [
+      name(snapshot, side),
+      "\(sets) \(sets == 1 ? "set" : "sets")",
+      "\(gamesWon) \(gamesWon == 1 ? "game" : "games") this set",
+    ]
     if snapshot.status == .inProgress {
       parts.append(score.isTiebreak ? "\(points(score, side)) in the tiebreak" : "\(points(score, side)) in this game")
     }
@@ -139,15 +167,48 @@ struct ScoreView: View {
     return parts.joined(separator: ", ")
   }
 
+  /// The set scores so far, then the game in words while the match is live:
+  /// "6-4, 3-2 · 30-all", or "6-6 · Tiebreak".
+  private func summaryLine(_ snapshot: WatchScoreSnapshot) -> String {
+    let score = snapshot.score
+    let sets = ScoreEngine.formatScoreDisplay(score)
+    guard snapshot.status == .inProgress else { return sets }
+    let game = score.isTiebreak ? "Tiebreak" : ScoreEngine.formatGameScore(score)
+    return sets.isEmpty ? game : "\(sets) · \(game)"
+  }
+
   private func points(_ score: LiveScore, _ side: Player) -> String {
     if score.isTiebreak, let tiebreak = score.tiebreakScore { return "\(tiebreak.points(for: side))" }
     return score.currentGame[side].rawValue
   }
 
-  /// "Ann Smith / Bob Jones" → "AS/BJ"; "Sam Rivera" → "SR".
-  private func initials(_ name: String) -> String {
-    name.components(separatedBy: " / ").map { person in
-      String(person.split(separator: " ").prefix(2).compactMap(\.first))
-    }.joined(separator: "/")
+  /// Games in the set being played, or in the last set once the match is over.
+  private func games(_ score: LiveScore, _ side: Player) -> Int {
+    guard score.sets.indices.contains(score.currentSet) else { return score.sets.last?.games(for: side) ?? 0 }
+    return score.sets[score.currentSet].games(for: side)
+  }
+
+  /// The side ahead on sets, which is the winner once the match is over.
+  private func leader(_ score: LiveScore) -> Player? {
+    let first = score.setsWon(by: .player1), second = score.setsWon(by: .player2)
+    if first == second { return nil }
+    return first > second ? .player1 : .player2
+  }
+
+  private func nextStep(_ status: MatchStatus) -> String? {
+    switch status {
+    case .scheduled: return "Start the match on your iPhone to score it here."
+    case .pendingReport: return "Finish the report on your iPhone."
+    default: return nil
+    }
+  }
+
+  /// "Ann Smith / Bob Jones" → "Ann/Bob"; "Sam Rivera" → "Sam".
+  private func firstNames(_ name: String) -> String {
+    let names = name.components(separatedBy: " / ").compactMap { person -> String? in
+      guard let first = person.split(separator: " ").first else { return nil }
+      return String(first)
+    }
+    return names.isEmpty ? name : names.joined(separator: "/")
   }
 }

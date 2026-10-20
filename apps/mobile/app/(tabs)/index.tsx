@@ -5,12 +5,18 @@ import {
   useRankings,
   useDoublesRankings,
   recalculateDivisionRankings,
+  useDivisionLevels,
+  useDivisionMemberships,
+  usePlayerMatches,
 } from "@tennis/firebase-client";
 import {
+  canRespondToReport,
   currentSeasonForDate,
   defaultSeasonOptions,
   isPrivilegedRole,
+  sideOfPlayer,
   type DivisionMatchType,
+  type DivisionMembershipStatus,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import {
@@ -30,6 +36,9 @@ import {
   typography,
   useAsyncAction,
 } from "../../theme";
+
+/** A player's own level counts while they are waitlisted too. */
+const ROSTERED: readonly DivisionMembershipStatus[] = ["active", "waitlisted"];
 
 /** One standings row, normalized so singles and doubles render identically. */
 type StandingsRow = {
@@ -125,22 +134,31 @@ function StandingsContent({
   divisionId,
   seasonId,
   seasonName,
+  divisionLevelId,
+  levelName,
   matchType,
   filters,
+  lead,
   onRetry,
 }: {
   divisionId: string;
   seasonId: string;
   seasonName: string;
+  /** Undefined for "All levels". */
+  divisionLevelId: string | undefined;
+  levelName: string | null;
   matchType: DivisionMatchType;
   filters: React.ReactNode;
+  /** Shown above everything else (the "Needs you" card). */
+  lead: React.ReactNode;
   onRetry: () => void;
 }) {
-  const { user } = useAppStore();
+  const user = useAppStore((state) => state.user);
   const router = useRouter();
   const isDoubles = matchType === "doubles";
-  const singles = useRankings(isDoubles ? null : divisionId, { seasonId });
-  const doubles = useDoublesRankings(isDoubles ? divisionId : null, { seasonId });
+  const rankingFilters = { seasonId, divisionLevelId };
+  const singles = useRankings(isDoubles ? null : divisionId, rankingFilters);
+  const doubles = useDoublesRankings(isDoubles ? divisionId : null, rankingFilters);
   const loading = isDoubles ? doubles.loading : singles.loading;
   const loadError = isDoubles ? doubles.error : singles.error;
   const rankings: StandingsRow[] = isDoubles
@@ -173,6 +191,7 @@ function StandingsContent({
     : -1;
   const me = myIndex >= 0 ? rankings[myIndex] : null;
   const formatLabel = isDoubles ? "doubles" : "singles";
+  const scopeLabel = levelName ?? `${seasonName} ${formatLabel}`;
   const goToMatches = () => router.push("/(tabs)/matches");
 
   const recalcControls = canRecalculate ? (
@@ -206,7 +225,10 @@ function StandingsContent({
   if (loading) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>{filters}</View>
+        <View style={styles.filtersOnly}>
+          {lead}
+          {filters}
+        </View>
         <LoadingState label={`Loading ${formatLabel} standings`} />
       </View>
     );
@@ -215,7 +237,10 @@ function StandingsContent({
   if (loadError) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>{filters}</View>
+        <View style={styles.filtersOnly}>
+          {lead}
+          {filters}
+        </View>
         <ErrorState title="Couldn't load standings" onRetry={onRetry} />
       </View>
     );
@@ -224,10 +249,17 @@ function StandingsContent({
   if (rankings.length === 0) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>{filters}</View>
+        <View style={styles.filtersOnly}>
+          {lead}
+          {filters}
+        </View>
         <EmptyState
           icon="trophy"
-          title={`No ${formatLabel} standings for ${seasonName} yet`}
+          title={
+            levelName
+              ? `No ${levelName} standings for ${seasonName} yet`
+              : `No ${formatLabel} standings for ${seasonName} yet`
+          }
           message={
             isDoubles
               ? "Team standings appear once a doubles result is reported and confirmed by the other team."
@@ -253,7 +285,8 @@ function StandingsContent({
             {rankings.length}
           </Text>
           <Text style={styles.myDetail}>
-            {me.matchesWon}–{me.matchesLost} in {seasonName} {formatLabel}
+            {me.matchesWon}–{me.matchesLost} in {scopeLabel}
+            {levelName ? `, ${seasonName}` : ""}
             {isDoubles ? ` as ${me.displayName}` : ""}
           </Text>
         </>
@@ -263,14 +296,17 @@ function StandingsContent({
             You're not in these standings yet
           </Text>
           <Text style={styles.myDetail}>
-            Play a {formatLabel} match this season and have the result confirmed to
-            appear here.
+            {levelName
+              ? `These are the ${levelName} standings. Play a match in this level and have the result confirmed to appear here.`
+              : `Play a ${formatLabel} match this season and have the result confirmed to appear here.`}
           </Text>
         </>
       )}
       <Button
         label="Find your next match"
         size="compact"
+        // The "Needs you" card above holds the screen's primary action.
+        variant={lead ? "secondary" : "primary"}
         style={styles.myAction}
         onPress={goToMatches}
       />
@@ -290,12 +326,13 @@ function StandingsContent({
       )}
       ListHeaderComponent={
         <View style={styles.tableHeader}>
+          {lead}
           {myStanding}
           {filters}
           <SectionHeader
             style={styles.sectionHeader}
-            title={isDoubles ? "Doubles team standings" : "Division standings"}
-            subtitle={seasonName}
+            title={isDoubles ? "Doubles team standings" : "Singles standings"}
+            subtitle={`${seasonName} · ${levelName ?? "All levels"}`}
           />
           <Button
             label="How standings work"
@@ -329,8 +366,81 @@ function StandingsContent({
   );
 }
 
+/**
+ * What is waiting on this player, by the same rules as the web dashboard's
+ * "For you" list: a live match, a finished match whose score nobody has
+ * submitted yet, a result the other side reported, and a
+ * proposal they received. Empty when nothing is waiting.
+ */
+function useNeedsYouItems(
+  userId: string | undefined,
+  divisionId: string | null,
+): string[] {
+  const { matches } = usePlayerMatches(userId ?? null);
+  let live = 0;
+  let toConfirm = 0;
+  let toSubmit = 0;
+  let proposals = 0;
+  if (userId) {
+    for (const m of matches) {
+      // Only this division's matches, which is what the Matches tab lists.
+      if (m.divisionId !== divisionId) continue;
+      const side = sideOfPlayer(m, userId);
+      if (!side) continue;
+      if (m.status === "in_progress") live += 1;
+      // Live scoring finished, but nobody has submitted the result yet.
+      else if (m.status === "pending_report" && !m.reportSubmission) toSubmit += 1;
+      else if (
+        m.status === "pending_report" &&
+        canRespondToReport(m, userId, m.reportSubmission?.submittedBy)
+      )
+        toConfirm += 1;
+      else if (m.status === "proposed" && side === "player2") proposals += 1;
+    }
+  }
+  return [
+    live > 0
+      ? `${live} live ${live === 1 ? "match" : "matches"} to keep scoring`
+      : null,
+    toSubmit > 0
+      ? `${toSubmit} ${toSubmit === 1 ? "score" : "scores"} to submit`
+      : null,
+    toConfirm > 0
+      ? `${toConfirm} ${toConfirm === 1 ? "result" : "results"} to confirm or dispute`
+      : null,
+    proposals > 0
+      ? `${proposals} ${proposals === 1 ? "proposal" : "proposals"} to accept or decline`
+      : null,
+  ].filter((item): item is string => !!item);
+}
+
+function NeedsYouCard({ items }: { items: string[] }) {
+  const router = useRouter();
+  return (
+    <Card style={styles.needsCard}>
+      <Text style={styles.needsTitle} accessibilityRole="header">
+        Needs you
+      </Text>
+      {items.map((item) => (
+        <Text key={item} style={styles.needsItem}>
+          {item}
+        </Text>
+      ))}
+      <Button
+        label="Open Matches"
+        accessibilityHint="Opens the Matches tab, where you can respond"
+        size="compact"
+        style={styles.myAction}
+        onPress={() => router.push("/(tabs)/matches")}
+      />
+    </Card>
+  );
+}
+
 export default function RankingsScreen() {
-  const { divisionId } = useAppStore();
+  const divisionId = useAppStore((state) => state.divisionId);
+  const userId = useAppStore((state) => state.user?.id);
+  const needsItems = useNeedsYouItems(userId, divisionId);
   const router = useRouter();
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
   // Matches web's dashboard: standings are scoped to one season at a time, since
@@ -338,11 +448,49 @@ export default function RankingsScreen() {
   const [selectedSeasonId, setSelectedSeasonId] = useState(
     () => currentSeasonForDate().id,
   );
-  const [matchTypeFilter, setMatchTypeFilter] =
-    useState<DivisionMatchType>("singles");
+  // null follows the format of the player's own level until they pick one.
+  const [matchTypeChoice, setMatchTypeFilter] =
+    useState<DivisionMatchType | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  // null follows the player's own level; "all" pools every level.
+  const [levelChoice, setLevelChoice] = useState<string | null>(null);
   const seasonName =
     seasonOptions.find((s) => s.id === selectedSeasonId)?.name ?? "";
+  const { levels } = useDivisionLevels(divisionId);
+  const { memberships } = useDivisionMemberships(
+    divisionId,
+    selectedSeasonId,
+    null,
+    ROSTERED,
+  );
+  const myLevelFormat = levels.find(
+    (level) =>
+      level.seasonId === selectedSeasonId &&
+      memberships.some(
+        (m) => m.userId === userId && m.divisionLevelId === level.id,
+      ),
+  )?.matchType;
+  const matchTypeFilter: DivisionMatchType =
+    matchTypeChoice ?? myLevelFormat ?? "singles";
+  // Standings are ranked per division level, so only levels of this season
+  // and format can be picked.
+  const seasonLevels = levels.filter(
+    (level) =>
+      level.seasonId === selectedSeasonId && level.matchType === matchTypeFilter,
+  );
+  const myLevelId = memberships.find(
+    (m) =>
+      m.userId === userId &&
+      seasonLevels.some((level) => level.id === m.divisionLevelId),
+  )?.divisionLevelId;
+  const activeLevelId =
+    levelChoice === "all"
+      ? undefined
+      : levelChoice && seasonLevels.some((level) => level.id === levelChoice)
+        ? levelChoice
+        : myLevelId;
+  const activeLevelName =
+    seasonLevels.find((level) => level.id === activeLevelId)?.name ?? null;
 
   const filters = (
     <View style={styles.filters}>
@@ -354,7 +502,10 @@ export default function RankingsScreen() {
             accessibilityLabel={`Show ${option} standings`}
             label={option === "singles" ? "Singles" : "Doubles"}
             selected={matchTypeFilter === option}
-            onPress={() => setMatchTypeFilter(option)}
+            onPress={() => {
+              setMatchTypeFilter(option);
+              setLevelChoice(null);
+            }}
           />
         ))}
       </View>
@@ -366,10 +517,35 @@ export default function RankingsScreen() {
             accessibilityLabel={`Show standings for ${season.name}`}
             label={season.name}
             selected={selectedSeasonId === season.id}
-            onPress={() => setSelectedSeasonId(season.id)}
+            onPress={() => {
+              setSelectedSeasonId(season.id);
+              setLevelChoice(null);
+            }}
           />
         ))}
       </View>
+      {seasonLevels.length > 1 ? (
+        <>
+          <Text style={styles.filterLabel}>Division level</Text>
+          <View style={styles.chipRow}>
+            <Chip
+              accessibilityLabel="Show all division levels together"
+              label="All levels"
+              selected={activeLevelId === undefined}
+              onPress={() => setLevelChoice("all")}
+            />
+            {seasonLevels.map((level) => (
+              <Chip
+                key={level.id}
+                accessibilityLabel={`Show ${level.name} standings${level.id === myLevelId ? ", your level" : ""}`}
+                label={level.id === myLevelId ? `${level.name} (yours)` : level.name}
+                selected={activeLevelId === level.id}
+                onPress={() => setLevelChoice(level.id)}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 
@@ -390,12 +566,15 @@ export default function RankingsScreen() {
   return (
     <Screen>
       <StandingsContent
-        key={`${matchTypeFilter}-${selectedSeasonId}-${retryKey}`}
+        key={`${matchTypeFilter}-${selectedSeasonId}-${activeLevelId ?? "all"}-${retryKey}`}
         divisionId={divisionId}
         seasonId={selectedSeasonId}
         seasonName={seasonName}
+        divisionLevelId={activeLevelId}
+        levelName={activeLevelName}
         matchType={matchTypeFilter}
         filters={filters}
+        lead={needsItems.length > 0 ? <NeedsYouCard items={needsItems} /> : null}
         onRetry={() => setRetryKey((k) => k + 1)}
       />
     </Screen>
@@ -417,6 +596,9 @@ const styles = StyleSheet.create({
   list: { padding: spacing.lg },
   tableHeader: { marginBottom: spacing.md, gap: spacing.xs },
   sectionHeader: { marginTop: spacing.sm },
+  needsCard: { gap: spacing.xs, marginBottom: spacing.sm },
+  needsTitle: { ...typography.heading, color: colors.primary },
+  needsItem: { ...typography.body, color: colors.text },
   myCard: { gap: spacing.xs, marginBottom: spacing.xs, ...elevations.low },
   myHeadline: { ...typography.heading, color: colors.primary },
   myDetail: { ...typography.bodySmall, color: colors.textMuted },
@@ -451,14 +633,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.transparent,
     overflow: "hidden",
   },
-  rowCurrentUser: {
-    backgroundColor: colors.primarySoft,
-    borderLeftColor: colors.primary,
-  },
+  // The tint plus the "You" label mark the row; no colored side stripe.
+  rowCurrentUser: { backgroundColor: colors.primarySoft },
   primaryRow: {
     minHeight: 56,
     flexDirection: "row",

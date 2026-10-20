@@ -5,11 +5,14 @@ import {
   PRIVACY_POLICY_LAST_UPDATED,
   PRIVACY_POLICY_SECTIONS,
 } from "@tennis/shared";
+import { StatusBar } from "expo-status-bar";
 import { colors, radii, spacing, typography } from "../theme";
 
 export default function PrivacyPolicyScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Light content on the green header, also when opened from sign-in. */}
+      <StatusBar style="light" />
       <Text style={styles.title} accessibilityRole="header">
         Tennis League Privacy Policy
       </Text>

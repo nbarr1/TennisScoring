@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onIdTokenChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { arrayRemove, arrayUnion, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, deleteField, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
 import type { User, PublicProfile } from '@tennis/shared';
@@ -141,15 +141,26 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   const now = Date.now();
 
   // Update private user doc
-  batch.update(userDoc(uid), { ...updates, updatedAt: now });
+  // Firestore rejects an update carrying an undefined value, and
+  // buildUserProfileUpdates() uses undefined for a cleared field (a player with
+  // no phone number, for example), so every such save used to throw. A key
+  // passed as undefined now deletes that field; deleting an absent field is a
+  // no-op that the rules don't count as a change.
+  const privateUpdates: Record<string, unknown> = { updatedAt: now };
+  for (const [key, value] of Object.entries(updates)) {
+    privateUpdates[key] = value === undefined ? deleteField() : value;
+  }
+  batch.update(userDoc(uid), privateUpdates);
 
   // If public fields are changed, sync with profiles doc
-  const publicUpdates: Partial<PublicProfile> = {};
-  if (updates.displayName !== undefined) publicUpdates.displayName = updates.displayName;
-  if (updates.avatarUrl !== undefined) publicUpdates.avatarUrl = updates.avatarUrl;
-  if (updates.divisionId !== undefined) publicUpdates.divisionId = updates.divisionId;
-  if (updates.role !== undefined) publicUpdates.role = updates.role;
-  if (updates.tutorialDone !== undefined) publicUpdates.tutorialDone = updates.tutorialDone;
+  // A mirrored key passed as undefined is deleted from the profile too, so
+  // clearing a division doesn't leave profiles/{uid} naming the old one.
+  const publicUpdates: Record<string, unknown> = {};
+  for (const key of ['displayName', 'avatarUrl', 'divisionId', 'role', 'tutorialDone'] as const) {
+    if (!(key in updates)) continue;
+    const value = updates[key];
+    publicUpdates[key] = value === undefined ? deleteField() : value;
+  }
 
   if (Object.keys(publicUpdates).length > 0) {
     // set+merge (not update) so this still succeeds if profiles/{uid} hasn't been created yet.

@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   required: { color: colors.destructive },
   input: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderRadius: radii.md,
     borderWidth: 1,
     color: colors.text,

@@ -1,5 +1,6 @@
 import SwiftUI
 import TennisCore
+import UIKit
 
 extension Color {
   /// `#RRGGBB` or `#RGB`, as used by `MATCH_STATUS_METADATA`.
@@ -16,9 +17,30 @@ extension Color {
   }
 }
 
-/// The league's brand green, shared with the web and Expo clients.
 extension Color {
-  static let league = Color(hex: "#1a472a")
+  /// The league's brand green, shared with the web and Expo clients: Clubhouse
+  /// Green (#1A472A) in light appearance and Light Green (#A8D5A2) in dark, where
+  /// Clubhouse Green is under 2:1 on the system backgrounds. It is the app's tint,
+  /// so it colors text buttons, links, and filled buttons alike.
+  static let league = Color(uiColor: UIColor { traits in
+    traits.userInterfaceStyle == .dark
+      ? UIColor(red: 0xA8 / 255, green: 0xD5 / 255, blue: 0xA2 / 255, alpha: 1)
+      : UIColor(red: 0x1A / 255, green: 0x47 / 255, blue: 0x2A / 255, alpha: 1)
+  })
+
+  /// Text and icons on a `league` fill: white on Clubhouse Green, black on Light
+  /// Green. Filled buttons and the player's own message bubbles use it.
+  static let onLeague = Color(uiColor: UIColor { traits in
+    traits.userInterfaceStyle == .dark ? .black : .white
+  })
+
+  /// The scoreboard's player colors (DESIGN.md `player-blue` and `player-orange`),
+  /// the same pair the watch shows. Labels on them are black (6:1 and 10:1).
+  static func player(_ side: Player) -> Color {
+    side == .player1
+      ? Color(red: 0x3D / 255, green: 0x8B / 255, blue: 1)
+      : Color(red: 1, green: 0x9F / 255, blue: 0x1C / 255)
+  }
 }
 
 struct StatusBadge: View {

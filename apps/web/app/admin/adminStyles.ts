@@ -160,9 +160,11 @@ export const styles = {
   registeredBadge: { ...badgeBase, background: color.greenSoft, color: color.clubhouseGreen },
   unregisteredBadge: { ...badgeBase, background: color.surfaceMuted, color: color.textMuted },
   waitlistBadge: { ...badgeBase, background: color.infoSoft, color: color.info },
+  otherSeasonNote: { ...type.caption, color: color.textMuted, alignSelf: "center" },
   reasonBadge: { ...badgeBase, background: color.destructiveSoft, color: color.destructivePressed },
 
   input: { ...inputStyle },
+  inputReadOnly: { background: color.surfaceMuted, color: color.textMuted, cursor: "default" },
   textarea: {
     ...inputStyle,
     minHeight: 180,
@@ -182,6 +184,27 @@ export const styles = {
     overflowWrap: "anywhere",
   },
   importCount: { ...type.label, color: color.textMuted, margin: 0 },
+  importPreview: {
+    listStyle: "none",
+    margin: 0,
+    display: "grid",
+    gap: space.xs,
+    border: `1px solid ${color.border}`,
+    borderRadius: radius.md,
+    padding: `${space.sm}px ${space.md}px`,
+  },
+  importPreviewItem: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "baseline",
+    columnGap: space.sm,
+    rowGap: 2,
+    ...type.bodySmall,
+    color: color.ink,
+  },
+  importPreviewName: { fontWeight: 600, overflowWrap: "anywhere" },
+  importPreviewMeta: { ...type.caption, color: color.textMuted, overflowWrap: "anywhere" },
+  importPreviewMove: { ...type.caption, fontWeight: 700, color: color.warningText },
 
   levelGrid: {
     listStyle: "none",
@@ -202,6 +225,7 @@ export const styles = {
   levelCardName: { ...type.label, fontSize: 16, color: color.clubhouseGreen, margin: 0 },
   levelCardMeta: { ...type.bodySmall, color: color.textMuted },
   levelCardCount: { ...type.label, color: color.ink },
+  levelCardAction: { justifySelf: "start", marginLeft: -12 },
 
   toolGrid: {
     display: "grid",
@@ -264,6 +288,7 @@ export const styles = {
     marginBottom: space.lg,
   },
   roundTitle: { ...type.label, color: color.clubhouseGreen, margin: `0 0 ${space.xs}px` },
+  roundDate: { fontWeight: 500, color: color.textMuted },
   roundList: { ...type.bodySmall, color: color.ink, margin: 0, paddingLeft: 18, display: "grid", gap: 2 },
 
   detailBody: { display: "grid", gap: space.xl },

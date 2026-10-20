@@ -25,6 +25,7 @@ import {
   useUserProfile,
   useDivisionLevels,
   useDivisionMemberships,
+  usePlayerMatches,
 } from "@tennis/firebase-client";
 import {
   formatScoreDisplay,
@@ -360,7 +361,7 @@ function CollapsedSection({ title, count, children }: { title: string; count: nu
     <details style={styles.details} data-matches-group="">
       <summary style={styles.summary}>
         <IconChevronDown size={20} aria-hidden="true" className="matches-group-chevron" />
-        <span style={styles.summaryTitle}>{title}</span>
+        <h2 style={styles.summaryTitle}>{title}</h2>
         <span style={styles.sectionCount}>({count})</span>
       </summary>
       <div style={styles.detailsBody}>{children}</div>
@@ -398,6 +399,12 @@ export default function MatchesPage(): React.JSX.Element {
       ? seasonLevels.find((level) => level.id === selectedLevelId)
       : undefined;
   const activeLevelId = activeLevel?.id;
+  // The player's own matches, every season and level, so a filter never hides a to-do.
+  const {
+    matches: playerMatches,
+    loading: playerMatchesLoading,
+    error: playerMatchesError,
+  } = usePlayerMatches(firebaseUser?.uid ?? null, reloadKey);
 
   useEffect(() => {
     if (!divisionId) {
@@ -469,20 +476,27 @@ export default function MatchesPage(): React.JSX.Element {
     const canConfirm = (m: Match) =>
       !!uid && m.status === "pending_report" && !!m.reportSubmission && canRespondToReport(m, uid, m.reportSubmission.submittedBy);
 
+    // The personal sections read the player's own matches in this division,
+    // ignoring the season and level filter; the filtered list is the fallback
+    // if that query fails.
+    const personal = playerMatchesError
+      ? matches.filter(mine)
+      : playerMatches.filter((m) => m.divisionId === divisionId);
+
     // Side membership rather than player2Id, so a doubles partner sees the proposal too.
-    const invitations = matches
+    const invitations = personal
       .filter((m) => m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player2")
       .sort(byDateAsc);
-    const toConfirm = matches.filter(canConfirm).sort(byDateAsc);
-    const toReport = matches
+    const toConfirm = personal.filter(canConfirm).sort(byDateAsc);
+    const toReport = personal
       .filter((m) => m.status === "pending_report" && !m.reportSubmission && mine(m))
       .sort(byDateAsc);
-    const next = matches
+    const next = personal
       .filter((m) => mine(m) && (m.status === "in_progress" || m.status === "scheduled"))
       .sort((a, b) =>
         a.status === b.status ? byDateAsc(a, b) : a.status === "in_progress" ? -1 : 1,
       );
-    const waiting = matches
+    const waiting = personal
       .filter(
         (m) =>
           (m.status === "proposed" && !!uid && sideOfPlayer(m, uid) === "player1") ||
@@ -512,9 +526,10 @@ export default function MatchesPage(): React.JSX.Element {
       .sort(byDateDesc);
 
     return { invitations, toConfirm, toReport, next, waiting, unsettled, liveElsewhere, schedule, history };
-  }, [matches, uid, isLeader]);
+  }, [matches, playerMatches, playerMatchesError, divisionId, uid, isLeader]);
 
   const needsYouCount = groups.invitations.length + groups.toConfirm.length + groups.toReport.length;
+  const personalCount = needsYouCount + groups.next.length + groups.waiting.length;
   const canCreate = !!(divisionId && firebaseUser && profile);
 
   const pageStyle = isIosView ? { ...styles.page, ...styles.iosPage } : styles.page;
@@ -564,7 +579,12 @@ export default function MatchesPage(): React.JSX.Element {
           )}
         </div>
 
-        <div role="group" aria-label="Show matches from" style={styles.filterBar}>
+        <div
+          role="group"
+          aria-label="Show division matches from"
+          aria-describedby="matches-filter-hint"
+          style={styles.filterBar}
+        >
           <div style={styles.filterField}>
             <label htmlFor="matches-filter-season" style={fieldLabelStyle}>
               Season
@@ -603,6 +623,10 @@ export default function MatchesPage(): React.JSX.Element {
               ))}
             </select>
           </div>
+          <p id="matches-filter-hint" style={styles.filterHint}>
+            These filters change the division sections. Your own matches and to-dos always show, from every season and
+            division level.
+          </p>
         </div>
 
         {!divisionLoading && !divisionId ? (
@@ -619,9 +643,9 @@ export default function MatchesPage(): React.JSX.Element {
           </div>
         ) : (
           <DataState
-            loading={loading || divisionLoading}
+            loading={loading || divisionLoading || (!!uid && playerMatchesLoading)}
             error={loadError}
-            isEmpty={matches.length === 0}
+            isEmpty={matches.length === 0 && personalCount === 0}
             loadingLabel="Loading matches"
             loadingRows={3}
             errorTitle="Couldn't load matches."
@@ -701,7 +725,7 @@ export default function MatchesPage(): React.JSX.Element {
               {groups.next.length === 0 ? (
                 <div style={styles.inlineEmpty}>
                   <p style={styles.quietLine}>
-                    You have no matches scheduled{filteredByLevel ? " in this division level" : ""}. Propose one to keep your season moving.
+                    You have no matches scheduled. Propose one to keep your season moving.
                   </p>
                   {canCreate && proposeButton("secondary")}
                 </div>
@@ -1586,9 +1610,13 @@ function RecordResultDialog({
           onChange={setIsDivisionMatch}
           label={entryMode === "bulk" ? "Count these results in the standings" : "Count this result in the standings"}
           hint={
-            isDivisionMatch
-              ? "Counts toward the division standings once confirmed."
-              : "Recorded for history only. It won't change the standings."
+            !isDivisionMatch
+              ? "Recorded for history only. It won't change the standings."
+              : entryMode === "bulk" || guestOpponent
+                ? "Guest results stay out of the standings until you link the guest's account and they confirm the result."
+                : onBehalf
+                  ? "Counts toward the division standings right away."
+                  : "Counts toward the division standings once your opponent confirms it."
           }
         />
 
@@ -1816,6 +1844,7 @@ const styles: Record<string, CSSProperties> = {
 
   filterBar: { display: "flex", gap: space.md, flexWrap: "wrap", marginBottom: space.xxl },
   filterField: { flex: "1 1 200px", maxWidth: 280 },
+  filterHint: { ...type.bodySmall, color: color.textMuted, margin: 0, flex: "1 1 100%" },
   select: inputStyle,
 
   emptyCard: { ...cardStyle, padding: 0 },
@@ -1855,7 +1884,7 @@ const styles: Record<string, CSSProperties> = {
     listStyle: "none",
     borderRadius: radius.card,
   },
-  summaryTitle: { ...type.title, color: color.clubhouseGreen },
+  summaryTitle: { ...type.title, fontFamily: "var(--font-body)", color: color.clubhouseGreen, margin: 0 },
   detailsBody: { padding: `0 ${space.lg}px ${space.lg}px` },
 
   grid: {

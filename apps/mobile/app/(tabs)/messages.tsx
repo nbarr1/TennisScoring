@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useNavigation } from "expo-router";
 import {
   View,
   Text,
@@ -73,6 +74,27 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 
 const CONTACT_SHARE_EXPLAINED_KEY = "messages.contactShareExplained";
 
+/** "4:05 PM" today, "Tue 4:05 PM" this week, "Oct 12" before that. */
+function formatMessageTime(timestamp: number | undefined): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const now = new Date();
+  const time = date.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === now.toDateString()) return time;
+  const days = (now.getTime() - date.getTime()) / 86400000;
+  if (days < 6) {
+    return `${date.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+  }
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
 /**
  * Display names for the other person in unnamed direct conversations, read
  * from their public profile. Falls back to "Direct message" when unreadable.
@@ -134,6 +156,7 @@ function MessageBubble({
   onOpenActions?: () => void;
 }) {
   const sender = isMe ? "You" : message.senderName;
+  const sentAt = formatMessageTime(message.createdAt);
   return (
     <View style={[styles.bubbleRow, isMe && styles.bubbleRowMe]}>
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
@@ -142,7 +165,7 @@ function MessageBubble({
           onLongPress={onOpenActions}
           delayLongPress={350}
           accessible
-          accessibilityLabel={`${sender}: ${message.content}`}
+          accessibilityLabel={`${sender}: ${message.content}${sentAt ? `. ${sentAt}` : ""}`}
           accessibilityHint={
             !isMe && onOpenActions
               ? "Long press, or use the report button, to report or block"
@@ -153,6 +176,11 @@ function MessageBubble({
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
             {message.content}
           </Text>
+          {sentAt ? (
+            <Text style={[styles.bubbleTime, isMe && styles.bubbleTimeMe]}>
+              {sentAt}
+            </Text>
+          ) : null}
         </Pressable>
 
         {/* Shared contact quick-actions */}
@@ -529,7 +557,7 @@ function ChannelView({ channel }: { channel: Channel }) {
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
             <AppIcon
-              name="person.crop.rectangle.stack"
+              name="person.crop.circle"
               size={ICON_SIZE.tab}
               color={ICON_COLOR.active}
             />
@@ -645,7 +673,8 @@ function ChannelView({ channel }: { channel: Channel }) {
           <View
             style={[
               styles.modalCard,
-              { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+              // The sheet wrapper paints the home-indicator inset below.
+              { paddingBottom: spacing.xl },
             ]}
             accessibilityViewIsModal
           >
@@ -736,6 +765,37 @@ export default function MessagesScreen() {
   const searchSeq = useRef(0);
   const channelName = useDirectChannelNames(channels, user?.id);
   const blockedIds = new Set(user?.blockedUserIds ?? []);
+  const navigation = useNavigation();
+  const activeTitle = activeChannel ? channelName(activeChannel) : null;
+
+  // An open conversation takes over the tab's own header (title and a
+  // platform back button), so there is one header, not two stacked.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: activeTitle ?? "Messages",
+      headerLeft: activeTitle
+        ? () => (
+            <Pressable
+              style={styles.backButtonTarget}
+              onPress={() => setActiveChannel(null)}
+              android_ripple={{
+                color: "rgba(255,255,255,0.2)",
+                borderless: true,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Back to conversations"
+            >
+              <AppIcon
+                name="chevron.backward"
+                size={ICON_SIZE.tab}
+                color={colors.onPrimary}
+                emphasized
+              />
+            </Pressable>
+          )
+        : undefined,
+    });
+  }, [navigation, activeTitle]);
 
   // System Back leaves the conversation instead of the tab.
   useEffect(() => {
@@ -805,35 +865,8 @@ export default function MessagesScreen() {
   }
 
   if (activeChannel) {
-    const title = channelName(activeChannel);
     return (
       <View style={styles.flex}>
-        <View
-          style={[
-            styles.channelHeader,
-            { paddingTop: Math.max(insets.top, spacing.md) },
-          ]}
-        >
-          <Pressable
-            style={styles.backButtonTarget}
-            onPress={() => setActiveChannel(null)}
-            android_ripple={{
-              color: "rgba(255,255,255,0.2)",
-              borderless: true,
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Back to conversations"
-          >
-            <Text style={styles.backBtn}>Back</Text>
-          </Pressable>
-          <Text
-            style={styles.channelTitle}
-            numberOfLines={2}
-            accessibilityRole="header"
-          >
-            {title}
-          </Text>
-        </View>
         <ChannelView channel={activeChannel} />
       </View>
     );
@@ -848,6 +881,7 @@ export default function MessagesScreen() {
           const name = channelName(item);
           const last = item.lastMessage;
           const lastHidden = !!last && blockedIds.has(last.senderId);
+          const lastAt = last ? formatMessageTime(last.timestamp) : "";
           const preview = last
             ? lastHidden
               ? "Message from a blocked player"
@@ -864,7 +898,7 @@ export default function MessagesScreen() {
               android_ripple={{ color: colors.surfaceMuted, foreground: true }}
               onPress={() => setActiveChannel(item)}
               accessibilityRole="button"
-              accessibilityLabel={`${name}. ${preview}`}
+              accessibilityLabel={`${name}. ${preview}${lastAt ? `. ${lastAt}` : ""}`}
               accessibilityHint="Opens this conversation"
             >
               <AppIcon
@@ -877,9 +911,14 @@ export default function MessagesScreen() {
                 color={colors.primary}
               />
               <View style={styles.flex}>
-                <Text style={styles.channelName} numberOfLines={1}>
-                  {name}
-                </Text>
+                <View style={styles.channelNameRow}>
+                  <Text style={styles.channelName} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  {lastAt ? (
+                    <Text style={styles.channelTime}>{lastAt}</Text>
+                  ) : null}
+                </View>
                 <Text
                   style={[styles.lastMessage, lastHidden && styles.lastHidden]}
                   numberOfLines={2}
@@ -941,7 +980,8 @@ export default function MessagesScreen() {
           <View
             style={[
               styles.modalCard,
-              { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+              // The sheet wrapper paints the home-indicator inset below.
+              { paddingBottom: spacing.xl },
             ]}
             accessibilityViewIsModal
           >
@@ -1057,27 +1097,28 @@ const styles = StyleSheet.create({
     ...elevations.low,
   },
   channelCardPressed: { backgroundColor: colors.surfaceMuted },
+  channelNameRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+    marginBottom: spacing.xxs,
+  },
   channelName: {
     ...typography.subheading,
     color: colors.text,
-    marginBottom: spacing.xxs,
+    flexShrink: 1,
   },
+  channelTime: { ...typography.caption, color: colors.textMuted, marginLeft: "auto" },
+  bubbleTime: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: spacing.xxs,
+    alignSelf: "flex-end",
+  },
+  // White at 85% on Clubhouse Green stays above 8:1.
+  bubbleTimeMe: { color: "rgba(255,255,255,0.85)" },
   lastMessage: { ...typography.bodySmall, color: colors.textMuted },
   lastHidden: { fontStyle: "italic" },
-  channelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  backBtn: { ...typography.label, fontSize: 16, color: colors.onPrimary },
-  channelTitle: {
-    ...typography.subheading,
-    color: colors.onPrimary,
-    flex: 1,
-  },
   notice: { margin: spacing.md, marginBottom: 0 },
   messageList: { padding: spacing.lg, paddingBottom: spacing.sm },
   messageListEmpty: { flexGrow: 1, justifyContent: "center" },
@@ -1147,7 +1188,7 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderRadius: radii.xl,
     paddingHorizontal: spacing.lg - 2,
     paddingTop: spacing.md,
@@ -1172,7 +1213,7 @@ const styles = StyleSheet.create({
   sendBtnPressed: { backgroundColor: colors.primaryPressed },
   sendText: { ...typography.label, fontSize: 15, color: colors.onPrimary },
   backButtonTarget: {
-    minWidth: MIN_TOUCH_TARGET + spacing.lg,
+    minWidth: MIN_TOUCH_TARGET,
     minHeight: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.sm,
     alignItems: "center",

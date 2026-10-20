@@ -12,6 +12,9 @@ final class WatchSessionManager: NSObject {
 
   private(set) var snapshot: WatchScoreSnapshot?
   private(set) var isReachable = false
+  /// Set when the last point never reached the phone, so the screen can say so;
+  /// cleared by the next send and by the next snapshot.
+  private(set) var lastSendFailed = false
 
   private override init() {
     super.init()
@@ -28,11 +31,27 @@ final class WatchSessionManager: NSObject {
     guard canScore, let snapshot else { return }
     let session = WCSession.default
     guard session.activationState == .activated, session.isReachable else { return }
-    session.sendMessage(WatchCommand.point(matchId: snapshot.matchId, scorer: scorer).message, replyHandler: nil, errorHandler: nil)
+    lastSendFailed = false
+    // WatchConnectivity calls the error handler on a background queue, so the
+    // closure is explicitly nonisolated and hops back to the main actor.
+    session.sendMessage(
+      WatchCommand.point(matchId: snapshot.matchId, scorer: scorer).message,
+      replyHandler: nil,
+      errorHandler: { @Sendable _ in
+        Task { @MainActor in self.sendFailed() }
+      }
+    )
   }
 
   fileprivate func receive(_ message: [String: Any]) {
-    if let snapshot = WatchScoreSnapshot(message: message) { self.snapshot = snapshot }
+    if let snapshot = WatchScoreSnapshot(message: message) {
+      self.snapshot = snapshot
+      lastSendFailed = false
+    }
+  }
+
+  fileprivate func sendFailed() {
+    lastSendFailed = true
   }
 
   fileprivate func reachabilityChanged(_ reachable: Bool) {
