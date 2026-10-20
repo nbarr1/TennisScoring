@@ -48,7 +48,11 @@ final class WatchSessionManager: NSObject {
     if let snapshot = WatchScoreSnapshot(message: message) {
       self.snapshot = snapshot
       lastSendFailed = false
-      workout.snapshotReceived(live: snapshot.status == .inProgress)
+      // Only a match this watch can score keeps the screen on. A spectator's
+      // snapshot, or the read-only one the phone sends when it leaves the
+      // match screen (and that the application context replays on every
+      // launch), says canScore false, so it must not start a workout.
+      workout.snapshotReceived(live: snapshot.status == .inProgress && snapshot.canScore)
     }
   }
 
