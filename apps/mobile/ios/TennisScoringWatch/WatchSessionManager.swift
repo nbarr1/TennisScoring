@@ -15,6 +15,7 @@ final class WatchSessionManager: NSObject {
   /// Set when the last point never reached the phone, so the screen can say so;
   /// cleared by the next send and by the next snapshot.
   private(set) var lastSendFailed = false
+  @ObservationIgnored private let workout = MatchWorkoutSession()
 
   private override init() {
     super.init()
@@ -47,6 +48,7 @@ final class WatchSessionManager: NSObject {
     if let snapshot = WatchScoreSnapshot(message: message) {
       self.snapshot = snapshot
       lastSendFailed = false
+      workout.snapshotReceived(live: snapshot.status == .inProgress)
     }
   }
 
