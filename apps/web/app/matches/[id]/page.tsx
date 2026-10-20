@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { celebrateConfirmedScore } from '../../shared/celebrate';
@@ -44,6 +44,7 @@ import {
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
+  getMatchMoment,
   formatScoreDisplay,
   formatGameScore,
   isMatchParticipant,
@@ -56,6 +57,8 @@ import {
   recordedSetsFromScore,
   validateRecordedSets,
   type Match,
+  type MatchMoment,
+  type MatchMomentTone,
   type PublicProfile,
   type RecordedSetInput,
 } from '@tennis/shared';
@@ -105,6 +108,36 @@ function formatWhen(ts?: number): string {
   return new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+/** `datetime-local` value for a moment, in the viewer's time zone. */
+function toLocalInputValue(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** The live match's current moment, or null when there is nothing to call out. */
+function liveMoment(match: Match): MatchMoment | null {
+  if (match.status !== 'in_progress' || !match.format) return null;
+  try {
+    const moment = getMatchMoment(match.liveScore, match.format);
+    return moment.tone === 'live' ? null : moment;
+  } catch {
+    return null;
+  }
+}
+
+/** Band fill per moment, from the scoreboard palette; each carries black text at 7:1 or better. */
+const MOMENT_FILL: Record<MatchMomentTone, string> = {
+  mp: color.matchPointPink,
+  sp: color.scoreboardYellow,
+  ad: color.scoreboardYellow,
+  tb: color.scoreboardYellow,
+  bp: color.playerOrange,
+  deuce: color.scoreboardText,
+  ok: color.scoreboardMuted,
+  live: color.scoreboardMuted,
+};
+
 /** A recorded score as the editor's text, from player 1's side: "6-4, 3-6, [10-8]". */
 function scoreLine(match: Match): string {
   return recordedSetsFromScore(match.liveScore)
@@ -144,6 +177,10 @@ export default function MatchPage(): React.JSX.Element {
   const isIosView = effectiveMode === 'ios';
   const [clockTick, setClockTick] = useState(Date.now());
   const [tapLock, setTapLock] = useState(false);
+  // A scheduled match opens on its details; the court view only after "Start live scoring".
+  const [onCourt, setOnCourt] = useState(false);
+  const [postponeAt, setPostponeAt] = useState('');
+  const [postponeError, setPostponeError] = useState<string | null>(null);
 
   const uid = firebaseUser?.uid;
   const opponent = match ? opponentOf(match, uid) : 'your opponent';
@@ -165,6 +202,12 @@ export default function MatchPage(): React.JSX.Element {
     if (match?.status !== 'in_progress') return;
     const t = setInterval(() => setClockTick(Date.now()), 1000);
     return () => clearInterval(t);
+  }, [match?.status]);
+
+  // Once a match is live, stay on court: undoing the first point returns it to
+  // scheduled, and the scorer should still see the serve choice, not the details.
+  useEffect(() => {
+    if (match?.status === 'in_progress') setOnCourt(true);
   }, [match?.status]);
 
   // Celebrate a confirmation that happens while the page is open, not every
@@ -272,9 +315,26 @@ export default function MatchPage(): React.JSX.Element {
     setConfirmAction({ type: 'postpone', newTime: base + ms });
   }
 
+  function handlePostponeTo(event: FormEvent) {
+    event.preventDefault();
+    const ts = Date.parse(postponeAt);
+    if (!postponeAt || Number.isNaN(ts)) {
+      setPostponeError('Pick a date and time.');
+      return;
+    }
+    if (ts <= Date.now()) {
+      setPostponeError('Pick a time in the future.');
+      return;
+    }
+    setPostponeError(null);
+    setConfirmAction({ type: 'postpone', newTime: ts });
+  }
+
   function closeManage() {
     setShowManage(false);
     setShowPostponeOptions(false);
+    setPostponeAt('');
+    setPostponeError(null);
     setConfirmAction(null);
     setShowDelete(false);
   }
@@ -413,6 +473,26 @@ export default function MatchPage(): React.JSX.Element {
                 {label}
               </Button>
             ))}
+            <form onSubmit={handlePostponeTo} noValidate style={styles.postponeForm}>
+              <label htmlFor="postpone-at" style={fieldLabelStyle}>Or pick a new date and time</label>
+              <div style={styles.resolveRow}>
+                <input
+                  id="postpone-at"
+                  type="datetime-local"
+                  min={toLocalInputValue(Date.now())}
+                  value={postponeAt}
+                  onChange={(event) => {
+                    setPostponeAt(event.target.value);
+                    setPostponeError(null);
+                  }}
+                  style={styles.resolveInput}
+                  aria-invalid={postponeError ? true : undefined}
+                  aria-describedby={postponeError ? 'postpone-at-error' : undefined}
+                />
+                <Button type="submit" variant="secondary">Move to this time</Button>
+              </div>
+              {postponeError && <p id="postpone-at-error" role="alert" style={styles.fieldError}>{postponeError}</p>}
+            </form>
             <Button variant="quiet" fullWidth icon={<IconChevronLeft size={20} aria-hidden="true" />} onClick={() => setShowPostponeOptions(false)}>
               Back to options
             </Button>
@@ -447,16 +527,29 @@ export default function MatchPage(): React.JSX.Element {
     </>
   );
 
-  if (isParticipant && (match.status === 'scheduled' || match.status === 'in_progress')) {
+  if (isParticipant && (match.status === 'in_progress' || (match.status === 'scheduled' && onCourt))) {
     const columns = Math.max(2, visibleSets.length);
     const serverName = match.liveScore.server === 'player1' ? p1Last : p2Last;
+    const moment = liveMoment(match);
+    const momentText = moment
+      ? moment.player ? `${moment.label} · ${moment.player === 'player1' ? p1Last : p2Last}` : moment.label
+      : '';
     return (
-      <div style={styles.livePage}>
+      <main style={styles.livePage}>
+        <h1 className="sr-only">
+          {match.status === 'scheduled' ? 'Start live scoring' : 'Live scoring'}: {p1Name} vs {p2Name}
+        </h1>
         <div style={styles.liveScoreboardRegion}>
           <div style={styles.liveTopBar}>
-            <Link href="/matches" style={styles.liveBackLink}>
-              <IconChevronLeft size={20} aria-hidden="true" /> Matches
-            </Link>
+            {match.status === 'scheduled' ? (
+              <button type="button" style={styles.liveBackBtn} onClick={() => setOnCourt(false)}>
+                <IconChevronLeft size={20} aria-hidden="true" /> Details
+              </button>
+            ) : (
+              <Link href="/matches" style={styles.liveBackLink}>
+                <IconChevronLeft size={20} aria-hidden="true" /> Matches
+              </Link>
+            )}
             <div style={styles.timerRow}>
               <span>Set {match.liveScore.currentSet + 1} · {setClock}</span>
               <span>Match · {matchClock}</span>
@@ -504,7 +597,7 @@ export default function MatchPage(): React.JSX.Element {
           </table>
           {match.status === 'in_progress' && (
             <p className="sr-only" aria-live="polite">
-              {`Game ${gameDisplay}. Sets ${scoreDisplay}. ${serverName} serving.`}
+              {`${momentText ? `${momentText}. ` : ''}Game ${gameDisplay}. Sets ${scoreDisplay}. ${serverName} serving.`}
             </p>
           )}
         </div>
@@ -514,7 +607,14 @@ export default function MatchPage(): React.JSX.Element {
               <IconAlertTriangle size={18} aria-hidden="true" /> {liveError}
             </span>
           ) : (
-            <span>{match.status === 'scheduled' ? 'Choose who serves first to start scoring.' : 'Tap the player who won the point.'}</span>
+            <span style={styles.hintText}>
+              {moment && (
+                <span aria-hidden="true" style={{ ...styles.momentPill, background: MOMENT_FILL[moment.tone] }}>
+                  {momentText}
+                </span>
+              )}
+              <span>{match.status === 'scheduled' ? 'Choose who serves first to start scoring.' : 'Tap the player who won the point.'}</span>
+            </span>
           )}
           {match.status === 'in_progress' && (
             <button type="button" style={styles.liveUndoStripBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>
@@ -557,10 +657,12 @@ export default function MatchPage(): React.JSX.Element {
           </div>
         )}
         {actionModals}
-      </div>
+      </main>
     );
   }
 
+  const played =
+    ['in_progress', 'pending_report', 'completed', 'disputed'].includes(match.status) || !!match.startedAt;
   const containerStyles = {
     page: isIosView ? { ...styles.page, ...styles.iosPage } : styles.page,
     nav: isIosView ? { ...styles.nav, ...styles.iosNav } : styles.nav,
@@ -604,7 +706,19 @@ export default function MatchPage(): React.JSX.Element {
       );
     }
   } else if (match.status === 'scheduled') {
-    nextStep = (
+    nextStep = isParticipant ? (
+      <StepPanel title="Scheduled" style={containerStyles.section}>
+        <p style={styles.stepText}>
+          Your match with {opponent} is {match.scheduledAt ? `on ${formatWhen(match.scheduledAt)}` : 'still waiting for a time'}. When
+          you&apos;re on court, start live scoring and choose who serves first.
+        </p>
+        <div style={styles.stepActions}>
+          <Button icon={<IconBallTennis size={18} aria-hidden="true" />} onClick={() => setOnCourt(true)}>
+            Start live scoring
+          </Button>
+        </div>
+      </StepPanel>
+    ) : (
       <StepPanel title="Scheduled" style={containerStyles.section}>
         <p style={styles.stepText}>{formatWhen(match.scheduledAt)}. The players start live scoring from this page when they&apos;re on court.</p>
       </StepPanel>
@@ -712,218 +826,238 @@ export default function MatchPage(): React.JSX.Element {
         <span style={styles.navBrand}><IconBallTennis size={20} aria-hidden="true" color="var(--ball-yellow)" /> Tennis League</span>
       </nav>
 
-      <main style={containerStyles.main}>
+      <main>
         <h1 className="sr-only">{p1Name} vs {p2Name}</h1>
-        <div style={containerStyles.scoreboard}>
-          <div style={styles.badgeRow}>
-            <StatusBadge status={match.status} style={styles.statusPill} />
-            {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={14} aria-hidden="true" /> Recorded result</span>}
-            {isDoublesMatch(match) && <span style={styles.historicBadge}>Doubles</span>}
-          </div>
-          <div style={styles.setsRow}>
-            <span style={styles.setsLabel}>Sets</span>
-            <span style={styles.setsScore}>{setsDisplay}</span>
-          </div>
-          <div style={styles.score}>{scoreDisplay}</div>
-          {match.status === 'in_progress' && <div style={styles.gameScore}>{gameDisplay}</div>}
-          {match.status === 'in_progress' && (
-            <div style={styles.server}>
-              {match.liveScore.server === 'player1' ? p1Name : p2Name} serves from the {match.liveScore.serviceSide} side
+        <div style={isIosView ? { ...styles.heroBand, padding: `0 ${space.lg}px` } : styles.heroBand}>
+          <div style={containerStyles.scoreboard}>
+            <div style={styles.badgeRow}>
+              <StatusBadge status={match.status} style={styles.statusPill} />
+              {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={14} aria-hidden="true" /> Recorded result</span>}
+              {isDoublesMatch(match) && <span style={styles.historicBadge}>Doubles</span>}
             </div>
-          )}
-          <div style={styles.playerNamesRow}>
-            <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player1' ? styles.playerNameWinner : {}) }}>
-              {p1Name}{mySide === 'player1' ? ' (you)' : ''}
-            </span>
-            <span style={styles.playerVsLabel}>vs</span>
-            <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player2' ? styles.playerNameWinner : {}) }}>
-              {p2Name}{match.player2IsGuest ? ' (guest)' : ''}{mySide === 'player2' ? ' (you)' : ''}
-            </span>
-          </div>
-          {match.winner && match.status === 'completed' && (
-            <p className="sr-only">{match.winner === 'player1' ? p1Name : p2Name} won.</p>
-          )}
-        </div>
-
-        {canManage && (
-          <div style={styles.manageWrap}>
-            <Button variant="secondary" size="sm" icon={<IconDotsVertical size={18} aria-hidden="true" />} onClick={openManage}>
-              Match options
-            </Button>
-          </div>
-        )}
-
-        {nextStep}
-
-        {canLinkGuest && (
-          <StepPanel title="Link your opponent's account" style={containerStyles.section}>
-            <p style={styles.stepText}>
-              Did {p2Name} join the app? Link their account to put this match in their history
-              {match.status === 'completed' ? ' and ask them to confirm the result, so it can count in the standings.' : '.'}
-            </p>
-            <div style={styles.stepActions}>
-              <Button variant="secondary" icon={<IconUserPlus size={18} aria-hidden="true" />} onClick={() => setShowLinkGuest(true)}>
-                Link account
-              </Button>
-            </div>
-          </StepPanel>
-        )}
-
-        {canResolveReport && (
-          <StepPanel title="Settle this result" style={containerStyles.section}>
-            <p style={styles.stepText}>
-              {match.status === 'disputed'
-                ? 'The players disagree on this score. Confirm the reported score, or enter the correct one.'
-                : 'The opposing side has not answered this report. Confirm the reported score, or enter the correct one.'}
-              {' '}Either way, the result is final and counts in the standings.
-            </p>
-            <p style={styles.resolveReported}>Reported: {p1Name} {scoreDisplay} {p2Name}</p>
-            <div style={styles.stepActions}>
-              <Button icon={<IconCheck size={18} aria-hidden="true" />} onClick={() => requestResolve(false)} style={styles.confirmBtn}>
-                Confirm reported score
-              </Button>
-            </div>
-            <div>
-              <label style={fieldLabelStyle} htmlFor="corrected-score">
-                Or set the correct score, with {p1Name}&apos;s games first
-              </label>
-              <div style={styles.resolveRow}>
-                <input
-                  id="corrected-score"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="6-4, 3-6, [10-8]"
-                  value={correctedScore}
-                  onChange={(e) => {
-                    setCorrectedScore(e.target.value);
-                    setResolveError(null);
-                  }}
-                  style={styles.resolveInput}
-                  aria-invalid={resolveError ? true : undefined}
-                  aria-describedby={resolveError ? 'corrected-score-error' : undefined}
-                />
-                <Button variant="secondary" onClick={() => requestResolve(true)} disabled={!correctedScore.trim()}>
-                  Save correct score
-                </Button>
-              </div>
-              {resolveError && <p id="corrected-score-error" role="alert" style={styles.fieldError}>{resolveError}</p>}
-            </div>
-            {canEditScore && match.status === 'pending_report' && (
-              <p style={styles.stepNote}>
-                To send a corrected score back to the players for confirmation instead,{' '}
-                <button type="button" style={styles.inlineLinkBtn} onClick={() => setShowEditScore(true)}>edit the score</button>.
+            {played ? (
+              <>
+                <div style={styles.setsRow}>
+                  <span style={styles.setsLabel}>Sets</span>
+                  <span style={styles.setsScore}>{setsDisplay}</span>
+                </div>
+                <div style={styles.score}>{scoreDisplay}</div>
+              </>
+            ) : (
+              <p style={styles.heroWhen}>
+                <IconCalendarTime size={24} aria-hidden="true" />
+                {match.scheduledAt ? (
+                  <time dateTime={new Date(match.scheduledAt).toISOString()}>{formatWhen(match.scheduledAt)}</time>
+                ) : (
+                  'Time not set yet'
+                )}
               </p>
             )}
-          </StepPanel>
-        )}
-
-        {match.status === 'completed' && canEditScore && (
-          <div style={styles.manageWrap}>
-            <Button variant="secondary" size="sm" icon={<IconPencil size={18} aria-hidden="true" />} onClick={() => setShowEditScore(true)}>
-              Edit score
-            </Button>
-          </div>
-        )}
-
-        {/* Set breakdown */}
-        <section style={containerStyles.section} aria-labelledby="set-breakdown-title">
-          <h2 id="set-breakdown-title" style={styles.sectionTitle}>Set breakdown</h2>
-          {match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).length === 0 ? (
-            <p style={styles.stepText}>No games played yet.</p>
-          ) : (
-            match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).map((s, i) => (
-              <div key={i} style={styles.setRow}>
-                <span style={styles.setLabel}>{s.matchTiebreak ? 'Match tiebreak' : `Set ${i + 1}`}</span>
-                <span style={{ ...styles.setScore, fontWeight: s.winner === 'player1' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player1Points : s.player1Games}</span>
-                <span style={styles.setDash} aria-hidden="true">–</span>
-                <span style={{ ...styles.setScore, fontWeight: s.winner === 'player2' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player2Points : s.player2Games}</span>
-                {s.tiebreak && !s.matchTiebreak && (
-                  <span style={styles.tbScore}>
-                    (tiebreak {s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points})
-                  </span>
-                )}
-                {s.winner && (
-                  <span style={styles.setWinner}>
-                    <IconCheck size={14} aria-hidden="true" /> {s.winner === 'player1' ? p1Name : p2Name}
-                  </span>
-                )}
+            {match.status === 'in_progress' && <div style={styles.gameScore}>{gameDisplay}</div>}
+            {match.status === 'in_progress' && (
+              <div style={styles.server}>
+                {match.liveScore.server === 'player1' ? p1Name : p2Name} serves from the {match.liveScore.serviceSide} side
               </div>
-            ))
-          )}
-        </section>
-
-        {/* Stats */}
-        {match.status === 'completed' && !isHistoric && (
-          <section style={containerStyles.section} aria-labelledby="match-stats-title">
-            <h2 id="match-stats-title" style={styles.sectionTitle}>Match statistics</h2>
-            <div style={styles.statsTable}>
-              <StatRow label="" v1={p1Name} v2={p2Name} header />
-              <StatRow label="Receiving points won" v1={statPercent(p1Stats.receivingPointsWon, p1Stats.receivingPointsTotal)} v2={statPercent(p2Stats.receivingPointsWon, p2Stats.receivingPointsTotal)} />
-              <StatRow label="Break points won" v1={`${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`} v2={`${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`} />
-              {match.advancedStatsEnabled && <>
-                <StatRow label="Aces" v1={String(p1Stats.aces)} v2={String(p2Stats.aces)} />
-                <StatRow label="Double faults" v1={String(p1Stats.doubleFaults)} v2={String(p2Stats.doubleFaults)} />
-                <StatRow label="Winners" v1={String(p1Stats.winners)} v2={String(p2Stats.winners)} />
-                <StatRow label="Unforced errors" v1={String(p1Stats.unforcedErrors)} v2={String(p2Stats.unforcedErrors)} />
-              </>}
+            )}
+            <div style={styles.playerNamesRow}>
+              <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player1' ? styles.playerNameWinner : {}) }}>
+                {p1Name}{mySide === 'player1' ? ' (you)' : ''}
+              </span>
+              <span style={styles.playerVsLabel}>vs</span>
+              <span style={{ ...styles.playerNameLabel, ...(match.winner === 'player2' ? styles.playerNameWinner : {}) }}>
+                {p2Name}{match.player2IsGuest ? ' (guest)' : ''}{mySide === 'player2' ? ' (you)' : ''}
+              </span>
             </div>
-            <div style={{ ...styles.statsTable, marginTop: space.lg }}>
-              <StatRow label="Elapsed time" v1="" v2="" header />
-              {match.liveScore.sets.filter((set) => set.winner).map((set) => (
-                <StatRow key={set.setNumber} label={`Set ${set.setNumber + 1}`} v1={formatDuration(set.durationMs)} v2="" />
-              ))}
-              <StatRow label="Match" v1={formatDuration(match.matchDurationMs)} v2="" />
-            </div>
-          </section>
-        )}
-
-        {/* Only render links the server generated: older matches could carry a
-            client-written reportUrl, and an href is never given another scheme. */}
-        {match.status === 'completed' && (
-          <div style={containerStyles.section}>
-            {match.reportUrl?.startsWith('https://') ? (
-              <a href={match.reportUrl} target="_blank" rel="noreferrer" className={buttonClassName('primary')} style={buttonStyle('primary')}>
-                <IconFileTypePdf size={20} aria-hidden="true" /> Download match report (PDF)
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-            ) : (
-              <p style={styles.stepText}>The PDF match report appears here once it&apos;s ready.</p>
+            {match.winner && match.status === 'completed' && (
+              <p className="sr-only">{match.winner === 'player1' ? p1Name : p2Name} won.</p>
             )}
           </div>
-        )}
+        </div>
 
-        <ConfirmDialog
-          open={showDisputeConfirm}
-          title="Dispute this score?"
-          message="A division leader will review it and set the final score. Only dispute if the score shown is wrong."
-          confirmLabel="Dispute score"
-          pendingLabel="Disputing…"
-          onConfirm={async () => {
-            if (!uid) return;
-            await disputeMatchReport(id, uid);
-            setShowDisputeConfirm(false);
-            announce('Score disputed. A division leader will review it.', { toast: true });
-          }}
-          onCancel={() => setShowDisputeConfirm(false)}
-        />
+        <div style={containerStyles.main}>
 
-        <ConfirmDialog
-          open={resolveSets !== undefined}
-          tone="primary"
-          title={resolveSets ? 'Save the corrected score as final?' : `Make ${scoreDisplay} the final result?`}
-          message={`It counts in the standings right away${resolveSets ? `, replacing the reported ${scoreDisplay}` : ''}.`}
-          confirmLabel={resolveSets ? 'Save final score' : 'Confirm reported score'}
-          pendingLabel="Saving…"
-          onConfirm={async () => {
-            await resolveDisputedReport(id, resolveSets ?? undefined);
-            setResolveSets(undefined);
-            setCorrectedScore('');
-            announce('Result settled. It counts in the standings now.', { toast: true });
-          }}
-          onCancel={() => setResolveSets(undefined)}
-        />
+          {canManage && (
+            <div style={styles.manageWrap}>
+              <Button variant="secondary" size="sm" icon={<IconDotsVertical size={18} aria-hidden="true" />} onClick={openManage}>
+                Match options
+              </Button>
+            </div>
+          )}
 
-        {actionModals}
+          {nextStep}
+
+          {canLinkGuest && (
+            <StepPanel title="Link your opponent's account" style={containerStyles.section}>
+              <p style={styles.stepText}>
+                Did {p2Name} join the app? Link their account to put this match in their history
+                {match.status === 'completed' ? ' and ask them to confirm the result, so it can count in the standings.' : '.'}
+              </p>
+              <div style={styles.stepActions}>
+                <Button variant="secondary" icon={<IconUserPlus size={18} aria-hidden="true" />} onClick={() => setShowLinkGuest(true)}>
+                  Link account
+                </Button>
+              </div>
+            </StepPanel>
+          )}
+
+          {canResolveReport && (
+            <StepPanel title="Settle this result" style={containerStyles.section}>
+              <p style={styles.stepText}>
+                {match.status === 'disputed'
+                  ? 'The players disagree on this score. Confirm the reported score, or enter the correct one.'
+                  : 'The opposing side has not answered this report. Confirm the reported score, or enter the correct one.'}
+                {' '}Either way, the result is final and counts in the standings.
+              </p>
+              <p style={styles.resolveReported}>Reported: {p1Name} {scoreDisplay} {p2Name}</p>
+              <div style={styles.stepActions}>
+                <Button icon={<IconCheck size={18} aria-hidden="true" />} onClick={() => requestResolve(false)} style={styles.confirmBtn}>
+                  Confirm reported score
+                </Button>
+              </div>
+              <div>
+                <label style={fieldLabelStyle} htmlFor="corrected-score">
+                  Or set the correct score, with {p1Name}&apos;s games first
+                </label>
+                <div style={styles.resolveRow}>
+                  <input
+                    id="corrected-score"
+                    type="text"
+                    autoComplete="off"
+                    placeholder="6-4, 3-6, [10-8]"
+                    value={correctedScore}
+                    onChange={(e) => {
+                      setCorrectedScore(e.target.value);
+                      setResolveError(null);
+                    }}
+                    style={styles.resolveInput}
+                    aria-invalid={resolveError ? true : undefined}
+                    aria-describedby={resolveError ? 'corrected-score-error' : undefined}
+                  />
+                  <Button variant="secondary" onClick={() => requestResolve(true)} disabled={!correctedScore.trim()}>
+                    Save correct score
+                  </Button>
+                </div>
+                {resolveError && <p id="corrected-score-error" role="alert" style={styles.fieldError}>{resolveError}</p>}
+              </div>
+              {canEditScore && match.status === 'pending_report' && (
+                <p style={styles.stepNote}>
+                  To send a corrected score back to the players for confirmation instead,{' '}
+                  <button type="button" style={styles.inlineLinkBtn} onClick={() => setShowEditScore(true)}>edit the score</button>.
+                </p>
+              )}
+            </StepPanel>
+          )}
+
+          {match.status === 'completed' && canEditScore && (
+            <div style={styles.manageWrap}>
+              <Button variant="secondary" size="sm" icon={<IconPencil size={18} aria-hidden="true" />} onClick={() => setShowEditScore(true)}>
+                Edit score
+              </Button>
+            </div>
+          )}
+
+          {/* Set breakdown */}
+          {played && (
+            <section style={containerStyles.section} aria-labelledby="set-breakdown-title">
+              <h2 id="set-breakdown-title" style={styles.sectionTitle}>Set breakdown</h2>
+              {match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).length === 0 ? (
+                <p style={styles.stepText}>No games played yet.</p>
+              ) : (
+                match.liveScore.sets.filter(s => s.winner || match.liveScore.currentSet === s.setNumber).map((s, i) => (
+                  <div key={i} style={styles.setRow}>
+                    <span style={styles.setLabel}>{s.matchTiebreak ? 'Match tiebreak' : `Set ${i + 1}`}</span>
+                    <span style={{ ...styles.setScore, fontWeight: s.winner === 'player1' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player1Points : s.player1Games}</span>
+                    <span style={styles.setDash} aria-hidden="true">–</span>
+                    <span style={{ ...styles.setScore, fontWeight: s.winner === 'player2' ? 700 : 400 }}>{s.matchTiebreak && s.tiebreak ? s.tiebreak.player2Points : s.player2Games}</span>
+                    {s.tiebreak && !s.matchTiebreak && (
+                      <span style={styles.tbScore}>
+                        (tiebreak {s.winner === 'player1' ? s.tiebreak.player2Points : s.tiebreak.player1Points})
+                      </span>
+                    )}
+                    {s.winner && (
+                      <span style={styles.setWinner}>
+                        <IconCheck size={14} aria-hidden="true" /> {s.winner === 'player1' ? p1Name : p2Name}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+          )}
+
+          {/* Stats */}
+          {match.status === 'completed' && !isHistoric && (
+            <section style={containerStyles.section} aria-labelledby="match-stats-title">
+              <h2 id="match-stats-title" style={styles.sectionTitle}>Match statistics</h2>
+              <div style={styles.statsTable} role="table" aria-label="Match statistics">
+                <StatRow label="Statistic" v1={p1Name} v2={p2Name} header />
+                <StatRow label="Receiving points won" v1={statPercent(p1Stats.receivingPointsWon, p1Stats.receivingPointsTotal)} v2={statPercent(p2Stats.receivingPointsWon, p2Stats.receivingPointsTotal)} />
+                <StatRow label="Break points won" v1={`${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`} v2={`${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`} />
+                {match.advancedStatsEnabled && <>
+                  <StatRow label="Aces" v1={String(p1Stats.aces)} v2={String(p2Stats.aces)} />
+                  <StatRow label="Double faults" v1={String(p1Stats.doubleFaults)} v2={String(p2Stats.doubleFaults)} />
+                  <StatRow label="Winners" v1={String(p1Stats.winners)} v2={String(p2Stats.winners)} />
+                  <StatRow label="Unforced errors" v1={String(p1Stats.unforcedErrors)} v2={String(p2Stats.unforcedErrors)} />
+                </>}
+              </div>
+              <div style={{ ...styles.statsTable, marginTop: space.lg }} role="table" aria-label="Elapsed time">
+                <StatRow label="Elapsed time" v1="Duration" v2="" header />
+                {match.liveScore.sets.filter((set) => set.winner).map((set) => (
+                  <StatRow key={set.setNumber} label={`Set ${set.setNumber + 1}`} v1={formatDuration(set.durationMs)} v2="" />
+                ))}
+                <StatRow label="Match" v1={formatDuration(match.matchDurationMs)} v2="" />
+              </div>
+            </section>
+          )}
+
+          {/* Only render links the server generated: older matches could carry a
+              client-written reportUrl, and an href is never given another scheme. */}
+          {match.status === 'completed' && (
+            <div style={containerStyles.section}>
+              {match.reportUrl?.startsWith('https://') ? (
+                <a href={match.reportUrl} target="_blank" rel="noreferrer" className={buttonClassName('primary')} style={buttonStyle('primary')}>
+                  <IconFileTypePdf size={20} aria-hidden="true" /> Download match report (PDF)
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : (
+                <p style={styles.stepText}>The PDF match report appears here once it&apos;s ready.</p>
+              )}
+            </div>
+          )}
+
+          <ConfirmDialog
+            open={showDisputeConfirm}
+            title="Dispute this score?"
+            message="A division leader will review it and set the final score. Only dispute if the score shown is wrong."
+            confirmLabel="Dispute score"
+            pendingLabel="Disputing…"
+            onConfirm={async () => {
+              if (!uid) return;
+              await disputeMatchReport(id, uid);
+              setShowDisputeConfirm(false);
+              announce('Score disputed. A division leader will review it.', { toast: true });
+            }}
+            onCancel={() => setShowDisputeConfirm(false)}
+          />
+
+          <ConfirmDialog
+            open={resolveSets !== undefined}
+            tone="primary"
+            title={resolveSets ? 'Save the corrected score as final?' : `Make ${scoreDisplay} the final result?`}
+            message={`It counts in the standings right away${resolveSets ? `, replacing the reported ${scoreDisplay}` : ''}.`}
+            confirmLabel={resolveSets ? 'Save final score' : 'Confirm reported score'}
+            pendingLabel="Saving…"
+            onConfirm={async () => {
+              await resolveDisputedReport(id, resolveSets ?? undefined);
+              setResolveSets(undefined);
+              setCorrectedScore('');
+              announce('Result settled. It counts in the standings now.', { toast: true });
+            }}
+            onCancel={() => setResolveSets(undefined)}
+          />
+
+          {actionModals}
+        </div>
       </main>
 
       <ConfirmDialog
@@ -989,9 +1123,10 @@ function StatePage({ children }: { children: ReactNode }) {
 }
 
 function StepPanel({ title, children, style }: { title: string; children: ReactNode; style: CSSProperties }) {
+  const headingId = useId();
   return (
-    <section style={{ ...style, ...styles.stepPanel }} aria-label={title}>
-      <h2 style={styles.stepTitle}>{title}</h2>
+    <section style={{ ...style, ...styles.stepPanel }} aria-labelledby={headingId}>
+      <h2 id={headingId} style={styles.stepTitle}>{title}</h2>
       {children}
     </section>
   );
@@ -1215,10 +1350,10 @@ function LinkGuestDialog({ guestName, divisionId, excludeIds, completed, onClose
 
 function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: string; header?: boolean }) {
   return (
-    <div style={{ ...styles.statRow, ...(header ? styles.statRowHeader : {}) }}>
-      <span style={header ? styles.statHeadLabel : styles.statLabel}>{label}</span>
-      <span style={styles.statVal}>{v1}</span>
-      <span style={styles.statVal}>{v2}</span>
+    <div role="row" style={{ ...styles.statRow, ...(header ? styles.statRowHeader : {}) }}>
+      <span role={header ? 'columnheader' : 'rowheader'} style={header ? styles.statHeadLabel : styles.statLabel}>{label}</span>
+      <span role={header ? 'columnheader' : 'cell'} style={styles.statVal}>{v1}</span>
+      <span role={header ? 'columnheader' : 'cell'} style={styles.statVal}>{v2}</span>
     </div>
   );
 }
@@ -1233,6 +1368,9 @@ const styles: Record<string, CSSProperties> = {
   livePage: { height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: color.scoreboardBlack, color: color.scoreboardText },
   liveScoreboardRegion: { position: 'relative', padding: `${space.sm}px ${space.md}px ${space.sm}px`, flex: '0 0 auto', background: color.scoreboardRow },
   liveTopBar: { display: 'flex', alignItems: 'center', gap: space.sm, marginBottom: space.xs },
+  liveBackBtn: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, padding: `0 ${space.sm}px 0 0`, background: 'transparent', border: 'none', color: color.scoreboardMuted, ...type.label, cursor: 'pointer' },
+  hintText: { display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
+  momentPill: { display: 'inline-flex', alignItems: 'center', minHeight: 28, padding: '2px 10px', borderRadius: radius.sm, color: color.scoreboardBlack, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, letterSpacing: '0.02em', textTransform: 'uppercase' },
   liveBackLink: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, paddingRight: space.sm, color: color.scoreboardMuted, ...type.label, textDecoration: 'none' },
   timerRow: { flex: 1, display: 'flex', justifyContent: 'space-between', gap: space.sm, ...type.bodySmall, color: color.scoreboardMuted, fontVariantNumeric: 'tabular-nums' },
   actionsIconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: target.control, minHeight: target.control, background: 'transparent', border: 'none', borderRadius: radius.md, color: color.scoreboardText, cursor: 'pointer' },
@@ -1252,15 +1390,18 @@ const styles: Record<string, CSSProperties> = {
   liveHalfBtn: { flex: 1, width: '50%', border: `1px solid ${color.scoreboardLine}`, borderTop: '6px solid transparent', background: color.scoreboardControl, color: color.scoreboardText, fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, cursor: 'pointer', padding: space.md, overflowWrap: 'anywhere' },
 
   // Clubhouse view
-  page: { minHeight: '100vh', background: color.clubhouseGreen },
+  page: { minHeight: '100vh', background: color.canvas },
+  heroBand: { background: color.clubhouseGreen, padding: `0 ${space.xl}px` },
+  heroWhen: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: space.sm, margin: `${space.sm}px 0 0`, fontFamily: 'var(--font-display)', color: color.surface, fontSize: 28, fontWeight: 700, overflowWrap: 'anywhere' },
+  postponeForm: { marginTop: space.sm },
   iosPage: { minHeight: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' },
-  nav: { padding: '12px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
+  nav: { background: color.clubhouseGreen, padding: '12px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
   iosNav: { position: 'sticky', top: 0, zIndex: 5, background: color.clubhouseGreen, paddingTop: 'max(12px, env(safe-area-inset-top))', paddingLeft: space.lg, paddingRight: space.lg },
   back: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, color: color.surface, ...type.label, fontSize: 15, textDecoration: 'none' },
   navBrand: { display: 'inline-flex', alignItems: 'center', gap: space.xs, fontFamily: 'var(--font-display)', color: color.surface, fontWeight: 700, fontSize: 20 },
   main: { maxWidth: width.reading, margin: '0 auto', padding: `${space.lg}px ${space.xl}px ${space.xxl}px` },
   iosMain: { padding: `${space.lg}px ${space.lg}px ${space.xl}px` },
-  scoreboard: { textAlign: 'center', padding: '24px 0 32px' },
+  scoreboard: { maxWidth: width.reading, margin: '0 auto', textAlign: 'center', padding: '24px 0 32px' },
   iosScoreboard: { padding: '16px 0 24px' },
   badgeRow: { display: 'flex', gap: space.sm, justifyContent: 'center', alignItems: 'center', marginBottom: space.lg, flexWrap: 'wrap' },
   statusPill: { background: color.surface, padding: '4px 12px', borderRadius: radius.pill },
