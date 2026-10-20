@@ -38,6 +38,7 @@ const CATEGORY_OPTIONS: Array<{ value: FeedbackCategory; label: string }> = [
   { value: "feature", label: "Feature request" },
   { value: "match_scoring", label: "Match scoring" },
   { value: "account", label: "Account or division" },
+  { value: "accessibility", label: "Accessibility" },
   { value: "other", label: "Other" },
 ];
 

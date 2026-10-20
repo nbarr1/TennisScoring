@@ -595,11 +595,14 @@ export default function MatchPage(): React.JSX.Element {
               })}
             </tbody>
           </table>
-          {match.status === 'in_progress' && (
-            <p className="sr-only" aria-live="polite">
-              {`${momentText ? `${momentText}. ` : ''}Game ${gameDisplay}. Sets ${scoreDisplay}. ${serverName} serving.`}
-            </p>
-          )}
+          {/* Mounted with the scoreboard, before the match starts: screen
+              readers often skip text that arrives together with a new live
+              region, which would swallow the first point. */}
+          <p className="sr-only" aria-live="polite">
+            {match.status === 'in_progress'
+              ? `${momentText ? `${momentText}. ` : ''}Game ${gameDisplay}. Sets ${scoreDisplay}. ${serverName} serving.`
+              : ''}
+          </p>
         </div>
         <div style={styles.hintStrip}>
           {liveError ? (

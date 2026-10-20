@@ -1,0 +1,76 @@
+name: Accessibility barrier
+description: Something in the app is hard or impossible to use with a disability or assistive technology.
+title: "[Accessibility] "
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting this. Accessibility reports are handled as described in [ACCESSIBILITY.md](https://github.com/nbarr1/TennisScoring/blob/Main/ACCESSIBILITY.md).
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Web app
+        - iPhone app
+        - Android app
+        - Wear OS watch
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: screen
+    attributes:
+      label: Screen or feature
+      description: For example, live scoring, standings, messages, or sign-in.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A screen recording helps but isn't required.
+      placeholder: |
+        1. Open a live match
+        2. Turn on TalkBack
+        3. ...
+  - type: input
+    id: environment
+    attributes:
+      label: Device, operating system, and browser
+      placeholder: Pixel 8, Android 16
+    validations:
+      required: true
+  - type: input
+    id: assistive-technology
+    attributes:
+      label: Assistive technology and version
+      description: For example, VoiceOver, TalkBack, NVDA, JAWS, Switch Control, large text, or none.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: How much does this block you?
+      options:
+        - "Critical: I can't complete the task at all"
+        - "Serious: I can complete it, but only with a lot of difficulty or a workaround"
+        - "Moderate: It's confusing or inconsistent"
+        - "Minor: It's cosmetic"
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround, if you found one
