@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import type { TextInput } from "react-native";
 import Constants from "expo-constants";
+import { StatusBar } from "expo-status-bar";
 import {
   useLocalSearchParams,
   usePathname,
@@ -43,6 +44,28 @@ const CATEGORY_OPTIONS = [
   { value: "general", label: "General" },
   { value: OTHER, label: "Something else" },
 ] as const;
+
+const SCREEN_NAMES: Record<string, string> = {
+  "": "Standings",
+  index: "Standings",
+  matches: "Matches",
+  messages: "Messages",
+  profile: "Profile",
+  admin: "Admin",
+  feedback: "Feedback",
+  "round-robin-scheduler": "Round-robin scheduler",
+  "privacy-policy": "Privacy policy",
+};
+
+/** "/(tabs)/profile" reads as "Profile"; the raw path is still what is sent. */
+function friendlyScreenName(path: string): string {
+  const key = path
+    .split("/")
+    .filter((part) => part && !/^\(.*\)$/.test(part))
+    .join("/");
+  if (key.startsWith("match/")) return "Match";
+  return SCREEN_NAMES[key] ?? key;
+}
 
 export default function FeedbackScreen() {
   const router = useRouter();
@@ -138,6 +161,7 @@ export default function FeedbackScreen() {
   if (sent) {
     return (
       <View style={[styles.keyboardView, styles.sentWrap]}>
+        <StatusBar style="light" />
         <AppIcon
           name="checkmark.circle.fill"
           size={ICON_SIZE.brand}
@@ -165,6 +189,7 @@ export default function FeedbackScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
     >
+      <StatusBar style="light" />
       <View style={styles.header}>
         <Text style={styles.title} accessibilityRole="header">
           Send feedback
@@ -278,7 +303,7 @@ export default function FeedbackScreen() {
           {appVersion ? `, app version ${appVersion}` : ""}
         </Text>
         <Text style={styles.contextText}>
-          Screen: {params.from ?? pathname}
+          Screen: {friendlyScreenName(params.from ?? pathname)}
         </Text>
       </View>
 
