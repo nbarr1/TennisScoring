@@ -2486,7 +2486,7 @@ const editScoreStyles = StyleSheet.create({
     flex: 2,
     minHeight: 48,
     borderWidth: 1.5,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     borderRadius: radii.md,
     paddingVertical: 10,
     paddingHorizontal: 14,
