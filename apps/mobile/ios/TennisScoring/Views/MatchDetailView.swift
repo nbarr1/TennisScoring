@@ -110,10 +110,15 @@ struct MatchDetailView: View {
                   .lineLimit(2)
                   .multilineTextAlignment(.center)
               }
+              // Black on the player colors, as on the watch: white on them is
+              // under 3.5:1.
+              .foregroundStyle(.black)
               .frame(maxWidth: .infinity, minHeight: 72)
             }
             .buttonStyle(.borderedProminent)
-            .tint(side == .player1 ? Color.league : .blue)
+            // The same blue and orange the watch shows for each side, so a
+            // player looking from wrist to phone finds the same button.
+            .tint(Color.player(side))
             .accessibilityLabel("Point to \(match.sideDisplayName(side))")
           }
         }
@@ -134,6 +139,7 @@ struct MatchDetailView: View {
           choosingServer = true
         } label: {
           Label("Start match", systemImage: "play.fill")
+            .foregroundStyle(Color.onLeague)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
@@ -151,7 +157,9 @@ struct MatchDetailView: View {
           Button {
             Task { await model.acceptProposal() }
           } label: {
-            Text("Accept").frame(maxWidth: .infinity)
+            Text("Accept")
+              .foregroundStyle(Color.onLeague)
+              .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
           Button(role: .destructive) {
@@ -200,23 +208,26 @@ struct MatchDetailView: View {
         Button {
           Task { await model.submitReport() }
         } label: {
-          Label("Submit result", systemImage: "paperplane.fill")
+          Label("Submit report", systemImage: "paperplane.fill")
+            .foregroundStyle(Color.onLeague)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
       }
 
       if model.isAwaitingReportConfirmation {
-        note("Result submitted. Waiting for the other side to confirm.", systemImage: "hourglass")
+        note("Report submitted. Waiting for the other side to confirm it.", systemImage: "hourglass")
       }
 
       if model.canRespondToReport {
-        note("Your opponent submitted this result. Confirm it if it's right.", systemImage: "checkmark.seal")
+        note("Your opponent reported this score. Confirm it if it's right.", systemImage: "checkmark.seal")
         HStack(spacing: 12) {
           Button {
             Task { await model.confirmReport() }
           } label: {
-            Text("Confirm").frame(maxWidth: .infinity)
+            Text("Confirm score")
+              .foregroundStyle(Color.onLeague)
+              .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
           Button(role: .destructive) {
