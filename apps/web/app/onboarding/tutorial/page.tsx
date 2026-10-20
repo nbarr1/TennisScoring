@@ -126,6 +126,7 @@ export default function WebTutorialPage(): React.JSX.Element {
             onClick={() => void finish()}
             pending={finishing}
             pendingLabel="Skipping…"
+            className="tl-btn--on-dark"
             style={styles.skipBtn}
           >
             Skip tutorial
@@ -155,6 +156,7 @@ export default function WebTutorialPage(): React.JSX.Element {
             onClick={back}
             disabled={finishing}
             icon={<IconArrowLeft size={18} aria-hidden="true" />}
+            className="tl-btn--on-dark"
             style={styles.backBtn}
           >
             Back
@@ -167,6 +169,7 @@ export default function WebTutorialPage(): React.JSX.Element {
           pending={finishing && isLast}
           pendingLabel="Starting…"
           disabled={finishing && !isLast}
+          className="tl-btn--on-dark"
           style={styles.nextBtn}
         >
           {isLast ? 'Get started' : 'Next'}

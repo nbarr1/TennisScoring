@@ -10,6 +10,7 @@ import {
   createDivision,
   joinDivisionByCode,
   getDivision,
+  signOutReleasingPushToken,
 } from '@tennis/firebase-client';
 import {
   Button,
@@ -42,6 +43,7 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [continuing, setContinuing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
   const announce = useAnnounce();
   const { firebaseUser, loading: authLoading } = useAuthUser();
@@ -111,6 +113,11 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
       document.getElementById('invite-code')?.focus();
       return;
     }
+    if (code.length !== INVITE_CODE_LENGTH) {
+      setFieldError(`Invite codes are ${INVITE_CODE_LENGTH} letters and numbers. Check the code and try again.`);
+      document.getElementById('invite-code')?.focus();
+      return;
+    }
     if (!firebaseUser) {
       setError(authLoading ? 'Still signing you in. Try again in a moment.' : 'Your session has expired. Sign in again to continue.');
       return;
@@ -143,6 +150,19 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
       setCopyStatus({ ok: true, text: 'Invite code copied.' });
     } catch {
       setCopyStatus({ ok: false, text: 'Couldn\'t copy automatically. Select the code and copy it yourself.' });
+    }
+  }
+
+  // The only way off this page for someone who signed up with the wrong
+  // address, or is here before accepting an emailed invite.
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutReleasingPushToken();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    } finally {
+      router.replace('/login');
     }
   }
 
@@ -206,6 +226,14 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
                 <span style={styles.optionBody}>For leaders starting a new league. You&apos;ll run its roster and seasons.</span>
               </span>
             </button>
+            <div style={styles.footer}>
+              <p style={styles.hint}>
+                Invited by email? Open the link in that email instead. Signed in with the wrong account?
+              </p>
+              <Button variant="quiet" size="sm" pending={signingOut} pendingLabel="Signing out…" onClick={() => void handleSignOut()}>
+                Sign out
+              </Button>
+            </div>
           </div>
         ) : mode === 'create' ? (
           <form
@@ -306,6 +334,14 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadow.raised,
   },
   stack: { display: 'flex', flexDirection: 'column', gap: space.lg },
+  footer: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: space.xs,
+    paddingTop: space.lg,
+    borderTop: `1px solid ${color.border}`,
+  },
   back: { alignSelf: 'flex-start', marginLeft: -space.md, marginBottom: -space.sm },
   title: { ...type.display, color: color.clubhouseGreen, margin: 0 },
   body: { ...type.body, color: color.ink, margin: 0, overflowWrap: 'anywhere' },

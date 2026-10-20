@@ -66,7 +66,10 @@ function AcceptInviteContent(): React.JSX.Element {
   const token = useMemo(() => params.get('token')?.trim() ?? '', [params]);
   // Accepting needs a verified address, so an unverified account verifies
   // first and comes back to this invite afterwards.
-  const verifyThenReturnHref = `/verify-email?next=${encodeURIComponent(`/invite/accept?token=${encodeURIComponent(token)}`)}`;
+  const inviteHref = `/invite/accept?token=${encodeURIComponent(token)}`;
+  const verifyThenReturnHref = `/verify-email?next=${encodeURIComponent(inviteHref)}`;
+  // Signing in from here comes straight back to this invite.
+  const signInThenReturnHref = `/login?next=${encodeURIComponent(inviteHref)}`;
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [email, setEmail] = useState('');
@@ -156,10 +159,18 @@ function AcceptInviteContent(): React.JSX.Element {
       });
 
       const idToken = await credential.user.getIdToken();
-      await fetch('/api/auth/login', {
+      const sessionResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });
+      if (!sessionResponse.ok) {
+        // The account exists now; only the web session failed, so signing in
+        // (which comes back here) finishes the job.
+        setError('Your account was created, but the web session couldn\'t start. Sign in to continue; you\'ll come back to this invite.');
+        setExistingAccount(true);
+        setAccepting(false);
+        return;
+      }
 
       // acceptInvite requires a verified address, so the invite is accepted
       // when the player returns here from the verification page.
@@ -169,7 +180,7 @@ function AcceptInviteContent(): React.JSX.Element {
       const code = (e as { code?: string }).code;
       if (code === 'auth/email-already-in-use') {
         setExistingAccount(true);
-        setError('An account already uses this email address. Sign in to it, then open this invite link again.');
+        setError('An account already uses this email address. Sign in to it and you\'ll come back to this invite.');
       } else if (code === 'auth/weak-password') {
         setFieldErrors({ password: `Use at least ${MIN_PASSWORD_LENGTH} characters, mixing letters and numbers.` });
         passwordRef.current?.focus();
@@ -250,7 +261,7 @@ function AcceptInviteContent(): React.JSX.Element {
           {signedInAsSomeoneElse && (
             <InlineAlert tone="warning" title="You're signed in with a different address">
               You&apos;re signed in as {firebaseUser?.email}, but this invite was sent to another address. Create the
-              account below with the invited address, or sign in with that address and open this link again.
+              account below with the invited address, or sign out and sign in with that address; you&apos;ll come back here.
             </InlineAlert>
           )}
 
@@ -332,8 +343,8 @@ function AcceptInviteContent(): React.JSX.Element {
               <InlineAlert
                 tone="error"
                 action={existingAccount ? (
-                  <Link href="/login" className={buttonClassName('secondary')} style={buttonStyle('secondary', { size: 'sm' })}>
-                    Go to sign in
+                  <Link href={signInThenReturnHref} className={buttonClassName('secondary')} style={buttonStyle('secondary', { size: 'sm' })}>
+                    Sign in and accept
                   </Link>
                 ) : undefined}
               >
@@ -349,7 +360,7 @@ function AcceptInviteContent(): React.JSX.Element {
 
           <p style={styles.small}>
             Already have an account?{' '}
-            <Link style={styles.link} href="/login">Sign in</Link>, then open this invite link again.
+            <Link style={styles.link} href={signInThenReturnHref}>Sign in to accept this invite</Link>.
           </p>
         </>
       )}
