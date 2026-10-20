@@ -368,19 +368,23 @@ function StandingsContent({
 
 /**
  * What is waiting on this player, by the same rules as the web dashboard's
- * "For you" list: a live match, a result the other side reported, and a
+ * "For you" list: a live match, a finished match whose score nobody has
+ * submitted yet, a result the other side reported, and a
  * proposal they received. Empty when nothing is waiting.
  */
 function useNeedsYouItems(userId: string | undefined): string[] {
   const { matches } = usePlayerMatches(userId ?? null);
   let live = 0;
   let toConfirm = 0;
+  let toSubmit = 0;
   let proposals = 0;
   if (userId) {
     for (const m of matches) {
       const side = sideOfPlayer(m, userId);
       if (!side) continue;
       if (m.status === "in_progress") live += 1;
+      // Live scoring finished, but nobody has submitted the result yet.
+      else if (m.status === "pending_report" && !m.reportSubmission) toSubmit += 1;
       else if (
         m.status === "pending_report" &&
         canRespondToReport(m, userId, m.reportSubmission?.submittedBy)
@@ -392,6 +396,9 @@ function useNeedsYouItems(userId: string | undefined): string[] {
   return [
     live > 0
       ? `${live} live ${live === 1 ? "match" : "matches"} to keep scoring`
+      : null,
+    toSubmit > 0
+      ? `${toSubmit} ${toSubmit === 1 ? "score" : "scores"} to submit`
       : null,
     toConfirm > 0
       ? `${toConfirm} ${toConfirm === 1 ? "result" : "results"} to confirm or dispute`

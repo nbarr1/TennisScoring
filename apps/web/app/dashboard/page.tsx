@@ -184,6 +184,16 @@ export default function DashboardPage(): React.JSX.Element {
           href: "/matches",
           actionLabel: "Respond to proposal",
         });
+      } else if (m.status === "pending_report" && !m.reportSubmission) {
+        // Live scoring has finished, but nobody has submitted the result yet.
+        todos.push({
+          key: m.id,
+          icon: <IconClipboardCheck size={22} aria-hidden="true" />,
+          title: `Submit the score against ${opponent}`,
+          detail: `The match is over. Submit the result so ${opponent} can confirm it.`,
+          href: `/matches/${m.id}`,
+          actionLabel: "Submit score",
+        });
       } else if (m.status === "pending_report") {
         waiting.push({
           key: m.id,

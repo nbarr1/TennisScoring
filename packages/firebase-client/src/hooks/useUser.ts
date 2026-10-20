@@ -153,12 +153,14 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   batch.update(userDoc(uid), privateUpdates);
 
   // If public fields are changed, sync with profiles doc
-  const publicUpdates: Partial<PublicProfile> = {};
-  if (updates.displayName !== undefined) publicUpdates.displayName = updates.displayName;
-  if (updates.avatarUrl !== undefined) publicUpdates.avatarUrl = updates.avatarUrl;
-  if (updates.divisionId !== undefined) publicUpdates.divisionId = updates.divisionId;
-  if (updates.role !== undefined) publicUpdates.role = updates.role;
-  if (updates.tutorialDone !== undefined) publicUpdates.tutorialDone = updates.tutorialDone;
+  // A mirrored key passed as undefined is deleted from the profile too, so
+  // clearing a division doesn't leave profiles/{uid} naming the old one.
+  const publicUpdates: Record<string, unknown> = {};
+  for (const key of ['displayName', 'avatarUrl', 'divisionId', 'role', 'tutorialDone'] as const) {
+    if (!(key in updates)) continue;
+    const value = updates[key];
+    publicUpdates[key] = value === undefined ? deleteField() : value;
+  }
 
   if (Object.keys(publicUpdates).length > 0) {
     // set+merge (not update) so this still succeeds if profiles/{uid} hasn't been created yet.

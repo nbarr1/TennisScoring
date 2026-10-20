@@ -479,12 +479,19 @@ export default function AdminScreen() {
 
   // Saving the name of a level this season already has updates that level,
   // so the editor never creates two levels with one name.
-  const levelBeingEdited =
-    levelsForSeason.find((l) => l.id === editingLevelId) ??
+  const sameNamedLevel =
     levelsForSeason.find(
       (l) => l.name.trim().toLowerCase() === levelName.trim().toLowerCase(),
-    ) ??
-    null;
+    ) ?? null;
+  const levelBeingEdited =
+    levelsForSeason.find((l) => l.id === editingLevelId) ??
+    sameNamedLevel;
+  // Renaming the level being edited to another level's name would leave two
+  // indistinguishable levels; upsertDivisionLevel doesn't check names.
+  const levelNameTaken =
+    editingLevelId && sameNamedLevel && sameNamedLevel.id !== editingLevelId
+      ? sameNamedLevel
+      : null;
 
   function resetLevelEditor() {
     setEditingLevelId(null);
@@ -507,7 +514,9 @@ export default function AdminScreen() {
         seasonHalf: selectedSeason.half,
         name: levelName,
         skillLevel: levelSkill,
-        matchType: levelMatchType,
+        // A level's format is fixed once it exists: its matches already have
+        // a two- or four-player shape, and the standings read one format.
+        matchType: existing?.matchType ?? levelMatchType,
         description: levelDescription,
         rankingsEnabled: existing?.rankingsEnabled ?? true,
         active: existing?.active ?? true,
@@ -1297,6 +1306,12 @@ export default function AdminScreen() {
             ))}
           </View>
           <Text style={styles.fieldLabel}>Format</Text>
+          {levelBeingEdited ? (
+            <Text style={styles.hint}>
+              {levelBeingEdited.matchType === "doubles" ? "Doubles" : "Singles"}. A level's format
+              can't change once it exists.
+            </Text>
+          ) : (
           <View style={styles.chipRow}>
             {(["singles", "doubles"] as DivisionMatchType[]).map((matchType) => (
               <Chip
@@ -1311,6 +1326,7 @@ export default function AdminScreen() {
               />
             ))}
           </View>
+          )}
           <FormField
             label="Level name"
             required
@@ -1337,6 +1353,12 @@ export default function AdminScreen() {
             />
           ) : null}
           {levelNotice ? <InlineAlert tone="success" message={levelNotice} /> : null}
+          {levelNameTaken ? (
+            <InlineAlert
+              tone="error"
+              message={`${selectedSeason.name} already has a level named ${levelNameTaken.name}. Choose another name.`}
+            />
+          ) : null}
           {!editingLevelId && levelBeingEdited ? (
             <InlineAlert
               tone="info"
@@ -1352,7 +1374,7 @@ export default function AdminScreen() {
             variant="secondary"
             pending={saveLevel.pending}
             pendingLabel="Saving level"
-            disabled={!levelName.trim()}
+            disabled={!levelName.trim() || Boolean(levelNameTaken)}
             onPress={() => {
               setLevelNotice(null);
               void saveLevel.run();
