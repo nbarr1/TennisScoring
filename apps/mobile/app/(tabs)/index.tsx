@@ -372,7 +372,10 @@ function StandingsContent({
  * submitted yet, a result the other side reported, and a
  * proposal they received. Empty when nothing is waiting.
  */
-function useNeedsYouItems(userId: string | undefined): string[] {
+function useNeedsYouItems(
+  userId: string | undefined,
+  divisionId: string | null,
+): string[] {
   const { matches } = usePlayerMatches(userId ?? null);
   let live = 0;
   let toConfirm = 0;
@@ -380,6 +383,8 @@ function useNeedsYouItems(userId: string | undefined): string[] {
   let proposals = 0;
   if (userId) {
     for (const m of matches) {
+      // Only this division's matches, which is what the Matches tab lists.
+      if (m.divisionId !== divisionId) continue;
       const side = sideOfPlayer(m, userId);
       if (!side) continue;
       if (m.status === "in_progress") live += 1;
@@ -435,7 +440,7 @@ function NeedsYouCard({ items }: { items: string[] }) {
 export default function RankingsScreen() {
   const divisionId = useAppStore((state) => state.divisionId);
   const userId = useAppStore((state) => state.user?.id);
-  const needsItems = useNeedsYouItems(userId);
+  const needsItems = useNeedsYouItems(userId, divisionId);
   const router = useRouter();
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
   // Matches web's dashboard: standings are scoped to one season at a time, since
@@ -443,8 +448,9 @@ export default function RankingsScreen() {
   const [selectedSeasonId, setSelectedSeasonId] = useState(
     () => currentSeasonForDate().id,
   );
-  const [matchTypeFilter, setMatchTypeFilter] =
-    useState<DivisionMatchType>("singles");
+  // null follows the format of the player's own level until they pick one.
+  const [matchTypeChoice, setMatchTypeFilter] =
+    useState<DivisionMatchType | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   // null follows the player's own level; "all" pools every level.
   const [levelChoice, setLevelChoice] = useState<string | null>(null);
@@ -457,6 +463,15 @@ export default function RankingsScreen() {
     null,
     ROSTERED,
   );
+  const myLevelFormat = levels.find(
+    (level) =>
+      level.seasonId === selectedSeasonId &&
+      memberships.some(
+        (m) => m.userId === userId && m.divisionLevelId === level.id,
+      ),
+  )?.matchType;
+  const matchTypeFilter: DivisionMatchType =
+    matchTypeChoice ?? myLevelFormat ?? "singles";
   // Standings are ranked per division level, so only levels of this season
   // and format can be picked.
   const seasonLevels = levels.filter(

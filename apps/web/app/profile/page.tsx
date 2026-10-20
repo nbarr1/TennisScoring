@@ -260,21 +260,31 @@ export default function ProfilePage(): React.JSX.Element {
   const save = useAsyncAction(
     async () => {
       if (!firebaseUser || !user) return;
-      await updateUserProfile(
-        firebaseUser.uid,
-        writableProfileUpdates(buildUserProfileUpdates({
-          displayName,
-          email,
-          phone,
-          allowEmail,
-          allowSMS,
-          allowInApp,
-          tipsEnabled,
-          availabilitySlots,
-          availabilityNote,
-          selectedDivisionId,
-        }), user),
-      );
+      // Treat the submitted values as the seed, so the snapshot this write
+      // produces re-seeds the form with the saved, normalized values (a
+      // trimmed name, for example) instead of reading them as unsaved edits.
+      const previousSeed = seededFrom.current;
+      seededFrom.current = latestForm.current;
+      try {
+        await updateUserProfile(
+          firebaseUser.uid,
+          writableProfileUpdates(buildUserProfileUpdates({
+            displayName,
+            email,
+            phone,
+            allowEmail,
+            allowSMS,
+            allowInApp,
+            tipsEnabled,
+            availabilitySlots,
+            availabilityNote,
+            selectedDivisionId,
+          }), user),
+        );
+      } catch (error) {
+        seededFrom.current = previousSeed;
+        throw error;
+      }
       setSavedAt(Date.now());
     },
     { successMessage: "Profile saved", errorMessage: "Couldn't save your profile. Please try again." },
