@@ -179,6 +179,8 @@ export default function ProfilePage(): React.JSX.Element {
   const seededFrom = useRef<string | null>(null);
   const latestForm = useRef(current);
   latestForm.current = current;
+  // Bumped after a successful save so the effect re-seeds from the saved document.
+  const [reseedTick, setReseedTick] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -195,7 +197,7 @@ export default function ProfilePage(): React.JSX.Element {
     setAvailabilitySlots(user.availability?.slots ?? []);
     setAvailabilityNote(user.availability?.note ?? "");
     setSelectedDivisionId(user.divisionId ?? "");
-  }, [user, initial]);
+  }, [user, initial, reseedTick]);
 
   // Leaving the page (reload, close, typed address) with unsaved edits asks first.
   useEffect(() => {
@@ -260,30 +262,30 @@ export default function ProfilePage(): React.JSX.Element {
   const save = useAsyncAction(
     async () => {
       if (!firebaseUser || !user) return;
-      // Treat the submitted values as the seed, so the snapshot this write
-      // produces re-seeds the form with the saved, normalized values (a
-      // trimmed name, for example) instead of reading them as unsaved edits.
-      const previousSeed = seededFrom.current;
-      seededFrom.current = latestForm.current;
-      try {
-        await updateUserProfile(
-          firebaseUser.uid,
-          writableProfileUpdates(buildUserProfileUpdates({
-            displayName,
-            email,
-            phone,
-            allowEmail,
-            allowSMS,
-            allowInApp,
-            tipsEnabled,
-            availabilitySlots,
-            availabilityNote,
-            selectedDivisionId,
-          }), user),
-        );
-      } catch (error) {
-        seededFrom.current = previousSeed;
-        throw error;
+      const submitted = latestForm.current;
+      await updateUserProfile(
+        firebaseUser.uid,
+        writableProfileUpdates(buildUserProfileUpdates({
+          displayName,
+          email,
+          phone,
+          allowEmail,
+          allowSMS,
+          allowInApp,
+          tipsEnabled,
+          availabilitySlots,
+          availabilityNote,
+          selectedDivisionId,
+        }), user),
+      );
+      // Once the write lands, treat the submitted values as the seed and
+      // re-seed, so the saved, normalized values (a trimmed name, for
+      // example) don't read as unsaved edits. The draft stays the guarded
+      // state until then, so a snapshot during a failed write can't wipe it,
+      // and edits made while the write was pending are kept.
+      if (latestForm.current === submitted) {
+        seededFrom.current = submitted;
+        setReseedTick((tick) => tick + 1);
       }
       setSavedAt(Date.now());
     },

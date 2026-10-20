@@ -357,6 +357,8 @@ export default function AdminPage(): React.JSX.Element {
   // What a row's level select shows while its choice settles (see LEVEL_COMMIT_DELAY_MS).
   const [draftLevels, setDraftLevels] = useState<Record<string, string>>({});
   const draftTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Each pending draft's commit, so a season change can write it now instead of dropping it.
+  const draftCommits = useRef<Record<string, (flushing: boolean) => void>>({});
   const [removeTarget, setRemoveTarget] = useState<{ row: RosterRow; viaSelect: boolean } | null>(null);
   // Players created here are prepended locally until the memberships snapshot catches up.
   const [pendingNewPlayers, setPendingNewPlayers] = useState<
@@ -418,6 +420,7 @@ export default function AdminPage(): React.JSX.Element {
   const clearDraftLevel = useCallback((userId: string) => {
     clearTimeout(draftTimers.current[userId]);
     delete draftTimers.current[userId];
+    delete draftCommits.current[userId];
     setDraftLevels((current) => {
       if (!(userId in current)) return current;
       const next = { ...current };
@@ -438,6 +441,7 @@ export default function AdminPage(): React.JSX.Element {
     setRosterAlert(null);
     Object.values(draftTimers.current).forEach((timer) => clearTimeout(timer));
     draftTimers.current = {};
+    draftCommits.current = {};
     setDraftLevels({});
   }, [adminSeasonId]);
 
@@ -1395,21 +1399,34 @@ export default function AdminPage(): React.JSX.Element {
     const userId = row.player.id;
     setDraftLevels((current) => ({ ...current, [userId]: nextLevelId }));
     clearTimeout(draftTimers.current[userId]);
-    draftTimers.current[userId] = setTimeout(() => {
+    const commit = (flushing: boolean) => {
       delete draftTimers.current[userId];
+      delete draftCommits.current[userId];
       if (nextLevelId === effectiveLevelRef.current(row)) {
         // Arrowed away and back again: nothing to write.
         clearDraftLevel(userId);
         return;
       }
       if (!nextLevelId) {
-        // The draft keeps showing "Unassigned" until the confirmation is answered.
-        setRemoveTarget({ row, viaSelect: true });
+        // The draft keeps showing "Unassigned" until the confirmation is answered. A season
+        // change drops it instead, since the confirmation would name the wrong season.
+        if (flushing) clearDraftLevel(userId);
+        else setRemoveTarget({ row, viaSelect: true });
         return;
       }
       clearDraftLevel(userId);
       void assignLevelRef.current(row, nextLevelId);
-    }, LEVEL_COMMIT_DELAY_MS);
+    };
+    draftCommits.current[userId] = commit;
+    draftTimers.current[userId] = setTimeout(() => commit(false), LEVEL_COMMIT_DELAY_MS);
+  }
+
+  /** Writes every pending row change now, for the season they were made in. */
+  function flushDraftLevels() {
+    Object.entries(draftCommits.current).forEach(([userId, commit]) => {
+      clearTimeout(draftTimers.current[userId]);
+      commit(true);
+    });
   }
 
   function cancelRemove() {
@@ -1778,7 +1795,10 @@ export default function AdminPage(): React.JSX.Element {
                   id="admin-season"
                   style={styles.headerSelect}
                   value={adminSeasonId}
-                  onChange={(e) => setAdminSeasonId(e.target.value)}
+                  onChange={(e) => {
+                    flushDraftLevels();
+                    setAdminSeasonId(e.target.value);
+                  }}
                 >
                   {seasonOptions.map((season) => (
                     <option key={season.id} value={season.id}>
