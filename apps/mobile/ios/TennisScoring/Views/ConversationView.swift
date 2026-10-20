@@ -205,8 +205,9 @@ private struct MessageBubble: View {
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
-          .foregroundStyle(isMine ? Color.white : Color.primary)
-          .tint(isMine ? Color.white : Color.league)
+          // `onLeague` follows the bubble's fill, which turns light in Dark Mode.
+          .foregroundStyle(isMine ? Color.onLeague : Color.primary)
+          .tint(isMine ? Color.onLeague : Color.league)
           .background(
             isMine ? Color.league : Color(.secondarySystemBackground),
             in: RoundedRectangle(cornerRadius: 16)
