@@ -6,7 +6,7 @@ import { AppNav, appNavStyles } from "../shared/AppNav";
 import { IconBellRinging, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cloneElement, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { deleteField, getDoc } from "firebase/firestore";
+import { getDoc } from "firebase/firestore";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import {
   useAuthUser,
@@ -91,11 +91,12 @@ function writableProfileUpdates(updates: Partial<User>, user: User): Partial<Use
       if (!canEditRestricted) continue;
       const before = (user as unknown as Record<string, unknown>)[key];
       if (value === before || (value === undefined && !before)) continue;
-      result[key] = value === undefined ? deleteField() : value;
+      result[key] = value;
       continue;
     }
     if (value === undefined) {
-      if (key === "phone" && user.phone) result[key] = deleteField();
+      // updateUserProfile() deletes a field passed as undefined.
+      if (key === "phone" && user.phone) result[key] = undefined;
       continue;
     }
     result[key] = value;

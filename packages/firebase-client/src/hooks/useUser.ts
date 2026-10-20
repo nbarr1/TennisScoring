@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onIdTokenChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { arrayRemove, arrayUnion, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, deleteField, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
 import type { User, PublicProfile } from '@tennis/shared';
@@ -141,7 +141,16 @@ export async function updateUserProfile(uid: string, updates: Partial<User>): Pr
   const now = Date.now();
 
   // Update private user doc
-  batch.update(userDoc(uid), { ...updates, updatedAt: now });
+  // Firestore rejects an update carrying an undefined value, and
+  // buildUserProfileUpdates() uses undefined for a cleared field (a player with
+  // no phone number, for example), so every such save used to throw. A key
+  // passed as undefined now deletes that field; deleting an absent field is a
+  // no-op that the rules don't count as a change.
+  const privateUpdates: Record<string, unknown> = { updatedAt: now };
+  for (const [key, value] of Object.entries(updates)) {
+    privateUpdates[key] = value === undefined ? deleteField() : value;
+  }
+  batch.update(userDoc(uid), privateUpdates);
 
   // If public fields are changed, sync with profiles doc
   const publicUpdates: Partial<PublicProfile> = {};
