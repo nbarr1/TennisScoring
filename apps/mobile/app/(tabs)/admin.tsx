@@ -53,6 +53,7 @@ import {
   formatDivisionLevelName,
   formatScoreDisplay,
   type Division,
+  type DivisionLevel,
   type DivisionMatchType,
   type DivisionMembershipStatus,
   type DivisionSkillLevel,
@@ -477,21 +478,30 @@ export default function AdminScreen() {
     void loadCandidateMatches();
   }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
 
-  // Saving the name of a level this season already has updates that level,
-  // so the editor never creates two levels with one name.
   const sameNamedLevel =
     levelsForSeason.find(
       (l) => l.name.trim().toLowerCase() === levelName.trim().toLowerCase(),
     ) ?? null;
   const levelBeingEdited =
-    levelsForSeason.find((l) => l.id === editingLevelId) ??
-    sameNamedLevel;
-  // Renaming the level being edited to another level's name would leave two
-  // indistinguishable levels; upsertDivisionLevel doesn't check names.
+    levelsForSeason.find((l) => l.id === editingLevelId) ?? null;
+  // upsertDivisionLevel doesn't check names, so the editor blocks a name
+  // another level already has, whether adding or renaming. An update only
+  // ever targets a level loaded into the editor, never one matched by name,
+  // since its other values were never loaded.
   const levelNameTaken =
-    editingLevelId && sameNamedLevel && sameNamedLevel.id !== editingLevelId
+    sameNamedLevel && sameNamedLevel.id !== editingLevelId
       ? sameNamedLevel
       : null;
+
+  function loadLevelIntoEditor(level: DivisionLevel) {
+    setEditingLevelId(level.id);
+    setLevelSkill(level.skillLevel);
+    setLevelMatchType(level.matchType);
+    setLevelName(level.name);
+    setLevelDescription(level.description ?? "");
+    setLevelNotice(null);
+    saveLevel.reset();
+  }
 
   function resetLevelEditor() {
     setEditingLevelId(null);
@@ -535,7 +545,10 @@ export default function AdminScreen() {
             ? `${levelName} is updated for ${selectedSeason.name}.`
             : `${levelName} is added to ${selectedSeason.name}.`,
         );
+        // Clear the name too: left in place it matches the level just
+        // saved, and the form would read as a duplicate.
         setEditingLevelId(null);
+        setLevelName("");
         setLevelDescription("");
       },
     },
@@ -1246,15 +1259,7 @@ export default function AdminScreen() {
                     editingThis && styles.selectRowActive,
                     pressed && styles.listRowPressed,
                   ]}
-                  onPress={() => {
-                    setEditingLevelId(level.id);
-                    setLevelSkill(level.skillLevel);
-                    setLevelMatchType(level.matchType);
-                    setLevelName(level.name);
-                    setLevelDescription(level.description ?? "");
-                    setLevelNotice(null);
-                    saveLevel.reset();
-                  }}
+                  onPress={() => loadLevelIntoEditor(level)}
                 >
                   <View style={styles.flexFill}>
                     <Text style={styles.playerName}>{level.name}</Text>
@@ -1353,16 +1358,18 @@ export default function AdminScreen() {
             />
           ) : null}
           {levelNotice ? <InlineAlert tone="success" message={levelNotice} /> : null}
-          {levelNameTaken ? (
+          {levelNameTaken && editingLevelId ? (
             <InlineAlert
               tone="error"
               message={`${selectedSeason.name} already has a level named ${levelNameTaken.name}. Choose another name.`}
             />
           ) : null}
-          {!editingLevelId && levelBeingEdited ? (
+          {levelNameTaken && !editingLevelId ? (
             <InlineAlert
               tone="info"
-              message={`${selectedSeason.name} already has a level named ${levelBeingEdited.name}. Saving updates it instead of adding a second one.`}
+              message={`${selectedSeason.name} already has a level named ${levelNameTaken.name}. Choose another name, or edit that level.`}
+              actionLabel={`Edit ${levelNameTaken.name}`}
+              onAction={() => loadLevelIntoEditor(levelNameTaken)}
             />
           ) : null}
           <Button
