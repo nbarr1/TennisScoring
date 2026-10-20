@@ -39,6 +39,7 @@ import {
   currentSeasonForDate,
   defaultSeasonOptions,
   formatDivisionLevelName,
+  formatSeasonName,
   type Division,
   type DivisionMatchType,
   type DivisionSkillLevel,
@@ -93,6 +94,29 @@ import css from "./admin.module.css";
 
 /** How long the transient "Saved" affordance stays visible next to a row control. */
 const SAVED_FLASH_MS = 1800;
+
+/**
+ * A row's division-level select writes only once the choice has settled. Arrow keys on a
+ * closed select fire a change per keypress in Firefox and in Chrome on Windows, so writing
+ * on every change moved a keyboard user's player through each level in turn, and passing
+ * over "Unassigned" opened the removal confirmation.
+ */
+const LEVEL_COMMIT_DELAY_MS = 600;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Lines of a pasted roster listed back before importing. */
+const IMPORT_PREVIEW_LIMIT = 8;
+
+/** "spring-2027" → "Spring 2027"; anything else is shown as stored. */
+function seasonNameFromId(id: string): string {
+  const match = /^(spring|fall)-(\d{4})$/.exec(id);
+  return match ? formatSeasonName(Number(match[2]), match[1] as "spring" | "fall") : id;
+}
+
+function normalizedName(value: string | undefined): string {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
 
 type AdminTab = "roster" | "divisions" | "tools";
 type ToolPanel = "scheduler" | "reports" | null;
@@ -168,7 +192,7 @@ function playerStatusLabel(player: User): string {
 }
 
 export default function AdminPage(): React.JSX.Element {
-  const { firebaseUser } = useAuthUser();
+  const { firebaseUser, loading: authLoading } = useAuthUser();
   const router = useRouter();
   const announce = useAnnounce();
   const [division, setDivision] = useState<Division | null>(null);
@@ -180,6 +204,7 @@ export default function AdminPage(): React.JSX.Element {
   const [mergeSourceUserId, setMergeSourceUserId] = useState("");
   const [candidateMatches, setCandidateMatches] = useState<Match[]>([]);
   const [candidateMatchRefreshKey, setCandidateMatchRefreshKey] = useState(0);
+  const [candidateMatchState, setCandidateMatchState] = useState<"loading" | "ready" | "error">("ready");
   const [selectedMatchIds, setSelectedMatchIds] = useState<string[]>([]);
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
@@ -222,7 +247,7 @@ export default function AdminPage(): React.JSX.Element {
   // The roster shows every player on the season, waitlisted included — leaving them out
   // rendered them as unassigned and let the next assignment quietly flip them to active.
   // The round-robin scheduler below keeps the active-only default on purpose.
-  const { memberships: seasonMemberships } = useDivisionMemberships(
+  const { memberships: seasonMemberships, loading: loadingSeasonMemberships } = useDivisionMemberships(
     division?.id,
     adminSeasonId,
     null,
@@ -231,7 +256,14 @@ export default function AdminPage(): React.JSX.Element {
   // Players move between divisions from one season to the next, so a player rostered only in
   // another season is not on this one: listing them here as unassigned is what put Fall-only
   // players on the Spring roster and the other way around.
-  const { seasonsByUserId: rosteredSeasonsByUserId } = useDivisionRosteredSeasons(division?.id);
+  const { seasonsByUserId: rosteredSeasonsByUserId, loading: loadingRosteredSeasons } =
+    useDivisionRosteredSeasons(division?.id);
+  // Until both snapshots land, every player looks unassigned: the banner fired, rows went
+  // amber, and an assignment made in that window wrote a waitlisted player back as active.
+  const rosterReady = !loadingSeasonMemberships && !loadingRosteredSeasons;
+  // Whether the signed-in account may use this page. The admin UI waits for the answer, so a
+  // player who lands here sees a loading state, not the roster, before being redirected.
+  const [accessChecked, setAccessChecked] = useState(false);
   const [csvMessage, setCsvMessage] = useState("");
   const [exportingType, setExportingType] = useState<"matches" | "rankings" | null>(null);
   const [openToolPanel, setOpenToolPanel] = useState<ToolPanel>(null);
@@ -322,6 +354,9 @@ export default function AdminPage(): React.JSX.Element {
   const [savedFlashIds, setSavedFlashIds] = useState<string[]>([]);
   const savedFlashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [rosterAlert, setRosterAlert] = useState<RosterAlert>(null);
+  // What a row's level select shows while its choice settles (see LEVEL_COMMIT_DELAY_MS).
+  const [draftLevels, setDraftLevels] = useState<Record<string, string>>({});
+  const draftTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [removeTarget, setRemoveTarget] = useState<{ row: RosterRow; viaSelect: boolean } | null>(null);
   // Players created here are prepended locally until the memberships snapshot catches up.
   const [pendingNewPlayers, setPendingNewPlayers] = useState<
@@ -373,9 +408,22 @@ export default function AdminPage(): React.JSX.Element {
 
   useEffect(() => {
     const timers = savedFlashTimers.current;
+    const drafts = draftTimers.current;
     return () => {
       Object.values(timers).forEach((timer) => clearTimeout(timer));
+      Object.values(drafts).forEach((timer) => clearTimeout(timer));
     };
+  }, []);
+
+  const clearDraftLevel = useCallback((userId: string) => {
+    clearTimeout(draftTimers.current[userId]);
+    delete draftTimers.current[userId];
+    setDraftLevels((current) => {
+      if (!(userId in current)) return current;
+      const next = { ...current };
+      delete next[userId];
+      return next;
+    });
   }, []);
 
   // Changing the season resets the roster's filter, search, and selection.
@@ -388,6 +436,9 @@ export default function AdminPage(): React.JSX.Element {
     setExpandedPlayerId(null);
     setAddPlayerOpen(false);
     setRosterAlert(null);
+    Object.values(draftTimers.current).forEach((timer) => clearTimeout(timer));
+    draftTimers.current = {};
+    setDraftLevels({});
   }, [adminSeasonId]);
 
   // Drop an optimistic override as soon as the memberships snapshot reports the same value,
@@ -454,14 +505,30 @@ export default function AdminPage(): React.JSX.Element {
 
   // Gate: redirect players who are not leaders/admins away from this page.
   useEffect(() => {
-    if (!firebaseUser) return;
-    getDoc(userDoc(firebaseUser.uid)).then((snap) => {
-      const role = snap.data()?.role as string | undefined;
-      if (!isPrivilegedRole(role)) {
-        router.replace('/dashboard');
-      }
-    });
-  }, [firebaseUser, router]);
+    if (!firebaseUser) {
+      if (!authLoading) setAccessChecked(true);
+      return;
+    }
+    let cancelled = false;
+    getDoc(userDoc(firebaseUser.uid))
+      .then((snap) => {
+        if (cancelled) return;
+        const role = snap.data()?.role as string | undefined;
+        if (!isPrivilegedRole(role)) {
+          router.replace('/dashboard');
+          return;
+        }
+        setAccessChecked(true);
+      })
+      .catch(() => {
+        // The role read failing is not a reason to lock a leader out: the Firestore rules
+        // still decide what loads, and any denial is reported below.
+        if (!cancelled) setAccessChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, firebaseUser, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -804,15 +871,19 @@ export default function AdminPage(): React.JSX.Element {
     undoContact.pending;
 
   useEffect(() => {
+    let cancelled = false;
     async function loadCandidateMatches() {
       if (!division?.id || !needsMergeForUserId) {
         setCandidateMatches([]);
         setSelectedMatchIds([]);
+        setCandidateMatchState("ready");
         return;
       }
+      setCandidateMatchState("loading");
       const snap = await getDocs(
         query(matchesCol(), where("divisionId", "==", division.id)),
       );
+      if (cancelled) return;
       const matches = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, "id">) }))
         .filter((match) => {
@@ -834,13 +905,25 @@ export default function AdminPage(): React.JSX.Element {
         );
       setCandidateMatches(matches);
       setSelectedMatchIds([]);
+      setCandidateMatchState("ready");
     }
-    loadCandidateMatches();
+    loadCandidateMatches().catch(() => {
+      if (cancelled) return;
+      setCandidateMatches([]);
+      setCandidateMatchState("error");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [division?.id, needsMergeForUserId, candidateMatchRefreshKey]);
 
   // ---- Division levels ----------------------------------------------------
   const levelFormDefaultName = formatDivisionLevelName(levelSkill, levelMatchType);
   const levelFormDirty = levelDescription.trim().length > 0 || levelName !== levelFormDefaultName;
+  // Two levels with one name are indistinguishable in every roster and scheduler select.
+  const levelNameTaken = adminSeasonLevels.some(
+    (level) => normalizedName(level.name) === normalizedName(levelName),
+  );
 
   function openLevelForm() {
     setLevelSkill("beginner");
@@ -964,6 +1047,11 @@ export default function AdminPage(): React.JSX.Element {
     );
   }
 
+  // Same arithmetic the publish callable uses, so the preview's dates match what it creates.
+  const rrPreviewStartAt = /^\d{4}-\d{2}-\d{2}$/.test(rrStartDate)
+    ? Date.parse(`${rrStartDate}T18:00:00`) || null
+    : null;
+
   /** Validates the start date, then asks for confirmation before anything is written. */
   function requestRrPublish() {
     if (!division || !adminSeasonId || !rrDivisionLevelId || !rrPreview) return;
@@ -1056,7 +1144,7 @@ export default function AdminPage(): React.JSX.Element {
       };
       const result = response.result;
       const message = result
-        ? `Rankings rebuilt. Counted ${plural(result.countedMatches ?? 0, "match", "matches")} and left out ${plural(result.guestMatchesSkipped ?? 0, "guest match", "guest matches")}. Updated ${plural(result.rankingsWritten ?? 0, "ranking row", "ranking rows")} and removed ${plural(result.rankingsDeleted ?? 0, "stale row", "stale rows")}. Normalized ${plural(result.matchesNormalized ?? 0, "historic match", "historic matches")}.`
+        ? `Rankings rebuilt. Counted ${plural(result.countedMatches ?? 0, "match", "matches")} and left out ${plural(result.guestMatchesSkipped ?? 0, "guest match", "guest matches")}. Updated ${plural(result.rankingsWritten ?? 0, "ranking row", "ranking rows")} and removed ${plural(result.rankingsDeleted ?? 0, "stale row", "stale rows")}. Brought ${plural(result.matchesNormalized ?? 0, "historic match", "historic matches")} up to the current format.`
         : "Rankings rebuilt.";
       setRepairMessage(message);
       return message;
@@ -1148,6 +1236,16 @@ export default function AdminPage(): React.JSX.Element {
       .map((player) => ({ player, membership: null }));
   }, [players, rosterRows, rosteredSeasonsByUserId]);
 
+  const otherSeasonIds = useMemo(
+    () => new Set(otherSeasonRows.map((row) => row.player.id)),
+    [otherSeasonRows],
+  );
+
+  /** The seasons an other-season row is rostered in, by name. */
+  function otherSeasonNames(userId: string): string {
+    return [...(rosteredSeasonsByUserId.get(userId) ?? [])].sort().map(seasonNameFromId).join(", ");
+  }
+
   /** The level a row should display: a pending write wins over the snapshot; "" means unassigned. */
   const effectiveLevelId = useCallback(
     (row: RosterRow): string => {
@@ -1214,6 +1312,31 @@ export default function AdminPage(): React.JSX.Element {
     return levelNameById.get(levelId) ?? "that division level";
   }
 
+  /**
+   * The division player an add or import line resolves to, mirroring the server: an email
+   * match first, then the same name with no conflicting email. The server reuses that player
+   * and moves them to the chosen level instead of creating a new one, so the forms say so.
+   */
+  function findExistingPlayer(name: string, email: string): { player: User; levelId: string } | null {
+    const safeEmail = email.trim().toLowerCase();
+    const safeName = normalizedName(name);
+    const byEmail = safeEmail
+      ? players.find((player) => (player.email ?? "").trim().toLowerCase() === safeEmail)
+      : undefined;
+    const byName =
+      !byEmail && safeName
+        ? players.find((player) => {
+            if (normalizedName(player.displayName) !== safeName) return false;
+            const recordEmail = (player.email ?? "").trim().toLowerCase();
+            return !safeEmail || !recordEmail || recordEmail === safeEmail;
+          })
+        : undefined;
+    const player = byEmail ?? byName;
+    if (!player) return null;
+    const row = rosterRows.find((candidate) => candidate.player.id === player.id);
+    return { player, levelId: row ? effectiveLevelId(row) : "" };
+  }
+
   // ---- Roster actions ---------------------------------------------------
   async function assignLevel(row: RosterRow, nextLevelId: string) {
     if (!division) return;
@@ -1261,11 +1384,45 @@ export default function AdminPage(): React.JSX.Element {
     }
   }
 
+  // The timer below fires after later renders, so it calls the latest assignLevel, which
+  // reads the latest pending state.
+  const assignLevelRef = useRef(assignLevel);
+  assignLevelRef.current = assignLevel;
+  const effectiveLevelRef = useRef(effectiveLevelId);
+  effectiveLevelRef.current = effectiveLevelId;
+
+  function onRowLevelChange(row: RosterRow, nextLevelId: string) {
+    const userId = row.player.id;
+    setDraftLevels((current) => ({ ...current, [userId]: nextLevelId }));
+    clearTimeout(draftTimers.current[userId]);
+    draftTimers.current[userId] = setTimeout(() => {
+      delete draftTimers.current[userId];
+      if (nextLevelId === effectiveLevelRef.current(row)) {
+        // Arrowed away and back again: nothing to write.
+        clearDraftLevel(userId);
+        return;
+      }
+      if (!nextLevelId) {
+        // The draft keeps showing "Unassigned" until the confirmation is answered.
+        setRemoveTarget({ row, viaSelect: true });
+        return;
+      }
+      clearDraftLevel(userId);
+      void assignLevelRef.current(row, nextLevelId);
+    }, LEVEL_COMMIT_DELAY_MS);
+  }
+
+  function cancelRemove() {
+    if (removeTarget) clearDraftLevel(removeTarget.row.player.id);
+    setRemoveTarget(null);
+  }
+
   /** Runs inside the remove confirmation; a rejection keeps the dialog open with the error. */
   async function confirmRemoveFromRoster() {
     if (!division || !removeTarget) return;
     const { row } = removeTarget;
     const userId = row.player.id;
+    clearDraftLevel(userId);
     const name = row.player.displayName;
     setRosterAlert(null);
     setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
@@ -1297,6 +1454,7 @@ export default function AdminPage(): React.JSX.Element {
         return;
       }
       flashSaved(userId);
+      setFocusRequest("roster");
       announce(
         detachedFromDivision
           ? `${name} removed from ${adminSeason.name} and from the division. Their match history is kept.`
@@ -1421,6 +1579,17 @@ export default function AdminPage(): React.JSX.Element {
   );
 
   const importEntries = useMemo(() => parseRosterPaste(importText), [importText]);
+  const importPreview = importEntries.map((entry) => ({
+    entry,
+    existing: findExistingPlayer(entry.name, entry.email),
+  }));
+  const importMoves = importPreview.filter(
+    ({ existing }) => existing?.levelId && existing.levelId !== importLevelId,
+  ).length;
+  const addPlayerExisting =
+    addPlayerOpen && (addPlayerName.trim() || addPlayerEmail.trim())
+      ? findExistingPlayer(addPlayerName, addPlayerEmail)
+      : null;
 
   const importRoster = useAsyncAction(
     async () => {
@@ -1544,6 +1713,13 @@ export default function AdminPage(): React.JSX.Element {
     setFocusRequest("results");
   }
 
+  function showLevelOnRoster(levelId: string) {
+    setActiveTab("roster");
+    setRosterSearch("");
+    setRosterFilter(levelId);
+    setFocusRequest("roster");
+  }
+
   function goToUnassigned() {
     setActiveTab("roster");
     setRosterFilter("unassigned");
@@ -1560,6 +1736,9 @@ export default function AdminPage(): React.JSX.Element {
   const detailRow = expandedPlayerId
     ? [...rosterRows, ...otherSeasonRows].find((row) => row.player.id === expandedPlayerId) ?? null
     : null;
+  // Registered players manage their own email and phone; the server keeps theirs whatever is
+  // typed here, so the detail fields are read-only rather than silently ignored.
+  const detailRegistered = detailRow ? detailRow.player.isRegistered !== false : false;
   const detailDirty =
     detailRow !== null &&
     (editName !== detailBaseline.name ||
@@ -1572,11 +1751,14 @@ export default function AdminPage(): React.JSX.Element {
   const disputedCount = reportsAwaitingResolution.filter((m) => m.status === "disputed").length;
   const unansweredCount = reportsAwaitingResolution.length - disputedCount;
   const toolsAttentionCount = messageReports.length + reportsAwaitingResolution.length;
+  const pageLoading = loading || !accessChecked;
+  // Counted only once the roster snapshots have landed; before that everyone reads as unassigned.
+  const knownUnassignedCount = rosterReady ? unassignedCount : 0;
   const showAttention =
     Boolean(division) &&
-    !loading &&
+    !pageLoading &&
     !viewAsUser &&
-    (messageReports.length > 0 || reportsAwaitingResolution.length > 0 || unassignedCount > 0);
+    (messageReports.length > 0 || reportsAwaitingResolution.length > 0 || knownUnassignedCount > 0);
   const bulkBarVisible = activeTab === "roster" && !viewAsUser && selectedVisibleIds.length > 0;
 
   return (
@@ -1587,7 +1769,7 @@ export default function AdminPage(): React.JSX.Element {
         <div style={styles.adminHeader}>
           <div style={styles.headerTitleGroup}>
             <h1 style={styles.pageTitle}>Division admin</h1>
-            {division && !loading ? (
+            {division && !pageLoading ? (
               <div style={styles.headerSeason}>
                 <label htmlFor="admin-season" style={styles.headerSeasonLabel}>
                   Season
@@ -1607,11 +1789,10 @@ export default function AdminPage(): React.JSX.Element {
               </div>
             ) : null}
           </div>
-          {division && !loading ? (
+          {division && !pageLoading ? (
             <Button
               variant="secondary"
               size="sm"
-              aria-pressed={viewAsUser}
               onClick={() => setViewAsUser((current) => !current)}
             >
               {viewAsUser ? "Exit user view" : "View as user"}
@@ -1619,13 +1800,17 @@ export default function AdminPage(): React.JSX.Element {
           ) : null}
         </div>
 
-        {division && !loading && !viewAsUser ? (
+        {division && !pageLoading && !viewAsUser ? (
           <p style={styles.headerSummary}>
             <strong style={{ color: styles.pageTitle.color }}>{division.name}</strong>
-            {" · "}
-            {plural(rosterRows.length, "player", "players")} ·{" "}
-            {plural(adminSeasonLevels.length, "division level", "division levels")} ·{" "}
-            {unassignedCount} unassigned
+            {rosterReady ? (
+              <>
+                {" · "}
+                {plural(rosterRows.length, "player", "players")} ·{" "}
+                {plural(adminSeasonLevels.length, "division level", "division levels")} ·{" "}
+                {unassignedCount} unassigned
+              </>
+            ) : null}
           </p>
         ) : null}
 
@@ -1680,7 +1865,7 @@ export default function AdminPage(): React.JSX.Element {
                   </Button>
                 </li>
               ) : null}
-              {unassignedCount > 0 ? (
+              {knownUnassignedCount > 0 ? (
                 <li style={{ ...styles.attentionItem, ...styles.attentionItemUnassigned }}>
                   <span style={styles.attentionText}>
                     <strong>{plural(unassignedCount, "player has", "players have")}</strong> no division level
@@ -1695,7 +1880,7 @@ export default function AdminPage(): React.JSX.Element {
           </section>
         ) : null}
 
-        {loading ? (
+        {pageLoading ? (
           <LoadingBlock label="Loading division…" rows={6} rowHeight={28} style={styles.placeholder} />
         ) : !division ? (
           <section style={styles.card} aria-labelledby="create-division-title">
@@ -1755,7 +1940,7 @@ export default function AdminPage(): React.JSX.Element {
                       <CountPill count={toolsAttentionCount} />
                       <span className="sr-only">, {toolsAttentionCount} to review</span>
                     </>
-                  ) : tab.id === "roster" && unassignedCount > 0 ? (
+                  ) : tab.id === "roster" && knownUnassignedCount > 0 ? (
                     <>
                       <CountPill count={unassignedCount} tone="unassigned" />
                       <span className="sr-only">, {unassignedCount} unassigned</span>
@@ -1837,265 +2022,293 @@ export default function AdminPage(): React.JSX.Element {
                     </InlineAlert>
                   ) : null}
 
-                  <div style={styles.toolbar}>
-                    <div style={styles.searchField}>
-                      <label htmlFor="roster-search" className="sr-only">
-                        Search players by name or email
-                      </label>
-                      <input
-                        id="roster-search"
-                        style={styles.input}
-                        type="search"
-                        value={rosterSearch}
-                        onChange={(e) => setRosterSearch(e.target.value)}
-                        placeholder="Search name or email"
-                      />
-                    </div>
-                    <div style={styles.chipRow} role="group" aria-label="Filter by division level">
-                      {[
-                        { id: "all", label: "All", count: rosterRows.length },
-                        { id: "unassigned", label: "Unassigned", count: unassignedCount },
-                        ...adminSeasonLevels.map((level) => ({
-                          id: level.id,
-                          label: level.name,
-                          count: countByLevelId.get(level.id) ?? 0,
-                        })),
-                        ...(otherSeasonRows.length > 0
-                          ? [{ id: OTHER_SEASONS_FILTER, label: "Other seasons", count: otherSeasonRows.length }]
-                          : []),
-                      ].map((chip) => {
-                        const active = rosterFilter === chip.id;
-                        return (
-                          <button
-                            key={chip.id}
-                            type="button"
-                            className={`${css.chip} ${active ? css.chipActive : ""}`}
-                            aria-pressed={active}
-                            onClick={() => setRosterFilter(chip.id)}
-                          >
-                            {active ? <IconCheck size={16} aria-hidden="true" /> : null}
-                            {chip.label}
-                            <span className={css.chipCount}>{chip.count}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {rosterAlert ? (
-                    <InlineAlert
-                      tone={rosterAlert.tone}
-                      style={styles.blockGap}
-                      onDismiss={() => setRosterAlert(null)}
-                      action={
-                        rosterAlert.retry ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            icon={<IconRefresh size={16} aria-hidden="true" />}
-                            onClick={rosterAlert.retry}
-                          >
-                            Try again
-                          </Button>
-                        ) : undefined
-                      }
-                    >
-                      {rosterAlert.message}
-                    </InlineAlert>
-                  ) : null}
-
-                  <div
-                    role="table"
-                    aria-label={`Players in ${adminSeason.name}`}
-                    aria-rowcount={visibleRows.length + 1}
-                    className={css.table}
-                  >
-                    <div role="rowgroup">
-                      <div role="row" className={`${css.row} ${css.head}`}>
-                        <div role="columnheader" className={css.cellCheck}>
-                          <label className={css.checkTarget}>
-                            <input
-                              type="checkbox"
-                              ref={(node) => {
-                                if (node) node.indeterminate = someVisibleSelected;
-                              }}
-                              checked={allVisibleSelected}
-                              aria-label={isFiltered ? "Select all listed players" : "Select all players"}
-                              disabled={visibleIds.length === 0}
-                              onChange={(e) =>
-                                setSelectedPlayerIds(e.target.checked ? [...visibleIds] : [])
-                              }
-                            />
+                  {!rosterReady ? (
+                    <LoadingBlock
+                      label={`Loading the ${adminSeason.name} roster…`}
+                      rows={5}
+                      rowHeight={28}
+                      style={styles.placeholder}
+                    />
+                  ) : (
+                    <>
+                      <div style={styles.toolbar}>
+                        <div style={styles.searchField}>
+                          <label htmlFor="roster-search" className="sr-only">
+                            Search players by name or email
                           </label>
+                          <input
+                            id="roster-search"
+                            style={styles.input}
+                            type="search"
+                            value={rosterSearch}
+                            onChange={(e) => setRosterSearch(e.target.value)}
+                            placeholder="Search name or email"
+                          />
                         </div>
-                        <div role="columnheader" className={css.cellPlayer} style={styles.headCell}>Player</div>
-                        <div role="columnheader" className={css.cellEmail} style={styles.headCell}>Email</div>
-                        <div role="columnheader" className={css.cellStatus} style={styles.headCell}>Status</div>
-                        <div role="columnheader" className={css.cellLevel} style={styles.headCell}>Division level</div>
-                        <div role="columnheader" className={css.cellRemove} style={styles.headCell}>
-                          <span className="sr-only">Remove</span>
+                        <div style={styles.chipRow} role="group" aria-label="Filter by division level">
+                          {[
+                            { id: "all", label: "All", count: rosterRows.length },
+                            { id: "unassigned", label: "Unassigned", count: unassignedCount },
+                            ...adminSeasonLevels.map((level) => ({
+                              id: level.id,
+                              label: level.name,
+                              count: countByLevelId.get(level.id) ?? 0,
+                            })),
+                            ...(otherSeasonRows.length > 0
+                              ? [{ id: OTHER_SEASONS_FILTER, label: "Other seasons", count: otherSeasonRows.length }]
+                              : []),
+                          ].map((chip) => {
+                            const active = rosterFilter === chip.id;
+                            return (
+                              <button
+                                key={chip.id}
+                                type="button"
+                                className={`${css.chip} ${active ? css.chipActive : ""}`}
+                                aria-pressed={active}
+                                onClick={() => setRosterFilter(chip.id)}
+                              >
+                                {active ? <IconCheck size={16} aria-hidden="true" /> : null}
+                                {chip.label}
+                                <span className={css.chipCount}>{chip.count}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
-                    </div>
-
-                    <AnimatedDiv role="rowgroup">
-                      {visibleRows.map((row) => {
-                        const p = row.player;
-                        const levelId = effectiveLevelId(row);
-                        const selected = selectedPlayerIds.includes(p.id);
-                        const registered = p.isRegistered !== false;
-                        const waitlisted = row.membership?.status === "waitlisted";
-                        const saving = savingRowIds.includes(p.id);
-                        const savedFlash = savedFlashIds.includes(p.id);
-                        return (
-                          <div
-                            key={p.id}
-                            role="row"
-                            className={`${css.row} ${selected ? css.rowSelected : ""}`}
-                          >
-                            <div role="cell" className={css.cellCheck}>
+    
+                      {rosterAlert ? (
+                        <InlineAlert
+                          tone={rosterAlert.tone}
+                          style={styles.blockGap}
+                          onDismiss={() => setRosterAlert(null)}
+                          action={
+                            rosterAlert.retry ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                icon={<IconRefresh size={16} aria-hidden="true" />}
+                                onClick={rosterAlert.retry}
+                              >
+                                Try again
+                              </Button>
+                            ) : undefined
+                          }
+                        >
+                          {rosterAlert.message}
+                        </InlineAlert>
+                      ) : null}
+    
+                      <div
+                        role="table"
+                        aria-label={`Players in ${adminSeason.name}`}
+                        aria-rowcount={visibleRows.length + 1}
+                        className={css.table}
+                      >
+                        <div role="rowgroup">
+                          <div role="row" className={`${css.row} ${css.head}`}>
+                            <div role="columnheader" className={css.cellCheck}>
                               <label className={css.checkTarget}>
                                 <input
                                   type="checkbox"
-                                  checked={selected}
-                                  aria-label={`Select ${p.displayName}`}
+                                  ref={(node) => {
+                                    if (node) node.indeterminate = someVisibleSelected;
+                                  }}
+                                  checked={allVisibleSelected}
+                                  aria-label={isFiltered ? "Select all listed players" : "Select all players"}
+                                  disabled={visibleIds.length === 0}
                                   onChange={(e) =>
-                                    setSelectedPlayerIds((current) =>
-                                      e.target.checked
-                                        ? [...current, p.id]
-                                        : current.filter((id) => id !== p.id),
-                                    )
+                                    setSelectedPlayerIds(e.target.checked ? [...visibleIds] : [])
                                   }
                                 />
                               </label>
                             </div>
-                            <div role="cell" className={css.cellPlayer}>
-                              <button
-                                type="button"
-                                className={css.playerButton}
-                                onClick={() => openPlayerDetail(row)}
-                                aria-haspopup="dialog"
-                                aria-label={`${p.displayName}: open details`}
-                              >
-                                <span style={styles.avatar} aria-hidden="true">
-                                  {initialsOf(p.displayName)}
-                                </span>
-                                <span className={css.playerName}>{p.displayName}</span>
-                              </button>
-                            </div>
-                            <div role="cell" className={css.cellEmail} style={styles.cellText}>
-                              {p.email && p.contactPreferences?.allowEmail !== false ? (
-                                <a href={`mailto:${p.email}`} style={styles.contactLink}>
-                                  {p.email}
-                                </a>
-                              ) : (
-                                <>
-                                  <span aria-hidden="true">—</span>
-                                  <span className="sr-only">No email</span>
-                                </>
-                              )}
-                            </div>
-                            <div role="cell" className={css.cellStatus} style={styles.statusCell}>
-                              <span style={registered ? styles.registeredBadge : styles.unregisteredBadge}>
-                                {playerStatusLabel(p)}
-                              </span>
-                              {waitlisted ? <span style={styles.waitlistBadge}>Waitlisted</span> : null}
-                            </div>
-                            <div role="cell" className={css.cellLevel}>
-                              <select
-                                style={{
-                                  ...styles.rowSelect,
-                                  ...(levelId ? {} : styles.rowSelectUnassigned),
-                                }}
-                                value={levelId}
-                                aria-label={`Division level for ${p.displayName}`}
-                                aria-busy={saving || undefined}
-                                onChange={(e) => void assignLevel(row, e.target.value)}
-                              >
-                                <option value="">Unassigned</option>
-                                {adminSeasonLevels.map((level) => (
-                                  <option key={level.id} value={level.id}>
-                                    {level.name}
-                                  </option>
-                                ))}
-                                {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
-                                  <option value={levelId}>
-                                    {levelNameById.get(levelId) ?? "Other level"}
-                                  </option>
-                                ) : null}
-                              </select>
-                              <span style={styles.savedFlag} aria-hidden="true">
-                                {saving ? (
-                                  <span className="tl-spinner" />
-                                ) : savedFlash ? (
-                                  <>
-                                    <IconCheck size={14} />
-                                    Saved
-                                  </>
-                                ) : null}
-                              </span>
-                            </div>
-                            <div role="cell" className={css.cellRemove}>
-                              <Button
-                                variant="quiet-danger"
-                                size="sm"
-                                style={styles.iconButton}
-                                aria-label={`Remove ${p.displayName} from ${adminSeason.name}`}
-                                title={`Remove from ${adminSeason.name}`}
-                                aria-haspopup="dialog"
-                                onClick={() => setRemoveTarget({ row, viaSelect: false })}
-                                icon={<IconUserMinus size={20} aria-hidden="true" />}
-                              />
+                            <div role="columnheader" className={css.cellPlayer} style={styles.headCell}>Player</div>
+                            <div role="columnheader" className={css.cellEmail} style={styles.headCell}>Email</div>
+                            <div role="columnheader" className={css.cellStatus} style={styles.headCell}>Status</div>
+                            <div role="columnheader" className={css.cellLevel} style={styles.headCell}>Division level</div>
+                            <div role="columnheader" className={css.cellRemove} style={styles.headCell}>
+                              <span className="sr-only">Remove</span>
                             </div>
                           </div>
-                        );
-                      })}
-                    </AnimatedDiv>
-                  </div>
-
-                  {visibleRows.length === 0 ? (
-                    <EmptyState
-                      compact
-                      title={
-                        rosterRows.length === 0
-                          ? `No players in ${adminSeason.name} yet`
-                          : rosterFilter === "unassigned" && !rosterSearch.trim()
-                            ? "Everyone has a division level"
-                            : "No players match"
-                      }
-                      description={
-                        rosterRows.length === 0
-                          ? noLevelsYet
-                            ? "Create a division level first, then add or import players."
-                            : "Add players one at a time, or paste a list with Import roster."
+                        </div>
+    
+                        <AnimatedDiv role="rowgroup">
+                          {visibleRows.map((row) => {
+                            const p = row.player;
+                            const draftLevelId = draftLevels[p.id];
+                            const levelId = draftLevelId ?? effectiveLevelId(row);
+                            const selected = selectedPlayerIds.includes(p.id);
+                            const registered = p.isRegistered !== false;
+                            const waitlisted = row.membership?.status === "waitlisted";
+                            // Rostered in another season only: not on this roster, so not "unassigned"
+                            // here, and there is nothing to remove from this season.
+                            const fromOtherSeason = otherSeasonIds.has(p.id) && !effectiveLevelId(row);
+                            const saving =
+                              savingRowIds.includes(p.id) ||
+                              (draftLevelId !== undefined && removeTarget?.row.player.id !== p.id);
+                            const savedFlash = savedFlashIds.includes(p.id);
+                            return (
+                              <div
+                                key={p.id}
+                                role="row"
+                                className={`${css.row} ${selected ? css.rowSelected : ""}`}
+                              >
+                                <div role="cell" className={css.cellCheck}>
+                                  <label className={css.checkTarget}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selected}
+                                      aria-label={`Select ${p.displayName}`}
+                                      onChange={(e) =>
+                                        setSelectedPlayerIds((current) =>
+                                          e.target.checked
+                                            ? [...current, p.id]
+                                            : current.filter((id) => id !== p.id),
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                                <div role="cell" className={css.cellPlayer}>
+                                  <button
+                                    type="button"
+                                    className={css.playerButton}
+                                    onClick={() => openPlayerDetail(row)}
+                                    aria-haspopup="dialog"
+                                    aria-label={`${p.displayName}: open details`}
+                                  >
+                                    <span style={styles.avatar} aria-hidden="true">
+                                      {initialsOf(p.displayName)}
+                                    </span>
+                                    <span className={css.playerName}>{p.displayName}</span>
+                                  </button>
+                                </div>
+                                <div role="cell" className={css.cellEmail} style={styles.cellText}>
+                                  {p.email && p.contactPreferences?.allowEmail !== false ? (
+                                    <a href={`mailto:${p.email}`} style={styles.contactLink}>
+                                      {p.email}
+                                    </a>
+                                  ) : (
+                                    <>
+                                      <span aria-hidden="true">—</span>
+                                      <span className="sr-only">{p.email ? "Email not shared" : "No email"}</span>
+                                    </>
+                                  )}
+                                </div>
+                                <div role="cell" className={css.cellStatus} style={styles.statusCell}>
+                                  <span style={registered ? styles.registeredBadge : styles.unregisteredBadge}>
+                                    {playerStatusLabel(p)}
+                                  </span>
+                                  {waitlisted ? <span style={styles.waitlistBadge}>Waitlisted</span> : null}
+                                  {fromOtherSeason ? (
+                                    <span style={styles.otherSeasonNote}>In {otherSeasonNames(p.id)}</span>
+                                  ) : null}
+                                </div>
+                                <div role="cell" className={css.cellLevel}>
+                                  <select
+                                    style={{
+                                      ...styles.rowSelect,
+                                      ...(levelId || fromOtherSeason ? {} : styles.rowSelectUnassigned),
+                                    }}
+                                    value={levelId}
+                                    aria-label={
+                                      fromOtherSeason
+                                        ? `Add ${p.displayName} to a ${adminSeason.name} division level`
+                                        : `Division level for ${p.displayName}`
+                                    }
+                                    aria-busy={saving || undefined}
+                                    onChange={(e) => onRowLevelChange(row, e.target.value)}
+                                  >
+                                    <option value="">
+                                      {fromOtherSeason ? `Not in ${adminSeason.name}` : "Unassigned"}
+                                    </option>
+                                    {adminSeasonLevels.map((level) => (
+                                      <option key={level.id} value={level.id}>
+                                        {level.name}
+                                      </option>
+                                    ))}
+                                    {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
+                                      <option value={levelId}>
+                                        {levelNameById.get(levelId) ?? "Other level"}
+                                      </option>
+                                    ) : null}
+                                  </select>
+                                  <span style={styles.savedFlag} aria-hidden="true">
+                                    {saving ? (
+                                      <span className="tl-spinner" />
+                                    ) : savedFlash ? (
+                                      <>
+                                        <IconCheck size={14} />
+                                        Saved
+                                      </>
+                                    ) : null}
+                                  </span>
+                                </div>
+                                <div role="cell" className={css.cellRemove}>
+                                  {fromOtherSeason ? null : (
+                                    <Button
+                                      variant="quiet-danger"
+                                      size="sm"
+                                      style={styles.iconButton}
+                                      aria-label={`Remove ${p.displayName} from ${adminSeason.name}`}
+                                      title={`Remove from ${adminSeason.name}`}
+                                      aria-haspopup="dialog"
+                                      onClick={() => setRemoveTarget({ row, viaSelect: false })}
+                                      icon={<IconUserMinus size={20} aria-hidden="true" />}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </AnimatedDiv>
+                      </div>
+    
+                      {visibleRows.length === 0 ? (
+                        <EmptyState
+                          compact
+                          title={
+                            rosterRows.length === 0
+                              ? `No players in ${adminSeason.name} yet`
+                              : rosterFilter === "unassigned" && !rosterSearch.trim()
+                                ? "Everyone has a division level"
+                                : "No players match"
+                          }
+                          description={
+                            rosterRows.length === 0
+                              ? noLevelsYet
+                                ? "Create a division level first, then add or import players."
+                                : "Add players one at a time, or paste a list with Import roster."
+                              : isFiltered
+                                ? "Try another search or filter."
+                                : undefined
+                          }
+                          action={
+                            isFiltered ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setRosterFilter("all");
+                                  setRosterSearch("");
+                                }}
+                              >
+                                Show all players
+                              </Button>
+                            ) : undefined
+                          }
+                        />
+                      ) : null}
+    
+                      <p style={styles.tableFooter} aria-live="polite">
+                        {rosterFilter === OTHER_SEASONS_FILTER
+                          ? `${plural(visibleRows.length, "player", "players")} from other seasons. Choose a level to add them to ${adminSeason.name}.`
                           : isFiltered
-                            ? "Try another search or filter."
-                            : undefined
-                      }
-                      action={
-                        isFiltered ? (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              setRosterFilter("all");
-                              setRosterSearch("");
-                            }}
-                          >
-                            Show all players
-                          </Button>
-                        ) : undefined
-                      }
-                    />
-                  ) : null}
-
-                  <p style={styles.tableFooter} aria-live="polite">
-                    {rosterFilter === OTHER_SEASONS_FILTER
-                      ? `${plural(visibleRows.length, "player", "players")} from other seasons. Choose a level to add them to ${adminSeason.name}.`
-                      : isFiltered
-                      ? `Showing ${visibleRows.length} of ${rosterRows.length} players`
-                      : `${plural(rosterRows.length, "player", "players")} in ${adminSeason.name}`}
-                  </p>
+                          ? `Showing ${visibleRows.length} of ${rosterRows.length} players`
+                          : `${plural(rosterRows.length, "player", "players")} in ${adminSeason.name}`}
+                      </p>
+                    </>
+                  )}
                 </section>
               </div>
             ) : null}
@@ -2199,6 +2412,17 @@ export default function AdminPage(): React.JSX.Element {
                             <span style={styles.levelCardCount}>{plural(count, "player", "players")}</span>
                             {level.description ? (
                               <span style={styles.levelCardMeta}>{level.description}</span>
+                            ) : null}
+                            {count > 0 ? (
+                              <Button
+                                size="sm"
+                                variant="quiet"
+                                style={styles.levelCardAction}
+                                aria-label={`Show the ${plural(count, "player", "players")} in ${level.name}`}
+                                onClick={() => showLevelOnRoster(level.id)}
+                              >
+                                Show players
+                              </Button>
                             ) : null}
                           </li>
                         );
@@ -2592,11 +2816,29 @@ export default function AdminPage(): React.JSX.Element {
                           Preview: {plural(rrPreview.length, "match", "matches")} over{" "}
                           {plural(new Set(rrPreview.map((m) => m.round)).size, "round", "rounds")}
                         </h3>
-                        <p style={styles.hint}>Nothing is created until you publish.</p>
+                        <p style={styles.hint}>
+                          {rrPreviewStartAt
+                            ? "Nothing is created until you publish."
+                            : "Nothing is created until you publish. Choose when round 1 starts to see each round's date."}
+                        </p>
                         <div style={styles.roundGrid}>
                           {Array.from(new Set(rrPreview.map((m) => m.round))).map((round) => (
                             <div key={round}>
-                              <h4 style={styles.roundTitle}>Round {round}</h4>
+                              <h4 style={styles.roundTitle}>
+                                Round {round}
+                                {rrPreviewStartAt ? (
+                                  <span style={styles.roundDate}>
+                                    {" · "}
+                                    {new Date(
+                                      rrPreviewStartAt + (round - 1) * rrIntervalDays * DAY_MS,
+                                    ).toLocaleDateString(undefined, {
+                                      weekday: "short",
+                                      month: "short",
+                                      day: "numeric",
+                                    })}
+                                  </span>
+                                ) : null}
+                              </h4>
                               <ul style={styles.roundList}>
                                 {rrPreview
                                   .filter((m) => m.round === round)
@@ -2755,6 +2997,15 @@ export default function AdminPage(): React.JSX.Element {
               ))}
             </select>
           </Field>
+          {addPlayerExisting && division ? (
+            <InlineAlert tone={addPlayerExisting.levelId ? "warning" : "info"} role={null}>
+              {addPlayerExisting.levelId === addPlayerLevelId
+                ? `${addPlayerExisting.player.displayName} is already in ${levelLabel(addPlayerLevelId)} for ${adminSeason.name}. Adding them again changes nothing.`
+                : addPlayerExisting.levelId
+                  ? `${addPlayerExisting.player.displayName} is already in ${levelLabel(addPlayerExisting.levelId)} for ${adminSeason.name}. Adding moves them to ${levelLabel(addPlayerLevelId)} instead of creating a new player.`
+                  : `${addPlayerExisting.player.displayName} is already in ${division.name}. Adding puts them on the ${adminSeason.name} roster instead of creating a new player.`}
+            </InlineAlert>
+          ) : null}
           {addPlayer.error ? <InlineAlert tone="error">{addPlayer.error}</InlineAlert> : null}
         </form>
       </Dialog>
@@ -2818,7 +3069,34 @@ export default function AdminPage(): React.JSX.Element {
           </Field>
           <p id="import-count" style={styles.importCount} aria-live="polite">
             {plural(importEntries.length, "player", "players")} detected
+            {importMoves > 0
+              ? `, ${plural(importMoves, "already has", "already have")} another division level`
+              : ""}
           </p>
+          {importPreview.length > 0 ? (
+            <ul style={styles.importPreview} aria-label="Players to import">
+              {importPreview.slice(0, IMPORT_PREVIEW_LIMIT).map(({ entry, existing }) => (
+                <li key={`${entry.email}|${entry.name}`} style={styles.importPreviewItem}>
+                  <span style={styles.importPreviewName}>{entry.name || entry.email}</span>
+                  {entry.name && entry.email ? (
+                    <span style={styles.importPreviewMeta}>{entry.email}</span>
+                  ) : !entry.email ? (
+                    <span style={styles.importPreviewMeta}>No email</span>
+                  ) : null}
+                  {existing?.levelId && existing.levelId !== importLevelId ? (
+                    <span style={styles.importPreviewMove}>Moves from {levelLabel(existing.levelId)}</span>
+                  ) : existing ? (
+                    <span style={styles.importPreviewMeta}>Already in the division</span>
+                  ) : null}
+                </li>
+              ))}
+              {importPreview.length > IMPORT_PREVIEW_LIMIT ? (
+                <li style={styles.importPreviewMeta}>
+                  and {importPreview.length - IMPORT_PREVIEW_LIMIT} more
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
           <Field id="import-level" label="Division level">
             <select
               id="import-level"
@@ -2833,6 +3111,13 @@ export default function AdminPage(): React.JSX.Element {
               ))}
             </select>
           </Field>
+          {importMoves > 0 ? (
+            <InlineAlert tone="warning" role={null}>
+              {plural(importMoves, "player is", "players are")} already in another {adminSeason.name}{" "}
+              division level. Importing moves them to {levelLabel(importLevelId)}; it doesn&rsquo;t
+              create a second copy.
+            </InlineAlert>
+          ) : null}
           {importRoster.error ? <InlineAlert tone="error">{importRoster.error}</InlineAlert> : null}
         </form>
       </Dialog>
@@ -2855,7 +3140,7 @@ export default function AdminPage(): React.JSX.Element {
               form="level-form"
               pending={saveLevel.pending}
               pendingLabel="Saving…"
-              disabled={!levelName.trim()}
+              disabled={!levelName.trim() || levelNameTaken}
             >
               Create division level
             </Button>
@@ -2867,6 +3152,7 @@ export default function AdminPage(): React.JSX.Element {
           style={styles.dialogForm}
           onSubmit={(event) => {
             event.preventDefault();
+            if (levelNameTaken) return;
             void saveLevel.run();
           }}
         >
@@ -2910,9 +3196,15 @@ export default function AdminPage(): React.JSX.Element {
               style={styles.input}
               value={levelName}
               onChange={(e) => setLevelName(e.target.value)}
-              aria-describedby="level-name-hint"
+              aria-describedby={levelNameTaken ? "level-name-hint level-name-error" : "level-name-hint"}
+              aria-invalid={levelNameTaken || undefined}
               required
             />
+            <FieldError id="level-name-error">
+              {levelNameTaken
+                ? `${adminSeason.name} already has a level called ${levelName.trim()}. Choose another name.`
+                : ""}
+            </FieldError>
           </Field>
           <Field id="level-description" label="Description (optional)">
             <input
@@ -2934,8 +3226,12 @@ export default function AdminPage(): React.JSX.Element {
         description={
           detailRow
             ? `${playerStatusLabel(detailRow.player)}${detailRow.membership?.status === "waitlisted" ? " · Waitlisted" : ""} · ${
-                effectiveLevelId(detailRow) ? levelLabel(effectiveLevelId(detailRow)) : "Unassigned"
-              } in ${adminSeason.name}`
+                effectiveLevelId(detailRow)
+                  ? `${levelLabel(effectiveLevelId(detailRow))} in ${adminSeason.name}`
+                  : otherSeasonIds.has(detailRow.player.id)
+                    ? `Not in ${adminSeason.name} (in ${otherSeasonNames(detailRow.player.id)}). Save to add them.`
+                    : `Unassigned in ${adminSeason.name}`
+              }`
             : undefined
         }
         size="lg"
@@ -2984,9 +3280,14 @@ export default function AdminPage(): React.JSX.Element {
                     ))}
                   </select>
                 </Field>
-                <Field id="detail-role" label="Role">
+                <Field
+                  id="detail-role"
+                  label="Role"
+                  hint="A division leader manages this roster and can see every player's contact details."
+                >
                   <select
                     id="detail-role"
+                    aria-describedby="detail-role-hint"
                     style={styles.input}
                     value={editRole}
                     onChange={(e) =>
@@ -3013,29 +3314,32 @@ export default function AdminPage(): React.JSX.Element {
                 <Field id="detail-email" label="Email">
                   <input
                     id="detail-email"
-                    style={styles.input}
                     type="email"
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
                     autoComplete="off"
+                    readOnly={detailRegistered}
                     aria-describedby="detail-contact-hint"
+                    style={{ ...styles.input, ...(detailRegistered ? styles.inputReadOnly : {}) }}
                   />
                 </Field>
                 <Field id="detail-phone" label="Phone (optional)">
                   <input
                     id="detail-phone"
-                    style={styles.input}
                     type="tel"
                     value={editPhone}
                     onChange={(e) => setEditPhone(e.target.value)}
                     autoComplete="off"
+                    readOnly={detailRegistered}
                     aria-describedby="detail-contact-hint"
+                    style={{ ...styles.input, ...(detailRegistered ? styles.inputReadOnly : {}) }}
                   />
                 </Field>
               </form>
               <p id="detail-contact-hint" style={styles.hint}>
-                Email and phone changes apply only to placeholders. A player who has registered
-                manages their own contact details.
+                {detailRegistered
+                  ? `${detailRow.player.displayName} has an account and manages their own email and phone from their profile.`
+                  : "This player is a placeholder. Save contact only updates the email and phone without changing their season details."}
               </p>
               <div style={styles.actionsRow}>
                 <Button
@@ -3047,15 +3351,17 @@ export default function AdminPage(): React.JSX.Element {
                 >
                   Save player
                 </Button>
-                <Button
-                  variant="secondary"
-                  pending={updateContact.pending}
-                  pendingLabel="Updating…"
-                  disabled={(detailBusy && !updateContact.pending) || !editEmail.trim()}
-                  onClick={() => void updateContact.run()}
-                >
-                  Update contact only
-                </Button>
+                {detailRegistered ? null : (
+                  <Button
+                    variant="secondary"
+                    pending={updateContact.pending}
+                    pendingLabel="Saving…"
+                    disabled={(detailBusy && !updateContact.pending) || !editEmail.trim()}
+                    onClick={() => void updateContact.run()}
+                  >
+                    Save contact only
+                  </Button>
+                )}
               </div>
               {savePlayer.error ? (
                 <InlineAlert tone="error" style={styles.blockGapTop}>
@@ -3104,7 +3410,25 @@ export default function AdminPage(): React.JSX.Element {
                 <legend style={styles.legendQuiet}>
                   Which of these recorded matches did {detailRow.player.displayName} play in?
                 </legend>
-                {candidateMatches.length > 0 ? (
+                {candidateMatchState === "loading" ? (
+                  <LoadingBlock label="Loading recorded matches…" rows={2} rowHeight={24} />
+                ) : candidateMatchState === "error" ? (
+                  <InlineAlert
+                    tone="error"
+                    action={
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<IconRefresh size={16} aria-hidden="true" />}
+                        onClick={() => setCandidateMatchRefreshKey((key) => key + 1)}
+                      >
+                        Try again
+                      </Button>
+                    }
+                  >
+                    Couldn&rsquo;t load the recorded matches for this division.
+                  </InlineAlert>
+                ) : candidateMatches.length > 0 ? (
                   <ul style={styles.matchChecklist}>
                     {candidateMatches.map((m) => {
                       const date = formatShortDate(m.completedAt ?? m.createdAt);
@@ -3217,7 +3541,7 @@ export default function AdminPage(): React.JSX.Element {
         confirmLabel="Remove player"
         pendingLabel="Removing…"
         onConfirm={confirmRemoveFromRoster}
-        onCancel={() => setRemoveTarget(null)}
+        onCancel={cancelRemove}
       />
 
       <ConfirmDialog

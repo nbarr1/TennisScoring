@@ -18,9 +18,22 @@ export function PermissionHints({
   authDebug: { uid: string; email: string; roleClaim?: unknown } | null;
 }): React.JSX.Element | null {
   if (!hints) return null;
+  // The checks name database fields, which mean nothing to most leaders. They stay one click
+  // away for whoever is asked to help, rather than leading the message.
   return (
-    <>
-      <p style={{ margin: `${space.sm}px 0 0` }}>Check that:</p>
+    <details style={{ marginTop: space.sm }}>
+      <summary
+        style={{
+          ...type.label,
+          cursor: "pointer",
+          minHeight: 44,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        Troubleshooting details
+      </summary>
+      <p style={{ margin: `${space.xs}px 0 0` }}>Check that:</p>
       <ul style={{ margin: `${space.xs}px 0 0 18px`, padding: 0, display: "grid", gap: space.xs }}>
         {hints.map((item) => (
           <li key={item}>{item}</li>
@@ -36,7 +49,7 @@ export function PermissionHints({
           ) : null}
         </p>
       ) : null}
-    </>
+    </details>
   );
 }
 
