@@ -10,7 +10,6 @@ import {
   Switch,
   Animated,
   TextInput,
-  FlatList,
   Pressable,
   Vibration,
   useWindowDimensions,
@@ -89,10 +88,7 @@ import {
   spokenUndoTarget,
   undoTargetLabel,
 } from "../../components/live-scoring/scoreSpeech";
-import {
-  KeyboardAwareBottomSheet,
-  KeyboardAwareScrollView,
-} from "../../components/KeyboardSafeView";
+import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
 import {
   addWearScoreInputListener,
   addWearSyncRequestListener,
@@ -119,6 +115,13 @@ type SymbolName = SymbolViewProps["name"];
 /** Platform-native glyphs for the top bar: a back chevron/arrow and a menu. */
 const BACK_ICON: SymbolName = { ios: "chevron.backward", android: "arrow_back" };
 const MENU_ICON: SymbolName = { ios: "ellipsis.circle", android: "more_vert" };
+/**
+ * The screen is presented as a modal: a sheet on iOS, which is closed rather
+ * than gone back from, and a full-screen push on Android, which keeps Back.
+ */
+const IS_IOS = Platform.OS === "ios";
+const LEAVE_ICON: SymbolName = { ios: "xmark", android: "arrow_back" };
+const LEAVE_LABEL = IS_IOS ? "Close" : "Back";
 
 function formatFormatLabel(match: Match): string {
   if (match.format.setsToWin >= 3) return "Best of 5";
@@ -363,120 +366,121 @@ function EditScoreModal({
       animationType="slide"
       onRequestClose={onCancel}
     >
-      <KeyboardAwareScrollView
-        keyboardViewStyle={styles.sheetOverlay}
-        contentContainerStyle={styles.sheetCard}
-      >
-        <Text style={styles.sheetTitle} accessibilityRole="header">
-          {resolving ? "Set the correct score" : "Edit score"}
-        </Text>
-        {resolving && (
-          <Text style={styles.sheetHint}>
-            This score is final. It counts in the standings without another
-            confirmation from the players.
+      {/* The same rising sheet as the others: a card pinned to the bottom that
+          scrolls when the keyboard or a long score needs the room. */}
+      <KeyboardAwareBottomSheet style={styles.sheetOverlay}>
+        <View style={styles.sheetCard} accessibilityViewIsModal>
+          <Text style={styles.sheetTitle} accessibilityRole="header">
+            {resolving ? "Set the correct score" : "Edit score"}
           </Text>
-        )}
-        {!resolving && isCompleted && (
-          <InlineAlert
-            tone="warning"
-            message="Changing a confirmed score sends it back to both players to confirm again."
-          />
-        )}
-        <View
-          style={editScoreStyles.headerRow}
-          importantForAccessibility="no-hide-descendants"
-          accessibilityElementsHidden
-        >
-          <Text style={editScoreStyles.headerSet}>Set</Text>
-          <Text style={editScoreStyles.headerName} numberOfLines={1}>
-            {p1Name}
-          </Text>
-          <Text style={editScoreStyles.headerName} numberOfLines={1}>
-            {p2Name}
-          </Text>
-        </View>
-        {sets.map((s, i) => {
-          const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
-          const unit = s.matchTiebreak ? "points" : "games";
-          return (
-            <React.Fragment key={i}>
-              <View style={editScoreStyles.setRow}>
-                <Text
-                  style={editScoreStyles.setLabel}
-                  importantForAccessibility="no"
-                  accessibilityElementsHidden
-                >
-                  {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
-                </Text>
-                <TextInput
-                  style={editScoreStyles.setInput}
-                  value={s.p1}
-                  onChangeText={(v) => updateSet(i, "p1", v)}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="0"
-                  placeholderTextColor={colors.placeholder}
-                  accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
-                  editable={!saving}
-                />
-                <TextInput
-                  style={editScoreStyles.setInput}
-                  value={s.p2}
-                  onChangeText={(v) => updateSet(i, "p2", v)}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="0"
-                  placeholderTextColor={colors.placeholder}
-                  accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
-                  editable={!saving}
-                />
-              </View>
-              <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
-            </React.Fragment>
-          );
-        })}
-        <View style={editScoreStyles.setActionRow}>
-          {sets.length < 5 && (
-            <Button
-              label="Add set"
-              icon="plus"
-              variant="quiet"
-              size="compact"
-              disabled={saving}
-              onPress={() =>
-                onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
-              }
+          {resolving && (
+            <Text style={styles.sheetHint}>
+              This score is final. It counts in the standings without another
+              confirmation from the players.
+            </Text>
+          )}
+          {!resolving && isCompleted && (
+            <InlineAlert
+              tone="warning"
+              message="Changing a confirmed score sends it back to both players to confirm again."
             />
           )}
-          {sets.length > 1 && (
+          <View
+            style={editScoreStyles.headerRow}
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
+          >
+            <Text style={editScoreStyles.headerSet}>Set</Text>
+            <Text style={editScoreStyles.headerName} numberOfLines={1}>
+              {p1Name}
+            </Text>
+            <Text style={editScoreStyles.headerName} numberOfLines={1}>
+              {p2Name}
+            </Text>
+          </View>
+          {sets.map((s, i) => {
+            const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
+            const unit = s.matchTiebreak ? "points" : "games";
+            return (
+              <React.Fragment key={i}>
+                <View style={editScoreStyles.setRow}>
+                  <Text
+                    style={editScoreStyles.setLabel}
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
+                  >
+                    {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+                  </Text>
+                  <TextInput
+                    style={editScoreStyles.setInput}
+                    value={s.p1}
+                    onChangeText={(v) => updateSet(i, "p1", v)}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    placeholder="0"
+                    placeholderTextColor={colors.placeholder}
+                    accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
+                    editable={!saving}
+                  />
+                  <TextInput
+                    style={editScoreStyles.setInput}
+                    value={s.p2}
+                    onChangeText={(v) => updateSet(i, "p2", v)}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    placeholder="0"
+                    placeholderTextColor={colors.placeholder}
+                    accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
+                    editable={!saving}
+                  />
+                </View>
+                <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
+              </React.Fragment>
+            );
+          })}
+          <View style={editScoreStyles.setActionRow}>
+            {sets.length < 5 && (
+              <Button
+                label="Add set"
+                icon="plus"
+                variant="quiet"
+                size="compact"
+                disabled={saving}
+                onPress={() =>
+                  onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
+                }
+              />
+            )}
+            {sets.length > 1 && (
+              <Button
+                label="Remove last set"
+                variant="quiet"
+                size="compact"
+                disabled={saving}
+                onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+              />
+            )}
+          </View>
+          {error ? (
+            <InlineAlert tone="error" title="Score not saved" message={error} />
+          ) : null}
+          <View style={styles.buttonStack}>
             <Button
-              label="Remove last set"
-              variant="quiet"
-              size="compact"
-              disabled={saving}
-              onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+              label={resolving ? "Save final score" : "Save score"}
+              pending={saving}
+              fullWidth
+              onPress={onSave}
             />
-          )}
+            <Button
+              label="Cancel"
+              variant="quiet"
+              fullWidth
+              disabled={saving}
+              onPress={onCancel}
+            />
+          </View>
         </View>
-        {error ? (
-          <InlineAlert tone="error" title="Score not saved" message={error} />
-        ) : null}
-        <View style={styles.buttonStack}>
-          <Button
-            label={resolving ? "Save final score" : "Save score"}
-            pending={saving}
-            fullWidth
-            onPress={onSave}
-          />
-          <Button
-            label="Cancel"
-            variant="quiet"
-            fullWidth
-            disabled={saving}
-            onPress={onCancel}
-          />
-        </View>
-      </KeyboardAwareScrollView>
+      </KeyboardAwareBottomSheet>
     </Modal>
   );
 }
@@ -1345,10 +1349,61 @@ export default function MatchScreen() {
           ? "Waiting for the players to confirm the result."
           : null
     : null;
+  // A proposal has nothing on the scoreboard yet, so Accept and Decline (or
+  // Withdraw) lead and the empty scoreboard follows.
+  const leadWithPanels = match.status === "proposed";
+
+  const court = showSetupSurface ? (
+    <ScoreboardSetup
+      names={names}
+      server={setupServer}
+      onPickServer={setSetupServer}
+      formatLabel={formatFormatLabel(match)}
+      scheduledLabel={match.scheduledAt ? formatWhen(match.scheduledAt) : undefined}
+      advancedStats={advancedStatsEnabled}
+      onToggleAdvancedStats={setAdvancedStatsEnabled}
+      onStart={() => void start.run()}
+      starting={start.pending}
+      startError={start.error}
+      watchAppInstalled={watchAppInstalled}
+      launchingWatch={launchingWatch}
+      onLaunchWatch={() => void handleLaunchWatch()}
+      fontsLoaded={fontsLoaded}
+    />
+  ) : (
+    <ScoreboardSurface
+      match={match}
+      interactive={showCourtSurface}
+      compact={compact}
+      fontsLoaded={fontsLoaded}
+      swapped={swapped}
+      onSwap={() => {
+        setSwapped((value) => !value);
+        announce("Ends swapped");
+      }}
+      onPoint={requestPoint}
+      scoring={scoring}
+      recordingFor={recordingFor}
+      lastPoint={lastPoint}
+      onUndo={() => void handleUndo()}
+      canUndo={!!match.undoSnapshot}
+      undoHint={
+        undoTarget
+          ? undoTargetLabel(match.liveScore, undoTarget)
+          : "No point to take back yet"
+      }
+      undoSpoken={undoTarget ? spokenUndoTarget(undoTarget, names) : undefined}
+    />
+  );
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: false }} />
+      {/* On iOS this screen is a sheet, and the court has scrolling off, so a
+          thumb dragging down a player row would pull the scoreboard away
+          mid-match. While scoring, the top-left control is the way out. */}
+      <Stack.Screen
+        options={{ headerShown: false, gestureEnabled: !showCourtSurface }}
+      />
       <View
         style={[
           styles.sbHeader,
@@ -1362,9 +1417,9 @@ export default function MatchScreen() {
           ]}
           onPress={() => router.back()}
           accessibilityRole="button"
-          accessibilityLabel="Back"
+          accessibilityLabel={LEAVE_LABEL}
         >
-          <AppIcon name={BACK_ICON} size={ICON_SIZE.tab} color={SB.text} />
+          <AppIcon name={LEAVE_ICON} size={ICON_SIZE.tab} color={SB.text} />
         </Pressable>
         <Text
           style={[styles.sbHeaderTitle, font(fontsLoaded, "bold")]}
@@ -1426,47 +1481,7 @@ export default function MatchScreen() {
             </View>
           ) : null}
 
-          {showSetupSurface ? (
-            <ScoreboardSetup
-              names={names}
-              server={setupServer}
-              onPickServer={setSetupServer}
-              formatLabel={formatFormatLabel(match)}
-              advancedStats={advancedStatsEnabled}
-              onToggleAdvancedStats={setAdvancedStatsEnabled}
-              onStart={() => void start.run()}
-              starting={start.pending}
-              startError={start.error}
-              watchAppInstalled={watchAppInstalled}
-              launchingWatch={launchingWatch}
-              onLaunchWatch={() => void handleLaunchWatch()}
-              fontsLoaded={fontsLoaded}
-            />
-          ) : (
-            <ScoreboardSurface
-              match={match}
-              interactive={showCourtSurface}
-              compact={compact}
-              fontsLoaded={fontsLoaded}
-              swapped={swapped}
-              onSwap={() => {
-                setSwapped((value) => !value);
-                announce("Ends swapped");
-              }}
-              onPoint={requestPoint}
-              scoring={scoring}
-              recordingFor={recordingFor}
-              lastPoint={lastPoint}
-              onUndo={() => void handleUndo()}
-              canUndo={!!match.undoSnapshot}
-              undoHint={
-                undoTarget
-                  ? undoTargetLabel(match.liveScore, undoTarget)
-                  : "No point to take back yet"
-              }
-              undoSpoken={undoTarget ? spokenUndoTarget(undoTarget, names) : undefined}
-            />
-          )}
+          {!leadWithPanels && court}
 
           {!fillScreen && (
             <View style={styles.sections}>
@@ -1940,6 +1955,8 @@ export default function MatchScreen() {
                 )}
             </View>
           )}
+
+          {leadWithPanels && court}
         </ScrollView>
         <TipOverlay tip={currentTip} onDismiss={() => setCurrentTip(null)} />
       </View>
@@ -2169,13 +2186,13 @@ export default function MatchScreen() {
             {link.pending ? (
               <LoadingState inline label="Linking player" showLabel />
             ) : null}
-            <FlatList
-              data={linkResults}
-              keyExtractor={(u) => u.id}
-              style={styles.linkResults}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
+            {/* The sheet already scrolls, and a division search returns a
+                short list, so the rows render directly rather than in a
+                nested virtualized list. */}
+            <View>
+              {linkResults.map((item) => (
                 <Pressable
+                  key={item.id}
                   style={({ pressed }) => [
                     styles.linkResultRow,
                     pressed && { backgroundColor: colors.surfaceMuted },
@@ -2192,15 +2209,16 @@ export default function MatchScreen() {
                   </Text>
                   <Text style={styles.linkResultAction}>Link</Text>
                 </Pressable>
-              )}
-              ListEmptyComponent={
-                linkSearch.trim().length > 0 && !linkSearching && !linkSearchError ? (
-                  <Text style={styles.linkNoResults}>
-                    No players in your division match "{linkSearch.trim()}".
-                  </Text>
-                ) : null
-              }
-            />
+              ))}
+              {linkResults.length === 0 &&
+              linkSearch.trim().length > 0 &&
+              !linkSearching &&
+              !linkSearchError ? (
+                <Text style={styles.linkNoResults}>
+                  No players in your division match "{linkSearch.trim()}".
+                </Text>
+              ) : null}
+            </View>
             <Button
               label="Cancel"
               variant="quiet"
@@ -2366,7 +2384,6 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { ...typography.heading, color: colors.primary },
   sheetHint: { ...typography.bodySmall, color: colors.textMuted },
-  linkResults: { maxHeight: 240 },
   linkResultRow: {
     flexDirection: "row",
     alignItems: "center",
