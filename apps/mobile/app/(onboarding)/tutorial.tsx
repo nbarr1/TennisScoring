@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { auth, updateUserProfile } from "@tennis/firebase-client";
 import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import {
@@ -147,6 +148,8 @@ export default function TutorialScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      {/* Light status-bar content on the Clubhouse Green background. */}
+      <StatusBar style="light" />
       <View style={styles.topBar}>
         {!isLast && (
           <DarkButton
