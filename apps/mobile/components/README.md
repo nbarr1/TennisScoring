@@ -44,6 +44,8 @@ function MatchRow() {
 
 The app runs on tablets in portrait. Content keeps a readable measure and centers instead of stretching: `CONTENT_MAX_WIDTH` is `form 720` (forms, lists, conversations, the live match), `wide 960` (the standings table), and `sheet 640` (bottom sheets). `useContentWidth(max = "form")` returns `{ width: "100%", maxWidth, alignSelf: "center" }` when the window is wider than `max`, and `undefined` otherwise, so **phone layouts are unchanged**. Add it to a scroll view's `contentContainerStyle`, or to a View that would span the window (a bottom action bar, a screen body). `ScreenContainer` is the same as a View. `BottomSheetModal` applies the sheet width itself.
 
+`useIsNarrowWindow(threshold)` is true when the window is narrower than `threshold` points *at the current text size* (width divided by the font scale). Use it, never a bare `useWindowDimensions().width < n`, for a switch to a stacked or compact layout, so a large phone at 200 % text gets the compact layout too.
+
 ```tsx
 const contentWidth = useContentWidth();
 <KeyboardAwareScrollView contentContainerStyle={[styles.content, contentWidth]}>
@@ -84,11 +86,13 @@ if (ok) await decline.run();
 
 **`confirmAction({ ..., destructive? })`** is the same dialog for actions that are not destructive.
 
+Only one confirm dialog shows at a time: while one is open, another call resolves `false` at once, so a double tap on Delete cannot stack two alerts and run the action twice.
+
 **`describeError(error, fallback?)`** turns a thrown value into a sentence. Bare codes such as `internal` become the fallback.
 
 ## Primitives (`theme/primitives.tsx`)
 
-**`Button`** props: `label`, `variant: "primary" | "secondary" | "danger" | "quiet"` (the old names `destructive` and `text` still work), `pending` (or the older `loading`), `pendingLabel?`, `icon?` (an SF Symbol name), `size?: "regular" | "compact"`, `fullWidth?`, and every `Pressable` prop. `pending` shows a spinner without changing the button's width, disables it, and sets `accessibilityState.busy`. `label` doubles as the accessibility label. A regular button is at least 48 tall. `compact` is 36 tall, and its hitSlop brings the touch target to the platform minimum. Use one `primary` per screen.
+**`Button`** props: `label`, `variant: "primary" | "secondary" | "danger" | "quiet"` (the old names `destructive` and `text` still work), `pending` (or the older `loading`), `pendingLabel?`, `icon?` (an SF Symbol name), `size?: "regular" | "compact"`, `fullWidth?`, and every `Pressable` prop. `pending` shows a spinner without changing the button's width, disables it, and sets `accessibilityState.busy`. `label` doubles as the accessibility label. A labelled button still pending after 10 seconds shows "Still working…" beside the spinner and announces once that it is still working, because an offline Firestore write or a slow callable can stay pending for over a minute. A regular button is at least 48 tall. `compact` is 36 tall, and its hitSlop brings the touch target to the platform minimum. Use one `primary` per screen.
 ```tsx
 <Button label="Propose match" pending={propose.pending} onPress={() => propose.run()} />
 <Button label="Change" variant="quiet" size="compact" accessibilityLabel="Change opponent" onPress={clear} />
@@ -122,7 +126,7 @@ if (loading) return <LoadingState label="Loading matches" />;
 <LoadingState inline label="Loading players" />
 ```
 
-**Also here:** `Screen` (canvas background; `scroll` makes it a ScrollView that keeps taps while the keyboard is open), `Card`, `TextField` (a lightweight labelled input; prefer `FormField` in forms), `Chip` (`label`, `selected`; at least the platform minimum height), and `SectionHeader` (`title` is a header, plus `subtitle?` and `action?`).
+**Also here:** `Screen` (canvas background; `scroll` makes it a ScrollView that keeps taps while the keyboard is open), `Card`, `TextField` (a lightweight labelled input; prefer `FormField` in forms), `Chip` (`label`, `selected`; at least the platform minimum height, never wider than its row, and its label wraps rather than running off screen), and `SectionHeader` (`title` is a header, plus `subtitle?` and `action?`).
 
 ## Components (`components/`)
 
@@ -131,7 +135,7 @@ if (loading) return <LoadingState label="Loading matches" />;
 <AppIcon name="trophy.fill" size={ICON_SIZE.tab} color={colors.primary} />
 <AppIcon name="exclamationmark.triangle" accessibilityLabel="Disputed" />
 ```
-`IconLabel` (`name`, `children`, `color?`, `textStyle?`) is an icon and text in one row.
+`IconLabel` (`name`, `children`, `color?`, `textStyle?`) is an icon and text in one row, start-aligned. Center it from the parent when a row should be centered.
 
 **`FormField`** props: `label` (required), `error?`, `helperText?`, `required?`, `disabled?`, `showCharacterCount?`, `containerStyle?`, `inputStyle?`, and every `TextInput` prop (it forwards a ref). Screen readers hear "Label, required" and the error or helper text as one stop. A new error is announced while the field is focused. Multiline fields are 96 tall with top-aligned text.
 ```tsx
