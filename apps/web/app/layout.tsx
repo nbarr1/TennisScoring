@@ -8,13 +8,14 @@ import { ViewModeProvider } from './shared/viewMode';
 import { SessionServices } from './shared/SessionServices';
 import { AnnouncerProvider } from './shared/Announcer';
 import { SkipLink } from './shared/SkipLink';
+import { palette, rootTokenCss } from './shared/tokens';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1a472a',
+  themeColor: palette.clubhouseGreen,
 };
 
 export const metadata: Metadata = {
@@ -33,6 +34,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
+      <head>
+        {/* The design tokens as CSS variables, from tokens.ts (static values). */}
+        <style dangerouslySetInnerHTML={{ __html: rootTokenCss }} />
+      </head>
       <body>
         <SkipLink />
         {/* Push registration and the email-verification gate. Nothing else in

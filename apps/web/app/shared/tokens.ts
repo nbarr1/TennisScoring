@@ -1,11 +1,12 @@
 /**
  * Design tokens for the web app, mirroring the DESIGN.md frontmatter.
  *
- * The same values are declared as CSS custom properties on `:root` in
- * globals.css. Inline style objects should use `color.*`, which resolve to
- * those variables, so one edit in globals.css restyles every page. `palette`
- * holds the raw hex values for the few places a variable cannot go (canvas
- * drawing, contrast maths, third-party options).
+ * This file is the single source of the token values: the root layout
+ * declares each one as a CSS custom property on `:root` (`rootTokenCss`, at
+ * the end), and inline style objects use `color.*`, which resolve to those
+ * variables, so one edit here restyles every page and every class in
+ * globals.css. Use `palette` itself only where a variable cannot go (canvas
+ * drawing, contrast maths, the theme-color meta, third-party options).
  *
  * Contrast notes (WCAG AA, 4.5:1 for text under 18.66px bold / 24px):
  * - `textMuted` passes on every clubhouse surface and tint (4.67:1 or better).
@@ -33,8 +34,6 @@ export const palette = {
   border: "#DADDD8",
   /** Input and control strokes: 3:1 against white so the field edge is visible. */
   borderStrong: "#8A8F8C",
-  disabled: "#C8CCC9",
-  disabledText: "#777C79",
   destructive: "#C0392B",
   destructivePressed: "#962D22",
   destructiveSoft: "#FBEAEA",
@@ -169,5 +168,24 @@ export const fieldLabelStyle: React.CSSProperties = {
   color: color.ink,
   marginBottom: space.xs,
 };
+
+/**
+ * Every token above as CSS custom properties in one `:root` rule
+ * (`--clubhouse-green:#1A472A;--radius-md:10px;--space-lg:16px;...`). The
+ * root layout writes it into the document head, so this file is the only
+ * place a token value is defined: the classes in globals.css and the inline
+ * `color.*` references both read these variables.
+ */
+export const rootTokenCss = `:root{${[
+  ...Object.entries(palette).map(([key, value]) => `--${kebab(key)}:${value}`),
+  ...Object.entries(radius).map(([key, value]) => `--radius-${key}:${value}px`),
+  ...Object.entries(space).map(([key, value]) => `--space-${key}:${value}px`),
+  ...Object.entries(type).map(([key, role]) => `--font-size-${kebab(key)}:${role.fontSize}px`),
+  ...Object.entries(shadow).map(([key, value]) => `--shadow-${key}:${value}`),
+  ...Object.entries(target).map(([key, value]) => `--target-${key}:${value}px`),
+  `--duration-fast:${motion.fast}`,
+  `--duration-page:${motion.page}`,
+  `--ease-out:${motion.easeOut}`,
+].join(";")}}`;
 
 export const tokens = { palette, color, radius, space, font, type, shadow, target, motion, width } as const;

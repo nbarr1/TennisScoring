@@ -1,5 +1,7 @@
-/** League green and gold, from the variables in globals.css. */
-const COLORS = ["#1a472a", "#2d6a4f", "#a8d5a2", "#ffdc60"];
+import { palette } from "./tokens";
+
+/** League green and gold. Raw hex, since the canvas cannot read CSS variables. */
+const COLORS = [palette.clubhouseGreen, palette.courtGreen, palette.greenLight, palette.ballYellow];
 
 /**
  * A one-second burst of confetti from both lower corners. canvas-confetti is
