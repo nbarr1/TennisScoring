@@ -1,5 +1,6 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { Stack } from 'expo-router';
+import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, type Theme } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,7 +8,15 @@ import { signOutReleasingPushToken, useAuthUser, usePrivateUser } from '@tennis/
 import { useRouter, useSegments } from 'expo-router';
 import { useAppStore } from '../store/appStore';
 import { useNotifications } from '../hooks/useNotifications';
-import { Button, LoadingState, colors, spacing, typography } from '../theme';
+import {
+  Button,
+  LoadingState,
+  ScreenContainer,
+  spacing,
+  typography,
+  makeStyles,
+  useTheme,
+} from '../theme';
 function LoadingScreen() {
   return <LoadingState label="Loading your account" showLabel={false} />;
 }
@@ -30,33 +39,41 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 
   render() {
     if (this.state.error) {
-      return (
-        <ScrollView style={styles.diagScreen} contentContainerStyle={styles.diagContent}>
-          <Text style={styles.diagTitle} accessibilityRole="header">
-            Something went wrong
-          </Text>
-          {__DEV__ ? (
-            <>
-              <Text style={styles.diagMessage}>{this.state.error.message}</Text>
-              <Text style={styles.diagDetails}>{this.state.error.stack}</Text>
-            </>
-          ) : (
-            <Text style={styles.diagMessage}>
-              The app hit an unexpected error. Try again. If it happens again, close the app and reopen it, and tell your division leader if it keeps happening.
-            </Text>
-          )}
-          <Button
-            label="Try again"
-            accessibilityLabel="Try loading the app again"
-            icon="arrow.clockwise"
-            fullWidth
-            onPress={() => this.setState({ error: null })}
-          />
-        </ScrollView>
-      );
+      return <RootErrorFallback error={this.state.error} onRetry={() => this.setState({ error: null })} />;
     }
     return this.props.children;
   }
+}
+
+// A function component so the fallback can read the themed styles hook.
+function RootErrorFallback({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  const styles = useStyles();
+  return (
+    <ScrollView style={styles.diagScreen} contentContainerStyle={styles.diagContent}>
+      <ScreenContainer>
+        <Text style={styles.diagTitle} accessibilityRole="header">
+          Something went wrong
+        </Text>
+        {__DEV__ ? (
+          <>
+            <Text style={styles.diagMessage}>{error.message}</Text>
+            <Text style={styles.diagDetails}>{error.stack}</Text>
+          </>
+        ) : (
+          <Text style={styles.diagMessage}>
+            The app hit an unexpected error. Try again. If it happens again, close the app and reopen it, and tell your division leader if it keeps happening.
+          </Text>
+        )}
+        <Button
+          label="Try again"
+          accessibilityLabel="Try loading the app again"
+          icon="arrow.clockwise"
+          fullWidth
+          onPress={onRetry}
+        />
+      </ScreenContainer>
+    </ScrollView>
+  );
 }
 
 
@@ -73,21 +90,24 @@ function DiagnosticScreen({
   onRetry?: () => void;
   onSignOut?: () => void;
 }) {
+  const styles = useStyles();
   return (
     <ScrollView style={styles.diagScreen} contentContainerStyle={[styles.diagContent, styles.diagCentered]}>
-      <Text style={styles.diagTitle} accessibilityRole="header">
-        {title}
-      </Text>
-      <Text style={styles.diagMessage}>{message}</Text>
-      {details && __DEV__ ? <Text style={styles.diagDetails}>{details}</Text> : null}
-      <View style={styles.diagActions}>
-        {onRetry ? (
-          <Button label="Try again" accessibilityLabel="Try loading the app again" icon="arrow.clockwise" fullWidth onPress={onRetry} />
-        ) : null}
-        {onSignOut ? (
-          <Button label="Sign out" accessibilityLabel="Sign out and return to sign in" variant="secondary" fullWidth onPress={onSignOut} />
-        ) : null}
-      </View>
+      <ScreenContainer>
+        <Text style={styles.diagTitle} accessibilityRole="header">
+          {title}
+        </Text>
+        <Text style={styles.diagMessage}>{message}</Text>
+        {details && __DEV__ ? <Text style={styles.diagDetails}>{details}</Text> : null}
+        <View style={styles.diagActions}>
+          {onRetry ? (
+            <Button label="Try again" accessibilityLabel="Try loading the app again" icon="arrow.clockwise" fullWidth onPress={onRetry} />
+          ) : null}
+          {onSignOut ? (
+            <Button label="Sign out" accessibilityLabel="Sign out and return to sign in" variant="secondary" fullWidth onPress={onSignOut} />
+          ) : null}
+        </View>
+      </ScreenContainer>
     </ScrollView>
   );
 }
@@ -103,6 +123,7 @@ function DiagnosticScreen({
  * parcel exceeded the Binder limit and killed the process on backgrounding.
  */
 function GateOverlay({ children }: { children: ReactNode }) {
+  const styles = useStyles();
   return <View style={[StyleSheet.absoluteFill, styles.overlay]}>{children}</View>;
 }
 
@@ -257,17 +278,40 @@ function AuthGate() {
 }
 
 export default function RootLayout() {
+  const { colors, isDark } = useTheme();
+  // The navigation container's own theme paints the card and scene
+  // backgrounds behind every screen, so a transition never flashes white in
+  // the dark scheme. Headers stay Clubhouse Green (`brand`) in both schemes.
+  const navigationTheme = useMemo<Theme>(() => {
+    const base = isDark ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.primary,
+        background: colors.canvas,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.destructive,
+      },
+    };
+  }, [colors, isDark]);
   return (
     <RootErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.canvas }}>
         <SafeAreaProvider>
-          <View style={{ flex: 1 }}>
+          <ThemeProvider value={navigationTheme}>
+          {/* Dark status-bar content on the light canvas, light on the dark
+              one. The tab layout and screens on a green header override it. */}
+          <StatusBar style="auto" />
+          <View style={{ flex: 1, backgroundColor: colors.canvas }}>
             <Stack
               screenOptions={{
                 headerShown: false,
-                headerStyle: { backgroundColor: colors.primary },
-                headerTintColor: colors.onPrimary,
-                headerTitleStyle: { color: colors.onPrimary },
+                headerStyle: { backgroundColor: colors.brand },
+                headerTintColor: colors.onBrand,
+                headerTitleStyle: { color: colors.onBrand },
                 contentStyle: { backgroundColor: colors.canvas },
               }}
             >
@@ -285,25 +329,28 @@ export default function RootLayout() {
             </Stack>
             <AuthGate />
           </View>
+          </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>
     </RootErrorBoundary>
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: colors.canvas,
-    // The navigator below is a native (react-native-screens) view, so JS sibling
-    // order alone is not enough to guarantee the overlay draws on top of it.
-    zIndex: 1000,
-    elevation: 24,
-  },
-  diagScreen: { flex: 1, backgroundColor: colors.canvas },
-  diagContent: { padding: spacing.xl, paddingTop: spacing.xxxl + spacing.lg },
-  diagCentered: { flexGrow: 1, justifyContent: 'center', paddingTop: spacing.xl },
-  diagTitle: { ...typography.heading, color: colors.primary, marginBottom: spacing.md },
-  diagMessage: { ...typography.body, color: colors.text, marginBottom: spacing.lg },
-  diagDetails: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.lg },
-  diagActions: { gap: spacing.md },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    overlay: {
+      backgroundColor: colors.canvas,
+      // The navigator below is a native (react-native-screens) view, so JS sibling
+      // order alone is not enough to guarantee the overlay draws on top of it.
+      zIndex: 1000,
+      elevation: 24,
+    },
+    diagScreen: { flex: 1, backgroundColor: colors.canvas },
+    diagContent: { padding: spacing.xl, paddingTop: spacing.xxxl + spacing.lg },
+    diagCentered: { flexGrow: 1, justifyContent: 'center', paddingTop: spacing.xl },
+    diagTitle: { ...typography.heading, color: colors.primary, marginBottom: spacing.md },
+    diagMessage: { ...typography.body, color: colors.text, marginBottom: spacing.lg },
+    diagDetails: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.lg },
+    diagActions: { gap: spacing.md },
+  }),
+);

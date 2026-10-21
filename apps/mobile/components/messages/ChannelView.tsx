@@ -28,7 +28,7 @@ import type { Channel, Message, MessageReportReason } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardSafeView } from "../KeyboardSafeView";
 import { BottomSheetModal } from "../BottomSheetModal";
-import { AppIcon, IconLabel, ICON_COLOR, ICON_SIZE } from "../AppIcon";
+import { AppIcon, IconLabel, ICON_SIZE } from "../AppIcon";
 import { FormField } from "../FormField";
 import {
   Button,
@@ -38,7 +38,6 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
-  colors,
   confirmDestructive,
   describeError,
   elevations,
@@ -47,6 +46,10 @@ import {
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  type ThemeColors,
+  useContentWidth,
 } from "../../theme";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
@@ -146,6 +149,8 @@ const MessageBubble = React.memo(function MessageBubble({
   isMe: boolean;
   onOpenActions?: (message: Message) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const sender = isMe ? "You" : message.senderName;
   const sentAt = formatMessageTime(message.createdAt);
   const openActions =
@@ -256,6 +261,11 @@ export function ChannelView({
   /** Picks the empty-state copy; unknown until the channel list loads. */
   channelType?: Channel["type"];
 }) {
+  const colors = useColors();
+  const styles = useStyles();
+  // The whole conversation (list and composer) centers at the form width on
+  // a tablet. Undefined on phones.
+  const contentWidth = useContentWidth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   // The stack header sits above this view, and iOS keyboard avoidance
@@ -528,7 +538,7 @@ export function ChannelView({
   const isEmpty = messages.length === 0;
   const listContentStyle = useMemo(
     () => [styles.messageList, isEmpty && styles.messageListEmpty],
-    [isEmpty],
+    [styles, isEmpty],
   );
   const listEmpty = useMemo(
     () =>
@@ -556,7 +566,7 @@ export function ChannelView({
 
   return (
     <KeyboardSafeView
-      style={styles.container}
+      style={[styles.container, contentWidth]}
       keyboardVerticalOffset={keyboardOffset}
     >
       {notice && (
@@ -620,7 +630,7 @@ export function ChannelView({
             <AppIcon
               name="person.crop.circle"
               size={ICON_SIZE.tab}
-              color={ICON_COLOR.active}
+              color={colors.primary}
             />
           )}
         </Pressable>
@@ -697,7 +707,7 @@ export function ChannelView({
         >
           <IconLabel
             name="person.crop.circle.badge.xmark"
-            color={ICON_COLOR.destructive}
+            color={colors.iconDestructive}
             textStyle={styles.actionSheetOptionTextDestructive}
           >
             Block {actionMessage?.senderName}
@@ -785,175 +795,183 @@ function keyExtractor(message: Message) {
 }
 
 /** The sheet card shared by the Messages screens. */
-export const sheetCardStyle = {
-  backgroundColor: colors.surface,
-  borderTopLeftRadius: radii.xl,
-  borderTopRightRadius: radii.xl,
-  padding: spacing.xl,
-  width: "100%",
-  gap: spacing.sm,
-} as const;
-
-const styles = StyleSheet.create({
-  container: { backgroundColor: colors.canvas },
-  bubbleTime: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xxs,
-    alignSelf: "flex-end",
-  },
-  // White at 85% on Clubhouse Green stays above 8:1.
-  bubbleTimeMe: { color: "rgba(255,255,255,0.85)" },
-  notice: { margin: spacing.md, marginBottom: 0 },
-  messageList: { padding: spacing.lg, paddingBottom: spacing.sm },
-  messageListEmpty: { flexGrow: 1, justifyContent: "center" },
-  bubbleRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: spacing.sm,
-    maxWidth: "88%",
-    alignSelf: "flex-start",
-  },
-  bubbleRowMe: { alignSelf: "flex-end" },
-  bubble: {
-    flexShrink: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radii.lg,
-  },
-  bubbleMe: {
-    backgroundColor: colors.primary,
-    borderBottomRightRadius: spacing.xs,
-  },
-  bubbleThem: {
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: spacing.xs,
-    ...elevations.low,
-  },
-  messageActionsBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  bubbleText: {
-    ...typography.body,
-    fontSize: 15,
-    lineHeight: 21,
-    color: colors.text,
-  },
-  bubbleTextMe: { color: colors.onPrimary },
-  senderName: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.textMuted,
-    marginBottom: spacing.xxs,
-  },
-  contactActions: {
-    flexDirection: "row",
-    gap: spacing.lg,
-    marginTop: spacing.sm,
-  },
-  contactLinkTarget: { minHeight: 24, justifyContent: "center" },
-  contactLink: { ...typography.label, color: colors.primary },
-  contactLinkMe: { color: colors.onPrimary },
-  sendError: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  inputRowCompact: { flexWrap: "wrap" },
-  shareContactBtn: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  textInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.xl,
-    paddingHorizontal: spacing.lg - 2,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
-    ...typography.body,
-    fontSize: 15,
-    lineHeight: 20,
-    color: colors.text,
-    maxHeight: 120,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  sendBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg + 2,
-    borderRadius: radii.xl,
-    minHeight: MIN_TOUCH_TARGET,
-    minWidth: 72,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  // The same faded green as a disabled Button. A gray fill under the white
-  // label measured 1.6:1, which read as no label at all.
-  sendBtnDisabled: { opacity: 0.52 },
-  sendBtnPressed: { backgroundColor: colors.primaryPressed },
-  sendText: { ...typography.label, fontSize: 15, color: colors.onPrimary },
-  modalCard: sheetCardStyle,
-  modalTitle: { ...typography.heading, color: colors.primary },
-  modalSubtitle: { ...typography.bodySmall, color: colors.textMuted },
-  modalAlert: { marginTop: spacing.xs },
-  modalActions: { gap: spacing.xs, marginTop: spacing.sm },
-  groupLabel: { ...typography.label, color: colors.text, marginTop: spacing.xs },
-  // Material bottom sheet: start-aligned rows under a short heading.
-  actionSheetCard: {
+function sheetCardStyleFor(colors: ThemeColors) {
+  return {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
-    paddingHorizontal: spacing.sm,
-  },
-  actionSheetTitle: {
-    ...typography.label,
-    color: colors.textMuted,
-    paddingHorizontal: spacing.lg,
-  },
-  actionSheetPreview: {
-    ...typography.bodySmall,
-    color: colors.text,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-  },
-  actionSheetOption: {
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
-    justifyContent: "center",
-    borderRadius: radii.md,
-    overflow: "hidden",
-  },
-  actionSheetOptionText: {
-    ...typography.body,
-    fontWeight: "500",
-    color: colors.text,
-  },
-  actionSheetOptionTextDestructive: {
-    ...typography.body,
-    fontWeight: "600",
-    color: colors.destructive,
-  },
-  reportPreview: {
-    ...typography.bodySmall,
-    color: colors.text,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    fontStyle: "italic",
-  },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  reportNote: { minHeight: 72 },
-});
+    padding: spacing.xl,
+    width: "100%",
+    gap: spacing.sm,
+  } as const;
+}
+
+/** `sheetCardStyle` for the current color scheme. */
+export const useSheetCardStyle = makeStyles(sheetCardStyleFor);
+
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { backgroundColor: colors.canvas },
+    bubbleTime: {
+      ...typography.caption,
+      color: colors.textMuted,
+      marginTop: spacing.xxs,
+      alignSelf: "flex-end",
+    },
+    // White at 85% on Clubhouse Green stays above 8:1; the dark scheme's
+    // dark green at 80% on light Clubhouse Green measures 5.7:1.
+    bubbleTimeMe: { color: colors.onPrimaryMuted },
+    notice: { margin: spacing.md, marginBottom: 0 },
+    messageList: { padding: spacing.lg, paddingBottom: spacing.sm },
+    messageListEmpty: { flexGrow: 1, justifyContent: "center" },
+    bubbleRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      marginBottom: spacing.sm,
+      maxWidth: "88%",
+      alignSelf: "flex-start",
+    },
+    bubbleRowMe: { alignSelf: "flex-end" },
+    bubble: {
+      flexShrink: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      borderRadius: radii.lg,
+    },
+    bubbleMe: {
+      backgroundColor: colors.primary,
+      borderBottomRightRadius: spacing.xs,
+    },
+    bubbleThem: {
+      backgroundColor: colors.surface,
+      borderBottomLeftRadius: spacing.xs,
+      ...elevations.low,
+    },
+    messageActionsBtn: {
+      width: MIN_TOUCH_TARGET,
+      height: MIN_TOUCH_TARGET,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    bubbleText: {
+      ...typography.body,
+      fontSize: 15,
+      lineHeight: 21,
+      color: colors.text,
+    },
+    bubbleTextMe: { color: colors.onPrimary },
+    senderName: {
+      ...typography.caption,
+      fontWeight: "600",
+      color: colors.textMuted,
+      marginBottom: spacing.xxs,
+    },
+    contactActions: {
+      flexDirection: "row",
+      gap: spacing.lg,
+      marginTop: spacing.sm,
+    },
+    contactLinkTarget: { minHeight: 24, justifyContent: "center" },
+    contactLink: { ...typography.label, color: colors.primary },
+    contactLinkMe: { color: colors.onPrimary },
+    sendError: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: spacing.sm,
+      paddingHorizontal: spacing.sm,
+      paddingTop: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    inputRowCompact: { flexWrap: "wrap" },
+    shareContactBtn: {
+      width: MIN_TOUCH_TARGET,
+      height: MIN_TOUCH_TARGET,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    textInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.xl,
+      paddingHorizontal: spacing.lg - 2,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.md,
+      ...typography.body,
+      fontSize: 15,
+      lineHeight: 20,
+      color: colors.text,
+      maxHeight: 120,
+      minHeight: MIN_TOUCH_TARGET,
+    },
+    sendBtn: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: spacing.lg + 2,
+      borderRadius: radii.xl,
+      minHeight: MIN_TOUCH_TARGET,
+      minWidth: 72,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // The same faded green as a disabled Button. A gray fill under the white
+    // label measured 1.6:1, which read as no label at all.
+    sendBtnDisabled: { opacity: 0.52 },
+    sendBtnPressed: { backgroundColor: colors.primaryPressed },
+    sendText: { ...typography.label, fontSize: 15, color: colors.onPrimary },
+    modalCard: sheetCardStyleFor(colors),
+    modalTitle: { ...typography.heading, color: colors.primary },
+    modalSubtitle: { ...typography.bodySmall, color: colors.textMuted },
+    modalAlert: { marginTop: spacing.xs },
+    modalActions: { gap: spacing.xs, marginTop: spacing.sm },
+    groupLabel: { ...typography.label, color: colors.text, marginTop: spacing.xs },
+    // Material bottom sheet: start-aligned rows under a short heading.
+    actionSheetCard: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: radii.xl,
+      borderTopRightRadius: radii.xl,
+      paddingHorizontal: spacing.sm,
+    },
+    actionSheetTitle: {
+      ...typography.label,
+      color: colors.textMuted,
+      paddingHorizontal: spacing.lg,
+    },
+    actionSheetPreview: {
+      ...typography.bodySmall,
+      color: colors.text,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.xs,
+      paddingBottom: spacing.sm,
+    },
+    actionSheetOption: {
+      minHeight: 56,
+      paddingHorizontal: spacing.lg,
+      justifyContent: "center",
+      borderRadius: radii.md,
+      overflow: "hidden",
+    },
+    actionSheetOptionText: {
+      ...typography.body,
+      fontWeight: "500",
+      color: colors.text,
+    },
+    actionSheetOptionTextDestructive: {
+      ...typography.body,
+      fontWeight: "600",
+      color: colors.destructive,
+    },
+    reportPreview: {
+      ...typography.bodySmall,
+      color: colors.text,
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      fontStyle: "italic",
+    },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+    reportNote: { minHeight: 72 },
+  }),
+);

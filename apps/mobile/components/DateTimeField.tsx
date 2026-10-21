@@ -15,7 +15,15 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { announce, colors, radii, spacing, typography } from "../theme";
+import {
+  announce,
+  radii,
+  spacing,
+  typography,
+  useColors,
+  useColorSchemeName,
+  makeStyles,
+} from "../theme";
 
 export type DateTimeFieldMode = "date" | "time";
 
@@ -120,6 +128,9 @@ export const DateTimeField = forwardRef<DateTimeFieldHandle, DateTimeFieldProps>
     },
     ref,
   ) {
+    const colors = useColors();
+    const scheme = useColorSchemeName();
+    const styles = useStyles();
     const fieldRef = useRef<View>(null);
 
     useImperativeHandle(ref, () => ({
@@ -181,7 +192,7 @@ export const DateTimeField = forwardRef<DateTimeFieldHandle, DateTimeFieldProps>
               display="compact"
               minimumDate={minimumDate}
               accentColor={colors.primary}
-              themeVariant="light"
+              themeVariant={scheme}
               onValueChange={(_event, date) =>
                 onChange(toFieldValue(date, mode))
               }
@@ -224,39 +235,41 @@ export const DateTimeField = forwardRef<DateTimeFieldHandle, DateTimeFieldProps>
   },
 );
 
-const styles = StyleSheet.create({
-  container: { gap: spacing.xs },
-  label: { color: colors.text, ...typography.label },
-  required: { color: colors.destructive },
-  input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 48,
-    padding: spacing.md,
-  },
-  focused: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    padding: spacing.md - 1,
-  },
-  errorInput: {
-    borderColor: colors.destructive,
-    borderWidth: 2,
-    padding: spacing.md - 1,
-  },
-  valueText: { color: colors.text, ...typography.body },
-  placeholderText: { color: colors.placeholder, ...typography.body },
-  iosPicker: {
-    alignItems: "flex-start",
-    borderColor: "transparent",
-    borderRadius: radii.md,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 48,
-  },
-  helper: { color: colors.textMuted, ...typography.caption },
-  errorText: { color: colors.destructive, fontWeight: "600" },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { gap: spacing.xs },
+    label: { color: colors.text, ...typography.label },
+    required: { color: colors.destructive },
+    input: {
+      backgroundColor: colors.surface,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      justifyContent: "center",
+      minHeight: 48,
+      padding: spacing.md,
+    },
+    focused: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+      padding: spacing.md - 1,
+    },
+    errorInput: {
+      borderColor: colors.destructive,
+      borderWidth: 2,
+      padding: spacing.md - 1,
+    },
+    valueText: { color: colors.text, ...typography.body },
+    placeholderText: { color: colors.placeholder, ...typography.body },
+    iosPicker: {
+      alignItems: "flex-start",
+      borderColor: "transparent",
+      borderRadius: radii.md,
+      borderWidth: 1,
+      justifyContent: "center",
+      minHeight: 48,
+    },
+    helper: { color: colors.textMuted, ...typography.caption },
+    errorText: { color: colors.destructive, fontWeight: "600" },
+  }),
+);

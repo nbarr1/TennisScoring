@@ -13,8 +13,8 @@ dialogs. Use them instead of building controls by hand.
 
 | Export | What it holds |
 | --- | --- |
-| `colors` | The clubhouse palette. Text: `text`, `textMuted` (secondary, 5.4:1), `placeholder`. `textSubtle` is **3.4:1**, so use it only for decoration or large text. Status: `destructive`, `warning`/`warningText`, `success`/`successText`, `info`, `live`/`liveText`, `proposed`, `unassignedSoft`/`unassignedText`. Each has a `*Soft` tint. Edges: `border` (hairline, dividers and chips) and `borderStrong` (text fields and other control outlines; the hairline is too faint to show where a field is). `warning`, `success`, and `live` are for fills and icons only. Text uses their `*Text` pair. |
-| `statusTextColors` | `Record<MatchStatus, string>`: contrast-safe text color for each match status on light surfaces. |
+| `lightColors`, `darkColors` | The clubhouse palette for each color scheme, with identical keys (`ThemeColors`). Never import them in a screen; read the current one through `useColors()` or `makeStyles()` (below). Text: `text`, `textMuted` (secondary, 5.4:1), `placeholder`. `textSubtle` is **3.4:1**, so use it only for decoration or large text. Status: `destructive`, `warning`/`warningText`, `success`/`successText`, `info`, `live`/`liveText`, `proposed`, `unassignedSoft`/`unassignedText`. Each has a `*Soft` tint. Edges: `border` (hairline, dividers and chips) and `borderStrong` (text fields and other control outlines; the hairline is too faint to show where a field is). `warning`, `success`, and `live` are for fills and icons only. Text uses their `*Text` pair. `primary` is light Clubhouse Green in the dark scheme so it reads as text, with dark `onPrimary` on its fill; `brand`/`onBrand` stay deep Clubhouse Green and white in both schemes, for headers, the brand mark, and the tutorial. Also `onPrimaryMuted`, `ripple`/`rippleStrong`/`rippleOnFill` (Android ripples), `icon*` tints, and `switchThumbOff`. Every dark value's contrast ratio is in a comment beside it. |
+| `statusTextColorsFor(colors)` | `Record<MatchStatus, string>`: contrast-safe text color for each match status. Screens use `useStatusTextColors()`. |
 | `spacing` | `xxs 2, xs 4, sm 8, md 12, lg 16, xl 24, xxl 32, xxxl 48` |
 | `radii` | `sm 6, md 10, card 10, lg 16, xl 24, pill 999` |
 | `typography` | `display, title (24), heading (20), subheading, body, bodySmall, label, caption`. These scale with the system font size, so use `minHeight`, never a fixed `height`. |
@@ -22,6 +22,32 @@ dialogs. Use them instead of building controls by hand.
 | `MIN_TOUCH_TARGET` | `48` on Android, `44` on iOS. Also `touchTargets.platform`. |
 | `touchTargets` | `minimum 44, comfortable 48, platform` |
 | `motion` | `press 150, enter 220` (ms). Skip animation when `useReduceMotion()` is true. |
+
+## Color scheme (`theme/scheme.ts`)
+
+The app follows the device's light or dark setting (`userInterfaceStyle: "automatic"`). **Screens never hold a static color**: a module-level `StyleSheet.create` that reads a palette renders light colors in dark mode, so define styles with `makeStyles` and call the hook in the component.
+
+```tsx
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({ card: { backgroundColor: colors.surface } }),
+);
+function MatchRow() {
+  const styles = useStyles();
+  const colors = useColors(); // only for inline colors (icons, ripples, spinners)
+  …
+}
+```
+
+`makeStyles(factory)` builds each scheme's styles once and caches them; the factory also receives the scheme (`"light" | "dark"`) for the rare style that differs by more than color. `useColors()`, `useTheme()` (`{ scheme, isDark, colors, statusTextColors }`), `useStatusTextColors()`, and `useColorSchemeName()` read the current scheme. A default prop cannot read a hook, so resolve color defaults in the body (`fillColor ?? colors.surface`). Keep `styles` and `colors` in the dependency list of any `useMemo` or `useCallback` that reads them. The live scoreboard (`components/live-scoring/scoreboardTheme.ts`) is dark in both schemes and keeps its static `SB` palette.
+
+## Wide screens (`theme/layout.tsx`)
+
+The app runs on tablets in portrait. Content keeps a readable measure and centers instead of stretching: `CONTENT_MAX_WIDTH` is `form 720` (forms, lists, conversations, the live match), `wide 960` (the standings table), and `sheet 640` (bottom sheets). `useContentWidth(max = "form")` returns `{ width: "100%", maxWidth, alignSelf: "center" }` when the window is wider than `max`, and `undefined` otherwise, so **phone layouts are unchanged**. Add it to a scroll view's `contentContainerStyle`, or to a View that would span the window (a bottom action bar, a screen body). `ScreenContainer` is the same as a View. `BottomSheetModal` applies the sheet width itself.
+
+```tsx
+const contentWidth = useContentWidth();
+<KeyboardAwareScrollView contentContainerStyle={[styles.content, contentWidth]}>
+```
 
 ## Accessibility helpers (`theme/a11y.ts`)
 
@@ -100,9 +126,9 @@ if (loading) return <LoadingState label="Loading matches" />;
 
 ## Components (`components/`)
 
-**`AppIcon`** props: `name` (an SF Symbol), `size?` (`ICON_SIZE.small | action | tab | feature | brand`), `color?` (`ICON_COLOR.*`), `emphasized?`, `style?`, and `accessibilityLabel?`. On Android the icon is drawn from Material Symbols through a lookup table in the file. **Add new SF names to `ANDROID_SYMBOLS`**, because an unmapped name renders nothing on Android. The icon is hidden from screen readers unless `accessibilityLabel` is set. Set it only for an icon that stands alone and carries meaning; icons inside labelled buttons stay unlabelled.
+**`AppIcon`** props: `name` (an SF Symbol), `size?` (`ICON_SIZE.small | action | tab | feature | brand`), `color?` (a palette color, or one of `useIconColors()`: `active`, `inactive` (the default), `inverse` for icons on `brand`, `destructive`, `warning`, `success`), `emphasized?`, `style?`, and `accessibilityLabel?`. On Android the icon is drawn from Material Symbols through a lookup table in the file. **Add new SF names to `ANDROID_SYMBOLS`**, because an unmapped name renders nothing on Android. The icon is hidden from screen readers unless `accessibilityLabel` is set. Set it only for an icon that stands alone and carries meaning; icons inside labelled buttons stay unlabelled.
 ```tsx
-<AppIcon name="trophy.fill" size={ICON_SIZE.tab} color={ICON_COLOR.active} />
+<AppIcon name="trophy.fill" size={ICON_SIZE.tab} color={colors.primary} />
 <AppIcon name="exclamationmark.triangle" accessibilityLabel="Disputed" />
 ```
 `IconLabel` (`name`, `children`, `color?`, `textStyle?`) is an icon and text in one row.
@@ -114,7 +140,7 @@ if (loading) return <LoadingState label="Loading matches" />;
 ```
 `FormErrorSummary({ errors: string[] })` goes above a form's submit button. It renders nothing when `errors` is empty, and it announces "N problems to fix" when it appears.
 
-**`StatusBadge`** props: `status` (a `MatchStatus`) and `style?`. It shows the glyph and label (for example "◐ Pending Report") in `statusTextColors`, and screen readers hear "Match pending report".
+**`StatusBadge`** props: `status` (a `MatchStatus`) and `style?`. It shows the glyph and label (for example "◐ Pending Report") in `useStatusTextColors()`, and screen readers hear "Match pending report".
 ```tsx
 <StatusBadge status={match.status} />
 ```
@@ -127,9 +153,9 @@ if (loading) return <LoadingState label="Loading matches" />;
 
 **`MatchTiebreakToggle`** props: `sets`, `index`, and `onChangeSets`. It renders only under the deciding set. The whole row is one accessible switch (`accessibilityRole="switch"` with a `checked` state), so tapping the label toggles it too. `withEligibleTiebreaks(rows)` clears the flag from rows that are no longer the deciding set.
 
-**`KeyboardSafeView`**, **`KeyboardAwareScrollView`**, and **`KeyboardAwareBottomSheet`** keep inputs above the keyboard. They use padding on iOS and height on Android, and their taps keep working while the keyboard is open. Under a stack header, pass `useHeaderHeight()` (from `expo-router/react-navigation`) as `keyboardVerticalOffset` on iOS. `KeyboardAwareBottomSheet` takes `fillColor` for the home-indicator inset, so match it to the card.
+**`KeyboardSafeView`**, **`KeyboardAwareScrollView`**, and **`KeyboardAwareBottomSheet`** keep inputs above the keyboard. They use padding on iOS and height on Android, and their taps keep working while the keyboard is open. Under a stack header, pass `useHeaderHeight()` (from `expo-router/react-navigation`) as `keyboardVerticalOffset` on iOS. `KeyboardAwareBottomSheet` takes `fillColor` for the home-indicator inset, so match it to the card (it defaults to the scheme's `surface`), and `sheetStyle`, which wraps the sheet and its inset so a tablet max width applies to both.
 
-**`BottomSheetModal`** is the sheet to use instead of a hand-rolled `<Modal transparent>`. Props: `visible`, `onRequestClose` (backdrop, Android Back, and a downward drag on the handle; it may decline to close, for example to confirm discarding a form), `cardStyle`, `fillColor` (the card background, also painted into the inset), `handleColor`, `backdropLabel?` (set it to close on a backdrop tap; leave it unset on forms), `keyboardAware` (default `true`; short action sheets turn it off and pad for the inset themselves), and `overlayStyle`. It fades instead of sliding under Reduce Motion. The drag handle is hidden from screen readers, so every sheet still needs a visible Close or Cancel.
+**`BottomSheetModal`** is the sheet to use instead of a hand-rolled `<Modal transparent>`. Props: `visible`, `onRequestClose` (backdrop, Android Back, and a downward drag on the handle; it may decline to close, for example to confirm discarding a form), `cardStyle`, `fillColor` (the card background, also painted into the inset), `handleColor`, `backdropLabel?` (set it to close on a backdrop tap; leave it unset on forms), `keyboardAware` (default `true`; short action sheets turn it off and pad for the inset themselves), and `overlayStyle`. It fades instead of sliding under Reduce Motion. `fillColor` and `handleColor` default to the scheme's `surface` and `borderStrong`, and on a tablet the card centers at the sheet width. The drag handle is hidden from screen readers, so every sheet still needs a visible Close or Cancel.
 ```tsx
 <BottomSheetModal visible={open} onRequestClose={close} cardStyle={styles.sheetCard}>
   <Text accessibilityRole="header">Report message</Text>
@@ -146,4 +172,6 @@ if (loading) return <LoadingState label="Loading matches" />;
 - Every pressable control has an `accessibilityRole` and a label that says what it does.
 - Async actions use `useAsyncAction` and `Button pending`. Failures show an `InlineAlert` or `ErrorState` that says how to recover.
 - Destructive actions call `confirmDestructive` with a verb label.
-- Secondary text uses `colors.textMuted` rather than `textSubtle`, and status text uses `statusTextColors` or the `*Text` tokens.
+- Secondary text uses `colors.textMuted` rather than `textSubtle`, and status text uses `useStatusTextColors()` or the `*Text` tokens.
+- Colors come from `makeStyles` or `useColors()`, never a hex value or a module-level `StyleSheet` that reads a palette. Check the screen in dark mode.
+- Scrolling content and full-width bars take `useContentWidth()`, so they center on a tablet.

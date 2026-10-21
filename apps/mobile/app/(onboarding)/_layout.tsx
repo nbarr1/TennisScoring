@@ -4,8 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 export default function OnboardingLayout() {
   return (
     <>
-      {/* Dark status-bar content on the Paper Canvas; the tutorial sets light on its green background. */}
-      <StatusBar style="dark" />
+      {/* Status-bar content follows the scheme on the canvas; the tutorial sets light on its green background. */}
+      <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }} />
     </>
   );

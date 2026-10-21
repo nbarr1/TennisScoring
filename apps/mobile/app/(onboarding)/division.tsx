@@ -20,11 +20,10 @@ import {
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { FormErrorSummary, FormField } from "../../components/FormField";
-import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
+import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import {
   Button,
   InlineAlert,
-  colors,
   confirmAction,
   describeError,
   elevations,
@@ -32,11 +31,15 @@ import {
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
 } from "../../theme";
 
 type Mode = "choose" | "create" | "join";
 
 export default function DivisionOnboardingScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const [mode, setMode] = useState<Mode>("choose");
   const [divisionName, setDivisionName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -161,7 +164,7 @@ export default function DivisionOnboardingScreen() {
         <AppIcon
           name="figure.tennis"
           size={ICON_SIZE.brand}
-          color={ICON_COLOR.active}
+          color={colors.primary}
           emphasized
         />
         <Text style={styles.title} accessibilityRole="header">
@@ -195,7 +198,7 @@ export default function DivisionOnboardingScreen() {
             <AppIcon
               name="link"
               size={ICON_SIZE.feature}
-              color={ICON_COLOR.active}
+              color={colors.primary}
             />
             <Text style={styles.choiceTitle}>I have an invite code</Text>
             <Text style={styles.choiceBody}>
@@ -213,7 +216,7 @@ export default function DivisionOnboardingScreen() {
             <AppIcon
               name="trophy.fill"
               size={ICON_SIZE.feature}
-              color={ICON_COLOR.active}
+              color={colors.primary}
             />
             <Text style={styles.choiceTitle}>Start a new division</Text>
             <Text style={styles.choiceBody}>
@@ -357,68 +360,70 @@ export default function DivisionOnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  inner: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
-    width: "100%",
-    maxWidth: 520,
-    alignSelf: "center",
-  },
-  header: { alignItems: "center", marginBottom: spacing.xxl, gap: spacing.sm },
-  title: {
-    ...typography.title,
-    color: colors.primary,
-    textAlign: "center",
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.canvas },
+    inner: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.xxl,
+      width: "100%",
+      maxWidth: 520,
+      alignSelf: "center",
+    },
+    header: { alignItems: "center", marginBottom: spacing.xxl, gap: spacing.sm },
+    title: {
+      ...typography.title,
+      color: colors.primary,
+      textAlign: "center",
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
 
-  choices: { gap: spacing.lg },
-  choiceCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    alignItems: "center",
-    gap: spacing.xs,
-    // Clips the ripple to the rounded corners on Android; on iOS it would
-    // also clip the shadow.
-    overflow: Platform.OS === "android" ? "hidden" : "visible",
-    ...elevations.low,
-  },
-  choicePressed: { backgroundColor: colors.surfaceMuted },
-  choiceTitle: {
-    ...typography.heading,
-    fontSize: 18,
-    color: colors.primary,
-    marginTop: spacing.sm,
-    textAlign: "center",
-  },
-  choiceBody: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
+    choices: { gap: spacing.lg },
+    choiceCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.lg,
+      padding: spacing.xl,
+      alignItems: "center",
+      gap: spacing.xs,
+      // Clips the ripple to the rounded corners on Android; on iOS it would
+      // also clip the shadow.
+      overflow: Platform.OS === "android" ? "hidden" : "visible",
+      ...elevations.low,
+    },
+    choicePressed: { backgroundColor: colors.surfaceMuted },
+    choiceTitle: {
+      ...typography.heading,
+      fontSize: 18,
+      color: colors.primary,
+      marginTop: spacing.sm,
+      textAlign: "center",
+    },
+    choiceBody: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
 
-  form: { gap: spacing.md },
-  codeInput: {
-    fontSize: 24,
-    fontWeight: "700",
-    letterSpacing: 8,
-    textAlign: "center",
-    color: colors.primary,
-  },
+    form: { gap: spacing.md },
+    codeInput: {
+      fontSize: 24,
+      fontWeight: "700",
+      letterSpacing: 8,
+      textAlign: "center",
+      color: colors.primary,
+    },
 
-  signOutRow: {
-    alignItems: "center",
-    marginTop: spacing.xxl,
-    gap: spacing.xs,
-  },
-  signOutText: { ...typography.caption, color: colors.textMuted },
-});
+    signOutRow: {
+      alignItems: "center",
+      marginTop: spacing.xxl,
+      gap: spacing.xs,
+    },
+    signOutText: { ...typography.caption, color: colors.textMuted },
+  }),
+);

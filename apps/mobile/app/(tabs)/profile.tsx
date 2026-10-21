@@ -55,7 +55,6 @@ import {
   LoadingState,
   MIN_TOUCH_TARGET,
   announce,
-  colors,
   confirmAction,
   confirmDestructive,
   describeError,
@@ -64,6 +63,8 @@ import {
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
 } from "../../theme";
 
 const DAY_NAMES: Record<DayOfWeek, string> = {
@@ -87,6 +88,7 @@ function SectionTitle({
   title: string;
   subtitle?: string;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.sectionHead}>
       <Text style={styles.sectionTitle} accessibilityRole="header">
@@ -112,6 +114,8 @@ function ToggleRow({
   disabled?: boolean;
   last?: boolean;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="switch"
@@ -141,7 +145,7 @@ function ToggleRow({
           Platform.OS === "android"
             ? value
               ? colors.primarySoft
-              : colors.surface
+              : colors.switchThumbOff
             : undefined
         }
         ios_backgroundColor={colors.disabled}
@@ -151,6 +155,8 @@ function ToggleRow({
 }
 
 export default function ProfileScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const { firebaseUser } = useAuthUser();
   const [reloadKey, setReloadKey] = useState(0);
   const { user, loading, error } = usePrivateUser(
@@ -1083,197 +1089,199 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxxl,
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
-  },
-  identity: { alignItems: "center", marginBottom: spacing.xl },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  avatarText: { color: colors.onPrimary, fontSize: 32, fontWeight: "700" },
-  name: {
-    ...typography.title,
-    color: colors.text,
-    textAlign: "center",
-  },
-  email: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  alertGap: { marginBottom: spacing.lg },
-  section: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    ...elevations.low,
-  },
-  dangerSection: { borderWidth: 1, borderColor: colors.destructiveSoft },
-  sectionHead: { marginBottom: spacing.md, gap: spacing.xxs },
-  sectionTitle: { ...typography.subheading, color: colors.primary },
-  sectionSubtitle: { ...typography.caption, color: colors.textMuted },
-  fields: { gap: spacing.md },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  rowLast: { borderBottomWidth: 0 },
-  rowLabel: { ...typography.bodySmall, color: colors.textMuted },
-  rowValue: {
-    ...typography.bodySmall,
-    fontWeight: "500",
-    color: colors.text,
-    flexShrink: 1,
-    textAlign: "right",
-  },
-  valueText: { ...typography.body, color: colors.text },
-  fieldNote: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-  blockedRow: { justifyContent: "space-between" },
-  blockedName: { textAlign: "left", flex: 1 },
-  toggleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    minHeight: MIN_TOUCH_TARGET + spacing.sm,
-    paddingVertical: spacing.sm,
-    gap: spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  toggleRowLast: { borderBottomWidth: 0 },
-  toggleText: { flex: 1, gap: spacing.xxs },
-  toggleLabel: { ...typography.body, fontSize: 15, color: colors.text },
-  toggleLabelOff: { color: colors.textMuted },
-  toggleDescription: { ...typography.caption, color: colors.textMuted },
-  actions: { gap: spacing.md, marginBottom: spacing.xl },
-  accountActions: { gap: spacing.md },
-  divisionList: { gap: spacing.sm },
-  divisionOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    overflow: "hidden",
-  },
-  divisionOptionActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.textMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioActive: { borderColor: colors.primary },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
-  },
-  divisionOptionText: { ...typography.label, color: colors.text, flex: 1 },
-  divisionOptionTextActive: { color: colors.primary },
-  slotSummary: {
-    ...typography.body,
-    color: colors.text,
-    paddingVertical: spacing.xs,
-  },
-  slotCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  slotHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  slotHeading: { ...typography.label, color: colors.text },
-  dayChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  dayChip: { minWidth: 48, paddingHorizontal: spacing.sm },
-  timeRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
-  timeField: { flex: 1 },
-  slotDash: {
-    ...typography.body,
-    color: colors.textMuted,
-    paddingBottom: spacing.md,
-  },
-  fieldError: {
-    ...typography.caption,
-    color: colors.destructive,
-    fontWeight: "600",
-    marginBottom: spacing.sm,
-  },
-  noteField: { marginTop: spacing.md },
-  noteInput: { minHeight: 72 },
-  emptyHint: { ...typography.bodySmall, color: colors.textMuted },
-  noteText: {
-    ...typography.bodySmall,
-    color: colors.text,
-    marginTop: spacing.sm,
-    fontStyle: "italic",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    width: "100%",
-    maxWidth: 480,
-    alignSelf: "center",
-    ...elevations.medium,
-  },
-  modalTitle: {
-    ...typography.heading,
-    fontSize: 18,
-    lineHeight: 24,
-    color: colors.destructive,
-    marginBottom: spacing.sm,
-  },
-  modalSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    marginBottom: spacing.lg,
-  },
-  modalAlert: { marginTop: spacing.md },
-  modalActions: { gap: spacing.md, marginTop: spacing.lg },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.canvas },
+    content: {
+      padding: spacing.lg,
+      paddingBottom: spacing.xxxl,
+      width: "100%",
+      maxWidth: 720,
+      alignSelf: "center",
+    },
+    identity: { alignItems: "center", marginBottom: spacing.xl },
+    avatar: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.primary,
+      justifyContent: "center",
+      alignItems: "center",
+      marginBottom: spacing.md,
+    },
+    avatarText: { color: colors.onPrimary, fontSize: 32, fontWeight: "700" },
+    name: {
+      ...typography.title,
+      color: colors.text,
+      textAlign: "center",
+    },
+    email: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+    alertGap: { marginBottom: spacing.lg },
+    section: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.card,
+      padding: spacing.lg,
+      marginBottom: spacing.lg,
+      ...elevations.low,
+    },
+    dangerSection: { borderWidth: 1, borderColor: colors.destructiveSoft },
+    sectionHead: { marginBottom: spacing.md, gap: spacing.xxs },
+    sectionTitle: { ...typography.subheading, color: colors.primary },
+    sectionSubtitle: { ...typography.caption, color: colors.textMuted },
+    fields: { gap: spacing.md },
+    row: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.md,
+      minHeight: MIN_TOUCH_TARGET,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    rowLast: { borderBottomWidth: 0 },
+    rowLabel: { ...typography.bodySmall, color: colors.textMuted },
+    rowValue: {
+      ...typography.bodySmall,
+      fontWeight: "500",
+      color: colors.text,
+      flexShrink: 1,
+      textAlign: "right",
+    },
+    valueText: { ...typography.body, color: colors.text },
+    fieldNote: {
+      ...typography.caption,
+      color: colors.textMuted,
+      marginTop: spacing.xs,
+    },
+    blockedRow: { justifyContent: "space-between" },
+    blockedName: { textAlign: "left", flex: 1 },
+    toggleRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      minHeight: MIN_TOUCH_TARGET + spacing.sm,
+      paddingVertical: spacing.sm,
+      gap: spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    toggleRowLast: { borderBottomWidth: 0 },
+    toggleText: { flex: 1, gap: spacing.xxs },
+    toggleLabel: { ...typography.body, fontSize: 15, color: colors.text },
+    toggleLabelOff: { color: colors.textMuted },
+    toggleDescription: { ...typography.caption, color: colors.textMuted },
+    actions: { gap: spacing.md, marginBottom: spacing.xl },
+    accountActions: { gap: spacing.md },
+    divisionList: { gap: spacing.sm },
+    divisionOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+      minHeight: MIN_TOUCH_TARGET,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      overflow: "hidden",
+    },
+    divisionOptionActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    radio: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: colors.textMuted,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    radioActive: { borderColor: colors.primary },
+    radioDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: colors.primary,
+    },
+    divisionOptionText: { ...typography.label, color: colors.text, flex: 1 },
+    divisionOptionTextActive: { color: colors.primary },
+    slotSummary: {
+      ...typography.body,
+      color: colors.text,
+      paddingVertical: spacing.xs,
+    },
+    slotCard: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      gap: spacing.sm,
+    },
+    slotHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    slotHeading: { ...typography.label, color: colors.text },
+    dayChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+    dayChip: { minWidth: 48, paddingHorizontal: spacing.sm },
+    timeRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
+    timeField: { flex: 1 },
+    slotDash: {
+      ...typography.body,
+      color: colors.textMuted,
+      paddingBottom: spacing.md,
+    },
+    fieldError: {
+      ...typography.caption,
+      color: colors.destructive,
+      fontWeight: "600",
+      marginBottom: spacing.sm,
+    },
+    noteField: { marginTop: spacing.md },
+    noteInput: { minHeight: 72 },
+    emptyHint: { ...typography.bodySmall, color: colors.textMuted },
+    noteText: {
+      ...typography.bodySmall,
+      color: colors.text,
+      marginTop: spacing.sm,
+      fontStyle: "italic",
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "center",
+      padding: spacing.xl,
+    },
+    modalCard: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.lg,
+      padding: spacing.xl,
+      width: "100%",
+      maxWidth: 480,
+      alignSelf: "center",
+      ...elevations.medium,
+    },
+    modalTitle: {
+      ...typography.heading,
+      fontSize: 18,
+      lineHeight: 24,
+      color: colors.destructive,
+      marginBottom: spacing.sm,
+    },
+    modalSubtitle: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      marginBottom: spacing.lg,
+    },
+    modalAlert: { marginTop: spacing.md },
+    modalActions: { gap: spacing.md, marginTop: spacing.lg },
+  }),
+);
