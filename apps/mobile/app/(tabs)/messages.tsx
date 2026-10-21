@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import {
   View,
@@ -8,7 +8,6 @@ import {
   Pressable,
   ActivityIndicator,
   Platform,
-  useWindowDimensions,
 } from "react-native";
 import {
   useChannels,
@@ -41,14 +40,18 @@ import {
   useColors,
   makeStyles,
   useContentWidth,
+  useIsNarrowWindow,
 } from "../../theme";
+
+/** Same pause as PlayerSlotPicker, so typing a name sends one search. */
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function MessagesScreen() {
   const colors = useColors();
   const styles = useStyles();
   const sheetCardStyle = useSheetCardStyle();
   const contentWidth = useContentWidth();
-  const { width } = useWindowDimensions();
+  const narrow = useIsNarrowWindow(360);
   const router = useRouter();
   const user = useAppStore((state) => state.user);
   const divisionId = useAppStore((state) => state.divisionId);
@@ -59,6 +62,14 @@ export default function MessagesScreen() {
   const [dmSearching, setDmSearching] = useState(false);
   const [dmSearchError, setDmSearchError] = useState(false);
   const searchSeq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The conversation being opened, so only its row shows the spinner.
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
   const channelName = useDirectChannelNames(channels, user?.id);
   const blockedIds = new Set(user?.blockedUserIds ?? []);
 
@@ -71,19 +82,30 @@ export default function MessagesScreen() {
     });
   }
 
-  async function handleSearchDM(text: string) {
+  function handleSearchDM(text: string) {
     setDmSearch(text);
     setDmSearchError(false);
     const seq = ++searchSeq.current;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!divisionId || !text.trim()) {
       setDmResults([]);
       setDmSearching(false);
       return;
     }
+    // Searching from the first keystroke keeps "No players match" hidden
+    // until this text has actually been searched.
     setDmSearching(true);
+    const searchDivisionId = divisionId;
+    searchTimer.current = setTimeout(
+      () => void runSearch(searchDivisionId, text, seq),
+      SEARCH_DEBOUNCE_MS,
+    );
+  }
+
+  async function runSearch(searchDivisionId: string, text: string, seq: number) {
     try {
       // A direct conversation needs a shared active division, which roster-only players lack.
-      const results = await searchDivisionPlayers(divisionId, text, {
+      const results = await searchDivisionPlayers(searchDivisionId, text, {
         profilesOnly: true,
       });
       if (seq !== searchSeq.current) return;
@@ -121,6 +143,7 @@ export default function MessagesScreen() {
 
   function closeNewDM() {
     setShowNewDM(false);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     setDmSearch("");
     setDmResults([]);
     setDmSearchError(false);
@@ -215,7 +238,7 @@ export default function MessagesScreen() {
           label="New message"
           icon="plus"
           accessibilityHint="Search for a player in your division to message"
-          fullWidth={width < 360}
+          fullWidth={narrow}
           style={styles.fab}
           onPress={() => setShowNewDM(true)}
         />
@@ -276,7 +299,10 @@ export default function MessagesScreen() {
             <Pressable
               key={item.id}
               style={styles.resultRow}
-              onPress={() => void startDM.run(item)}
+              onPress={() => {
+                setOpeningId(item.id);
+                void startDM.run(item);
+              }}
               disabled={startDM.pending}
               android_ripple={{ color: colors.surfaceMuted }}
               accessibilityRole="button"
@@ -287,7 +313,7 @@ export default function MessagesScreen() {
               }}
             >
               <Text style={styles.resultName}>{item.displayName}</Text>
-              {startDM.pending ? (
+              {startDM.pending && openingId === item.id ? (
                 <ActivityIndicator color={colors.primary} size="small" />
               ) : (
                 <AppIcon
@@ -349,7 +375,7 @@ const useStyles = makeStyles((colors) =>
       color: colors.text,
       flexShrink: 1,
     },
-    channelTime: { ...typography.caption, color: colors.textMuted, marginLeft: "auto" },
+    channelTime: { ...typography.caption, color: colors.textMuted, marginStart: "auto" },
     lastMessage: { ...typography.bodySmall, color: colors.textMuted },
     lastHidden: { fontStyle: "italic" },
     newMessageBar: {
@@ -364,6 +390,7 @@ const useStyles = makeStyles((colors) =>
     modalAlert: { marginTop: spacing.xs },
     resultRow: {
       flexDirection: "row",
+      gap: spacing.md,
       alignItems: "center",
       justifyContent: "space-between",
       minHeight: MIN_TOUCH_TARGET + spacing.sm,
@@ -371,7 +398,12 @@ const useStyles = makeStyles((colors) =>
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
-    resultName: { ...typography.body, fontWeight: "600", color: colors.text },
+    resultName: {
+      ...typography.body,
+      fontWeight: "600",
+      color: colors.text,
+      flexShrink: 1,
+    },
     noResults: {
       ...typography.bodySmall,
       color: colors.textMuted,

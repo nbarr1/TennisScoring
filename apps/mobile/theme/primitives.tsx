@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -27,6 +27,31 @@ import {
 } from "./tokens";
 
 const IS_ANDROID = Platform.OS === "android";
+
+/**
+ * How long a button may stay pending before it says so. Firestore writes made
+ * offline only resolve once the server acknowledges them, and callables wait
+ * about 70 seconds before failing, so a spinner alone can run for minutes.
+ */
+export const SLOW_PENDING_MS = 10000;
+
+/** True once `busy` has stayed true for `SLOW_PENDING_MS`; announced once. */
+function useSlowPending(busy: boolean, speak: boolean): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!busy) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSlow(true);
+      if (speak)
+        announce("Still working. Check your connection if this takes much longer.");
+    }, SLOW_PENDING_MS);
+    return () => clearTimeout(timer);
+  }, [busy, speak]);
+  return slow;
+}
 
 export function Screen({
   scroll = false,
@@ -122,6 +147,9 @@ export function Button({
   const kind = canonical(variant);
   const busy = Boolean(pending ?? loading);
   const inactive = Boolean(disabled) || busy;
+  // Icon-only buttons have no room for words, so only labelled ones say it.
+  const slow = useSlowPending(busy, Boolean(label));
+  const busyText = slow && label ? "Still working…" : pendingLabel;
   const compact = size === "compact";
   const variantColors = useVariantColors();
   const fg = variantColors.label[kind];
@@ -175,11 +203,15 @@ export function Button({
       ]}
       {...props}
     >
-      {busy && pendingLabel ? (
+      {busy && busyText ? (
         <>
           {spinner}
-          <Text style={[styles.buttonLabel, { color: fg }]} numberOfLines={1}>
-            {pendingLabel}
+          <Text
+            style={[styles.buttonLabel, { color: fg }]}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.6}
+          >
+            {busyText}
           </Text>
         </>
       ) : busy ? (
@@ -677,13 +709,16 @@ const useStyles = makeStyles((colors) =>
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
+      // A long label ("Intermediate Doubles (yours)") at a large text size
+      // truncates inside the row instead of running past the screen edge.
+      maxWidth: "100%",
     },
     chipSelected: {
       borderColor: colors.primary,
       backgroundColor: colors.primarySoft,
     },
     chipPressed: { backgroundColor: colors.surfaceMuted },
-    chipLabel: { ...typography.label, color: colors.textMuted },
+    chipLabel: { ...typography.label, color: colors.textMuted, flexShrink: 1 },
     chipLabelSelected: { color: colors.primary },
     sectionHeader: {
       flexDirection: "row",
@@ -740,7 +775,7 @@ const useStyles = makeStyles((colors) =>
     alertRow: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
     alertTitle: { ...typography.label },
     alertMessage: { ...typography.bodySmall },
-    alertAction: { alignSelf: "flex-start", marginLeft: spacing.xl },
+    alertAction: { alignSelf: "flex-start", marginStart: spacing.xl },
   }),
 );
 

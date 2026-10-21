@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   StyleSheet,
   Pressable,
   useWindowDimensions,
@@ -282,31 +283,40 @@ function StandingsContent({
 
   if (loading) {
     return (
-      <View style={styles.flex}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.stateScroll}
+      >
         <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
         </View>
         <LoadingState label={`Loading ${formatLabel} standings`} />
-      </View>
+      </ScrollView>
     );
   }
 
   if (loadError) {
     return (
-      <View style={styles.flex}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.stateScroll}
+      >
         <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
         </View>
         <ErrorState title="Couldn't load standings" onRetry={onRetry} />
-      </View>
+      </ScrollView>
     );
   }
 
   if (rankings.length === 0) {
     return (
-      <View style={styles.flex}>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.stateScroll}
+      >
         <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
@@ -330,7 +340,7 @@ function StandingsContent({
             </View>
           }
         />
-      </View>
+      </ScrollView>
     );
   }
 
@@ -654,6 +664,9 @@ export default function RankingsScreen() {
 const useStyles = makeStyles((colors) =>
   StyleSheet.create({
     flex: { flex: 1 },
+    // The filters, the Needs-you card, and a full empty state outgrow a small
+    // phone at large text sizes, so these states scroll like the table does.
+    stateScroll: { flexGrow: 1 },
     filtersOnly: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
     filters: { marginBottom: spacing.md },
     filterLabel: {

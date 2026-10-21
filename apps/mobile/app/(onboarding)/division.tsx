@@ -157,7 +157,10 @@ export default function DivisionOnboardingScreen() {
       keyboardViewStyle={styles.container}
       contentContainerStyle={[
         styles.inner,
-        { paddingTop: insets.top + spacing.xxl },
+        {
+          paddingTop: insets.top + spacing.xxl,
+          paddingBottom: insets.bottom + spacing.xxl,
+        },
       ]}
     >
       <View style={styles.header}>

@@ -3,6 +3,7 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import type { TextInput } from "react-native";
 import Constants from "expo-constants";
 import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useLocalSearchParams,
   usePathname,
@@ -72,6 +73,9 @@ function friendlyScreenName(path: string): string {
 export default function FeedbackScreen() {
   const colors = useColors();
   const styles = useStyles();
+  // The stack screen runs to the bottom edge, so the last button clears the
+  // home indicator and Android's gesture bar.
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
@@ -191,7 +195,10 @@ export default function FeedbackScreen() {
     <KeyboardAwareScrollView
       keyboardViewStyle={styles.keyboardView}
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: insets.bottom + spacing.xl },
+      ]}
     >
       <StatusBar style="light" />
       {/* The stack header already says "Send Feedback". */}

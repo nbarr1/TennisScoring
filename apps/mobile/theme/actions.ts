@@ -13,11 +13,16 @@ export type ConfirmOptions = {
   destructive?: boolean;
 };
 
+/** When the confirm dialog on screen opened, or null when none is. */
+let openDialogSince: number | null = null;
+const OPEN_DIALOG_STALE_MS = 30000;
+
 /**
  * Ask before an action, resolving `true` only when the confirm button is
  * pressed. Tapping outside the dialog (Android) or Cancel resolves `false`.
  * Uses the native alert on both platforms: Material dialog on Android, UIKit
- * alert on iOS (where the destructive button renders red).
+ * alert on iOS (where the destructive button renders red). Only one shows at
+ * a time: asking again while one is open resolves `false` at once.
  */
 export function confirmAction({
   title,
@@ -26,11 +31,21 @@ export function confirmAction({
   cancelLabel = "Cancel",
   destructive = false,
 }: ConfirmOptions): Promise<boolean> {
+  // A double tap on Delete or Decline would otherwise stack two alerts, and
+  // confirming both runs the action twice. A dialog left open past
+  // OPEN_DIALOG_STALE_MS is treated as gone, so a lost dismissal can never
+  // block every later confirmation.
+  const now = Date.now();
+  if (openDialogSince !== null && now - openDialogSince < OPEN_DIALOG_STALE_MS) {
+    return Promise.resolve(false);
+  }
+  openDialogSince = now;
   return new Promise((resolve) => {
     let settled = false;
     const settle = (value: boolean) => {
       if (settled) return;
       settled = true;
+      if (openDialogSince === now) openDialogSince = null;
       resolve(value);
     };
     // Order matters on Android: with two buttons the first is the negative

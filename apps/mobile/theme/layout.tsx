@@ -44,6 +44,17 @@ export function useContentWidth(
   return { width: "100%", maxWidth, alignSelf: "center" };
 }
 
+/**
+ * True when the window is narrower than `threshold` once the system font size
+ * is counted: at 200% text a 430-point phone has the room of a 215-point one.
+ * Use it for the "stack instead of sit side by side" switches, never a bare
+ * `width < n`.
+ */
+export function useIsNarrowWindow(threshold: number): boolean {
+  const { width, fontScale } = useWindowDimensions();
+  return width / Math.max(fontScale, 1) < threshold;
+}
+
 /** True when the window is wider than the `form` width (a tablet). */
 export function useIsWideScreen(): boolean {
   return useWindowDimensions().width > CONTENT_MAX_WIDTH.form;
