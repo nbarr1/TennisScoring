@@ -14,7 +14,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -71,6 +70,7 @@ import {
   useColors,
   makeStyles,
   useContentWidth,
+  useIsNarrowWindow,
 } from "../../theme";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -472,8 +472,8 @@ const MatchCard = React.memo(function MatchCard({
 }) {
   const colors = useColors();
   const styles = useStyles();
-  const { width } = useWindowDimensions();
-  const compact = width < 380;
+  // Counts the text size too: large text needs the stacked layout sooner.
+  const compact = useIsNarrowWindow(380);
   const isLive = match.status === "in_progress";
   const isUpcoming =
     match.status === "scheduled" || match.status === "proposed";
@@ -602,6 +602,7 @@ const MatchCard = React.memo(function MatchCard({
           <Text
             style={[
               styles.playerName,
+              styles.playerNameLeft,
               match.winner === "player1" && styles.winner,
             ]}
           >
@@ -711,6 +712,9 @@ export default function MatchesScreen() {
   const [historyOpen, setHistoryOpen] = useState<boolean | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  // Only the first load takes the whole screen. Later ones (a season switch,
+  // a retry) load inside the list, so the season chips stay usable.
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -731,11 +735,13 @@ export default function MatchesScreen() {
       (snap) => {
         setMatches(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Match));
         setLoading(false);
+        setLoadedOnce(true);
       },
       (err) => {
         console.error("[MatchesScreen] matches listener error:", err);
         setLoadError(true);
         setLoading(false);
+        setLoadedOnce(true);
       },
     );
     return unsub;
@@ -831,18 +837,7 @@ export default function MatchesScreen() {
       }));
   }, [buckets, activeFilter, historyExpanded]);
 
-  if (loading) return <LoadingState label="Loading matches" />;
-
-  if (loadError)
-    return (
-      <View style={styles.container}>
-        <ErrorState
-          title="Couldn't load matches"
-          message="Check your connection, then try again."
-          onRetry={() => setLoadRetryKey((key) => key + 1)}
-        />
-      </View>
-    );
+  if (loading && !loadedOnce) return <LoadingState label="Loading matches" />;
 
   if (!divisionId || !user)
     return (
@@ -874,7 +869,9 @@ export default function MatchesScreen() {
   return (
     <View style={styles.container}>
       <SectionList
-        sections={sections}
+        // A failed or pending load shows its state under the controls rather
+        // than a stale list from another season.
+        sections={loading || loadError ? [] : sections}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <MatchCard
@@ -1004,7 +1001,15 @@ export default function MatchesScreen() {
           </View>
         }
         ListEmptyComponent={
-          seasonMatches.length === 0 ? (
+          loading ? (
+            <LoadingState label={`Loading ${seasonName} matches`} />
+          ) : loadError ? (
+            <ErrorState
+              title="Couldn't load matches"
+              message="Check your connection, then try again, or pick another season."
+              onRetry={() => setLoadRetryKey((key) => key + 1)}
+            />
+          ) : seasonMatches.length === 0 ? (
             <EmptyState
               icon="figure.tennis"
               title={`No matches in ${seasonName}`}
@@ -1890,6 +1895,7 @@ const useStyles = makeStyles((colors) =>
       marginBottom: spacing.sm,
     },
     winnerBadge: {
+      flexShrink: 1,
       ...typography.caption,
       fontWeight: "600",
       color: colors.primary,
@@ -1928,6 +1934,9 @@ const useStyles = makeStyles((colors) =>
     },
     playersCompact: { flexWrap: "wrap", gap: spacing.sm },
     playerName: { ...typography.label, fontSize: 15, color: colors.text },
+    // Both names shrink and wrap, so a long name or a doubles team never
+    // pushes "vs" and the other side off the card.
+    playerNameLeft: { flexShrink: 1 },
     playerNameRight: { textAlign: "right", flexShrink: 1 },
     playerRight: {
       flexDirection: "row",

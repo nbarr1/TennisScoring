@@ -311,6 +311,9 @@ function isNoLongerLiveError(err: unknown): boolean {
 
 const CONNECTION_HINT = "Check your connection, then try again.";
 
+/** Same pause as PlayerSlotPicker, so typing a name sends one search. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 function buildWearFeedback(
   match: Match,
   tipTriggers: TipTrigger[] = [],
@@ -640,11 +643,24 @@ export default function MatchScreen() {
   const [linkSearching, setLinkSearching] = useState(false);
   const [linkSearchError, setLinkSearchError] = useState<string | null>(null);
   const linkSearchSeq = useRef(0);
+  const linkSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (linkSearchTimer.current) clearTimeout(linkSearchTimer.current);
+    };
+  }, []);
   const [linkNotice, setLinkNotice] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<{
     tone: "info" | "error";
     message: string;
   } | null>(null);
+
+  // Opened from a notification on a cold start, the screen has no history to
+  // go back to, so leaving lands on the Matches tab instead of doing nothing.
+  const leave = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/matches" as never);
+  }, [router]);
 
   const isParticipant = !!(user && match && isMatchParticipant(match, user.id));
   const isAdminOrLeader =
@@ -850,7 +866,7 @@ export default function MatchScreen() {
       errorMessage: (e) => describeError(e, `Couldn't delete the match. ${CONNECTION_HINT}`),
       onSuccess: () => {
         setShowManage(false);
-        router.back();
+        leave();
       },
     },
   );
@@ -1208,19 +1224,29 @@ export default function MatchScreen() {
     if (ok) await decline.run();
   }
 
-  async function handleLinkSearch(text: string) {
+  function handleLinkSearch(text: string) {
     setLinkSearch(text);
     setLinkSearchError(null);
     // Results from an older, slower query must not replace newer ones.
     const seq = ++linkSearchSeq.current;
+    if (linkSearchTimer.current) clearTimeout(linkSearchTimer.current);
     if (!divisionId || !text.trim()) {
       setLinkResults([]);
       setLinkSearching(false);
       return;
     }
+    // Shown from the first keystroke, so "No players" waits for the search.
     setLinkSearching(true);
+    const searchDivisionId = divisionId;
+    linkSearchTimer.current = setTimeout(
+      () => void runLinkSearch(searchDivisionId, text, seq),
+      SEARCH_DEBOUNCE_MS,
+    );
+  }
+
+  async function runLinkSearch(searchDivisionId: string, text: string, seq: number) {
     try {
-      const results = await searchDivisionPlayers(divisionId, text);
+      const results = await searchDivisionPlayers(searchDivisionId, text);
       if (seq !== linkSearchSeq.current) return;
       const filtered = results.filter((u) => u.id !== user?.id);
       setLinkResults(filtered);
@@ -1241,6 +1267,7 @@ export default function MatchScreen() {
 
   function closeLinkOpponent() {
     linkSearchSeq.current += 1;
+    if (linkSearchTimer.current) clearTimeout(linkSearchTimer.current);
     setShowLinkOpponent(false);
     setLinkSearch("");
     setLinkResults([]);
@@ -1372,9 +1399,7 @@ export default function MatchScreen() {
               : "It may have been deleted, or you may no longer have access to it."
           }
           retryLabel="Back to matches"
-          onRetry={() =>
-            router.canGoBack() ? router.back() : router.replace("/(tabs)/matches" as never)
-          }
+          onRetry={leave}
         />
       </View>
     );
@@ -1498,7 +1523,7 @@ export default function MatchScreen() {
             styles.sbHeaderBtn,
             pressed && styles.sbHeaderBtnPressed,
           ]}
-          onPress={() => router.back()}
+          onPress={leave}
           accessibilityRole="button"
           accessibilityLabel={LEAVE_LABEL}
         >
@@ -2236,7 +2261,7 @@ export default function MatchScreen() {
         <FormField
           label="Opponent's name or email"
           value={linkSearch}
-          onChangeText={(text) => void handleLinkSearch(text)}
+          onChangeText={handleLinkSearch}
           placeholder="Start typing a name"
           autoCapitalize="none"
           autoCorrect={false}
@@ -2252,7 +2277,7 @@ export default function MatchScreen() {
             tone="error"
             message={linkSearchError}
             actionLabel="Try again"
-            onAction={() => void handleLinkSearch(linkSearch)}
+            onAction={() => handleLinkSearch(linkSearch)}
           />
         ) : null}
         {link.error ? (
@@ -2536,10 +2561,11 @@ const statsStyles = StyleSheet.create({
 
 const useEditScoreStyles = makeStyles((colors) =>
   StyleSheet.create({
+    // The same gap as the input rows below, so each name sits over its column.
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 4,
+      gap: spacing.sm,
     },
     headerSet: {
       flex: 1.5,
