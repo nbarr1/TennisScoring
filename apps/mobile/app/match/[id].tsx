@@ -929,6 +929,11 @@ export default function MatchScreen() {
         await sendScoreToWear(result.nextScore, {
           matchId: id,
           status: result.matchWinner ? "pending_report" : match.status,
+          // Only this screen's participant scores, and only while it is live.
+          canScore:
+            isParticipant &&
+            !result.matchWinner &&
+            match.status === "in_progress",
           player1Name: p1,
           player2Name: p2,
           ...buildWearFeedback(
@@ -980,7 +985,7 @@ export default function MatchScreen() {
         setRecordingFor(null);
       }
     },
-    [match, id, scoring],
+    [match, id, scoring, isParticipant],
   );
   // The retry above runs after a re-render, so it calls the latest handler
   // rather than the one that failed, which closed over a stale `scoring`.
@@ -1270,7 +1275,7 @@ export default function MatchScreen() {
       }
       Alert.alert(
         "Couldn't open the watch app",
-        "Check that your watch is nearby, paired, and still has Tennis Score installed.",
+        "Check that your watch is nearby, paired, and still has Tennis League installed.",
       );
       // The watch may have gone out of range since the last check.
       await refreshWatchAppInstalled();
@@ -1284,11 +1289,13 @@ export default function MatchScreen() {
     void sendScoreToWear(match.liveScore, {
       matchId: id,
       status: match.status,
+      // A spectator's watch shows the match read-only.
+      canScore: isParticipant && match.status === "in_progress",
       player1Name: match.player1Name ?? "Player 1",
       player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
     });
-  }, [match, id]);
+  }, [match, id, isParticipant]);
 
   useEffect(() => {
     syncWear();

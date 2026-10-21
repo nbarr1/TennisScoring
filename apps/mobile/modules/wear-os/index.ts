@@ -18,6 +18,12 @@ export type WearScorePayload = {
   matchId: string;
   score: LiveScore;
   status: MatchStatus;
+  /**
+   * Whether the watch may send points for this match: the phone's user is a
+   * participant and the match is in progress. A spectator's snapshot sends
+   * false, so the watch shows the match read-only.
+   */
+  canScore?: boolean;
   player1Name: string;
   player2Name: string;
   feedbackTitle?: string;

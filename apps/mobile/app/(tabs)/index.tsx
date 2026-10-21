@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, FlatList, StyleSheet, Pressable } from "react-native";
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
 import { useRouter } from "expo-router";
 import {
   useRankings,
@@ -67,6 +74,32 @@ function ordinal(n: number): string {
   }
 }
 
+/**
+ * Column widths that grow with the system font size, so the header and every
+ * row stay aligned while "10–12" or a two-digit rank still fits. Past 2x the
+ * numbers shrink to fit instead (`adjustsFontSizeToFit` on each cell).
+ */
+function useColumnWidths() {
+  const { fontScale } = useWindowDimensions();
+  const scale = Math.min(Math.max(fontScale, 1), 2);
+  return useMemo(
+    () => ({
+      marker: Math.round(28 * scale),
+      rank: Math.round(28 * scale) + spacing.md,
+      record: Math.round(58 * scale),
+      diff: Math.round(48 * scale),
+    }),
+    [scale],
+  );
+}
+
+/** Props for a numeric cell: one line, shrinking rather than wrapping. */
+const FIT_ONE_LINE = {
+  numberOfLines: 1,
+  adjustsFontSizeToFit: true,
+  minimumFontScale: 0.6,
+} as const;
+
 function RankingRow({
   item,
   index,
@@ -77,6 +110,7 @@ function RankingRow({
   isCurrentUser: boolean;
 }) {
   const [showDetails, setShowDetails] = useState(false);
+  const widths = useColumnWidths();
   const differential = `${item.gameDifferential > 0 ? "+" : ""}${item.gameDifferential}`;
   return (
     <Pressable
@@ -89,33 +123,49 @@ function RankingRow({
       style={[styles.row, isCurrentUser && styles.rowCurrentUser]}
     >
       <View style={styles.primaryRow}>
-        <View style={[styles.rankMarker, index < 3 && styles.rankMarkerTop]}>
-          <Text style={[styles.rank, index < 3 && styles.rankTop]}>
+        <View
+          style={[
+            styles.rankMarker,
+            { minWidth: widths.marker, minHeight: widths.marker },
+            index < 3 && styles.rankMarkerTop,
+          ]}
+        >
+          <Text
+            style={[styles.rank, index < 3 && styles.rankTop]}
+            {...FIT_ONE_LINE}
+          >
             {index + 1}
           </Text>
         </View>
         <View style={styles.playerCell}>
           <View style={styles.nameLine}>
-            <Text style={styles.name} numberOfLines={1}>
+            <Text style={styles.name} numberOfLines={2}>
               {item.displayName}
             </Text>
             {isCurrentUser && <Text style={styles.youLabel}>You</Text>}
           </View>
         </View>
-        <Text style={styles.recordCell}>
+        <Text
+          style={[styles.recordCell, { width: widths.record }]}
+          {...FIT_ONE_LINE}
+        >
           {item.matchesWon}–{item.matchesLost}
         </Text>
         <Text
           style={[
             styles.diffCell,
+            { width: widths.diff },
             item.gameDifferential > 0 && styles.positiveDiff,
           ]}
+          {...FIT_ONE_LINE}
         >
           {differential}
         </Text>
       </View>
       {showDetails && (
-        <View style={styles.detailRow}>
+        <View
+          style={[styles.detailRow, { paddingLeft: spacing.md + widths.rank }]}
+        >
           <Text style={styles.detailLabel}>Set record</Text>
           <Text style={styles.detailValue}>
             {item.setsWon}–{item.setsLost}
@@ -155,6 +205,7 @@ function StandingsContent({
 }) {
   const user = useAppStore((state) => state.user);
   const router = useRouter();
+  const widths = useColumnWidths();
   const isDoubles = matchType === "doubles";
   const rankingFilters = { seasonId, divisionLevelId };
   const singles = useRankings(isDoubles ? null : divisionId, rankingFilters);
@@ -354,10 +405,20 @@ function StandingsContent({
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
-            <Text style={styles.rankHeader}>#</Text>
+            <Text style={[styles.rankHeader, { width: widths.rank }]}>#</Text>
             <Text style={styles.playerHeader}>{isDoubles ? "Team" : "Player"}</Text>
-            <Text style={styles.recordHeader}>W–L</Text>
-            <Text style={styles.diffHeader}>Diff</Text>
+            <Text
+              style={[styles.recordHeader, { width: widths.record }]}
+              {...FIT_ONE_LINE}
+            >
+              W–L
+            </Text>
+            <Text
+              style={[styles.diffHeader, { width: widths.diff }]}
+              {...FIT_ONE_LINE}
+            >
+              Diff
+            </Text>
           </View>
         </View>
       }
@@ -610,7 +671,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.xs,
   },
-  rankHeader: { width: 38, ...typography.caption, color: colors.textMuted },
+  rankHeader: { ...typography.caption, color: colors.textMuted },
   playerHeader: {
     flex: 1,
     ...typography.caption,
@@ -618,13 +679,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   recordHeader: {
-    width: 58,
     ...typography.caption,
     color: colors.textMuted,
     textAlign: "center",
   },
   diffHeader: {
-    width: 48,
     ...typography.caption,
     color: colors.textMuted,
     textAlign: "right",
@@ -644,9 +703,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  // Sized by useColumnWidths(); minWidth/minHeight, never a fixed box.
   rankMarker: {
-    width: 28,
-    height: 28,
+    paddingHorizontal: spacing.xxs,
     borderRadius: radii.pill,
     marginRight: spacing.md,
     alignItems: "center",
@@ -668,13 +727,11 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   recordCell: {
-    width: 58,
     ...typography.label,
     color: colors.text,
     textAlign: "center",
   },
   diffCell: {
-    width: 48,
     ...typography.label,
     color: colors.textMuted,
     textAlign: "right",
@@ -683,7 +740,6 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingLeft: 52,
     paddingRight: spacing.md,
     paddingBottom: spacing.sm,
   },
