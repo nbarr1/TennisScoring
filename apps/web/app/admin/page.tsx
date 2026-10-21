@@ -67,6 +67,7 @@ import {
   LEVEL_COMMIT_DELAY_MS,
   OTHER_SEASONS_FILTER,
   PartialWriteError,
+  ROSTER_UNAVAILABLE_MESSAGE,
   ROSTER_MEMBERSHIP_STATUSES,
   ROSTER_WRITE_CONCURRENCY,
   SAVED_FLASH_MS,
@@ -152,20 +153,32 @@ export default function AdminPage(): React.JSX.Element {
   // The roster shows every player on the season, waitlisted included — leaving them out
   // rendered them as unassigned and let the next assignment quietly flip them to active.
   // The round-robin scheduler below keeps the active-only default on purpose.
-  const { memberships: seasonMemberships, loading: loadingSeasonMemberships } = useDivisionMemberships(
-    division?.id,
-    adminSeasonId,
-    null,
-    ROSTER_MEMBERSHIP_STATUSES,
-  );
+  const {
+    memberships: seasonMemberships,
+    loading: loadingSeasonMemberships,
+    error: seasonMembershipsError,
+    retry: retrySeasonMemberships,
+  } = useDivisionMemberships(division?.id, adminSeasonId, null, ROSTER_MEMBERSHIP_STATUSES);
   // Players move between divisions from one season to the next, so a player rostered only in
   // another season is not on this one: listing them here as unassigned is what put Fall-only
   // players on the Spring roster and the other way around.
-  const { seasonsByUserId: rosteredSeasonsByUserId, loading: loadingRosteredSeasons } =
-    useDivisionRosteredSeasons(division?.id);
+  const {
+    seasonsByUserId: rosteredSeasonsByUserId,
+    loading: loadingRosteredSeasons,
+    error: rosteredSeasonsError,
+    retry: retryRosteredSeasons,
+  } = useDivisionRosteredSeasons(division?.id);
   // Until both snapshots land, every player looks unassigned: the banner fired, rows went
   // amber, and an assignment made in that window wrote a waitlisted player back as active.
   const rosterReady = !loadingSeasonMemberships && !loadingRosteredSeasons;
+  // A failed snapshot hands back an empty list, which is not a roster: it reads the same way,
+  // every player unassigned. The Roster tab shows the error instead of the grid, the
+  // unassigned banner and badge stay hidden, and level writes refuse to run until it loads.
+  const rosterLoadError = seasonMembershipsError ?? rosteredSeasonsError;
+  const retryRosterLoad = useCallback(() => {
+    retrySeasonMemberships();
+    retryRosteredSeasons();
+  }, [retryRosteredSeasons, retrySeasonMemberships]);
   // Whether the signed-in account may use this page. The admin UI waits for the answer, so a
   // player who lands here sees a loading state, not the roster, before being redirected.
   const [accessChecked, setAccessChecked] = useState(false);
@@ -212,7 +225,11 @@ export default function AdminPage(): React.JSX.Element {
   // so a leader learns that before building a preview.
   const rrSelectedLevelIsDoubles =
     adminSeasonLevels.find((level) => level.id === rrDivisionLevelId)?.matchType === "doubles";
-  const { memberships: rrMemberships } = useDivisionMemberships(
+  const {
+    memberships: rrMemberships,
+    error: rrMembershipsError,
+    retry: retryRrMemberships,
+  } = useDivisionMemberships(
     division?.id,
     adminSeasonId,
     rrDivisionLevelId || null,
@@ -752,6 +769,8 @@ export default function AdminPage(): React.JSX.Element {
   const savePlayer = useAsyncAction(
     async () => {
       if (!division || !editingPlayerId || !editName.trim() || !editDivisionLevelId) return "";
+      // The status field was filled from a membership the failed snapshot never delivered.
+      if (rosterLoadError) throw new Error(ROSTER_UNAVAILABLE_MESSAGE);
       const savedId = editingPlayerId;
       await upsertDivisionMembership({
         divisionId: division.id,
@@ -1252,6 +1271,11 @@ export default function AdminPage(): React.JSX.Element {
   // ---- Roster actions ---------------------------------------------------
   async function assignLevel(row: RosterRow, nextLevelId: string) {
     if (!division) return;
+    if (rosterLoadError) {
+      // Without the membership the write cannot keep a waitlisted player waitlisted.
+      setRosterAlert({ tone: "error", message: ROSTER_UNAVAILABLE_MESSAGE, retry: retryRosterLoad });
+      return;
+    }
     const userId = row.player.id;
     const previous = effectiveLevelId(row);
     if (nextLevelId === previous) return;
@@ -1395,6 +1419,7 @@ export default function AdminPage(): React.JSX.Element {
   const bulkAssign = useAsyncAction(
     async () => {
       if (!division || !bulkLevelId || selectedVisibleIds.length === 0) return 0;
+      if (rosterLoadError) throw new Error(ROSTER_UNAVAILABLE_MESSAGE);
       setRosterAlert(null);
       const targets = visibleRows
         .filter((row) => selectedVisibleIds.includes(row.player.id))
@@ -1678,7 +1703,7 @@ export default function AdminPage(): React.JSX.Element {
   const toolsAttentionCount = messageReports.length + reportsAwaitingResolution.length;
   const pageLoading = loading || !accessChecked;
   // Counted only once the roster snapshots have landed; before that everyone reads as unassigned.
-  const knownUnassignedCount = rosterReady ? unassignedCount : 0;
+  const knownUnassignedCount = rosterReady && !rosterLoadError ? unassignedCount : 0;
   const showAttention =
     Boolean(division) &&
     !pageLoading &&
@@ -1731,7 +1756,7 @@ export default function AdminPage(): React.JSX.Element {
         {division && !pageLoading && !viewAsUser ? (
           <p style={styles.headerSummary}>
             <strong style={{ color: styles.pageTitle.color }}>{division.name}</strong>
-            {rosterReady ? (
+            {rosterReady && !rosterLoadError ? (
               <>
                 {" · "}
                 {plural(rosterRows.length, "player", "players")} ·{" "}
@@ -1904,6 +1929,8 @@ export default function AdminPage(): React.JSX.Element {
                 levelNameById={levelNameById}
                 noLevelsYet={noLevelsYet}
                 rosterReady={rosterReady}
+                rosterLoadError={rosterLoadError}
+                retryRosterLoad={retryRosterLoad}
                 rosterRows={rosterRows}
                 otherSeasonRows={otherSeasonRows}
                 otherSeasonIds={otherSeasonIds}
@@ -1987,6 +2014,8 @@ export default function AdminPage(): React.JSX.Element {
                 setRrDivisionLevelId={setRrDivisionLevelId}
                 rrSelectedLevelIsDoubles={rrSelectedLevelIsDoubles}
                 rrMemberships={rrMemberships}
+                rrMembershipsError={rrMembershipsError}
+                retryRrMemberships={retryRrMemberships}
                 rrSelectedPlayerIds={rrSelectedPlayerIds}
                 setRrSelectedPlayerIds={setRrSelectedPlayerIds}
                 toggleRrPlayer={toggleRrPlayer}

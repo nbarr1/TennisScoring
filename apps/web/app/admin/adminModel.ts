@@ -111,3 +111,10 @@ export function playerStatusLabel(player: User): string {
 
 /** The page-level season every admin panel reads. */
 export type AdminSeason = Pick<Season, "id" | "year" | "half" | "name">;
+
+/**
+ * Why a level write is refused while the season's memberships failed to load. Writing then
+ * would set `status: 'active'` over a waitlisted membership the page never saw.
+ */
+export const ROSTER_UNAVAILABLE_MESSAGE =
+  "The roster didn't load, so this change could put a waitlisted player back on the active list. Load the roster again, then try the change.";

@@ -4,7 +4,8 @@ import { memo, useMemo, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { DivisionLevel } from "@tennis/shared";
 import { IconCheck, IconRefresh, IconUpload, IconUserMinus, IconUserPlus } from "@tabler/icons-react";
-import { AnimatedDiv, Button, EmptyState, InlineAlert, LoadingBlock } from "../shared/ui";
+import type { FirestoreError } from "firebase/firestore";
+import { AnimatedDiv, Button, EmptyState, ErrorState, InlineAlert, LoadingBlock } from "../shared/ui";
 import type { AsyncAction } from "../shared/ui";
 import { plural } from "./AdminParts";
 import {
@@ -36,6 +37,9 @@ export type RosterPanelProps = {
   levelNameById: Map<string, string>;
   noLevelsYet: boolean;
   rosterReady: boolean;
+  /** A membership snapshot failed: the roster shows this instead of a grid of unassigned rows. */
+  rosterLoadError: FirestoreError | null;
+  retryRosterLoad: () => void;
   rosterRows: RosterRow[];
   otherSeasonRows: RosterRow[];
   otherSeasonIds: Set<string>;
@@ -77,6 +81,8 @@ export function RosterPanel({
   levelNameById,
   noLevelsYet,
   rosterReady,
+  rosterLoadError,
+  retryRosterLoad,
   rosterRows,
   otherSeasonRows,
   otherSeasonIds,
@@ -181,7 +187,16 @@ export function RosterPanel({
           </InlineAlert>
         ) : null}
 
-        {!rosterReady ? (
+        {rosterLoadError ? (
+          // Never the grid: with no memberships every player would read as unassigned.
+          <ErrorState
+            compact
+            title={`Couldn't load the ${adminSeason.name} roster.`}
+            error={rosterLoadError}
+            onRetry={retryRosterLoad}
+            style={styles.blockGap}
+          />
+        ) : !rosterReady ? (
           <LoadingBlock
             label={`Loading the ${adminSeason.name} roster…`}
             rows={5}

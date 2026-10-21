@@ -10,7 +10,8 @@ import type {
   RoundRobinMatchup,
 } from "@tennis/shared";
 import { IconCheck, IconDownload, IconRefresh } from "@tabler/icons-react";
-import { Button, EmptyState, FieldError, InlineAlert, StatusBadge } from "../shared/ui";
+import type { FirestoreError } from "firebase/firestore";
+import { Button, EmptyState, ErrorState, FieldError, InlineAlert, StatusBadge } from "../shared/ui";
 import type { AsyncAction } from "../shared/ui";
 import { CheckboxRow, Field, plural } from "./AdminParts";
 import { DAY_MS, REPORT_REASON_LABELS, type AdminSeason, type ToolPanel } from "./adminModel";
@@ -55,6 +56,8 @@ export type ToolsPanelProps = {
   setRrDivisionLevelId: (levelId: string) => void;
   rrSelectedLevelIsDoubles: boolean;
   rrMemberships: DivisionMembership[];
+  rrMembershipsError: FirestoreError | null;
+  retryRrMemberships: () => void;
   rrSelectedPlayerIds: string[];
   setRrSelectedPlayerIds: (ids: string[]) => void;
   toggleRrPlayer: (userId: string) => void;
@@ -109,6 +112,8 @@ export function ToolsPanel({
   setRrDivisionLevelId,
   rrSelectedLevelIsDoubles,
   rrMemberships,
+  rrMembershipsError,
+  retryRrMemberships,
   rrSelectedPlayerIds,
   setRrSelectedPlayerIds,
   toggleRrPlayer,
@@ -384,7 +389,15 @@ export function ToolsPanel({
             <legend style={styles.legend}>
               Players ({rrSelectedPlayerIds.length} of {rrMemberships.length} selected)
             </legend>
-            {rrMemberships.length === 0 ? (
+            {rrMembershipsError ? (
+              // A failed query is not an empty level: say so rather than "No active players".
+              <ErrorState
+                compact
+                title="Couldn't load this level's players."
+                error={rrMembershipsError}
+                onRetry={retryRrMemberships}
+              />
+            ) : rrMemberships.length === 0 ? (
               <p style={styles.hint}>
                 No active players in this division level for {adminSeason.name} yet. Assign
                 players on the Roster tab.
