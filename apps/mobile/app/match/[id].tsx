@@ -97,6 +97,7 @@ import {
   isWatchAppInstalled,
   launchWatchApp,
   sendScoreToWear,
+  type WearScorePayload,
 } from "../../modules/wear-os";
 import type {
   LiveScore,
@@ -1325,9 +1326,27 @@ export default function MatchScreen() {
     }
   }, [refreshWatchAppInstalled]);
 
+  // The last snapshot sent, so leaving the screen can resend it read-only.
+  const lastWearSnapshotRef = useRef<{
+    score: LiveScore;
+    payload: Omit<WearScorePayload, "score">;
+  } | null>(null);
+
   const syncWear = useCallback(() => {
-    if (!match || !id) return;
-    void sendScoreToWear(match.liveScore, {
+    if (!id) return;
+    if (!match) {
+      // The match was deleted while open: stop the watch accepting points.
+      const last = lastWearSnapshotRef.current;
+      if (last?.payload.canScore) {
+        lastWearSnapshotRef.current = {
+          ...last,
+          payload: { ...last.payload, canScore: false },
+        };
+        void sendScoreToWear(last.score, { ...last.payload, canScore: false });
+      }
+      return;
+    }
+    const payload = {
       matchId: id,
       status: match.status,
       // A spectator's watch shows the match read-only.
@@ -1335,12 +1354,26 @@ export default function MatchScreen() {
       player1Name: match.player1Name ?? "Player 1",
       player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
-    });
+    };
+    lastWearSnapshotRef.current = { score: match.liveScore, payload };
+    void sendScoreToWear(match.liveScore, payload);
   }, [match, id, isParticipant]);
 
   useEffect(() => {
     syncWear();
   }, [syncWear]);
+
+  // Leaving the screen ends the phone's ability to apply watch points, so the
+  // watch gets one last read-only snapshot instead of staying scoreable.
+  useEffect(
+    () => () => {
+      const last = lastWearSnapshotRef.current;
+      if (last?.payload.canScore) {
+        void sendScoreToWear(last.score, { ...last.payload, canScore: false });
+      }
+    },
+    [],
+  );
 
   // The watch asks for a snapshot whenever it comes to the foreground. Without an
   // answer it shows whatever it last saw until the match document next changes.
