@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { DivisionLevel } from "@tennis/shared";
 import { IconCheck, IconRefresh, IconUpload, IconUserMinus, IconUserPlus } from "@tabler/icons-react";
@@ -17,6 +18,12 @@ import {
 } from "./adminModel";
 import { styles } from "./adminStyles";
 import css from "./admin.module.css";
+
+/**
+ * Above this many visible rows the roster stops animating: auto-animate measures every row
+ * on each change, and a filter narrowing a 100-row roster reflows them all.
+ */
+const ROSTER_ANIMATION_ROW_LIMIT = 40;
 
 /**
  * The Roster tab: search, level filter chips, and the players grid with its
@@ -104,6 +111,23 @@ export function RosterPanel({
   onRowLevelChange,
   openPlayerDetail,
 }: RosterPanelProps): React.JSX.Element {
+  // AdminPage rebuilds its handlers every render; the rows call the latest through this ref,
+  // so the handlers object below never changes and the row memo holds.
+  const latest = useRef({ openPlayerDetail, onRowLevelChange });
+  latest.current = { openPlayerDetail, onRowLevelChange };
+  const rowHandlers = useMemo<RosterRowHandlers>(
+    () => ({
+      toggleSelected: (userId, checked) =>
+        setSelectedPlayerIds((current) =>
+          checked ? [...current, userId] : current.filter((id) => id !== userId),
+        ),
+      openDetail: (row) => latest.current.openPlayerDetail(row),
+      changeLevel: (row, nextLevelId) => latest.current.onRowLevelChange(row, nextLevelId),
+      remove: (row) => setRemoveTarget({ row, viaSelect: false }),
+    }),
+    [setRemoveTarget, setSelectedPlayerIds],
+  );
+
   return (
     <div
       role="tabpanel"
@@ -267,133 +291,31 @@ export function RosterPanel({
                 </div>
               </div>
 
-              <AnimatedDiv role="rowgroup">
+              <AnimatedDiv role="rowgroup" animate={visibleRows.length <= ROSTER_ANIMATION_ROW_LIMIT}>
                 {visibleRows.map((row) => {
                   const p = row.player;
                   const draftLevelId = draftLevels[p.id];
-                  const levelId = draftLevelId ?? effectiveLevelId(row);
-                  const selected = selectedPlayerIds.includes(p.id);
-                  const registered = p.isRegistered !== false;
-                  const waitlisted = row.membership?.status === "waitlisted";
                   // Rostered in another season only: not on this roster, so not "unassigned"
                   // here, and there is nothing to remove from this season.
                   const fromOtherSeason = otherSeasonIds.has(p.id) && !effectiveLevelId(row);
-                  const saving =
-                    savingRowIds.includes(p.id) ||
-                    (draftLevelId !== undefined && removeTarget?.row.player.id !== p.id);
-                  const savedFlash = savedFlashIds.includes(p.id);
                   return (
-                    <div
+                    <RosterRowView
                       key={p.id}
-                      role="row"
-                      className={`${css.row} ${selected ? css.rowSelected : ""}`}
-                    >
-                      <div role="cell" className={css.cellCheck}>
-                        <label className={css.checkTarget}>
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            aria-label={`Select ${p.displayName}`}
-                            onChange={(e) =>
-                              setSelectedPlayerIds((current) =>
-                                e.target.checked
-                                  ? [...current, p.id]
-                                  : current.filter((id) => id !== p.id),
-                              )
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div role="cell" className={css.cellPlayer}>
-                        <button
-                          type="button"
-                          className={css.playerButton}
-                          onClick={() => openPlayerDetail(row)}
-                          aria-haspopup="dialog"
-                          aria-label={`${p.displayName}: open details`}
-                        >
-                          <span style={styles.avatar} aria-hidden="true">
-                            {initialsOf(p.displayName)}
-                          </span>
-                          <span className={css.playerName}>{p.displayName}</span>
-                        </button>
-                      </div>
-                      <div role="cell" className={css.cellEmail} style={styles.cellText}>
-                        {p.email && p.contactPreferences?.allowEmail !== false ? (
-                          <a href={`mailto:${p.email}`} style={styles.contactLink}>
-                            {p.email}
-                          </a>
-                        ) : (
-                          <>
-                            <span aria-hidden="true">—</span>
-                            <span className="sr-only">{p.email ? "Email not shared" : "No email"}</span>
-                          </>
-                        )}
-                      </div>
-                      <div role="cell" className={css.cellStatus} style={styles.statusCell}>
-                        <span style={registered ? styles.registeredBadge : styles.unregisteredBadge}>
-                          {playerStatusLabel(p)}
-                        </span>
-                        {waitlisted ? <span style={styles.waitlistBadge}>Waitlisted</span> : null}
-                        {fromOtherSeason ? (
-                          <span style={styles.otherSeasonNote}>In {otherSeasonNames(p.id)}</span>
-                        ) : null}
-                      </div>
-                      <div role="cell" className={css.cellLevel}>
-                        <select
-                          style={{
-                            ...styles.rowSelect,
-                            ...(levelId || fromOtherSeason ? {} : styles.rowSelectUnassigned),
-                          }}
-                          value={levelId}
-                          aria-label={
-                            fromOtherSeason
-                              ? `Add ${p.displayName} to a ${adminSeason.name} division level`
-                              : `Division level for ${p.displayName}`
-                          }
-                          aria-busy={saving || undefined}
-                          onChange={(e) => onRowLevelChange(row, e.target.value)}
-                        >
-                          <option value="">
-                            {fromOtherSeason ? `Not in ${adminSeason.name}` : "Unassigned"}
-                          </option>
-                          {adminSeasonLevels.map((level) => (
-                            <option key={level.id} value={level.id}>
-                              {level.name}
-                            </option>
-                          ))}
-                          {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
-                            <option value={levelId}>
-                              {levelNameById.get(levelId) ?? "Other level"}
-                            </option>
-                          ) : null}
-                        </select>
-                        <span style={styles.savedFlag} aria-hidden="true">
-                          {saving ? (
-                            <span className="tl-spinner" />
-                          ) : savedFlash ? (
-                            <>
-                              <IconCheck size={14} />
-                              Saved
-                            </>
-                          ) : null}
-                        </span>
-                      </div>
-                      <div role="cell" className={css.cellRemove}>
-                        {fromOtherSeason ? null : (
-                          <Button
-                            variant="quiet-danger"
-                            size="sm"
-                            style={styles.iconButton}
-                            aria-label={`Remove ${p.displayName} from ${adminSeason.name}`}
-                            title={`Remove from ${adminSeason.name}`}
-                            aria-haspopup="dialog"
-                            onClick={() => setRemoveTarget({ row, viaSelect: false })}
-                            icon={<IconUserMinus size={20} aria-hidden="true" />}
-                          />
-                        )}
-                      </div>
-                    </div>
+                      row={row}
+                      levelId={draftLevelId ?? effectiveLevelId(row)}
+                      selected={selectedPlayerIds.includes(p.id)}
+                      fromOtherSeason={fromOtherSeason}
+                      otherSeasonLabel={fromOtherSeason ? otherSeasonNames(p.id) : ""}
+                      saving={
+                        savingRowIds.includes(p.id) ||
+                        (draftLevelId !== undefined && removeTarget?.row.player.id !== p.id)
+                      }
+                      savedFlash={savedFlashIds.includes(p.id)}
+                      seasonName={adminSeason.name}
+                      adminSeasonLevels={adminSeasonLevels}
+                      levelNameById={levelNameById}
+                      handlers={rowHandlers}
+                    />
                   );
                 })}
               </AnimatedDiv>
@@ -448,3 +370,150 @@ export function RosterPanel({
     </div>
   );
 }
+
+/** What a roster row can do. One stable object for every row, so a row's memo holds. */
+type RosterRowHandlers = {
+  toggleSelected: (userId: string, checked: boolean) => void;
+  openDetail: (row: RosterRow) => void;
+  changeLevel: (row: RosterRow, nextLevelId: string) => void;
+  remove: (row: RosterRow) => void;
+};
+
+/**
+ * One roster row. Memoized on primitive props: a keystroke in the search, a
+ * "Saved" flag on another row, or a snapshot that leaves this row unchanged
+ * re-renders only the rows whose own values moved.
+ */
+const RosterRowView = memo(function RosterRowView({
+  row,
+  levelId,
+  selected,
+  fromOtherSeason,
+  otherSeasonLabel,
+  saving,
+  savedFlash,
+  seasonName,
+  adminSeasonLevels,
+  levelNameById,
+  handlers,
+}: {
+  row: RosterRow;
+  /** The draft choice while it settles, else the effective level; "" is unassigned. */
+  levelId: string;
+  selected: boolean;
+  fromOtherSeason: boolean;
+  otherSeasonLabel: string;
+  saving: boolean;
+  savedFlash: boolean;
+  seasonName: string;
+  adminSeasonLevels: DivisionLevel[];
+  levelNameById: Map<string, string>;
+  handlers: RosterRowHandlers;
+}): React.JSX.Element {
+  const p = row.player;
+  const registered = p.isRegistered !== false;
+  const waitlisted = row.membership?.status === "waitlisted";
+  return (
+    <div role="row" className={`${css.row} ${selected ? css.rowSelected : ""}`}>
+      <div role="cell" className={css.cellCheck}>
+        <label className={css.checkTarget}>
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={`Select ${p.displayName}`}
+            onChange={(e) => handlers.toggleSelected(p.id, e.target.checked)}
+          />
+        </label>
+      </div>
+      <div role="cell" className={css.cellPlayer}>
+        <button
+          type="button"
+          className={css.playerButton}
+          onClick={() => handlers.openDetail(row)}
+          aria-haspopup="dialog"
+          aria-label={`${p.displayName}: open details`}
+        >
+          <span style={styles.avatar} aria-hidden="true">
+            {initialsOf(p.displayName)}
+          </span>
+          <span className={css.playerName}>{p.displayName}</span>
+        </button>
+      </div>
+      <div role="cell" className={css.cellEmail} style={styles.cellText}>
+        {p.email && p.contactPreferences?.allowEmail !== false ? (
+          <a href={`mailto:${p.email}`} style={styles.contactLink}>
+            {p.email}
+          </a>
+        ) : (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">{p.email ? "Email not shared" : "No email"}</span>
+          </>
+        )}
+      </div>
+      <div role="cell" className={css.cellStatus} style={styles.statusCell}>
+        <span style={registered ? styles.registeredBadge : styles.unregisteredBadge}>
+          {playerStatusLabel(p)}
+        </span>
+        {waitlisted ? <span style={styles.waitlistBadge}>Waitlisted</span> : null}
+        {fromOtherSeason ? (
+          <span style={styles.otherSeasonNote}>In {otherSeasonLabel}</span>
+        ) : null}
+      </div>
+      <div role="cell" className={css.cellLevel}>
+        <select
+          style={{
+            ...styles.rowSelect,
+            ...(levelId || fromOtherSeason ? {} : styles.rowSelectUnassigned),
+          }}
+          value={levelId}
+          aria-label={
+            fromOtherSeason
+              ? `Add ${p.displayName} to a ${seasonName} division level`
+              : `Division level for ${p.displayName}`
+          }
+          aria-busy={saving || undefined}
+          onChange={(e) => handlers.changeLevel(row, e.target.value)}
+        >
+          <option value="">
+            {fromOtherSeason ? `Not in ${seasonName}` : "Unassigned"}
+          </option>
+          {adminSeasonLevels.map((level) => (
+            <option key={level.id} value={level.id}>
+              {level.name}
+            </option>
+          ))}
+          {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
+            <option value={levelId}>
+              {levelNameById.get(levelId) ?? "Other level"}
+            </option>
+          ) : null}
+        </select>
+        <span style={styles.savedFlag} aria-hidden="true">
+          {saving ? (
+            <span className="tl-spinner" />
+          ) : savedFlash ? (
+            <>
+              <IconCheck size={14} />
+              Saved
+            </>
+          ) : null}
+        </span>
+      </div>
+      <div role="cell" className={css.cellRemove}>
+        {fromOtherSeason ? null : (
+          <Button
+            variant="quiet-danger"
+            size="sm"
+            style={styles.iconButton}
+            aria-label={`Remove ${p.displayName} from ${seasonName}`}
+            title={`Remove from ${seasonName}`}
+            aria-haspopup="dialog"
+            onClick={() => handlers.remove(row)}
+            icon={<IconUserMinus size={20} aria-hidden="true" />}
+          />
+        )}
+      </div>
+    </div>
+  );
+});

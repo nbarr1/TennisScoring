@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { HTMLAttributes } from "react";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import Skeleton from "react-loading-skeleton";
@@ -8,9 +9,18 @@ import Skeleton from "react-loading-skeleton";
  * A `div` whose direct children fade and slide when they are added, removed,
  * or reordered. auto-animate skips the animation when the visitor's system
  * asks for reduced motion.
+ *
+ * Pass `animate={false}` to switch it off, for a list long enough that
+ * measuring every child on each change costs more than the motion is worth.
  */
-export function AnimatedDiv(props: HTMLAttributes<HTMLDivElement>): React.JSX.Element {
-  const [ref] = useAutoAnimate<HTMLDivElement>();
+export function AnimatedDiv({
+  animate = true,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { animate?: boolean }): React.JSX.Element {
+  const [ref, setEnabled] = useAutoAnimate<HTMLDivElement>();
+  useEffect(() => {
+    setEnabled(animate);
+  }, [animate, setEnabled]);
   return <div ref={ref} {...props} />;
 }
 

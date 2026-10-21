@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { AppNav } from "../shared/AppNav";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { onSnapshot, getDoc, getDocs } from "firebase/firestore";
@@ -248,6 +248,9 @@ export default function AdminPage(): React.JSX.Element {
 
   // ---- Roster tab state -------------------------------------------------
   const [rosterSearch, setRosterSearch] = useState("");
+  // The roster filters on a deferred copy, so the field keeps up with typing while the rows
+  // catch up a beat behind on a large division.
+  const deferredRosterSearch = useDeferredValue(rosterSearch);
   const [rosterFilter, setRosterFilter] = useState<string>("all");
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
   const [bulkLevelId, setBulkLevelId] = useState("");
@@ -1183,7 +1186,7 @@ export default function AdminPage(): React.JSX.Element {
   }, [effectiveLevelId, rosterRows]);
 
   const visibleRows = useMemo(() => {
-    const term = rosterSearch.trim().toLowerCase();
+    const term = deferredRosterSearch.trim().toLowerCase();
     if (rosterFilter === OTHER_SEASONS_FILTER) {
       return otherSeasonRows.filter(
         (row) =>
@@ -1204,7 +1207,7 @@ export default function AdminPage(): React.JSX.Element {
         (row.player.email ?? "").toLowerCase().includes(term)
       );
     });
-  }, [effectiveLevelId, otherSeasonRows, rosterFilter, rosterRows, rosterSearch]);
+  }, [effectiveLevelId, otherSeasonRows, rosterFilter, rosterRows, deferredRosterSearch]);
 
   const visibleIds = useMemo(() => visibleRows.map((row) => row.player.id), [visibleRows]);
   const selectedVisibleIds = useMemo(
@@ -1215,7 +1218,7 @@ export default function AdminPage(): React.JSX.Element {
     visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
   const someVisibleSelected =
     selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
-  const isFiltered = rosterFilter !== "all" || rosterSearch.trim().length > 0;
+  const isFiltered = rosterFilter !== "all" || deferredRosterSearch.trim().length > 0;
 
   function levelLabel(levelId: string): string {
     return levelNameById.get(levelId) ?? "that division level";
