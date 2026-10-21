@@ -1,8 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authMiddleware } from 'next-firebase-auth-edge';
 import { logStructured } from './lib/logger';
+import { DEFAULT_NEXT_PATH, safeNextPath } from './lib/safeNextPath';
 
 const privateKey = (process.env.FIREBASE_ADMIN_PRIVATE_KEY ?? '').replace(/\\n/g, '\n');
+
+/**
+ * Sends a signed-out page request to /login, carrying where it was going in
+ * `next` so the player lands on the match or proposal they opened (a push
+ * notification link, say) instead of the dashboard. Only page navigations
+ * carry it: API routes answer with JSON before this is reached, and a
+ * background request has no destination worth returning to. The login page
+ * validates `next` again with the same helper before following it.
+ */
+function redirectToLogin(request: NextRequest): NextResponse {
+  const loginUrl = new URL('/login', request.url);
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    const search = new URLSearchParams(request.nextUrl.search);
+    // The router's internal cache-busting parameter is not part of the page.
+    search.delete('_rsc');
+    const query = search.toString();
+    const destination = `${request.nextUrl.pathname}${query ? `?${query}` : ''}`;
+    const next = safeNextPath(destination, '');
+    if (next && next !== '/' && next !== DEFAULT_NEXT_PATH) loginUrl.searchParams.set('next', next);
+  }
+  return NextResponse.redirect(loginUrl);
+}
 
 export async function middleware(request: NextRequest) {
   const cookieSecret = process.env.NEXTAUTH_SECRET;
@@ -17,7 +40,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
     }
 
-    return NextResponse.redirect(new URL('/login', request.url));
+    return redirectToLogin(request);
   }
 
   try {
@@ -44,7 +67,7 @@ export async function middleware(request: NextRequest) {
         if (request.nextUrl.pathname.startsWith('/api/')) {
           return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        return NextResponse.redirect(new URL('/login', request.url));
+        return redirectToLogin(request);
       },
       handleError: async (error) => {
         logStructured('error', 'authMiddleware error', {
@@ -55,7 +78,7 @@ export async function middleware(request: NextRequest) {
         if (request.nextUrl.pathname.startsWith('/api/')) {
           return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
         }
-        return NextResponse.redirect(new URL('/login', request.url));
+        return redirectToLogin(request);
       },
     });
   } catch (err) {
@@ -67,7 +90,7 @@ export async function middleware(request: NextRequest) {
     if (request.nextUrl.pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Auth configuration error' }, { status: 500 });
     }
-    return NextResponse.redirect(new URL('/login', request.url));
+    return redirectToLogin(request);
   }
 }
 
