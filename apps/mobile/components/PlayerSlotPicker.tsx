@@ -13,11 +13,12 @@ import type { PublicProfile } from "@tennis/shared";
 import {
   announce,
   Button,
-  colors,
   MIN_TOUCH_TARGET,
   radii,
   spacing,
   typography,
+  useColors,
+  makeStyles,
 } from "../theme";
 
 /**
@@ -46,6 +47,8 @@ export function PlayerSlotPicker({
   onClear: () => void;
   placeholder?: string;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const [searchText, setSearchText] = useState("");
   const [results, setResults] = useState<PublicProfile[]>([]);
   const [searching, setSearching] = useState(false);
@@ -183,7 +186,7 @@ export function PlayerSlotPicker({
               key={item.id}
               accessibilityRole="button"
               accessibilityLabel={`Select ${item.displayName} as ${label}`}
-              android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
+              android_ripple={{ color: colors.ripple }}
               style={({ pressed }) => [
                 styles.resultRow,
                 i > 0 && styles.resultDivider,
@@ -225,75 +228,77 @@ export function PlayerSlotPicker({
   );
 }
 
-const styles = StyleSheet.create({
-  block: { marginBottom: spacing.md },
-  label: {
-    ...typography.label,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  searchRow: { flexDirection: "row", alignItems: "center" },
-  input: {
-    flex: 1,
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.body,
-    color: colors.text,
-    backgroundColor: colors.surface,
-  },
-  spinner: { marginLeft: spacing.sm },
-  results: {
-    marginTop: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-    overflow: "hidden",
-  },
-  resultRow: {
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  resultDivider: { borderTopWidth: 1, borderTopColor: colors.border },
-  resultPressed: { backgroundColor: colors.primarySoft },
-  resultName: { ...typography.body, color: colors.text },
-  noResults: {
-    ...typography.bodySmall,
-    marginTop: spacing.xs,
-    color: colors.textMuted,
-  },
-  errorRow: {
-    marginTop: spacing.xs,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  errorText: {
-    ...typography.bodySmall,
-    flex: 1,
-    color: colors.destructive,
-  },
-  selectedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-    minHeight: 48,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.md,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.xs,
-  },
-  selectedName: {
-    ...typography.body,
-    fontWeight: "600",
-    flex: 1,
-    color: colors.text,
-  },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    block: { marginBottom: spacing.md },
+    label: {
+      ...typography.label,
+      color: colors.text,
+      marginBottom: spacing.xs,
+    },
+    searchRow: { flexDirection: "row", alignItems: "center" },
+    input: {
+      flex: 1,
+      minHeight: 48,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      ...typography.body,
+      color: colors.text,
+      backgroundColor: colors.surface,
+    },
+    spinner: { marginLeft: spacing.sm },
+    results: {
+      marginTop: spacing.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radii.md,
+      backgroundColor: colors.surface,
+      overflow: "hidden",
+    },
+    resultRow: {
+      minHeight: MIN_TOUCH_TARGET,
+      justifyContent: "center",
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+    },
+    resultDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+    resultPressed: { backgroundColor: colors.primarySoft },
+    resultName: { ...typography.body, color: colors.text },
+    noResults: {
+      ...typography.bodySmall,
+      marginTop: spacing.xs,
+      color: colors.textMuted,
+    },
+    errorRow: {
+      marginTop: spacing.xs,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    errorText: {
+      ...typography.bodySmall,
+      flex: 1,
+      color: colors.destructive,
+    },
+    selectedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.sm,
+      minHeight: 48,
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radii.md,
+      paddingLeft: spacing.md,
+      paddingRight: spacing.xs,
+    },
+    selectedName: {
+      ...typography.body,
+      fontWeight: "600",
+      flex: 1,
+      color: colors.text,
+    },
+  }),
+);

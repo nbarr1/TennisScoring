@@ -30,13 +30,15 @@ import {
   LoadingState,
   MIN_TOUCH_TARGET,
   announce,
-  colors,
   confirmAction,
   confirmDestructive,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  useContentWidth,
 } from "../theme";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -74,6 +76,9 @@ function formatRoundDate(timestamp: number): string {
 type PublishResult = { matchesCreated: number; roundsCreated: number };
 
 export default function RoundRobinSchedulerScreen() {
+  const colors = useColors();
+  const styles = useStyles();
+  const contentWidth = useContentWidth();
   const router = useRouter();
   const params = useLocalSearchParams<{ divisionId: string; seasonId?: string }>();
   const divisionId = params.divisionId;
@@ -258,7 +263,7 @@ export default function RoundRobinSchedulerScreen() {
       : formatRoundDate(startAt + (round - 1) * intervalDays * 86400000);
 
   return (
-    <KeyboardAwareScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAwareScrollView style={styles.container} contentContainerStyle={[styles.content, contentWidth]}>
       <Text style={styles.intro}>
         Build every match for one division level and season, check the preview, then
         publish. Nothing is created until you publish.
@@ -582,69 +587,71 @@ export default function RoundRobinSchedulerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  intro: { ...typography.bodySmall, color: colors.textMuted },
-  section: { gap: spacing.sm },
-  inlineEmpty: { paddingVertical: spacing.lg },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.subheading,
-    color: colors.primary,
-    marginTop: spacing.sm,
-  },
-  count: { ...typography.caption, color: colors.textMuted },
-  hint: { ...typography.bodySmall, color: colors.textMuted },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  bulkRow: { flexDirection: "row", gap: spacing.sm },
-  field: { marginTop: spacing.md },
-  toggleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    minHeight: MIN_TOUCH_TARGET,
-    paddingTop: spacing.md,
-    marginTop: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    gap: spacing.lg,
-  },
-  toggleText: { flex: 1, gap: spacing.xxs },
-  toggleLabel: { ...typography.label, color: colors.text },
-  toggleHint: { ...typography.caption, color: colors.textMuted },
-  playerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.md,
-    overflow: "hidden",
-  },
-  playerRowActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: radii.sm,
-    borderWidth: 2,
-    borderColor: colors.textMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  playerRowText: { ...typography.label, color: colors.text, flex: 1 },
-  previewBtn: { alignSelf: "stretch" },
-  roundBlock: { marginTop: spacing.sm },
-  roundLabel: { ...typography.label, color: colors.primary, marginBottom: spacing.xs },
-  matchupText: { ...typography.bodySmall, color: colors.text },
-  publishBtn: { marginTop: spacing.sm, alignSelf: "stretch" },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.canvas },
+    content: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
+    intro: { ...typography.bodySmall, color: colors.textMuted },
+    section: { gap: spacing.sm },
+    inlineEmpty: { paddingVertical: spacing.lg },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    sectionTitle: {
+      ...typography.subheading,
+      color: colors.primary,
+      marginTop: spacing.sm,
+    },
+    count: { ...typography.caption, color: colors.textMuted },
+    hint: { ...typography.bodySmall, color: colors.textMuted },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+    bulkRow: { flexDirection: "row", gap: spacing.sm },
+    field: { marginTop: spacing.md },
+    toggleRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      minHeight: MIN_TOUCH_TARGET,
+      paddingTop: spacing.md,
+      marginTop: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      gap: spacing.lg,
+    },
+    toggleText: { flex: 1, gap: spacing.xxs },
+    toggleLabel: { ...typography.label, color: colors.text },
+    toggleHint: { ...typography.caption, color: colors.textMuted },
+    playerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+      minHeight: MIN_TOUCH_TARGET,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.md,
+      overflow: "hidden",
+    },
+    playerRowActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: radii.sm,
+      borderWidth: 2,
+      borderColor: colors.textMuted,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+    playerRowText: { ...typography.label, color: colors.text, flex: 1 },
+    previewBtn: { alignSelf: "stretch" },
+    roundBlock: { marginTop: spacing.sm },
+    roundLabel: { ...typography.label, color: colors.primary, marginBottom: spacing.xs },
+    matchupText: { ...typography.bodySmall, color: colors.text },
+    publishBtn: { marginTop: spacing.sm, alignSelf: "stretch" },
+  }),
+);

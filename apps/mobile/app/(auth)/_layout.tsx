@@ -4,8 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 export default function AuthLayout() {
   return (
     <>
-      {/* Dark status-bar content on the Paper Canvas. */}
-      <StatusBar style="dark" />
+      {/* Status-bar content follows the scheme: dark on the light canvas, light on the dark one. */}
+      <StatusBar style="auto" />
       <Stack screenOptions={{ headerShown: false }} />
     </>
   );

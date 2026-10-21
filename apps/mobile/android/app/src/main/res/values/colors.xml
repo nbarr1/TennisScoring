@@ -3,4 +3,6 @@
   <color name="iconBackground">#1a472a</color>
   <color name="colorPrimary">#023c69</color>
   <color name="colorPrimaryDark">#1a472a</color>
+  <!-- Native text (system dialogs, pickers); values-night holds the dark-scheme value. -->
+  <color name="appTextColor">#000000</color>
 </resources>

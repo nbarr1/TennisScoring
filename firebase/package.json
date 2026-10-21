@@ -27,7 +27,7 @@
     "@firebase/rules-unit-testing": "^6.0.0",
     "@tennis/shared": "workspace:*",
     "@types/node": "^26.6.5",
-    "esbuild": "0.28.0",
+    "esbuild": "0.28.1",
     "firebase": "^13.0.0",
     "typescript": "^6.0.3"
   }

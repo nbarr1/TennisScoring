@@ -21,12 +21,13 @@ import {
   Button,
   Chip,
   InlineAlert,
-  colors,
   describeError,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
 } from "../theme";
 
 const MESSAGE_LIMIT = 2000;
@@ -69,6 +70,8 @@ function friendlyScreenName(path: string): string {
 }
 
 export default function FeedbackScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
@@ -326,58 +329,60 @@ export default function FeedbackScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  keyboardView: { flex: 1, backgroundColor: colors.canvas },
-  container: { flex: 1, backgroundColor: colors.canvas },
-  content: {
-    padding: spacing.xl,
-    gap: spacing.lg,
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
-  },
-  header: { gap: spacing.sm },
-  subtitle: { ...typography.body, color: colors.textMuted },
-  section: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    padding: spacing.lg,
-    gap: spacing.lg,
-  },
-  categoryGroup: { gap: spacing.sm },
-  groupLabel: { ...typography.label, color: colors.text },
-  required: { color: colors.destructive },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  fieldError: {
-    ...typography.caption,
-    color: colors.destructive,
-    fontWeight: "600",
-  },
-  messageInput: { minHeight: 160 },
-  contextCard: {
-    backgroundColor: colors.primarySoft,
-    borderRadius: radii.card,
-    padding: spacing.lg,
-    gap: spacing.xs,
-  },
-  contextTitle: {
-    ...typography.label,
-    fontWeight: "700",
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  contextText: { ...typography.bodySmall, color: colors.successText },
-  sentWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-    gap: spacing.lg,
-  },
-  sentTitle: { ...typography.title, color: colors.primary },
-  sentBody: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-    maxWidth: 420,
-  },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    keyboardView: { flex: 1, backgroundColor: colors.canvas },
+    container: { flex: 1, backgroundColor: colors.canvas },
+    content: {
+      padding: spacing.xl,
+      gap: spacing.lg,
+      width: "100%",
+      maxWidth: 720,
+      alignSelf: "center",
+    },
+    header: { gap: spacing.sm },
+    subtitle: { ...typography.body, color: colors.textMuted },
+    section: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.card,
+      padding: spacing.lg,
+      gap: spacing.lg,
+    },
+    categoryGroup: { gap: spacing.sm },
+    groupLabel: { ...typography.label, color: colors.text },
+    required: { color: colors.destructive },
+    chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+    fieldError: {
+      ...typography.caption,
+      color: colors.destructive,
+      fontWeight: "600",
+    },
+    messageInput: { minHeight: 160 },
+    contextCard: {
+      backgroundColor: colors.primarySoft,
+      borderRadius: radii.card,
+      padding: spacing.lg,
+      gap: spacing.xs,
+    },
+    contextTitle: {
+      ...typography.label,
+      fontWeight: "700",
+      color: colors.primary,
+      marginBottom: spacing.xs,
+    },
+    contextText: { ...typography.bodySmall, color: colors.successText },
+    sentWrap: {
+      alignItems: "center",
+      justifyContent: "center",
+      padding: spacing.xl,
+      gap: spacing.lg,
+    },
+    sentTitle: { ...typography.title, color: colors.primary },
+    sentBody: {
+      ...typography.body,
+      color: colors.textMuted,
+      textAlign: "center",
+      maxWidth: 420,
+    },
+  }),
+);

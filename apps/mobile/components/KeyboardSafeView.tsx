@@ -12,7 +12,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors } from "../theme/tokens";
+import { useColors } from "../theme/scheme";
 
 type KeyboardSafeViewProps = Omit<KeyboardAvoidingViewProps, "behavior"> & {
   behavior?: KeyboardAvoidingViewProps["behavior"];
@@ -36,6 +36,11 @@ type KeyboardAwareBottomSheetProps = {
   sheetTranslateY?: Animated.Value;
   /** Drawn behind the sheet, filling the overlay (a tap-to-close backdrop). */
   backdrop?: React.ReactNode;
+  /**
+   * Wraps the sheet and its inset filler, so a max width (tablets) applies to
+   * both. Leave it unset to render them without a wrapper.
+   */
+  sheetStyle?: StyleProp<ViewStyle>;
 };
 
 const DEFAULT_KEYBOARD_BEHAVIOR: KeyboardAvoidingViewProps["behavior"] =
@@ -88,10 +93,13 @@ export function KeyboardAwareBottomSheet({
   children,
   style,
   contentContainerStyle,
-  fillColor = colors.surface,
+  fillColor: fillColorProp,
   sheetTranslateY,
   backdrop,
+  sheetStyle,
 }: KeyboardAwareBottomSheetProps) {
+  const colors = useColors();
+  const fillColor = fillColorProp ?? colors.surface;
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
@@ -140,11 +148,16 @@ export function KeyboardAwareBottomSheet({
         {backdrop}
         {sheetTranslateY ? (
           <Animated.View
-            style={{ transform: [{ translateY: sheetTranslateY }] }}
+            style={[sheetStyle, { transform: [{ translateY: sheetTranslateY }] }]}
           >
             {children}
             {filler}
           </Animated.View>
+        ) : sheetStyle ? (
+          <View style={sheetStyle}>
+            {children}
+            {filler}
+          </View>
         ) : (
           <>
             {children}

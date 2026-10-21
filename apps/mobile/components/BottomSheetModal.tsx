@@ -10,7 +10,13 @@ import {
   type ViewStyle,
 } from "react-native";
 import { KeyboardAwareBottomSheet } from "./KeyboardSafeView";
-import { colors, spacing, useReduceMotion } from "../theme";
+import {
+  spacing,
+  useReduceMotion,
+  useColors,
+  makeStyles,
+  useContentWidth,
+} from "../theme";
 
 /** How far (pt) or how fast (pt/ms) a downward drag must go to dismiss. */
 const DISMISS_DISTANCE = 96;
@@ -57,12 +63,19 @@ export function BottomSheetModal({
   onRequestClose,
   children,
   cardStyle,
-  fillColor = colors.surface,
-  handleColor = colors.borderStrong,
+  fillColor: fillColorProp,
+  handleColor: handleColorProp,
   backdropLabel,
   keyboardAware = true,
   overlayStyle,
 }: BottomSheetModalProps) {
+  const colors = useColors();
+  const styles = useStyles();
+  const fillColor = fillColorProp ?? colors.surface;
+  const handleColor = handleColorProp ?? colors.borderStrong;
+  // On a tablet the sheet (and its inset filler) centers at the sheet width
+  // instead of spanning the screen. Undefined on phones.
+  const sheetWidth = useContentWidth("sheet");
   const reduceMotion = useReduceMotion();
   const translateY = useRef(new Animated.Value(0)).current;
   const closeRef = useRef(onRequestClose);
@@ -137,6 +150,7 @@ export function BottomSheetModal({
           fillColor={fillColor}
           sheetTranslateY={translateY}
           backdrop={backdrop}
+          sheetStyle={sheetWidth}
         >
           <View
             style={[styles.card, { backgroundColor: fillColor }, cardStyle]}
@@ -155,6 +169,7 @@ export function BottomSheetModal({
               styles.card,
               { backgroundColor: fillColor },
               cardStyle,
+              sheetWidth,
               { transform: [{ translateY }] },
             ]}
             accessibilityViewIsModal
@@ -171,20 +186,22 @@ export function BottomSheetModal({
 /** Space the handle needs at the top of a card; cards pad at least this. */
 export const SHEET_HANDLE_SPACE = spacing.xl;
 
-const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: colors.overlay },
-  overlayPlain: { justifyContent: "flex-end" },
-  card: { paddingTop: SHEET_HANDLE_SPACE },
-  // Drawn first, so the card's own controls (a Close button in the header)
-  // sit above it and keep their taps.
-  handleZone: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: SHEET_HANDLE_SPACE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  handleBar: { width: 36, height: 4, borderRadius: 2 },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: colors.overlay },
+    overlayPlain: { justifyContent: "flex-end" },
+    card: { paddingTop: SHEET_HANDLE_SPACE },
+    // Drawn first, so the card's own controls (a Close button in the header)
+    // sit above it and keep their taps.
+    handleZone: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      height: SHEET_HANDLE_SPACE,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    handleBar: { width: 36, height: 4, borderRadius: 2 },
+  }),
+);
