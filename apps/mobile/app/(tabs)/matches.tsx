@@ -62,13 +62,15 @@ import {
   LoadingState,
   MIN_TOUCH_TARGET,
   announce,
-  colors,
   confirmDestructive,
   elevations,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  useContentWidth,
 } from "../../theme";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -332,6 +334,7 @@ function CompetitionFields({
   choice: CompetitionChoice;
   showError: boolean;
 }) {
+  const styles = useStyles();
   const levelError = showError ? choice.levelError : "";
   return (
     <View style={styles.fieldGroup}>
@@ -427,6 +430,7 @@ function FormSheet({
   onRequestClose: () => void;
   children: React.ReactNode;
 }) {
+  const styles = useStyles();
   return (
     <BottomSheetModal
       visible
@@ -466,6 +470,8 @@ const MatchCard = React.memo(function MatchCard({
   /** Shows an action's outcome above the list, since the card moves or leaves. */
   onNotice: (message: string) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const { width } = useWindowDimensions();
   const compact = width < 380;
   const isLive = match.status === "in_progress";
@@ -558,7 +564,7 @@ const MatchCard = React.memo(function MatchCard({
         accessibilityLabel={cardAccessibilityLabel}
         accessibilityHint="Opens the match"
         onPress={onOpen}
-        android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
+        android_ripple={{ color: colors.ripple }}
         style={({ pressed }) => [
           styles.cardBody,
           !IS_ANDROID && pressed && styles.cardBodyPressed,
@@ -689,6 +695,9 @@ const MatchCard = React.memo(function MatchCard({
 type Sheet = null | "choices" | "live" | "historic" | "propose";
 
 export default function MatchesScreen() {
+  const colors = useColors();
+  const styles = useStyles();
+  const contentWidth = useContentWidth();
   const insets = useSafeAreaInsets();
   const user = useAppStore((state) => state.user);
   const divisionId = useAppStore((state) => state.divisionId);
@@ -1011,11 +1020,11 @@ export default function MatchesScreen() {
             />
           )
         }
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, contentWidth]}
       />
 
       {/* The tab bar below already owns the home-indicator inset. */}
-      <View style={styles.fabGroup}>
+      <View style={[styles.fabGroup, contentWidth]}>
         <Button
           label="New match"
           icon="plus"
@@ -1065,7 +1074,7 @@ export default function MatchesScreen() {
             accessibilityRole="button"
             accessibilityLabel={title}
             accessibilityHint={description}
-            android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
+            android_ripple={{ color: colors.ripple }}
             style={({ pressed }) => [
               styles.newMatchChoice,
               !IS_ANDROID && pressed && styles.cardBodyPressed,
@@ -1136,6 +1145,7 @@ function LiveOrRecordSheet({
   onDone: (message: string) => void;
   onStarted: (matchId: string) => void;
 }) {
+  const styles = useStyles();
   const historic = mode === "historic";
   const [recordingMode, setRecordingMode] = useState<"self" | "onBehalf">(
     "self",
@@ -1448,6 +1458,8 @@ function SetScoresField({
   secondLabel: string;
   error?: string;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const update = (index: number, key: "p1" | "p2", value: string) => {
     const next = [...sets];
     next[index] = { ...next[index], [key]: value.replace(/[^0-9]/g, "") };
@@ -1542,6 +1554,7 @@ function ProposeMatchSheet({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
+  const styles = useStyles();
   const [formatChoice, setFormatChoice] = useState<
     "singles" | "doubles" | null
   >(null);
@@ -1810,242 +1823,244 @@ function ProposeMatchSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  list: { padding: spacing.lg, paddingBottom: spacing.lg, flexGrow: 1 },
-  listControls: { marginBottom: spacing.md, gap: spacing.md },
-  controlLabel: { ...typography.label, color: colors.textMuted },
-  chipRow: { flexDirection: "row", gap: spacing.sm },
-  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  matchSearchRow: {
-    minHeight: MIN_TOUCH_TARGET,
-    paddingLeft: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-  },
-  matchSearchInput: {
-    flex: 1,
-    minHeight: MIN_TOUCH_TARGET,
-    color: colors.text,
-    ...typography.bodySmall,
-  },
-  wrapRow: { flexWrap: "wrap", alignItems: "flex-start" },
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.canvas },
+    list: { padding: spacing.lg, paddingBottom: spacing.lg, flexGrow: 1 },
+    listControls: { marginBottom: spacing.md, gap: spacing.md },
+    controlLabel: { ...typography.label, color: colors.textMuted },
+    chipRow: { flexDirection: "row", gap: spacing.sm },
+    chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+    matchSearchRow: {
+      minHeight: MIN_TOUCH_TARGET,
+      paddingLeft: spacing.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      backgroundColor: colors.surface,
+    },
+    matchSearchInput: {
+      flex: 1,
+      minHeight: MIN_TOUCH_TARGET,
+      color: colors.text,
+      ...typography.bodySmall,
+    },
+    wrapRow: { flexWrap: "wrap", alignItems: "flex-start" },
 
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.canvas,
-  },
-  sectionHeaderButton: {
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "space-between",
-  },
-  sectionTitle: { ...typography.label, color: colors.textMuted },
-  sectionTitleUrgent: { color: colors.primary },
-  sectionTitleLive: { color: colors.liveText },
-  sectionToggle: { ...typography.label, color: colors.primary },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.live,
-  },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.canvas,
+    },
+    sectionHeaderButton: {
+      minHeight: MIN_TOUCH_TARGET,
+      justifyContent: "space-between",
+    },
+    sectionTitle: { ...typography.label, color: colors.textMuted },
+    sectionTitleUrgent: { color: colors.primary },
+    sectionTitleLive: { color: colors.liveText },
+    sectionToggle: { ...typography.label, color: colors.primary },
+    liveDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.live,
+    },
 
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    marginBottom: spacing.md,
-    overflow: "hidden",
-    ...elevations.low,
-  },
-  cardLive: { borderLeftWidth: 4, borderLeftColor: colors.live },
-  cardBody: { padding: spacing.lg },
-  cardBodyPressed: { backgroundColor: colors.surfaceMuted },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  winnerBadge: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.primary,
-    backgroundColor: colors.primarySoft,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radii.pill,
-    overflow: "hidden",
-  },
-  contextLine: {
-    ...typography.bodySmall,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  scheduledLine: {
-    ...typography.label,
-    color: colors.primary,
-    marginBottom: spacing.sm,
-  },
-  scoreRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  setScore: {
-    ...typography.heading,
-    color: colors.text,
-    letterSpacing: 1,
-  },
-  gameScore: { ...typography.label, color: colors.liveText },
-  players: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  playersCompact: { flexWrap: "wrap", gap: spacing.sm },
-  playerName: { ...typography.label, fontSize: 15, color: colors.text },
-  playerNameRight: { textAlign: "right", flexShrink: 1 },
-  playerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  winner: { color: colors.primary, fontWeight: "700" },
-  vs: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginHorizontal: spacing.md,
-  },
-  guestBadge: {
-    ...typography.caption,
-    fontWeight: "700",
-    color: colors.warningText,
-    backgroundColor: colors.warningSoft,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xxs,
-    borderRadius: radii.sm,
-    overflow: "hidden",
-  },
-  serverLine: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-  cardActions: {
-    flexDirection: "row",
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
-  },
-  cardActionsCompact: { flexDirection: "column" },
-  cardActionButton: { flex: 1 },
-  cardAlert: { marginHorizontal: spacing.lg, marginBottom: spacing.lg },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.card,
+      marginBottom: spacing.md,
+      overflow: "hidden",
+      ...elevations.low,
+    },
+    cardLive: { borderLeftWidth: 4, borderLeftColor: colors.live },
+    cardBody: { padding: spacing.lg },
+    cardBodyPressed: { backgroundColor: colors.surfaceMuted },
+    cardHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    winnerBadge: {
+      ...typography.caption,
+      fontWeight: "600",
+      color: colors.primary,
+      backgroundColor: colors.primarySoft,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xxs,
+      borderRadius: radii.pill,
+      overflow: "hidden",
+    },
+    contextLine: {
+      ...typography.bodySmall,
+      color: colors.text,
+      marginBottom: spacing.sm,
+    },
+    scheduledLine: {
+      ...typography.label,
+      color: colors.primary,
+      marginBottom: spacing.sm,
+    },
+    scoreRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    setScore: {
+      ...typography.heading,
+      color: colors.text,
+      letterSpacing: 1,
+    },
+    gameScore: { ...typography.label, color: colors.liveText },
+    players: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    playersCompact: { flexWrap: "wrap", gap: spacing.sm },
+    playerName: { ...typography.label, fontSize: 15, color: colors.text },
+    playerNameRight: { textAlign: "right", flexShrink: 1 },
+    playerRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.xs,
+      flex: 1,
+      justifyContent: "flex-end",
+    },
+    winner: { color: colors.primary, fontWeight: "700" },
+    vs: {
+      ...typography.caption,
+      color: colors.textMuted,
+      marginHorizontal: spacing.md,
+    },
+    guestBadge: {
+      ...typography.caption,
+      fontWeight: "700",
+      color: colors.warningText,
+      backgroundColor: colors.warningSoft,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: spacing.xxs,
+      borderRadius: radii.sm,
+      overflow: "hidden",
+    },
+    serverLine: {
+      ...typography.caption,
+      color: colors.textMuted,
+      marginTop: spacing.xs,
+    },
+    cardActions: {
+      flexDirection: "row",
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.lg,
+    },
+    cardActionsCompact: { flexDirection: "column" },
+    cardActionButton: { flex: 1 },
+    cardAlert: { marginHorizontal: spacing.lg, marginBottom: spacing.lg },
 
-  fabGroup: {
-    flexDirection: "row",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    justifyContent: "flex-end",
-    backgroundColor: colors.canvas,
-  },
-  fab: {
-    minHeight: 56,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radii.lg,
-    ...elevations.medium,
-  },
-  newMatchSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.sm,
-    width: "100%",
-    maxWidth: 640,
-    alignSelf: "center",
-  },
-  newMatchTitle: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  newMatchChoice: {
-    minHeight: 72,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    justifyContent: "center",
-    gap: spacing.xs,
-    overflow: "hidden",
-  },
-  newMatchChoiceTitle: { ...typography.subheading, color: colors.primary },
-  newMatchChoiceDescription: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-  },
+    fabGroup: {
+      flexDirection: "row",
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.md,
+      justifyContent: "flex-end",
+      backgroundColor: colors.canvas,
+    },
+    fab: {
+      minHeight: 56,
+      paddingHorizontal: spacing.xl,
+      borderRadius: radii.lg,
+      ...elevations.medium,
+    },
+    newMatchSheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: radii.xl,
+      borderTopRightRadius: radii.xl,
+      padding: spacing.xl,
+      gap: spacing.sm,
+      width: "100%",
+      maxWidth: 640,
+      alignSelf: "center",
+    },
+    newMatchTitle: {
+      ...typography.title,
+      color: colors.text,
+      marginBottom: spacing.xs,
+    },
+    newMatchChoice: {
+      minHeight: 72,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radii.md,
+      padding: spacing.md,
+      justifyContent: "center",
+      gap: spacing.xs,
+      overflow: "hidden",
+    },
+    newMatchChoiceTitle: { ...typography.subheading, color: colors.primary },
+    newMatchChoiceDescription: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+    },
 
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    padding: spacing.xl,
-    width: "100%",
-    maxWidth: 640,
-    alignSelf: "center",
-    gap: spacing.lg,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-  },
-  modalTitle: { ...typography.heading, color: colors.primary, flex: 1 },
-  fieldGroup: { gap: spacing.sm },
-  fieldLabel: { ...typography.label, color: colors.text },
-  fieldLabelSpaced: { marginTop: spacing.sm },
-  helperText: { ...typography.bodySmall, color: colors.textMuted },
-  whenSummary: { ...typography.label, color: colors.primary },
-  errorText: {
-    ...typography.caption,
-    fontWeight: "600",
-    color: colors.destructive,
-  },
-  submitAlert: { marginTop: -spacing.sm },
-  dateTimeRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
-  dateField: { flexGrow: 3, flexBasis: 160 },
-  timeField: { flexGrow: 2, flexBasis: 120 },
-  setRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  setLabel: { ...typography.label, color: colors.textMuted, minWidth: 44 },
-  setInput: {
-    minHeight: 48,
-    width: 64,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.sm,
-    ...typography.subheading,
-    textAlign: "center",
-    color: colors.text,
-    backgroundColor: colors.surface,
-  },
-  setInputError: { borderColor: colors.destructive },
-  setDash: { ...typography.subheading, color: colors.textMuted },
-  addSet: { alignSelf: "flex-start" },
-  modalActions: { flexDirection: "row", gap: spacing.md },
-  modalActionButton: { flex: 1 },
-});
+    modalCard: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: radii.lg,
+      borderTopRightRadius: radii.lg,
+      padding: spacing.xl,
+      width: "100%",
+      maxWidth: 640,
+      alignSelf: "center",
+      gap: spacing.lg,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: spacing.sm,
+    },
+    modalTitle: { ...typography.heading, color: colors.primary, flex: 1 },
+    fieldGroup: { gap: spacing.sm },
+    fieldLabel: { ...typography.label, color: colors.text },
+    fieldLabelSpaced: { marginTop: spacing.sm },
+    helperText: { ...typography.bodySmall, color: colors.textMuted },
+    whenSummary: { ...typography.label, color: colors.primary },
+    errorText: {
+      ...typography.caption,
+      fontWeight: "600",
+      color: colors.destructive,
+    },
+    submitAlert: { marginTop: -spacing.sm },
+    dateTimeRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+    dateField: { flexGrow: 3, flexBasis: 160 },
+    timeField: { flexGrow: 2, flexBasis: 120 },
+    setRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+    setLabel: { ...typography.label, color: colors.textMuted, minWidth: 44 },
+    setInput: {
+      minHeight: 48,
+      width: 64,
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      paddingHorizontal: spacing.sm,
+      ...typography.subheading,
+      textAlign: "center",
+      color: colors.text,
+      backgroundColor: colors.surface,
+    },
+    setInputError: { borderColor: colors.destructive },
+    setDash: { ...typography.subheading, color: colors.textMuted },
+    addSet: { alignSelf: "flex-start" },
+    modalActions: { flexDirection: "row", gap: spacing.md },
+    modalActionButton: { flex: 1 },
+  }),
+);

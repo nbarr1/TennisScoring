@@ -1,1 +1,4 @@
-<resources/>
+<resources>
+  <!-- Native text on the dark system theme (DayNight), matching the app's dark-scheme text. -->
+  <color name="appTextColor">#E8ECE9</color>
+</resources>

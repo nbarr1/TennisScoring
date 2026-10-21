@@ -12,16 +12,17 @@ import { doc, setDoc } from "firebase/firestore";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
-import { AppIcon, ICON_COLOR, ICON_SIZE } from "../../components/AppIcon";
+import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import { FormErrorSummary, FormField } from "../../components/FormField";
 import {
   Button,
   InlineAlert,
   announce,
-  colors,
   spacing,
   typography,
   useAsyncAction,
+  makeStyles,
+  useColors,
 } from "../../theme";
 
 type Mode = "signin" | "signup";
@@ -54,6 +55,8 @@ function authErrorMessage(error: unknown, mode: Mode): string {
 }
 
 export default function LoginScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const [mode, setMode] = useState<Mode>("signin");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -222,7 +225,7 @@ export default function LoginScreen() {
           <AppIcon
             name="figure.tennis"
             size={ICON_SIZE.brand}
-            color={ICON_COLOR.inverse}
+            color={colors.onBrand}
             emphasized
           />
         </View>
@@ -390,64 +393,66 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.canvas },
-  inner: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
-    width: "100%",
-    maxWidth: 480,
-    alignSelf: "center",
-  },
-  header: { alignItems: "center", marginBottom: spacing.xxl },
-  brandMark: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    marginBottom: spacing.lg,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    backgroundColor: colors.primary,
-    transform: [{ rotate: "-4deg" }],
-  },
-  brandCourtLine: {
-    position: "absolute",
-    width: 100,
-    height: 2,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    transform: [{ rotate: "-35deg" }],
-  },
-  title: {
-    ...typography.title,
-    fontSize: 28,
-    lineHeight: 34,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  form: { gap: spacing.lg },
-  passwordActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginTop: spacing.xs,
-    gap: spacing.sm,
-  },
-  submit: { marginTop: spacing.xs },
-  switchRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-  },
-  switchPrompt: { ...typography.bodySmall, color: colors.textMuted },
-  privacyLink: { alignSelf: "center" },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.canvas },
+    inner: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.xxl,
+      width: "100%",
+      maxWidth: 480,
+      alignSelf: "center",
+    },
+    header: { alignItems: "center", marginBottom: spacing.xxl },
+    brandMark: {
+      width: 76,
+      height: 76,
+      borderRadius: 24,
+      marginBottom: spacing.lg,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      backgroundColor: colors.brand,
+      transform: [{ rotate: "-4deg" }],
+    },
+    brandCourtLine: {
+      position: "absolute",
+      width: 100,
+      height: 2,
+      backgroundColor: "rgba(255,255,255,0.3)",
+      transform: [{ rotate: "-35deg" }],
+    },
+    title: {
+      ...typography.title,
+      fontSize: 28,
+      lineHeight: 34,
+      color: colors.primary,
+      marginBottom: spacing.xs,
+    },
+    subtitle: {
+      ...typography.body,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+    form: { gap: spacing.lg },
+    passwordActions: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "space-between",
+      marginTop: spacing.xs,
+      gap: spacing.sm,
+    },
+    submit: { marginTop: spacing.xs },
+    switchRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: spacing.xs,
+    },
+    switchPrompt: { ...typography.bodySmall, color: colors.textMuted },
+    privacyLink: { alignSelf: "center" },
+  }),
+);

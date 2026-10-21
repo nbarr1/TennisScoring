@@ -36,12 +36,14 @@ import {
   LoadingState,
   Screen,
   SectionHeader,
-  colors,
   elevations,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  useContentWidth,
 } from "../../theme";
 
 /** A player's own level counts while they are waitlisted too. */
@@ -109,6 +111,8 @@ function RankingRow({
   index: number;
   isCurrentUser: boolean;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const [showDetails, setShowDetails] = useState(false);
   const widths = useColumnWidths();
   const differential = `${item.gameDifferential > 0 ? "+" : ""}${item.gameDifferential}`;
@@ -203,9 +207,12 @@ function StandingsContent({
   lead: React.ReactNode;
   onRetry: () => void;
 }) {
+  const styles = useStyles();
   const user = useAppStore((state) => state.user);
   const router = useRouter();
   const widths = useColumnWidths();
+  // The standings table uses the wide measure on a tablet.
+  const contentWidth = useContentWidth("wide");
   const isDoubles = matchType === "doubles";
   const rankingFilters = { seasonId, divisionLevelId };
   const singles = useRankings(isDoubles ? null : divisionId, rankingFilters);
@@ -276,7 +283,7 @@ function StandingsContent({
   if (loading) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>
+        <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
         </View>
@@ -288,7 +295,7 @@ function StandingsContent({
   if (loadError) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>
+        <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
         </View>
@@ -300,7 +307,7 @@ function StandingsContent({
   if (rankings.length === 0) {
     return (
       <View style={styles.flex}>
-        <View style={styles.filtersOnly}>
+        <View style={[styles.filtersOnly, contentWidth]}>
           {lead}
           {filters}
         </View>
@@ -422,7 +429,7 @@ function StandingsContent({
           </View>
         </View>
       }
-      contentContainerStyle={styles.list}
+      contentContainerStyle={[styles.list, contentWidth]}
     />
   );
 }
@@ -476,6 +483,7 @@ function useNeedsYouItems(
 }
 
 function NeedsYouCard({ items }: { items: string[] }) {
+  const styles = useStyles();
   const router = useRouter();
   return (
     <Card style={styles.needsCard}>
@@ -499,6 +507,7 @@ function NeedsYouCard({ items }: { items: string[] }) {
 }
 
 export default function RankingsScreen() {
+  const styles = useStyles();
   const divisionId = useAppStore((state) => state.divisionId);
   const userId = useAppStore((state) => state.user?.id);
   const needsItems = useNeedsYouItems(userId, divisionId);
@@ -642,118 +651,120 @@ export default function RankingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  filtersOnly: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  filters: { marginBottom: spacing.md },
-  filterLabel: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
-    textTransform: "uppercase",
-  },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  list: { padding: spacing.lg },
-  tableHeader: { marginBottom: spacing.md, gap: spacing.xs },
-  sectionHeader: { marginTop: spacing.sm },
-  needsCard: { gap: spacing.xs, marginBottom: spacing.sm },
-  needsTitle: { ...typography.heading, color: colors.primary },
-  needsItem: { ...typography.body, color: colors.text },
-  myCard: { gap: spacing.xs, marginBottom: spacing.xs, ...elevations.low },
-  myHeadline: { ...typography.heading, color: colors.primary },
-  myDetail: { ...typography.bodySmall, color: colors.textMuted },
-  myAction: { alignSelf: "flex-start", marginTop: spacing.sm },
-  columnHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  rankHeader: { ...typography.caption, color: colors.textMuted },
-  playerHeader: {
-    flex: 1,
-    ...typography.caption,
-    color: colors.textMuted,
-    textTransform: "uppercase",
-  },
-  recordHeader: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  diffHeader: {
-    ...typography.caption,
-    color: colors.textMuted,
-    textAlign: "right",
-  },
-  row: {
-    backgroundColor: colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    overflow: "hidden",
-  },
-  // The tint plus the "You" label mark the row; no colored side stripe.
-  rowCurrentUser: { backgroundColor: colors.primarySoft },
-  primaryRow: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  // Sized by useColumnWidths(); minWidth/minHeight, never a fixed box.
-  rankMarker: {
-    paddingHorizontal: spacing.xxs,
-    borderRadius: radii.pill,
-    marginRight: spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rankMarkerTop: { backgroundColor: colors.primary },
-  rank: { ...typography.label, color: colors.textMuted },
-  rankTop: { color: colors.onPrimary },
-  playerCell: { flex: 1, minWidth: 0 },
-  nameLine: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  name: { ...typography.subheading, color: colors.text, flexShrink: 1 },
-  youLabel: {
-    ...typography.caption,
-    fontWeight: "700",
-    color: colors.primary,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.sm,
-    overflow: "hidden",
-  },
-  recordCell: {
-    ...typography.label,
-    color: colors.text,
-    textAlign: "center",
-  },
-  diffCell: {
-    ...typography.label,
-    color: colors.textMuted,
-    textAlign: "right",
-  },
-  positiveDiff: { color: colors.successText },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingRight: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  detailLabel: { ...typography.caption, color: colors.textMuted },
-  detailValue: { ...typography.caption, color: colors.text, fontWeight: "700" },
-  infoButton: { alignSelf: "flex-start" },
-  tiebreakerText: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    backgroundColor: colors.surfaceMuted,
-    padding: spacing.md,
-    borderRadius: radii.sm,
-  },
-  recalcBlock: { gap: spacing.sm, alignSelf: "stretch" },
-  recalcBtn: { alignSelf: "flex-start" },
-  emptyActions: { gap: spacing.md, alignItems: "stretch", alignSelf: "stretch" },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    flex: { flex: 1 },
+    filtersOnly: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+    filters: { marginBottom: spacing.md },
+    filterLabel: {
+      ...typography.caption,
+      color: colors.textMuted,
+      marginBottom: spacing.sm,
+      marginTop: spacing.md,
+      textTransform: "uppercase",
+    },
+    chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+    list: { padding: spacing.lg },
+    tableHeader: { marginBottom: spacing.md, gap: spacing.xs },
+    sectionHeader: { marginTop: spacing.sm },
+    needsCard: { gap: spacing.xs, marginBottom: spacing.sm },
+    needsTitle: { ...typography.heading, color: colors.primary },
+    needsItem: { ...typography.body, color: colors.text },
+    myCard: { gap: spacing.xs, marginBottom: spacing.xs, ...elevations.low },
+    myHeadline: { ...typography.heading, color: colors.primary },
+    myDetail: { ...typography.bodySmall, color: colors.textMuted },
+    myAction: { alignSelf: "flex-start", marginTop: spacing.sm },
+    columnHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.xs,
+    },
+    rankHeader: { ...typography.caption, color: colors.textMuted },
+    playerHeader: {
+      flex: 1,
+      ...typography.caption,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+    },
+    recordHeader: {
+      ...typography.caption,
+      color: colors.textMuted,
+      textAlign: "center",
+    },
+    diffHeader: {
+      ...typography.caption,
+      color: colors.textMuted,
+      textAlign: "right",
+    },
+    row: {
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      overflow: "hidden",
+    },
+    // The tint plus the "You" label mark the row; no colored side stripe.
+    rowCurrentUser: { backgroundColor: colors.primarySoft },
+    primaryRow: {
+      minHeight: 56,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    // Sized by useColumnWidths(); minWidth/minHeight, never a fixed box.
+    rankMarker: {
+      paddingHorizontal: spacing.xxs,
+      borderRadius: radii.pill,
+      marginRight: spacing.md,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    rankMarkerTop: { backgroundColor: colors.primary },
+    rank: { ...typography.label, color: colors.textMuted },
+    rankTop: { color: colors.onPrimary },
+    playerCell: { flex: 1, minWidth: 0 },
+    nameLine: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+    name: { ...typography.subheading, color: colors.text, flexShrink: 1 },
+    youLabel: {
+      ...typography.caption,
+      fontWeight: "700",
+      color: colors.primary,
+      backgroundColor: colors.surface,
+      paddingHorizontal: spacing.xs,
+      borderRadius: radii.sm,
+      overflow: "hidden",
+    },
+    recordCell: {
+      ...typography.label,
+      color: colors.text,
+      textAlign: "center",
+    },
+    diffCell: {
+      ...typography.label,
+      color: colors.textMuted,
+      textAlign: "right",
+    },
+    positiveDiff: { color: colors.successText },
+    detailRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingRight: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    detailLabel: { ...typography.caption, color: colors.textMuted },
+    detailValue: { ...typography.caption, color: colors.text, fontWeight: "700" },
+    infoButton: { alignSelf: "flex-start" },
+    tiebreakerText: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      backgroundColor: colors.surfaceMuted,
+      padding: spacing.md,
+      borderRadius: radii.sm,
+    },
+    recalcBlock: { gap: spacing.sm, alignSelf: "stretch" },
+    recalcBtn: { alignSelf: "flex-start" },
+    emptyActions: { gap: spacing.md, alignItems: "stretch", alignSelf: "stretch" },
+  }),
+);

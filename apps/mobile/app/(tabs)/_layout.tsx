@@ -3,7 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { isPrivilegedRole } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
 import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
-import { colors, typography } from "../../theme";
+import { typography, useColors } from "../../theme";
 
 function TabIcon({
   focused,
@@ -14,6 +14,7 @@ function TabIcon({
   regular: React.ComponentProps<typeof AppIcon>["name"];
   active: React.ComponentProps<typeof AppIcon>["name"];
 }) {
+  const colors = useColors();
   return (
     <AppIcon
       name={focused ? active : regular}
@@ -25,6 +26,7 @@ function TabIcon({
 }
 
 export default function TabLayout() {
+  const colors = useColors();
   // Selector, not destructuring: subscribing to the whole store re-rendered
   // the whole tab navigator on every unrelated write.
   const role = useAppStore((state) => state.user?.role);
@@ -38,7 +40,7 @@ export default function TabLayout() {
       <StatusBar style="light" />
       <Tabs
         screenOptions={{
-          // Inactive labels use the muted text token (5.4:1 on white) so they
+          // Inactive labels use the muted text token (5.4:1 on white, 7.4:1 on the dark surface) so they
           // stay readable; the active tab also switches to its filled icon, so
           // color is not the only cue.
           tabBarActiveTintColor: colors.primary,
@@ -46,9 +48,9 @@ export default function TabLayout() {
           tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
           tabBarLabelStyle: { ...typography.caption, fontWeight: "600" },
           tabBarAllowFontScaling: true,
-          headerStyle: { backgroundColor: colors.primary },
-          headerTintColor: colors.onPrimary,
-          headerTitleStyle: { fontWeight: "700", color: colors.onPrimary },
+          headerStyle: { backgroundColor: colors.brand },
+          headerTintColor: colors.onBrand,
+          headerTitleStyle: { fontWeight: "700", color: colors.onBrand },
           sceneStyle: { backgroundColor: colors.canvas },
         }}
       >

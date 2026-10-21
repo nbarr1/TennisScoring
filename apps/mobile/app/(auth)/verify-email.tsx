@@ -12,11 +12,12 @@ import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import {
   Button,
   InlineAlert,
-  colors,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
 } from "../../theme";
 
 /** Seconds to wait before another verification email can be requested. */
@@ -27,6 +28,8 @@ const RESEND_COOLDOWN_SECONDS = 60;
  * verified. Once it is, the gate moves on to division selection by itself.
  */
 export default function VerifyEmailScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const { firebaseUser } = useAuthUser();
   const setUser = useAppStore((state) => state.setUser);
   const [notVerifiedYet, setNotVerifiedYet] = useState(false);
@@ -200,42 +203,44 @@ export default function VerifyEmailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  container: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
-    gap: spacing.lg,
-    width: "100%",
-    maxWidth: 480,
-    alignSelf: "center",
-  },
-  iconWrap: { alignItems: "center" },
-  title: {
-    ...typography.title,
-    color: colors.primary,
-    textAlign: "center",
-  },
-  body: {
-    ...typography.body,
-    color: colors.text,
-    textAlign: "center",
-  },
-  email: { fontWeight: "700", color: colors.text },
-  steps: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  step: { ...typography.bodySmall, color: colors.text },
-  hint: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  signOut: { alignSelf: "center" },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.canvas },
+    container: {
+      flexGrow: 1,
+      justifyContent: "center",
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.xxl,
+      gap: spacing.lg,
+      width: "100%",
+      maxWidth: 480,
+      alignSelf: "center",
+    },
+    iconWrap: { alignItems: "center" },
+    title: {
+      ...typography.title,
+      color: colors.primary,
+      textAlign: "center",
+    },
+    body: {
+      ...typography.body,
+      color: colors.text,
+      textAlign: "center",
+    },
+    email: { fontWeight: "700", color: colors.text },
+    steps: {
+      backgroundColor: colors.surface,
+      borderRadius: radii.card,
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
+    step: { ...typography.bodySmall, color: colors.text },
+    hint: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      textAlign: "center",
+      marginTop: spacing.sm,
+    },
+    signOut: { alignSelf: "center" },
+  }),
+);
