@@ -9,8 +9,8 @@ export type ButtonSize = "md" | "sm";
 
 const VARIANT_STYLES: Record<ButtonVariant, CSSProperties> = {
   primary: {
-    background: color.clubhouseGreen,
-    color: color.surface,
+    background: color.brandFill,
+    color: color.onBrand,
     border: "1px solid transparent",
   },
   secondary: {
@@ -19,8 +19,8 @@ const VARIANT_STYLES: Record<ButtonVariant, CSSProperties> = {
     border: `1px solid ${color.clubhouseGreen}`,
   },
   danger: {
-    background: color.destructive,
-    color: color.surface,
+    background: color.destructiveFill,
+    color: color.onBrand,
     border: "1px solid transparent",
   },
   quiet: {

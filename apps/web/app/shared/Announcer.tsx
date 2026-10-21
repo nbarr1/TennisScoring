@@ -142,8 +142,8 @@ const styles = {
     alignItems: "center",
     gap: 10,
     padding: "10px 8px 10px 14px",
-    background: color.clubhouseGreen,
-    color: color.surface,
+    background: color.brandFill,
+    color: color.onBrand,
     borderRadius: radius.md,
     boxShadow: shadow.raised,
   },
@@ -157,6 +157,6 @@ const styles = {
     background: "transparent",
     border: "none",
     borderRadius: radius.sm,
-    color: color.surface,
+    color: color.onBrand,
   },
 } satisfies Record<string, React.CSSProperties>;

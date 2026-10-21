@@ -655,8 +655,8 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     ...type.label,
     padding: "12px 12px",
-    background: color.clubhouseGreen,
-    color: color.surface,
+    background: color.brandFill,
+    color: color.onBrand,
     textAlign: "center",
     whiteSpace: "nowrap",
   },
@@ -701,8 +701,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: space.sm,
     padding: "2px 8px",
     borderRadius: radius.pill,
-    background: color.clubhouseGreen,
-    color: color.surface,
+    background: color.brandFill,
+    color: color.onBrand,
     whiteSpace: "nowrap",
   },
 };
