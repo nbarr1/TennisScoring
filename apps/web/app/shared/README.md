@@ -36,6 +36,8 @@ For inline styles, `tokens.ts` exports:
 | `target` | `min 44` (any tap target), `control 48` (buttons, inputs) |
 | `width` | `dialog 500`, `reading 720`, `list 960`, `wide 1200` |
 | `cardStyle`, `inputStyle`, `fieldLabelStyle` | ready-made style objects |
+| `gutter`, `sectionPadding` | `clamp()` side gutter (16px at 320 to 24px) and card/section padding, so a 320px screen keeps its content width |
+| `pageMainStyle(maxWidth, bottom?)` | a page's `<main>`: centered at `maxWidth`, `gutter` sides, fluid top padding. Use it for any new page |
 
 Contrast rules: use `textMuted` for any secondary text (4.67:1 or better on
 every clubhouse surface). `textSubtle` is about 3:1, so it is for icons and
@@ -259,3 +261,26 @@ still has a heading.
   but stay visible next to their label.
 - Placeholders use `--text-muted`; tables use tabular numerals; text
   selection uses Light Green.
+- `body` sets `overflow-wrap: break-word`, so a long unbroken name or email
+  wraps instead of pushing the page sideways.
+- `.tl-standings` on a `<table>` pins its first two columns (rank and name)
+  while the rest scrolls sideways in its wrapper; body cells get a `surface`
+  fill (`greenSoft` on `tr[aria-current]`). The rank column is 64px wide, 44px
+  at 600px and below.
+
+## Network (`network.ts`, `ConnectionStatus.tsx`)
+
+Firestore writes made offline do not reject; they wait, so a pending button
+can spin with no explanation. Three helpers cover it:
+
+- `useOnline()`: the browser's online state, live.
+- `useSlow(pending, afterMs = 5000)`: true once `pending` has lasted
+  `afterMs`. Show a "Still saving…" line next to the control when it is.
+- `fetchWithTimeout(input, init, timeoutMs = 20000)`: `fetch` that aborts and
+  rejects with a `TimeoutError` (`code: "deadline-exceeded"`). Use it for
+  any request a page waits on, such as the session-cookie exchange.
+
+`ConnectionStatus` is mounted once in `layout.tsx`: an in-flow warning bar
+while offline, and an announcement when the connection returns. Don't add a
+per-page offline banner. `describeError` turns a network `TypeError` into
+"Couldn't reach the server. Check your connection and try again."

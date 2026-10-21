@@ -85,6 +85,7 @@ export function AddPlayerDialog({
             style={styles.input}
             value={addPlayerName}
             onChange={(e) => setAddPlayerName(e.target.value)}
+            maxLength={80}
             placeholder="Full name"
             autoComplete="off"
             required
@@ -101,6 +102,7 @@ export function AddPlayerDialog({
             type="email"
             value={addPlayerEmail}
             onChange={(e) => setAddPlayerEmail(e.target.value)}
+            maxLength={254}
             autoComplete="off"
             aria-describedby="add-player-email-hint"
           />

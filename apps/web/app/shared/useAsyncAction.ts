@@ -48,6 +48,13 @@ export function describeError(error: unknown, fallback = "Something went wrong. 
       break;
   }
 
+  // fetch() rejects with a bare TypeError when the network is down; its
+  // message ("Failed to fetch", "Load failed", "NetworkError ...") means
+  // nothing to a player.
+  if (error instanceof TypeError && /failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+    return "Couldn't reach the server. Check your connection and try again.";
+  }
+
   // Strip the SDK's "FirebaseError: " prefix and trailing "(code)" noise.
   const cleaned = message
     .replace(/^FirebaseError:\s*/i, "")

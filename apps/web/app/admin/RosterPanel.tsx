@@ -451,12 +451,13 @@ const RosterRowView = memo(function RosterRowView({
           <span style={styles.avatar} aria-hidden="true">
             {initialsOf(p.displayName)}
           </span>
-          <span className={css.playerName}>{p.displayName}</span>
+          {/* Ellipsized in a narrow column, so the full name is on hover too. */}
+          <span className={css.playerName} title={p.displayName}>{p.displayName}</span>
         </button>
       </div>
       <div role="cell" className={css.cellEmail} style={styles.cellText}>
         {p.email && p.contactPreferences?.allowEmail !== false ? (
-          <a href={`mailto:${p.email}`} style={styles.contactLink}>
+          <a href={`mailto:${p.email}`} style={styles.contactLink} title={p.email}>
             {p.email}
           </a>
         ) : (

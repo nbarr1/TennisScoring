@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { AppNav, appNavStyles } from "../shared/AppNav";
 import { useViewMode } from "../shared/viewMode";
 import Link from "next/link";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { onSnapshot, where } from "firebase/firestore";
@@ -76,6 +76,7 @@ import {
   useAsyncAction,
   useDialogClose,
   width,
+  pageMainStyle,
 } from "../shared/ui";
 import type { ButtonVariant } from "../shared/ui";
 import {
@@ -93,6 +94,17 @@ type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
 
 /** Rostered statuses: a waitlisted player still has a division level. */
 const ROSTERED: readonly DivisionMembershipStatus[] = ["active", "waitlisted"];
+
+/** Longest guest name the match rules accept is 100; 80 matches every other name field. */
+const MAX_GUEST_NAME_LENGTH = 80;
+
+/** Cards a collapsed group shows before "Show more", so a full season's history doesn't render at once. */
+const GROUP_PAGE_SIZE = 24;
+
+/** Moves focus to a field by id, when it is on screen (a filled player slot has no search field). */
+function focusField(id: string) {
+  document.getElementById(id)?.focus();
+}
 
 /** Clears the match tiebreak flag from any row that is no longer the deciding set. */
 function withEligibleTiebreaks(rows: SetDraft[]): SetDraft[] {
@@ -366,6 +378,57 @@ function CollapsedSection({ title, count, children }: { title: string; count: nu
       </summary>
       <div style={styles.detailsBody}>{children}</div>
     </details>
+  );
+}
+
+/**
+ * A grid that renders `GROUP_PAGE_SIZE` cards at a time. A division's history
+ * grows by every match of every season; rendering hundreds of cards on open
+ * made the page slow to expand and long to scroll.
+ */
+function CappedGrid({ items, render }: { items: Match[]; render: (m: Match) => ReactNode }) {
+  const [shown, setShown] = useState(GROUP_PAGE_SIZE);
+  const firstNewRef = useRef<HTMLDivElement>(null);
+  const focusFrom = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusFrom.current === null) return;
+    focusFrom.current = null;
+    firstNewRef.current?.querySelector<HTMLElement>("a, button")?.focus();
+  }, [shown]);
+  const visible = items.slice(0, shown);
+  const remaining = items.length - visible.length;
+  return (
+    <>
+      <div style={styles.grid}>
+        {visible.map((m, index) =>
+          index === shown - GROUP_PAGE_SIZE && index > 0 ? (
+            <div key={m.id} ref={firstNewRef} style={styles.gridCell}>
+              {render(m)}
+            </div>
+          ) : (
+            <div key={m.id} style={styles.gridCell}>
+              {render(m)}
+            </div>
+          ),
+        )}
+      </div>
+      {remaining > 0 && (
+        <div style={styles.showMoreRow}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              focusFrom.current = shown;
+              setShown((n) => n + GROUP_PAGE_SIZE);
+            }}
+          >
+            Show {Math.min(GROUP_PAGE_SIZE, remaining)} more
+          </Button>
+          <span style={styles.showMoreCount}>
+            Showing {visible.length} of {items.length}
+          </span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -818,20 +881,18 @@ export default function MatchesPage(): React.JSX.Element {
               <div style={styles.collapsedGroup}>
                 {groups.schedule.length > 0 && (
                   <CollapsedSection title="Division schedule" count={groups.schedule.length}>
-                    <div style={styles.grid}>
-                      {groups.schedule.map((m) => (
-                        <MatchCard key={m.id} m={m} uid={uid} myName={myName} link={{ label: "View match" }} />
-                      ))}
-                    </div>
+                    <CappedGrid
+                      items={groups.schedule}
+                      render={(m) => <MatchCard m={m} uid={uid} myName={myName} link={{ label: "View match" }} />}
+                    />
                   </CollapsedSection>
                 )}
                 {groups.history.length > 0 && (
                   <CollapsedSection title="History" count={groups.history.length}>
-                    <div style={styles.grid}>
-                      {groups.history.map((m) => (
-                        <MatchCard key={m.id} m={m} uid={uid} myName={myName} link={{ label: "View match" }} />
-                      ))}
-                    </div>
+                    <CappedGrid
+                      items={groups.history}
+                      render={(m) => <MatchCard m={m} uid={uid} myName={myName} link={{ label: "View match" }} />}
+                    />
                   </CollapsedSection>
                 )}
               </div>
@@ -1104,6 +1165,7 @@ function StartLiveMatchDialog({
     if (submitting) return;
     if (!opponentName.trim()) {
       setError("Enter your opponent's name.");
+      focusField("live-opponent-name");
       return;
     }
     setSubmitting(true);
@@ -1166,11 +1228,13 @@ function StartLiveMatchDialog({
           value={opponentName}
           onChange={(event) => setOpponentName(event.target.value)}
           autoComplete="off"
+          maxLength={MAX_GUEST_NAME_LENGTH}
           aria-invalid={error && !opponentName.trim() ? true : undefined}
+          aria-describedby={error ? "start-live-error" : undefined}
         />
         <CompetitionFields comp={comp} idPrefix="live" ownLevelLabel="your" />
         <p style={styles.hint}>You serve first. Guest results stay out of the standings until you link the guest&apos;s account.</p>
-        {error && <InlineAlert tone="error" style={styles.formAlert}>{error}</InlineAlert>}
+        {error && <InlineAlert id="start-live-error" tone="error" style={styles.formAlert}>{error}</InlineAlert>}
       </form>
     </Dialog>
   );
@@ -1238,7 +1302,7 @@ function RecordResultDialog({
     if (parts.length < 3) return null;
     const opponentName = parts[0];
     const parsed = parts.slice(1).map(parseRecordedSetToken);
-    if (!opponentName || parsed.some((s) => !s)) return null;
+    if (!opponentName || opponentName.length > MAX_GUEST_NAME_LENGTH || parsed.some((s) => !s)) return null;
     return { opponentName, sets: parsed as RecordedSetInput[] };
   }
 
@@ -1257,12 +1321,16 @@ function RecordResultDialog({
     for (let i = 0; i < lines.length; i += 1) {
       const item = parseBulkLine(lines[i]);
       if (!item) {
-        setError(`Line ${i + 1} isn't in the format Opponent Name, 6-4, 7-5 (use [10-8] for a match tiebreak).`);
+        setError(
+          `Line ${i + 1} isn't in the format Opponent Name, 6-4, 7-5 (use [10-8] for a match tiebreak), with a name of up to ${MAX_GUEST_NAME_LENGTH} characters.`,
+        );
+        focusField("bulk-match-import");
         return;
       }
       const invalid = validateRecordedSets(item.sets);
       if (invalid) {
         setError(`Line ${i + 1} (${item.opponentName}): ${invalid}`);
+        focusField("bulk-match-import");
         return;
       }
       items.push(item);
@@ -1316,14 +1384,17 @@ function RecordResultDialog({
 
     if (onBehalf && (!selectedPlayer1 || !selectedOpponent)) {
       setError("Choose both players.");
+      focusField(!selectedPlayer1 ? "record-match-player1-search" : "record-match-opponent-search");
       return;
     }
     if (!onBehalf && guestOpponent && !guestName.trim()) {
       setError("Enter the guest's name.");
+      focusField("record-match-guest-name");
       return;
     }
     if (!onBehalf && !guestOpponent && !selectedOpponent) {
       setError("Choose your opponent.");
+      focusField("record-match-opponent-search");
       return;
     }
 
@@ -1497,6 +1568,7 @@ function RecordResultDialog({
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
                       autoComplete="off"
+                      maxLength={MAX_GUEST_NAME_LENGTH}
                     />
                   </div>
                 ) : (
@@ -1668,15 +1740,26 @@ function ProposeMatchDialog({
     setDateError("");
     if (isDoubles ? !(partner && opponent1 && opponent2) : !selectedOpponent) {
       setError(isDoubles ? "Choose your partner and both opponents." : "Choose an opponent.");
+      focusField(
+        !isDoubles
+          ? "proposal-opponent-search"
+          : !partner
+            ? "proposal-partner-search"
+            : !opponent1
+              ? "proposal-opponent1-search"
+              : "proposal-opponent2-search",
+      );
       return;
     }
     const ts = Date.parse(scheduledAt);
     if (!scheduledAt || Number.isNaN(ts)) {
       setDateError("Pick a date and time.");
+      focusField("proposal-scheduled-at");
       return;
     }
     if (ts < Date.now()) {
       setDateError("Pick a time in the future.");
+      focusField("proposal-scheduled-at");
       return;
     }
     setSubmitting(true);
@@ -1828,7 +1911,7 @@ details[data-matches-group][open] .matches-group-chevron { transform: rotate(180
 const styles: Record<string, CSSProperties> = {
   page: appNavStyles.page,
   iosPage: { minHeight: "100dvh" },
-  main: { maxWidth: width.list, margin: "0 auto", padding: "40px 24px" },
+  main: pageMainStyle(width.list),
   iosMain: { padding: `${space.xl}px ${space.lg}px calc(${space.xl}px + env(safe-area-inset-bottom))` },
   titleRow: {
     display: "flex",
@@ -1892,6 +1975,10 @@ const styles: Record<string, CSSProperties> = {
     gridTemplateColumns: "repeat(auto-fill, minmax(min(280px, 100%), 1fr))",
     gap: space.lg,
   },
+  // A grid cell that lets its card fill the row height, as a direct card child would.
+  gridCell: { display: "grid", minWidth: 0 },
+  showMoreRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.md, marginTop: space.lg },
+  showMoreCount: { ...type.bodySmall, color: color.textMuted },
   card: {
     ...cardStyle,
     display: "flex",
@@ -1992,7 +2079,8 @@ const styles: Record<string, CSSProperties> = {
     marginTop: space.sm,
   },
   setBlock: { marginBottom: space.sm },
-  setRow: { display: "flex", alignItems: "center", gap: space.sm },
+  // Wraps at 200% zoom or a narrow sheet instead of pushing the remove button off the edge.
+  setRow: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: space.sm },
   setLabel: { ...type.bodySmall, color: color.textMuted, width: 72, flex: "0 0 auto" },
   setInput: {
     ...inputStyle,
