@@ -90,6 +90,15 @@ public final class DemoBackend: @unchecked Sendable {
     broadcastMatches()
   }
 
+  /// Deletes a match, as a leader's cleanup on another device would. For tests.
+  public func remove(matchId: String) {
+    lock.withLock {
+      matches[matchId] = nil
+      undoSnapshots[matchId] = nil
+    }
+    broadcastMatches()
+  }
+
   // MARK: - Plumbing
 
   private func takeFailure() -> ServiceError? {

@@ -109,17 +109,15 @@ function ToggleRow({
   description?: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
-  disabled: boolean;
+  disabled?: boolean;
   last?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="switch"
       accessibilityLabel={label}
-      accessibilityHint={
-        disabled ? "Tap Edit profile to change this setting" : description
-      }
-      accessibilityState={{ checked: value, disabled }}
+      accessibilityHint={description}
+      accessibilityState={{ checked: value, disabled: !!disabled }}
       disabled={disabled}
       onPress={() => onValueChange(!value)}
       style={[styles.toggleRow, last && styles.toggleRowLast]}
@@ -194,23 +192,78 @@ export default function ProfileScreen() {
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
 
-  const loadDraft = useCallback((source: User) => {
-    setDisplayName(source.displayName ?? "");
-    setEmail(source.email ?? "");
-    setPhone(source.phone ?? "");
+  // The switches save as they change, outside edit mode, so they always show
+  // the saved values. The text fields are a draft only while editing.
+  const loadToggles = useCallback((source: User) => {
     setAllowEmail(source.contactPreferences?.allowEmail ?? true);
     setAllowSMS(source.contactPreferences?.allowSMS ?? false);
     setAllowInApp(source.contactPreferences?.allowInApp ?? true);
     setTipsEnabled(source.tipsEnabled ?? true);
+  }, []);
+
+  const loadDraft = useCallback((source: User) => {
+    setDisplayName(source.displayName ?? "");
+    setEmail(source.email ?? "");
+    setPhone(source.phone ?? "");
+    loadToggles(source);
     setAvailabilitySlots(source.availability?.slots ?? []);
     setAvailabilityNote(source.availability?.note ?? "");
     setSelectedDivisionId(source.divisionId ?? "");
-  }, []);
+  }, [loadToggles]);
 
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   useEffect(() => {
     if (!user) return;
-    loadDraft(user);
-  }, [user, loadDraft]);
+    // A switch saved mid-edit updates this document too; reloading the whole
+    // draft then would throw away what the player is typing.
+    if (editingRef.current) loadToggles(user);
+    else loadDraft(user);
+  }, [user, loadDraft, loadToggles]);
+
+  type ToggleKey = "allowEmail" | "allowSMS" | "allowInApp" | "tipsEnabled";
+  const [toggleError, setToggleError] = useState<{
+    section: "contact" | "match";
+    message: string;
+  } | null>(null);
+  const toggleSetters: Record<ToggleKey, (value: boolean) => void> = {
+    allowEmail: setAllowEmail,
+    allowSMS: setAllowSMS,
+    allowInApp: setAllowInApp,
+    tipsEnabled: setTipsEnabled,
+  };
+
+  /** Saves one switch right away, and puts it back if the write fails. */
+  async function saveToggle(key: ToggleKey, value: boolean) {
+    if (!firebaseUser) return;
+    const section = key === "tipsEnabled" ? "match" : "contact";
+    const previous = { allowEmail, allowSMS, allowInApp, tipsEnabled }[key];
+    const contact = { allowEmail, allowSMS, allowInApp, [key]: value };
+    toggleSetters[key](value);
+    setToggleError(null);
+    try {
+      await updateUserProfile(
+        firebaseUser.uid,
+        key === "tipsEnabled"
+          ? { tipsEnabled: value }
+          : {
+              contactPreferences: {
+                allowEmail: contact.allowEmail,
+                allowSMS: contact.allowSMS,
+                allowInApp: contact.allowInApp,
+              },
+            },
+      );
+    } catch (err) {
+      toggleSetters[key](previous);
+      const message = describeError(
+        err,
+        "Couldn't save that setting. Check your connection and try again.",
+      );
+      setToggleError({ section, message });
+      announce(message);
+    }
+  }
 
   useEffect(() => {
     const ids = user?.blockedUserIds ?? [];
@@ -674,22 +727,27 @@ export default function ProfileScreen() {
         <ToggleRow
           label="Share my email with players"
           value={allowEmail}
-          onValueChange={setAllowEmail}
-          disabled={!editing}
+          onValueChange={(value) => void saveToggle("allowEmail", value)}
         />
         <ToggleRow
           label="Share my phone for texts"
           value={allowSMS}
-          onValueChange={setAllowSMS}
-          disabled={!editing}
+          onValueChange={(value) => void saveToggle("allowSMS", value)}
         />
         <ToggleRow
           label="Allow in-app messages"
           value={allowInApp}
-          onValueChange={setAllowInApp}
-          disabled={!editing}
+          onValueChange={(value) => void saveToggle("allowInApp", value)}
           last
         />
+        {toggleError?.section === "contact" && (
+          <InlineAlert
+            tone="error"
+            title="Setting not saved"
+            message={toggleError.message}
+            style={styles.alertGap}
+          />
+        )}
       </View>
 
       <View style={styles.section}>
@@ -812,10 +870,17 @@ export default function ProfileScreen() {
           label="Live tips during matches"
           description="Short tips on the scoring screen, like deuce or set point."
           value={tipsEnabled}
-          onValueChange={setTipsEnabled}
-          disabled={!editing}
+          onValueChange={(value) => void saveToggle("tipsEnabled", value)}
           last
         />
+        {toggleError?.section === "match" && (
+          <InlineAlert
+            tone="error"
+            title="Setting not saved"
+            message={toggleError.message}
+            style={styles.alertGap}
+          />
+        )}
       </View>
 
       <View style={styles.actions}>
@@ -1039,8 +1104,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: colors.onPrimary, fontSize: 32, fontWeight: "700" },
   name: {
-    ...typography.heading,
-    fontSize: 22,
+    ...typography.title,
     color: colors.text,
     textAlign: "center",
   },

@@ -1,3 +1,85 @@
 <resources>
-  <string name="app_name">Tennis Score</string>
+  <!-- The product name, as in apps/mobile/app.json. -->
+  <string name="app_name">Tennis League</string>
+
+  <!-- The status line: the one line always in view, so it carries the match's state. -->
+  <string name="status_waiting">WAITING</string>
+  <string name="status_live">LIVE</string>
+  <string name="status_live_moment">LIVE · %1$s</string>
+  <string name="status_live_tiebreak">LIVE · TIEBREAK</string>
+  <string name="status_live_serving">LIVE · %1$s SERVES</string>
+  <string name="status_view_only">LIVE · VIEW ONLY</string>
+  <string name="status_final">FINAL</string>
+  <string name="status_scheduled">SCHEDULED</string>
+  <string name="status_proposed">PROPOSED</string>
+  <string name="status_disputed">DISPUTED</string>
+  <string name="status_cancelled">CANCELLED</string>
+  <string name="status_no_phone">NO PHONE</string>
+  <string name="status_not_sent">NOT SENT</string>
+  <string name="status_undo_sent">UNDO SENT</string>
+
+  <!-- The sets-and-games plate. -->
+  <string name="plate_sets">Sets %1$d-%2$d</string>
+  <string name="plate_games">Games %1$d-%2$d</string>
+  <string name="plate_no_match">No live match</string>
+  <string name="plate_waiting_for_phone">Waiting for your phone</string>
+  <string name="plate_server">%1$s serves · %2$s court</string>
+  <string name="court_ad">ad</string>
+  <string name="court_deuce">deuce</string>
+  <!-- One player's line on the ambient scoreboard: a short name, then the points. -->
+  <string name="ambient_player_line">"%1$s  %2$s"</string>
+
+  <!-- TalkBack reads the plate as one sentence. -->
+  <string name="a11y_no_match">No live match yet.</string>
+  <string name="a11y_tiebreak">"Tiebreak. "</string>
+  <string name="a11y_scoreboard">Sets %1$d to %2$d. Games %3$d to %4$d. %5$s%6$s %7$s, %8$s %9$s. %10$s serves from the %11$s court.</string>
+  <string name="a11y_point_to">Point to %1$s</string>
+  <string name="a11y_point_to_now_on">Point to %1$s, now on %2$s</string>
+  <string name="a11y_undo_last_point">Undo last point</string>
+
+  <!-- Player tiles and controls. -->
+  <string name="player1_default">Player 1</string>
+  <string name="player2_default">Player 2</string>
+  <string name="player1_spoken">player 1</string>
+  <string name="player2_spoken">player 2</string>
+  <string name="player_fallback">Player</string>
+  <string name="point_advantage">AD</string>
+  <string name="point_unknown">–</string>
+  <string name="undo_button">Hold to undo</string>
+
+  <!-- The feedback area below the controls, a polite live region. -->
+  <string name="feedback_ready">Ready</string>
+  <string name="feedback_ready_body">Open a live match on your phone. The score appears here.</string>
+  <string name="feedback_score_point">Score a point</string>
+  <string name="feedback_score_point_body">Tap the player who won it. Hold a player to undo.</string>
+  <string name="feedback_winner">%1$s wins</string>
+  <string name="feedback_match_complete">Match complete</string>
+  <string name="feedback_match_complete_body">Finish the report on your phone.</string>
+  <string name="feedback_scheduled">Not started yet</string>
+  <string name="feedback_scheduled_body">Start the match on your phone to score it from here.</string>
+  <string name="feedback_proposed">Not scheduled yet</string>
+  <string name="feedback_proposed_body">Accept the match on your phone first.</string>
+  <string name="feedback_disputed">Score disputed</string>
+  <string name="feedback_disputed_body">A division leader settles disputed scores.</string>
+  <string name="feedback_cancelled">Match cancelled</string>
+  <string name="feedback_cancelled_body">There\'s nothing to score.</string>
+  <string name="feedback_view_only">View only</string>
+  <string name="feedback_view_only_body">Only the players in this match can score it.</string>
+  <string name="feedback_not_live">Scoring is off</string>
+  <string name="feedback_not_live_body">Check the match on your phone.</string>
+  <string name="feedback_render_failed">Score not updated</string>
+  <string name="feedback_render_failed_body">Couldn\'t read the latest score from your phone. Check the score there.</string>
+  <string name="feedback_waiting_for_match">Waiting for match</string>
+  <string name="feedback_waiting_for_match_body">Open a live match on your phone before scoring.</string>
+  <string name="feedback_undo_sent">Undo sent</string>
+  <string name="feedback_undo_sent_body">The last point comes off once your phone confirms.</string>
+  <string name="feedback_undo_hint">Hold to undo</string>
+  <string name="feedback_undo_hint_body">Press and hold this button to take off the last point.</string>
+  <string name="feedback_phone_not_found">Phone not found</string>
+  <string name="feedback_phone_not_found_body">Nothing was sent. Keep your phone nearby with the live match open.</string>
+  <string name="feedback_sync_no_phone_body">Install and open %1$s on your paired phone.</string>
+  <string name="feedback_not_sent">Not sent</string>
+  <string name="feedback_not_sent_body">Your phone didn\'t receive that. Check the score there, then tap again.</string>
+  <string name="feedback_looking">Looking for a match</string>
+  <string name="feedback_looking_body">Open the live match on your phone if the score doesn\'t appear.</string>
 </resources>

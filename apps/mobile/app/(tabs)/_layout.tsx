@@ -33,8 +33,8 @@ export default function TabLayout() {
   return (
     <>
       {/* Light status-bar content on the Clubhouse Green headers. Screens
-          pushed above the tabs (feedback, privacy, scheduler) share the green
-          header, so they keep this style. */}
+          pushed above the tabs (feedback, privacy, scheduler, conversations)
+          share the green header, so they keep this style. */}
       <StatusBar style="light" />
       <Tabs
         screenOptions={{

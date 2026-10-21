@@ -1,7 +1,13 @@
 <resources>
-  <style name="WatchTheme" parent="@android:style/Theme.Material.NoActionBar">
+  <!--
+    DeviceDefault is the Wear OS system theme, which carries the watch's own
+    styling and swipe-to-dismiss. NoActionBar keeps the result the same on any
+    device that would otherwise draw one. The scoreboard sets its colors and
+    typefaces in code, from colors.xml.
+  -->
+  <style name="WatchTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
     <item name="android:windowBackground">@color/watch_background</item>
-    <item name="android:fontFamily">sans</item>
-    <item name="android:colorAccent">@color/watch_yellow</item>
+    <item name="android:windowSwipeToDismiss">true</item>
+    <item name="android:colorAccent">@color/scoreboard_yellow</item>
   </style>
 </resources>

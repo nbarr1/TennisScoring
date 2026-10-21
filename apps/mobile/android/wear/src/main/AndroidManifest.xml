@@ -1,11 +1,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-feature android:name="android.hardware.type.watch" android:required="true" />
+  <!-- Ambient mode holds a wake lock while the dimmed scoreboard stays up. -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
 
   <application
     android:allowBackup="false"
     android:icon="@mipmap/ic_launcher"
     android:label="@string/app_name"
     android:theme="@style/WatchTheme">
+    <!--
+      Not standalone: the watch app has no network or account code of its own.
+      Every score comes from the phone over the Data Layer and every command goes
+      back the same way, so without the phone app it can only say "NO PHONE".
+      Play lists a non-standalone app as needing its phone companion.
+    -->
+    <meta-data
+      android:name="com.google.android.wearable.standalone"
+      android:value="false" />
+    <!--
+      The Wear shared library behind ambient mode. Optional, so the app still
+      installs on a watch without it, where the scoreboard just has no ambient view.
+    -->
+    <uses-library
+      android:name="com.google.android.wearable"
+      android:required="false" />
     <activity
       android:name=".MainActivity"
       android:launchMode="singleTask"

@@ -77,7 +77,7 @@ export default function RoundRobinSchedulerScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ divisionId: string; seasonId?: string }>();
   const divisionId = params.divisionId;
-  const { user } = useAppStore();
+  const user = useAppStore((state) => state.user);
   const currentSeason = currentSeasonForDate();
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
   const initialSeasonId =

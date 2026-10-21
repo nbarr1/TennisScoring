@@ -128,6 +128,20 @@ public final class RankingsModel {
     self.repository = repository
   }
 
+  /// Bumped by `retry()`. The view keys its `observe()` task on it, so a new
+  /// value restarts the listeners after one of them failed.
+  public private(set) var attempt = 0
+
+  /// Starts over after an error. Does nothing while the listeners are healthy.
+  public func retry() {
+    guard errorMessage != nil else { return }
+    errorMessage = nil
+    isLoading = true
+    receivedSingles = false
+    receivedDoubles = false
+    attempt += 1
+  }
+
   public var selectedTable: StandingsTable? {
     tables.first { $0.id == selectedTableId } ?? tables.first
   }

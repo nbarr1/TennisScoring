@@ -79,7 +79,7 @@ export const statusTextColors: Record<MatchStatus, string> = {
   scheduled: colors.primary,
   in_progress: colors.liveText,
   pending_report: colors.warningText,
-  completed: "#555555",
+  completed: colors.text,
   disputed: colors.destructive,
   cancelled: colors.textMuted,
 };

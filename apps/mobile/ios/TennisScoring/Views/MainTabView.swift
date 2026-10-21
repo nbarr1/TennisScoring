@@ -88,9 +88,11 @@ struct MainTabView: View {
     }
     // Observed here rather than inside each tab, so the badge stays current and
     // pushing a match screen does not tear the listeners down.
-    .task { await matchList.observe() }
-    .task { await rankings?.observe() }
-    .task { await channels.observe() }
+    // Keyed on each model's retry count, so Retry (or a pull to refresh) after
+    // an error starts the listener again.
+    .task(id: matchList.attempt) { await matchList.observe() }
+    .task(id: rankings?.attempt) { await rankings?.observe() }
+    .task(id: channels.attempt) { await channels.observe() }
     .onChange(of: user) { _, user in
       // Blocks and profile edits arrive through the session's user listener.
       channels.user = user
@@ -110,8 +112,7 @@ struct MatchListView: View {
   var body: some View {
     List {
       if let error = model.errorMessage {
-        Label(error, systemImage: "exclamationmark.triangle")
-          .foregroundStyle(.red)
+        ListErrorRow(message: error, retry: model.retry)
       }
       ForEach(model.sections) { section in
         Section(section.title) {
@@ -123,6 +124,8 @@ struct MatchListView: View {
         }
       }
     }
+    // The listener keeps the list current, so a pull only matters after an error.
+    .refreshable { await model.retry() }
     .overlay {
       if model.isLoading {
         ProgressView()

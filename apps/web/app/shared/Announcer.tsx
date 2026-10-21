@@ -66,6 +66,22 @@ export function AnnouncerProvider({ children }: { children: ReactNode }): React.
     [dismiss],
   );
 
+  // The close buttons are out of the tab order (the region is aria-hidden), so
+  // Escape dismisses the newest toast for keyboard users. An open dialog keeps
+  // Escape for itself: it handles the key first and prevents the default.
+  const newestToastId = toasts.length > 0 ? toasts[toasts.length - 1].id : null;
+  useEffect(() => {
+    if (newestToastId === null) return undefined;
+    const id = newestToastId;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      dismiss(id);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [newestToastId, dismiss]);
+
   const value = useMemo(() => announce, [announce]);
 
   return (

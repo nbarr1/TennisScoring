@@ -167,11 +167,13 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - Handles SSR (isBrowser/isReactNative checks) and uses AsyncStorage for React Native persistence.
 - Exports singletons: `app`, `db`, `auth`, `storage`, `functions`, `getMessagingIfSupported()`.
 
-**`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
+**`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `divisionSeasonMatchesQuery` (one season of a division, newest first; uses the `divisionId, seasonId, createdAt desc` index and leaves out matches with no `seasonId`), `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
 
 **`packages/firebase-client/src/divisions.ts`** — division-related Firestore helpers, including `useDivisionLevels`, `useDivisionMemberships`, `upsertDivisionLevel`, `upsertDivisionMembership`, and `removeDivisionMembership`.
 
 `useDivisionMemberships(divisionId, seasonId, divisionLevelId?, statuses?)` defaults `statuses` to `['active']`, which is what the round-robin schedulers want. **A roster view must pass `['active', 'waitlisted']`.** A waitlisted player left out of the snapshot has no `membership` on their row, so they render as Unassigned, are counted in the "no division" warning, show Status `Active` in the detail panel, and — because the waitlist-preserving branch in the assignment handlers reads `row.membership?.status` — get silently flipped back to `active` by their next assignment.
+
+Both membership hooks also return `error` and `retry`. **An errored empty list is not a roster:** a roster view shows the error and blocks membership writes until the query loads, as both admin surfaces do, because a write made from an empty list turns waitlisted players active.
 
 **`packages/firebase-client/src/moderation.ts`** — UGC moderation helpers: `reportMessage()`, `useDivisionMessageReports()` (pending reports for a division leader/admin's review queue), `resolveMessageReport()` (calls the `resolveMessageReport` callable to dismiss, or to remove the offending message and mark resolved), `blockUser()`/`unblockUser()` (writes to the caller's own `users/{uid}.blockedUserIds`).
 
@@ -247,7 +249,7 @@ Three details are load-bearing:
 
 ### Auth flow
 
-**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, `robots.txt`, `sitemap.xml`, `auth/`, and a handful of `api/*` routes (`api/health`, `api/readiness`, `api/functions/`, `api/auth/logout`) from the auth check — any future public-facing page or crawler-facing file must be added to that exclusion list or it will silently redirect signed-out visitors (and every crawler) to `/login`.
+**Web**: Firebase email/password authentication is handled on the client in `apps/web/app/login/page.tsx`. After sign in/sign up, the page posts the Firebase ID token to `/api/auth/login`; `next-firebase-auth-edge` middleware intercepts that route and sets the `tennis-auth` httpOnly session cookie (max age 12 days). Unauthenticated protected requests redirect to `/login`, carrying the original path and query in `next` for GET/HEAD page requests. `apps/web/lib/safeNextPath.ts` validates `next` in the middleware, the login page, and verify-email; never follow a `next` value without it; logout is handled by `/api/auth/logout`. `middleware.ts`'s `matcher` excludes `login`, `invite/`, `privacy`, `robots.txt`, `sitemap.xml`, `auth/`, and a handful of `api/*` routes (`api/health`, `api/readiness`, `api/functions/`, `api/auth/logout`) from the auth check — any future public-facing page or crawler-facing file must be added to that exclusion list or it will silently redirect signed-out visitors (and every crawler) to `/login`.
 
 **Email verification** is required. `isAuth()` in `firestore.rules` and the Storage rules require `email_verified`, and every callable except `deleteAccount` and `getInvitePreview` starts with `assertVerifiedEmail()` (`firebase/src/auth/verifiedEmail.ts`). An unverified account can read and edit only its own `users/{uid}` document (`isOwnAccount()`). Both apps send the verification email at sign-up and hold an unverified account on a verify-email screen (web `/verify-email`, via `EmailVerificationGate` in the root layout; mobile `(auth)/verify-email`, via `AuthGate`). `useAuthUser()` exposes `emailVerified` and listens with `onIdTokenChanged`, because verifying mutates the same user object; `refreshEmailVerification()` reloads the user and forces a new ID token, since the rules read the claim from the token. Any new callable must call `assertVerifiedEmail()` too.
 
@@ -257,7 +259,8 @@ Three details are load-bearing:
 
 ```text
 page.tsx               # Root redirect
-layout.tsx             # Root layout
+layout.tsx             # Root layout. Mounts shared/SessionServices.tsx, which loads FcmProvider and EmailVerificationGate on demand and skips them on lib/publicPaths.ts's PUBLIC_PATH_PREFIXES,
+                       # so public pages never load the Firebase SDK. Nothing else in the root layout may import @tennis/firebase-client; a new public page goes in that list and the middleware matcher
 login/                 # Login page
 dashboard/             # Main dashboard
 matches/               # Matches list + [id]/ match detail (includes Pending/Awaiting/Upcoming scheduling sections)
@@ -277,7 +280,7 @@ api/functions/add-division-member/  # Server-side proxy (Admin SDK auth) to the 
 api/firebase-messaging-sw/          # Firebase Cloud Messaging service worker route
 robots.ts              # Generated /robots.txt
 sitemap.ts             # Generated /sitemap.xml
-FcmProvider.tsx        # Web FCM setup/token registration (mounted from the root layout)
+FcmProvider.tsx        # Web FCM setup/token registration (loaded by shared/SessionServices.tsx)
 shared/                # Cross-page UI: AppNav, StatusBadge, ViewModeToggle, viewMode.tsx, PlayerSlotPicker, motion.tsx (AnimatedDiv, LoadingBlock), celebrate.ts (score-confirmed confetti),
                        # and the design-system pieces exported from ui.ts (tokens, Button, Dialog, ConfirmDialog/useConfirm, InlineAlert, useAnnounce, Empty/Error/DataState, useAsyncAction); see shared/README.md
 template.tsx           # Wraps every page in the `page-enter` fade (keyframes in globals.css)
@@ -292,13 +295,14 @@ Uses Expo Router with file-based group routing:
 (onboarding)/    # Onboarding group
 (tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor and a Privacy Policy link; admin includes the round-robin scheduler entry point)
 match/           # Match detail screens
+conversation/[channelId].tsx  # One conversation (messages, composer, report/block), pushed on the root stack from the Messages tab or a message notification; body is components/messages/ChannelView.tsx
 round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
 privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
 ```
 
 ### Mobile UI building blocks
 
-`apps/mobile/theme/` holds the tokens (`colors`, `statusTextColors`, `MIN_TOUCH_TARGET`: 48 on Android, 44 on iOS) and the primitives screens use: `Button` (with `pending`), `InlineAlert`, `EmptyState`, `ErrorState`, `LoadingState`, `useAsyncAction`, `confirmDestructive`/`confirmAction`, and `announce`. `apps/mobile/components/README.md` is the guide. Use `textMuted`, not `textSubtle`, for small text, and `statusTextColors` rather than `getMatchStatusMetadata().color` for status text on light surfaces.
+`apps/mobile/theme/` holds the tokens (`colors`, `statusTextColors`, `MIN_TOUCH_TARGET`: 48 on Android, 44 on iOS) and the primitives screens use: `Button` (with `pending`), `InlineAlert`, `EmptyState`, `ErrorState`, `LoadingState`, `useAsyncAction`, `confirmDestructive`/`confirmAction`, and `announce`. `components/BottomSheetModal.tsx` is the sheet primitive (drag-to-dismiss through the sheet's own close handler, a fade under Reduce Motion, `fillColor` for the home-indicator inset); every sheet still needs a visible Close or Cancel. A `KeyboardSafeView` under a stack header passes `useHeaderHeight()` from `expo-router/react-navigation` on iOS (`@react-navigation/elements` is a different context). The live scoring screen uses `expo-haptics` on iOS and the Vibration API on Android. `apps/mobile/components/README.md` is the guide. Use `textMuted`, not `textSubtle`, for small text, and `statusTextColors` rather than `getMatchStatusMetadata().color` for status text on light surfaces.
 
 **`AppIcon` needs an Android mapping for every SF Symbol name.** `expo-symbols` draws nothing on Android for a bare SF Symbol name, so `ANDROID_SYMBOLS` in `components/AppIcon.tsx` maps each name the app uses to a Material Symbol. A name missing from that table renders as a blank space on Android.
 
@@ -365,6 +369,8 @@ Consequences worth knowing before changing this code:
 - **Divisions** — the season's division levels as cards, plus the level editor.
 - **Tools** — round-robin scheduler, reported-message queue, ranking repair, and CSV exports.
 
+`app/admin/page.tsx` owns all state and handlers; the tabs and dialogs are presentational files beside it (`RosterPanel.tsx`, `DivisionsPanel.tsx` with `LevelFormDialog`, `ToolsPanel.tsx`, `RosterDialogs.tsx`, `PlayerDetailDialog.tsx`), and constants and helpers live in `adminModel.ts`. Keep new state in the page so a tab switch does not reset it. Web design tokens have one source, `app/shared/tokens.ts`: the root layout writes `rootTokenCss` onto `:root`, so a token changes only there. In live scoring (`matches/[id]/page.tsx`), controls that lock during a write use `aria-disabled` with handler guards, never `disabled`, which drops keyboard focus.
+
 Row-level division changes are optimistic: the pending level is held in local state, shown with a transient "Saved" label, rolled back if the write fails, and dropped once the memberships snapshot reports the same value. Unassigned rows reuse the app's existing amber pair (`#fff3cd` / `#856404`, the leader-badge tint) — do not introduce a new state color.
 
 ### Round-robin match scheduling
@@ -383,7 +389,7 @@ Any channel participant can report a message (reason: `harassment | spam | inapp
 
 **`apps/mobile/modules/wear-os/index.ts`** — the TypeScript surface, a thin wrapper over `NativeModules.WearOs`:
 
-- `sendScoreToWear(score: LiveScore, payload: Omit<WearScorePayload, 'score'>): Promise<void>` — `payload.matchId` is **required**; the native side rejects a snapshot without one, since match id is what scopes commands to the match the watch is actually showing. This call never rejects: watch sync is peripheral and the match screen awaits it inside the scoring flow, so a transport failure is logged rather than thrown.
+- `sendScoreToWear(score: LiveScore, payload: Omit<WearScorePayload, 'score'>): Promise<void>` — `payload.matchId` is **required**; the native side rejects a snapshot without one, since match id is what scopes commands to the match the watch is actually showing. `payload.canScore` is true only for a participant while the match is `in_progress`; the phone forwards it in the v1 envelope so a spectator's watch is read-only. This call never rejects: watch sync is peripheral and the match screen awaits it inside the scoring flow, so a transport failure is logged rather than thrown.
 - `isWearOsAvailable(): Promise<boolean>` — whether *a* watch is connected. It cannot tell whether that watch has this app.
 - `isWatchAppInstalled(): Promise<boolean>` — whether a reachable watch actually has this app, via `CapabilityClient`. **This is the gate for any "open on watch" control**, never `isWearOsAvailable()`, which is true for a paired watch that has never had the app and so offers a control that does nothing.
 - `launchWatchApp(): Promise<boolean>` — opens the app on every reachable watch that has it, resolving whether one accepted. Never rejects, like the rest of the module.
@@ -393,7 +399,7 @@ The Android implementation is **not** an Expo module. It is a React Native bridg
 
 **`apps/mobile/modules/apple-watch/`** — the Apple Watch surface (`sendScoreToWatch`, `isAppleWatchConnected`, `addWatchScoreInputListener`, `addWatchConnectedListener`). Nothing in the app imports it yet, and it has none of the match-id scoping the Wear path has.
 
-**Native iOS ↔ watchOS protocol.** The native iOS client (`apps/mobile/ios`) and `TennisScoringWatch` share one message format, `WatchMessages.swift` in `TennisCore`. Every value is a string, so each message is a valid property list. `score` is the `LiveScore` JSON (the same key the React Native module sends, which the watch shows read-only), and commands are `{ action: "point", player, matchId }`. The phone discards any command whose `matchId` is not the match on screen, and a command without one fails to parse. Unlike the Wear pair, the iOS and watchOS apps ship in one bundle and update together, so there is no pre-v1 path to carry.
+**Native iOS ↔ watchOS protocol.** The native iOS client (`apps/mobile/ios`) and `TennisScoringWatch` share one message format, `WatchMessages.swift` in `TennisCore`. Every value is a string, so each message is a valid property list. `score` is the `LiveScore` JSON (the same key the React Native module sends, which the watch shows read-only), and commands are `{ action: "point", player, matchId }` or `{ action: "undo", matchId }`. The phone discards any command whose `matchId` is not the match on screen, and a command without one fails to parse. It answers every command with `{ applied: "true" | "false" }` (no match screen open counts as false), and the watch confirms a tap only on `"true"`. Snapshots also carry `canUndo`, `isParticipant`, and `sentAt` (Unix milliseconds); the phone sends one for every status, and `{ removedMatchId }` for a deleted match. A snapshot more than five minutes old is shown but is not live. `MatchWorkoutSession` records and saves a tennis workout (`HKLiveWorkoutBuilder`) while a scoreable match is live, discards one under a minute, and requests Health access when the player first sees a scheduled match; the watch target needs both `NSHealthUpdateUsageDescription` and `NSHealthShareUsageDescription`. Starting it still ends a workout running in Apple's Workout app, since watchOS allows one session at a time. Unlike the Wear pair, the iOS and watchOS apps ship in one bundle and update together, so there is no pre-v1 path to carry.
 
 Changes to the `LiveScore` type shape **must** be reflected in both native modules and in `TennisCore`'s `ScoringModels.swift`.
 
@@ -404,6 +410,8 @@ Two things are load-bearing:
 - **`sessionId` identifies one phone process.** The sequence counter lives in memory and restarts at 1 when the process does. Without the session check, a watch that kept counting across a phone restart rejects every snapshot the new process sends as stale, and the phone in turn rejects the watch's commands. The watch resets its ordering state whenever the session id changes.
 - **Remote launch is a two-artifact contract with no compiler behind it.** The phone's `launchWatchApp` sends an `ACTION_VIEW` intent through `RemoteActivityHelper` (`androidx.wear:wear-remote-interactions`); `:wear`'s `MainActivity` answers it with a second intent filter (`VIEW` + `DEFAULT` + `BROWSABLE`, scheme `tennisleague`) and `launchMode="singleTask"`, and `wear/src/main/res/values/wear.xml` advertises the capability the phone queries. `WATCH_APP_CAPABILITY` and `LAUNCH_URI` in `WearSyncProtocol.kt` are the phone's copy of both strings and nothing checks them across the module boundary: a capability mismatch makes the phone report that no watch has the app, and a scheme mismatch makes the intent resolve to nothing, so the launch reports success and does nothing.
 - **`RemoteActivityHelper` is the only way to do this.** It accepts nothing but `ACTION_VIEW` with a data URI and `CATEGORY_BROWSABLE` — `checkTargetIntentPrecondition()` throws otherwise — which is why the watch filter must match that exact shape. Reusing the Data Layer instead (a message plus a `WearableListenerService` calling `startActivity`) does not work: a watch whose app is not already running has no visible window, so that is a background activity start, and receiving a Data Layer message is not one of the platform's exemptions.
+- **Liveness is phone-decided.** Each v1 snapshot carries `canScore`, from `isScoreable(status, canScore)` in `WearSyncProtocol.kt`: the match is `in_progress` and the match screen hasn't sent `canScore: false`. `WearCommandValidator` rejects commands, v1 and pre-v1, while the last snapshot wasn't scoreable. The watch renders read-only and doesn't hold the screen unless it's true, and applies the same rule itself when an older phone omits the field; keep the copy in `MainActivity.kt` in step.
+- **Ambient.** `:wear` depends on `androidx.wear:wear`, and `MainActivity` is a `ComponentActivity` with an `AmbientLifecycleObserver`. `FLAG_KEEP_SCREEN_ON` is held only for `SCREEN_HOLD_MS` after a scoreable snapshot; a screen that isn't scoreable, or not updated for `AMBIENT_STALE_MS`, goes back to the watch face. Watch copy and colors live in `wear/src/main/res/values/strings.xml` and `colors.xml`.
 - **Both sides carry the pre-v1 paths for one rollout.** `:app` and `:wear` install as separate artifacts and update independently, so switching paths in one release would leave a mixed pair silently unable to talk. The phone mirrors every snapshot onto `/tennis/score` and accepts bare-string commands on `/tennis/point`; the watch uses those paths only until it has seen a v1 snapshot, so a v1 pair never sends a command twice. Delete both sides together once a v1 build of each artifact has shipped.
 
 ## Key Conventions

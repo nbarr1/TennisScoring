@@ -191,10 +191,8 @@ export default function FeedbackScreen() {
       contentContainerStyle={styles.content}
     >
       <StatusBar style="light" />
+      {/* The stack header already says "Send Feedback". */}
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">
-          Send feedback
-        </Text>
         <Text style={styles.subtitle}>
           Tell us what&apos;s working, what&apos;s confusing, or what
           you&apos;d like to see next.
@@ -339,7 +337,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   header: { gap: spacing.sm },
-  title: { ...typography.title, fontSize: 28, lineHeight: 34, color: colors.text },
   subtitle: { ...typography.body, color: colors.textMuted },
   section: {
     backgroundColor: colors.surface,

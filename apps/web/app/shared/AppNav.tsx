@@ -8,7 +8,7 @@ import { signOutReleasingPushToken, useAuthUser, useUserProfile } from "@tennis/
 import { isPrivilegedRole } from "@tennis/shared";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { IconBallTennis, IconMenu2, IconX } from "@tabler/icons-react";
-import { color, radius } from "./tokens";
+import { color, radius, target } from "./tokens";
 
 export type AppNavSection =
   | "dashboard"
@@ -153,36 +153,23 @@ export function AppNav({
 }
 
 /**
- * Kept for the pages that spread these into their own style objects
+ * The page background, for pages that spread it into their own style objects
  * (`appNavStyles.page`). The nav itself is styled by the `tl-nav*` classes in
  * globals.css, because it needs a media query.
  */
 export const appNavStyles = {
   page: { minHeight: "100vh", background: color.canvas },
-  nav: {
-    background: color.clubhouseGreen,
-    padding: "10px 32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    flexWrap: "wrap",
-  },
-  navBrand: { fontFamily: "var(--font-display)", color: "#fff", fontWeight: 700, fontSize: 22 },
-  navLinks: { display: "flex", gap: 20, flexWrap: "wrap" },
-  navLink: { color: "rgba(255,255,255,0.82)", fontWeight: 500, fontSize: 15 },
-  navLinkActive: {
-    color: "#fff",
-    borderBottom: `2px solid ${color.ballYellow}`,
-    paddingBottom: 2,
-  },
+} satisfies Record<string, React.CSSProperties>;
+
+// White text and translucent white veils on Clubhouse Green.
+const styles = {
   logoutForm: { margin: 0 },
   logoutButton: {
     background: "rgba(255,255,255,0.12)",
-    color: "#fff",
+    color: color.surface,
     border: "1px solid rgba(255,255,255,0.45)",
     borderRadius: radius.pill,
-    minHeight: 44,
+    minHeight: target.min,
     padding: "0 16px",
     fontSize: 14,
     fontWeight: 700,
@@ -191,15 +178,13 @@ export const appNavStyles = {
   toggle: {
     alignItems: "center",
     gap: 8,
-    minHeight: 44,
+    minHeight: target.min,
     padding: "0 12px",
     background: "rgba(255,255,255,0.12)",
-    color: "#fff",
+    color: color.surface,
     border: "1px solid rgba(255,255,255,0.45)",
     borderRadius: radius.md,
     fontSize: 15,
     fontWeight: 600,
   },
 } satisfies Record<string, React.CSSProperties>;
-
-const styles = appNavStyles;

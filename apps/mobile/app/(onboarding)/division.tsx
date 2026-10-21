@@ -184,8 +184,10 @@ export default function DivisionOnboardingScreen() {
         <View style={styles.choices}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Join a division"
-            accessibilityHint="Enter an invite code from your division leader"
+            // Starts with the visible title, so saying it works with Voice
+            // Control and Voice Access.
+            accessibilityLabel="I have an invite code"
+            accessibilityHint="Join a division with the code from your division leader"
             android_ripple={{ color: colors.primarySoft, foreground: true }}
             style={cardStyle}
             onPress={() => choose("join")}
@@ -202,8 +204,8 @@ export default function DivisionOnboardingScreen() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Create a division"
-            accessibilityHint="Start a new division and become its leader"
+            accessibilityLabel="Start a new division"
+            accessibilityHint="Create a division and become its leader"
             android_ripple={{ color: colors.primarySoft, foreground: true }}
             style={cardStyle}
             onPress={() => choose("create")}

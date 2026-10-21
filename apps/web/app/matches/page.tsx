@@ -1868,7 +1868,7 @@ const styles: Record<string, CSSProperties> = {
     height: 10,
     borderRadius: radius.pill,
     background: color.liveGreen,
-    boxShadow: "0 0 0 3px rgba(39,174,96,0.3)",
+    boxShadow: `0 0 0 3px color-mix(in srgb, ${color.liveGreen} 30%, transparent)`,
     animation: "pulse 1.5s infinite",
     flex: "0 0 auto",
   },

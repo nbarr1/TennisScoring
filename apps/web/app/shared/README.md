@@ -13,14 +13,16 @@ tokens should import from `./tokens` directly.
 
 ## Tokens (`tokens.ts`, `globals.css`)
 
-`globals.css` declares every DESIGN.md token on `:root`
-(`--clubhouse-green`, `--text-muted`, `--radius-md`, `--space-lg`,
-`--shadow-card`, `--focus-ring-color`, ...). `tokens.ts` carries the same
-values for inline styles:
+`tokens.ts` is the one place a token value is defined. The root layout writes
+its `rootTokenCss` into the document head, declaring every token as a CSS
+variable on `:root` (`--clubhouse-green`, `--text-muted`, `--radius-md`,
+`--space-lg`, `--shadow-card`, ...), which the classes in `globals.css` use.
+`globals.css` itself declares only the font stacks and the focus ring
+(`--focus-ring-color`, ...). For inline styles, `tokens.ts` exports:
 
 | Export | What it holds |
 |---|---|
-| `color.*` | `var(--…)` references: `clubhouseGreen`, `courtGreen`, `greenSoft`, `ballYellow`, `canvas`, `surface`, `surfaceMuted`, `ink`, `textMuted`, `textSubtle`, `border`, `borderStrong`, `disabled`, `destructive`, `destructiveSoft`, `warningText`, `warningSoft`, `info`, `infoSoft`, `liveGreen`, `liveText`, `proposedPurple`, `unassignedSoft`, `unassignedText`, scoreboard colors |
+| `color.*` | `var(--…)` references: `clubhouseGreen`, `courtGreen`, `greenSoft`, `ballYellow`, `canvas`, `surface`, `surfaceMuted`, `ink`, `textMuted`, `textSubtle`, `border`, `borderStrong`, `destructive`, `destructiveSoft`, `warningText`, `warningSoft`, `info`, `infoSoft`, `liveGreen`, `liveText`, `proposedPurple`, `unassignedSoft`, `unassignedText`, scoreboard colors |
 | `palette.*` | the same colors as raw hex, for canvas or third-party options |
 | `radius` | `sm 6`, `md 10`, `card 14`, `lg 16`, `xl 24`, `pill 999` |
 | `space` | `xxs 2`, `xs 4`, `sm 8`, `md 12`, `lg 16`, `xl 24`, `xxl 32`, `xxxl 48` |
@@ -35,9 +37,6 @@ every clubhouse surface). `textSubtle` is about 3:1, so it is for icons and
 dividers only. Live Green, Warning Orange, and `success` fail as small text:
 use `liveText`, `warningText`, and `courtGreen` for text. Ball Yellow never
 carries text on light surfaces. Input borders use `borderStrong` (3:1).
-
-The old variable names (`--green-dark`, `--muted`, `--bg`, `--gold`, ...)
-still work as aliases.
 
 ```tsx
 <section style={{ ...cardStyle, marginBottom: space.lg }}>
@@ -191,7 +190,10 @@ that has `aria-invalid` and `aria-describedby="score-error"`.
 `AnnouncerProvider` is mounted once in `layout.tsx`. `useAnnounce()` returns
 `announce(message, { politeness?, toast?, duration? })`. Messages go to a
 polite (or `"assertive"`) live region; `toast: true` also shows a short
-visible confirmation at the bottom of the screen.
+visible confirmation at the bottom of the screen. Toasts are hidden from
+assistive technology (the live region already spoke) and their close buttons
+are out of the tab order, so Escape dismisses the newest one unless a dialog
+is open.
 
 ```tsx
 const announce = useAnnounce();
@@ -203,13 +205,15 @@ announce("Proposal accepted. The match is now scheduled.", { toast: true });
 
 | Component | Props |
 |---|---|
-| `EmptyState` | `title` (required), `description`, `icon`, `action`, `compact`, `style` |
-| `ErrorState` | `title` ("Couldn't load this."), `error` or `message`, `onRetry`, `retryLabel`, `retrying`, `compact`, `style` |
+| `EmptyState` | `title` (required), `description`, `icon`, `action`, `compact`, `headingLevel`, `style` |
+| `ErrorState` | `title` ("Couldn't load this."), `error` or `message`, `onRetry`, `retryLabel`, `retrying`, `compact`, `headingLevel`, `style` |
 | `DataState` | `loading`, `error`, `isEmpty`, `loadingLabel`, `loadingRows`, `errorTitle`, `onRetry`, `empty`, `children` |
 | `LoadingBlock` | `label` (announced), `rows`, `rowHeight`, `style` |
 
 `DataState` checks error, then loading, then empty, so a failed query never
-reads as "No matches yet".
+reads as "No matches yet". When an `EmptyState` or `ErrorState` stands in for
+a whole page (a dead link, a failed load), pass `headingLevel={1}` so the page
+still has a heading.
 
 ```tsx
 <DataState loading={loading} error={error} isEmpty={matches.length === 0} loadingLabel="Loading matches"
