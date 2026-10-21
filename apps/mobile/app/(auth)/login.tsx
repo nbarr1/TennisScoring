@@ -17,6 +17,7 @@ import { FormErrorSummary, FormField } from "../../components/FormField";
 import {
   Button,
   InlineAlert,
+  announce,
   colors,
   spacing,
   typography,
@@ -188,7 +189,14 @@ export default function LoginScreen() {
   }
 
   function switchMode() {
-    setMode(mode === "signin" ? "signup" : "signin");
+    const next = mode === "signin" ? "signup" : "signin";
+    setMode(next);
+    // The form changes in place, so say so: focus stays on the switch button.
+    announce(
+      next === "signup"
+        ? "Create account. Enter your name, email, and a password."
+        : "Sign in. Enter your email and password.",
+    );
     setErrors({});
     submit.reset();
     reset.reset();
@@ -301,7 +309,8 @@ export default function LoginScreen() {
               label={showPassword ? "Hide password" : "Show password"}
               variant="quiet"
               size="compact"
-              accessibilityState={{ checked: showPassword }}
+              // The label names the next action, so it carries the state;
+              // "checked" is not a state a plain button has.
               onPress={() => setShowPassword((shown) => !shown)}
             />
             {!isSignup && (

@@ -147,7 +147,7 @@ export function ScoreboardSetup({
             pressed && { backgroundColor: SB.control },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Open Tennis Score on your watch"
+          accessibilityLabel="Open Tennis League on your watch"
           accessibilityState={{ disabled: launchingWatch, busy: launchingWatch }}
         >
           <AppIcon name="applewatch" color={SB.yellow} />

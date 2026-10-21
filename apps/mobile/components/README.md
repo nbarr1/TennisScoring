@@ -127,7 +127,18 @@ if (loading) return <LoadingState label="Loading matches" />;
 
 **`MatchTiebreakToggle`** props: `sets`, `index`, and `onChangeSets`. It renders only under the deciding set. The whole row is one accessible switch (`accessibilityRole="switch"` with a `checked` state), so tapping the label toggles it too. `withEligibleTiebreaks(rows)` clears the flag from rows that are no longer the deciding set.
 
-**`KeyboardSafeView`**, **`KeyboardAwareScrollView`**, and **`KeyboardAwareBottomSheet`** keep inputs above the keyboard. They use padding on iOS and height on Android, and their taps keep working while the keyboard is open.
+**`KeyboardSafeView`**, **`KeyboardAwareScrollView`**, and **`KeyboardAwareBottomSheet`** keep inputs above the keyboard. They use padding on iOS and height on Android, and their taps keep working while the keyboard is open. Under a stack header, pass `useHeaderHeight()` (from `expo-router/react-navigation`) as `keyboardVerticalOffset` on iOS. `KeyboardAwareBottomSheet` takes `fillColor` for the home-indicator inset, so match it to the card.
+
+**`BottomSheetModal`** is the sheet to use instead of a hand-rolled `<Modal transparent>`. Props: `visible`, `onRequestClose` (backdrop, Android Back, and a downward drag on the handle; it may decline to close, for example to confirm discarding a form), `cardStyle`, `fillColor` (the card background, also painted into the inset), `handleColor`, `backdropLabel?` (set it to close on a backdrop tap; leave it unset on forms), `keyboardAware` (default `true`; short action sheets turn it off and pad for the inset themselves), and `overlayStyle`. It fades instead of sliding under Reduce Motion. The drag handle is hidden from screen readers, so every sheet still needs a visible Close or Cancel.
+```tsx
+<BottomSheetModal visible={open} onRequestClose={close} cardStyle={styles.sheetCard}>
+  <Text accessibilityRole="header">Report message</Text>
+  …
+  <Button label="Cancel" variant="quiet" onPress={close} />
+</BottomSheetModal>
+```
+
+**`messages/ChannelView`** is one conversation (list, composer, report and block). It renders inside the `conversation/[channelId]` route; also exports `formatMessageTime` and `useDirectChannelNames`.
 
 ## Checklist for screen code
 

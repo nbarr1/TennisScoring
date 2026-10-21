@@ -16,6 +16,7 @@ import {
   recalculateDivisionRankings,
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
+  upsertDivisionMembership,
   exportDivisionCsv,
   useDivisionLevels,
   useDivisionMemberships,
@@ -27,6 +28,7 @@ import {
 } from "@tennis/firebase-client";
 import { useAppStore } from "../../store/appStore";
 import { KeyboardAwareScrollView } from "../../components/KeyboardSafeView";
+import { BottomSheetModal } from "../../components/BottomSheetModal";
 import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import { FormField } from "../../components/FormField";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -40,6 +42,7 @@ import {
   LoadingState,
   MIN_TOUCH_TARGET,
   colors,
+  announce,
   confirmAction,
   confirmDestructive,
   radii,
@@ -119,7 +122,7 @@ function candidateMatchDetail(match: Match): string {
 
 export default function AdminScreen() {
   const router = useRouter();
-  const { user } = useAppStore();
+  const user = useAppStore((state) => state.user);
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
   const [newPlayerName, setNewPlayerName] = useState("");
@@ -237,31 +240,33 @@ export default function AdminScreen() {
           setDivision(div);
           if (div) {
             const activeDivision = div;
-            const [divisionMemberProfiles, divisionProfileSnap, rankingSnap] =
-              await Promise.all([
-                activeDivision.playerIds.length
-                  ? Promise.all(
-                      activeDivision.playerIds.map((id) => readableUserDoc(id)),
-                    )
-                  : Promise.resolve([]),
-                getDocs(
-                  query(
-                    usersCol(),
-                    where("divisionId", "==", activeDivision.id),
-                  ),
-                ),
-                getDocs(rankingsCol(activeDivision.id)),
-              ]);
+            const [divisionProfileSnap, rankingSnap] = await Promise.all([
+              getDocs(
+                query(usersCol(), where("divisionId", "==", activeDivision.id)),
+              ),
+              getDocs(rankingsCol(activeDivision.id)),
+            ]);
             const byId = new Map<string, User>();
             const addProfile = (id: string, data: Omit<User, "id">) => {
               byId.set(id, { id, ...data });
             };
-            divisionMemberProfiles.forEach((d) => {
-              if (d?.exists()) addProfile(d.id, d.data() as Omit<User, "id">);
-            });
             divisionProfileSnap.docs.forEach((d) =>
               addProfile(d.id, d.data() as Omit<User, "id">),
             );
+            // One read per roster player the query above did not return
+            // (players whose active division is another one), instead of
+            // one per roster player.
+            const missingIds = activeDivision.playerIds.filter(
+              (id) => !byId.has(id),
+            );
+            const divisionMemberProfiles = await Promise.all(
+              missingIds.map((id) => readableUserDoc(id)),
+            );
+            if (currentId !== activeId) return;
+            divisionMemberProfiles.forEach((d) => {
+              if (d?.exists() && !byId.has(d.id))
+                addProfile(d.id, d.data() as Omit<User, "id">);
+            });
             rankingSnap.docs.forEach((d) => {
               const ranking = d.data() as PlayerRanking;
               const userId = ranking.userId || d.id;
@@ -672,6 +677,48 @@ export default function AdminScreen() {
     !membershipByUser.has(id) && Boolean(rosteredSeasonsByUserId.get(id)?.size);
   const seasonPlayers = players.filter((p) => !inOtherSeasonOnly(p.id));
   const otherSeasonCount = players.length - seasonPlayers.length;
+  // Level assignment, like the web roster's per-row division select. Players
+  // keep a waitlisted status when they move, and their role.
+  const [levelPickerFor, setLevelPickerFor] = useState<User | null>(null);
+  const [levelAssignNotice, setLevelAssignNotice] = useState<string | null>(
+    null,
+  );
+  const assignableLevels = levelsForSeason.filter((l) => l.active !== false);
+  const assignLevel = useAsyncAction(
+    async (player: User, level: DivisionLevel) => {
+      if (!division) throw new Error("Division not loaded.");
+      const membership = membershipByUser.get(player.id);
+      await upsertDivisionMembership({
+        divisionId: division.id,
+        seasonId,
+        divisionLevelId: level.id,
+        userId: player.id,
+        name: player.displayName,
+        email: player.email || undefined,
+        phone: player.phone || undefined,
+        role: membership?.role,
+        status: membership?.status === "waitlisted" ? "waitlisted" : "active",
+      });
+      return `${player.displayName} moved to ${level.name}.`;
+    },
+    {
+      errorMessage:
+        "Couldn't change the level. Check your connection and try again.",
+      onSuccess: (message) => {
+        setLevelPickerFor(null);
+        setLevelAssignNotice(message);
+        announce(message);
+      },
+    },
+  );
+  const pickerMembership = levelPickerFor
+    ? membershipByUser.get(levelPickerFor.id)
+    : undefined;
+  function openLevelPicker(player: User) {
+    assignLevel.reset();
+    setLevelPickerFor(player);
+  }
+
   const unassignedCount =
     division && levelsForSeason.length > 0 && !membershipsLoading
       ? division.playerIds.filter(
@@ -814,7 +861,7 @@ export default function AdminScreen() {
           <InlineAlert
             tone="warning"
             title={`${plural(unassignedCount, "player")} without a division level`}
-            message={`They aren't on any ${selectedSeason.name} level, so the round-robin scheduler won't include them. Assign levels from the Roster tab on the web admin page.`}
+            message={`They aren't on any ${selectedSeason.name} level, so the round-robin scheduler won't include them. Use Assign level on each player under Players.`}
           />
         ) : null}
 
@@ -964,6 +1011,16 @@ export default function AdminScreen() {
                         </Text>
                       </View>
                     ) : null}
+                    {onRoster && assignableLevels.length > 0 ? (
+                      <Button
+                        label={membership ? "Change level" : "Assign level"}
+                        accessibilityLabel={`${membership ? "Change" : "Assign"} ${selectedSeason.name} level for ${p.displayName}`}
+                        variant="quiet"
+                        size="compact"
+                        style={styles.levelButton}
+                        onPress={() => openLevelPicker(p)}
+                      />
+                    ) : null}
                   </View>
                   <View style={isLeader ? styles.leaderBadge : styles.playerBadge}>
                     <Text
@@ -977,6 +1034,15 @@ export default function AdminScreen() {
             })}
           </View>
         )}
+        {levelAssignNotice ? (
+          <InlineAlert
+            tone="success"
+            message={levelAssignNotice}
+            announce={false}
+            actionLabel="Dismiss"
+            onAction={() => setLevelAssignNotice(null)}
+          />
+        ) : null}
         {otherSeasonCount > 0 ? (
           <Text style={styles.hint}>
             {plural(otherSeasonCount, "player")} from other seasons{" "}
@@ -1491,6 +1557,69 @@ export default function AdminScreen() {
           />
         </View>
       </Card>
+      <BottomSheetModal
+        visible={!!levelPickerFor}
+        onRequestClose={() => {
+          if (!assignLevel.pending) setLevelPickerFor(null);
+        }}
+        backdropLabel="Close level choices"
+        cardStyle={styles.levelSheet}
+      >
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {`${selectedSeason.name} level for ${levelPickerFor?.displayName ?? "player"}`}
+        </Text>
+        {pickerMembership?.status === "waitlisted" ? (
+          <Text style={styles.hint}>They stay on the waitlist.</Text>
+        ) : null}
+        <View accessibilityRole="radiogroup">
+          {assignableLevels.map((level) => {
+            const current =
+              pickerMembership?.divisionLevelId === level.id;
+            return (
+              <Pressable
+                key={level.id}
+                accessibilityRole="radio"
+                accessibilityLabel={level.name}
+                accessibilityState={{
+                  checked: current,
+                  disabled: assignLevel.pending,
+                }}
+                disabled={assignLevel.pending || current}
+                android_ripple={{ color: colors.surfaceMuted }}
+                style={({ pressed }) => [
+                  styles.levelOption,
+                  pressed && styles.levelOptionPressed,
+                ]}
+                onPress={() => {
+                  if (levelPickerFor) void assignLevel.run(levelPickerFor, level);
+                }}
+              >
+                <Text style={styles.levelOptionText}>{level.name}</Text>
+                {current ? (
+                  <AppIcon
+                    name="checkmark"
+                    size={ICON_SIZE.small}
+                    color={colors.primary}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        {assignLevel.pending ? (
+          <LoadingState inline showLabel label="Saving level" />
+        ) : null}
+        {assignLevel.error ? (
+          <InlineAlert tone="error" message={assignLevel.error} />
+        ) : null}
+        <Button
+          label="Cancel"
+          accessibilityLabel="Cancel level change"
+          variant="quiet"
+          disabled={assignLevel.pending}
+          onPress={() => setLevelPickerFor(null)}
+        />
+      </BottomSheetModal>
     </KeyboardAwareScrollView>
   );
 }
@@ -1605,6 +1734,27 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   playerInfo: { flex: 1, gap: spacing.xxs },
+  levelButton: { alignSelf: "flex-start", marginLeft: -spacing.sm },
+  levelSheet: {
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    padding: spacing.xl,
+    gap: spacing.sm,
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+  },
+  levelOption: {
+    minHeight: MIN_TOUCH_TARGET + spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  levelOptionPressed: { backgroundColor: colors.surfaceMuted },
+  levelOptionText: { ...typography.body, color: colors.text },
   playerName: { ...typography.subheading, color: colors.text },
   playerContact: { ...typography.bodySmall, color: colors.textMuted },
   unassignedLine: { flexDirection: "row", alignItems: "center", gap: spacing.xs },

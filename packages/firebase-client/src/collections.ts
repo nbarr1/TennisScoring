@@ -81,7 +81,25 @@ export const messageReportDoc = (id: string) => doc(db, 'messageReports', id) as
 export const divisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
   query(matchesCol(), where('divisionId', '==', divisionId), orderBy('createdAt', 'desc'), ...extra);
 
-export const divisionMatchesUnorderedQuery = (divisionId: string) =>
+/**
+ * One season's matches in a division, newest first. Served by the
+ * `divisionId, seasonId, createdAt desc` composite index. Matches with no
+ * `seasonId` are not returned.
+ */
+export const divisionSeasonMatchesQuery = (
+  divisionId: string,
+  seasonId: string,
+  ...extra: QueryConstraint[]
+) =>
+  query(
+    matchesCol(),
+    where('divisionId', '==', divisionId),
+    where('seasonId', '==', seasonId),
+    orderBy('createdAt', 'desc'),
+    ...extra,
+  );
+
+export const divisionMatchesUnorderedQuery =(divisionId: string) =>
   query(matchesCol(), where('divisionId', '==', divisionId));
 
 export const liveMatchesQuery = (divisionId: string) =>

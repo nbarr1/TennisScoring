@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Alert,
-  Modal,
   ActivityIndicator,
   ScrollView,
   Switch,
@@ -18,6 +17,7 @@ import {
 import type { SymbolViewProps } from "expo-symbols";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
 import * as Linking from "expo-linking";
 import { AppIcon, IconLabel, ICON_SIZE } from "../../components/AppIcon";
@@ -88,7 +88,7 @@ import {
   spokenUndoTarget,
   undoTargetLabel,
 } from "../../components/live-scoring/scoreSpeech";
-import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
+import { BottomSheetModal } from "../../components/BottomSheetModal";
 import {
   addWearScoreInputListener,
   addWearSyncRequestListener,
@@ -152,14 +152,25 @@ function formatWhen(ms: number): string {
 }
 
 /**
- * A short confirming buzz on Android, where the app holds the VIBRATE
- * permission. iOS has no light haptic without a native module, and its
- * Vibration API is a long buzz, so iOS relies on the visual and spoken
- * confirmation instead.
+ * A short confirming tap. Android keeps the Vibration API pulses it has always
+ * used (the app holds the VIBRATE permission). iOS uses the Taptic Engine
+ * through expo-haptics, since its Vibration API is a long buzz.
  */
 function haptic(kind: "point" | "undo" | "error"): void {
-  if (Platform.OS !== "android") return;
   try {
+    if (Platform.OS === "ios") {
+      const feedback =
+        kind === "error"
+          ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+          : Haptics.impactAsync(
+              kind === "undo"
+                ? Haptics.ImpactFeedbackStyle.Medium
+                : Haptics.ImpactFeedbackStyle.Light,
+            );
+      feedback.catch(() => undefined);
+      return;
+    }
+    if (Platform.OS !== "android") return;
     Vibration.vibrate(
       kind === "error" ? [0, 40, 70, 40] : kind === "undo" ? 30 : 15,
     );
@@ -231,6 +242,51 @@ function spokenDuration(ms?: number): string {
   const minutes = totalMinutes % 60;
   if (hours > 0) return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minutes`;
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+/** The current time, refreshed once a second while `active`. */
+function useClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+/**
+ * A duration that counts up from `since` while it is set, or shows the fixed
+ * `ms` otherwise. It owns the once-a-second tick, so only this text
+ * re-renders as the clock runs, not the whole match screen.
+ */
+function ElapsedText({
+  since,
+  ms,
+  prefix = "",
+  spokenPrefix = prefix,
+  style,
+  maxFontSizeMultiplier,
+}: {
+  since?: number;
+  ms?: number;
+  prefix?: string;
+  spokenPrefix?: string;
+  style?: React.ComponentProps<typeof Text>["style"];
+  maxFontSizeMultiplier?: number;
+}) {
+  const now = useClock(since !== undefined);
+  const value = since !== undefined ? now - since : ms;
+  return (
+    <Text
+      style={style}
+      maxFontSizeMultiplier={maxFontSizeMultiplier}
+      accessibilityLabel={`${spokenPrefix}${spokenDuration(value)}`}
+    >
+      {`${prefix}${formatDuration(value)}`}
+    </Text>
+  );
 }
 
 function statPercent(won: number, total: number): string {
@@ -360,128 +416,125 @@ function EditScoreModal({
     );
   }
   return (
-    <Modal
+    // The same rising sheet as the others: a card pinned to the bottom that
+    // scrolls when the keyboard or a long score needs the room.
+    <BottomSheetModal
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onCancel}
+      onRequestClose={() => {
+        if (!saving) onCancel();
+      }}
+      cardStyle={styles.sheetCard}
     >
-      {/* The same rising sheet as the others: a card pinned to the bottom that
-          scrolls when the keyboard or a long score needs the room. */}
-      <KeyboardAwareBottomSheet style={styles.sheetOverlay}>
-        <View style={styles.sheetCard} accessibilityViewIsModal>
-          <Text style={styles.sheetTitle} accessibilityRole="header">
-            {resolving ? "Set the correct score" : "Edit score"}
-          </Text>
-          {resolving && (
-            <Text style={styles.sheetHint}>
-              This score is final. It counts in the standings without another
-              confirmation from the players.
-            </Text>
-          )}
-          {!resolving && isCompleted && (
-            <InlineAlert
-              tone="warning"
-              message="Changing a confirmed score sends it back to both players to confirm again."
-            />
-          )}
-          <View
-            style={editScoreStyles.headerRow}
-            importantForAccessibility="no-hide-descendants"
-            accessibilityElementsHidden
-          >
-            <Text style={editScoreStyles.headerSet}>Set</Text>
-            <Text style={editScoreStyles.headerName} numberOfLines={1}>
-              {p1Name}
-            </Text>
-            <Text style={editScoreStyles.headerName} numberOfLines={1}>
-              {p2Name}
-            </Text>
-          </View>
-          {sets.map((s, i) => {
-            const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
-            const unit = s.matchTiebreak ? "points" : "games";
-            return (
-              <React.Fragment key={i}>
-                <View style={editScoreStyles.setRow}>
-                  <Text
-                    style={editScoreStyles.setLabel}
-                    importantForAccessibility="no"
-                    accessibilityElementsHidden
-                  >
-                    {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
-                  </Text>
-                  <TextInput
-                    style={editScoreStyles.setInput}
-                    value={s.p1}
-                    onChangeText={(v) => updateSet(i, "p1", v)}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    placeholder="0"
-                    placeholderTextColor={colors.placeholder}
-                    accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
-                    editable={!saving}
-                  />
-                  <TextInput
-                    style={editScoreStyles.setInput}
-                    value={s.p2}
-                    onChangeText={(v) => updateSet(i, "p2", v)}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    placeholder="0"
-                    placeholderTextColor={colors.placeholder}
-                    accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
-                    editable={!saving}
-                  />
-                </View>
-                <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
-              </React.Fragment>
-            );
-          })}
-          <View style={editScoreStyles.setActionRow}>
-            {sets.length < 5 && (
-              <Button
-                label="Add set"
-                icon="plus"
-                variant="quiet"
-                size="compact"
-                disabled={saving}
-                onPress={() =>
-                  onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
-                }
+      <Text style={styles.sheetTitle} accessibilityRole="header">
+        {resolving ? "Set the correct score" : "Edit score"}
+      </Text>
+      {resolving && (
+        <Text style={styles.sheetHint}>
+          This score is final. It counts in the standings without another
+          confirmation from the players.
+        </Text>
+      )}
+      {!resolving && isCompleted && (
+        <InlineAlert
+          tone="warning"
+          message="Changing a confirmed score sends it back to both players to confirm again."
+        />
+      )}
+      <View
+        style={editScoreStyles.headerRow}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
+        <Text style={editScoreStyles.headerSet}>Set</Text>
+        <Text style={editScoreStyles.headerName} numberOfLines={1}>
+          {p1Name}
+        </Text>
+        <Text style={editScoreStyles.headerName} numberOfLines={1}>
+          {p2Name}
+        </Text>
+      </View>
+      {sets.map((s, i) => {
+        const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
+        const unit = s.matchTiebreak ? "points" : "games";
+        return (
+          <React.Fragment key={i}>
+            <View style={editScoreStyles.setRow}>
+              <Text
+                style={editScoreStyles.setLabel}
+                importantForAccessibility="no"
+                accessibilityElementsHidden
+              >
+                {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+              </Text>
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p1}
+                onChangeText={(v) => updateSet(i, "p1", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor={colors.placeholder}
+                accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
+                editable={!saving}
               />
-            )}
-            {sets.length > 1 && (
-              <Button
-                label="Remove last set"
-                variant="quiet"
-                size="compact"
-                disabled={saving}
-                onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p2}
+                onChangeText={(v) => updateSet(i, "p2", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor={colors.placeholder}
+                accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
+                editable={!saving}
               />
-            )}
-          </View>
-          {error ? (
-            <InlineAlert tone="error" title="Score not saved" message={error} />
-          ) : null}
-          <View style={styles.buttonStack}>
-            <Button
-              label={resolving ? "Save final score" : "Save score"}
-              pending={saving}
-              fullWidth
-              onPress={onSave}
-            />
-            <Button
-              label="Cancel"
-              variant="quiet"
-              fullWidth
-              disabled={saving}
-              onPress={onCancel}
-            />
-          </View>
-        </View>
-      </KeyboardAwareBottomSheet>
-    </Modal>
+            </View>
+            <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
+          </React.Fragment>
+        );
+      })}
+      <View style={editScoreStyles.setActionRow}>
+        {sets.length < 5 && (
+          <Button
+            label="Add set"
+            icon="plus"
+            variant="quiet"
+            size="compact"
+            disabled={saving}
+            onPress={() =>
+              onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
+            }
+          />
+        )}
+        {sets.length > 1 && (
+          <Button
+            label="Remove last set"
+            variant="quiet"
+            size="compact"
+            disabled={saving}
+            onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+          />
+        )}
+      </View>
+      {error ? (
+        <InlineAlert tone="error" title="Score not saved" message={error} />
+      ) : null}
+      <View style={styles.buttonStack}>
+        <Button
+          label={resolving ? "Save final score" : "Save score"}
+          pending={saving}
+          fullWidth
+          onPress={onSave}
+        />
+        <Button
+          label="Cancel"
+          variant="quiet"
+          fullWidth
+          disabled={saving}
+          onPress={onCancel}
+        />
+      </View>
+    </BottomSheetModal>
   );
 }
 
@@ -537,7 +590,8 @@ export default function MatchScreen() {
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
   const { match, loading, error: loadError } = useMatch(id ?? null);
-  const { user, divisionId } = useAppStore();
+  const user = useAppStore((state) => state.user);
+  const divisionId = useAppStore((state) => state.divisionId);
   const [currentTip, setCurrentTip] = useState<{
     title: string;
     body: string;
@@ -565,7 +619,6 @@ export default function MatchScreen() {
   const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
   const [watchAppInstalled, setWatchAppInstalled] = useState(false);
   const [launchingWatch, setLaunchingWatch] = useState(false);
-  const [clockTick, setClockTick] = useState(Date.now());
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
@@ -840,7 +893,7 @@ export default function MatchScreen() {
   handleUndoRef.current = handleUndo;
 
   // Kept referentially stable so the Wear listener below is not torn down and
-  // re-registered on every render; the match clock re-renders once a second.
+  // re-registered on every render.
   const handlePoint = useCallback(
     async (
       player: "player1" | "player2",
@@ -876,6 +929,11 @@ export default function MatchScreen() {
         await sendScoreToWear(result.nextScore, {
           matchId: id,
           status: result.matchWinner ? "pending_report" : match.status,
+          // Only this screen's participant scores, and only while it is live.
+          canScore:
+            isParticipant &&
+            !result.matchWinner &&
+            match.status === "in_progress",
           player1Name: p1,
           player2Name: p2,
           ...buildWearFeedback(
@@ -927,7 +985,7 @@ export default function MatchScreen() {
         setRecordingFor(null);
       }
     },
-    [match, id, scoring],
+    [match, id, scoring, isParticipant],
   );
   // The retry above runs after a re-render, so it calls the latest handler
   // rather than the one that failed, which closed over a stale `scoring`.
@@ -944,13 +1002,26 @@ export default function MatchScreen() {
   }, [match?.status, pendingPoint]);
 
   // With advanced stats on, a tap asks for the point type first; see PointTypeSheet.
-  function requestPoint(player: Player) {
-    if (match?.advancedStatsEnabled) {
-      setPendingPoint(player);
-      return;
-    }
-    void handlePoint(player);
-  }
+  // Stable callbacks, so the memoized scoreboard re-renders only when what it
+  // shows changes.
+  const advancedStatsOn = !!match?.advancedStatsEnabled;
+  const requestPoint = useCallback(
+    (player: Player) => {
+      if (advancedStatsOn) {
+        setPendingPoint(player);
+        return;
+      }
+      void handlePoint(player);
+    },
+    [advancedStatsOn, handlePoint],
+  );
+  const handleSwapEnds = useCallback(() => {
+    setSwapped((value) => !value);
+    announce("Ends swapped");
+  }, []);
+  const handleUndoPress = useCallback(() => {
+    void handleUndoRef.current();
+  }, []);
 
   function openManage() {
     setShowPostponeOptions(false);
@@ -1185,12 +1256,6 @@ export default function MatchScreen() {
     await share.run(match.reportUrl);
   }
 
-  useEffect(() => {
-    if (match?.status !== "in_progress") return;
-    const timer = setInterval(() => setClockTick(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [match?.status]);
-
   const refreshWatchAppInstalled = useCallback(async () => {
     setWatchAppInstalled(await isWatchAppInstalled());
   }, []);
@@ -1210,7 +1275,7 @@ export default function MatchScreen() {
       }
       Alert.alert(
         "Couldn't open the watch app",
-        "Check that your watch is nearby, paired, and still has Tennis Score installed.",
+        "Check that your watch is nearby, paired, and still has Tennis League installed.",
       );
       // The watch may have gone out of range since the last check.
       await refreshWatchAppInstalled();
@@ -1224,11 +1289,13 @@ export default function MatchScreen() {
     void sendScoreToWear(match.liveScore, {
       matchId: id,
       status: match.status,
+      // A spectator's watch shows the match read-only.
+      canScore: isParticipant && match.status === "in_progress",
       player1Name: match.player1Name ?? "Player 1",
       player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
     });
-  }, [match, id]);
+  }, [match, id, isParticipant]);
 
   useEffect(() => {
     syncWear();
@@ -1312,15 +1379,21 @@ export default function MatchScreen() {
     (canManage && match.status === "pending_report") ||
     ((isAdminOrLeader || isAdminRole(user?.role)) &&
       match.status === "completed");
-  const elapsedMs =
-    match.matchDurationMs ??
-    (match.startedAt && match.status === "in_progress"
-      ? clockTick - match.startedAt
-      : undefined);
-  const currentSetElapsedMs =
+  // The clocks tick inside ElapsedText; the screen itself never re-renders
+  // for them. `matchSince` is set only while the match clock is running.
+  const matchSince =
+    match.matchDurationMs === undefined &&
+    match.startedAt &&
+    match.status === "in_progress"
+      ? match.startedAt
+      : undefined;
+  const matchFixedMs = match.matchDurationMs;
+  const currentSetSince =
     match.status === "in_progress" && match.currentSetStartedAt
-      ? clockTick - match.currentSetStartedAt
-      : match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
+      ? match.currentSetStartedAt
+      : undefined;
+  const currentSetFixedMs =
+    match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
   const showCourtSurface = isParticipant && match.status === "in_progress";
   const showSetupSurface = isParticipant && match.status === "scheduled";
   const fillScreen = showCourtSurface || showSetupSurface;
@@ -1331,10 +1404,8 @@ export default function MatchScreen() {
       : match.status === "pending_report" || match.status === "completed"
         ? "FINAL"
         : getMatchStatusMetadata(match.status).label.toUpperCase();
-  const headerClock =
-    match.status === "in_progress" || match.status === "pending_report"
-      ? formatDuration(elapsedMs)
-      : "";
+  const showHeaderClock =
+    match.status === "in_progress" || match.status === "pending_report";
   const undoTarget = match.undoSnapshot?.liveScore;
   const isProposedToMe =
     isParticipant && match.status === "proposed" && mySide === "player2";
@@ -1377,15 +1448,12 @@ export default function MatchScreen() {
       compact={compact}
       fontsLoaded={fontsLoaded}
       swapped={swapped}
-      onSwap={() => {
-        setSwapped((value) => !value);
-        announce("Ends swapped");
-      }}
+      onSwap={handleSwapEnds}
       onPoint={requestPoint}
       scoring={scoring}
       recordingFor={recordingFor}
       lastPoint={lastPoint}
-      onUndo={() => void handleUndo()}
+      onUndo={handleUndoPress}
       canUndo={!!match.undoSnapshot}
       undoHint={
         undoTarget
@@ -1429,14 +1497,14 @@ export default function MatchScreen() {
         >
           {headerTitle}
         </Text>
-        {headerClock !== "" && (
-          <Text
+        {showHeaderClock && (
+          <ElapsedText
+            since={matchSince}
+            ms={matchFixedMs}
+            spokenPrefix="Match time "
             style={[styles.sbHeaderClock, font(fontsLoaded, "semibold")]}
             maxFontSizeMultiplier={1.3}
-            accessibilityLabel={`Match time ${spokenDuration(elapsedMs)}`}
-          >
-            {headerClock}
-          </Text>
+          />
         )}
         {canManage && match.status !== "cancelled" ? (
           <Pressable
@@ -1572,9 +1640,12 @@ export default function MatchScreen() {
                     fontsLoaded={fontsLoaded}
                   >
                     <PanelScore score={match.liveScore} fontsLoaded={fontsLoaded} />
-                    <Text style={styles.panelMeta}>
-                      Match time {formatDuration(elapsedMs)}
-                    </Text>
+                    <ElapsedText
+                      since={matchSince}
+                      ms={matchFixedMs}
+                      prefix="Match time "
+                      style={styles.panelMeta}
+                    />
                     <Text style={styles.panelBody}>
                       Your opponent is a guest, so no one needs to confirm.
                       Save the result now. It counts in the standings once you
@@ -1929,27 +2000,31 @@ export default function MatchScreen() {
                             set.setNumber === match.liveScore.currentSet,
                         )
                         .map((set) => {
+                          const isCurrent =
+                            set.setNumber === match.liveScore.currentSet;
+                          const since =
+                            set.durationMs === undefined && isCurrent
+                              ? currentSetSince
+                              : undefined;
                           const ms =
                             set.durationMs ??
-                            (set.setNumber === match.liveScore.currentSet
-                              ? currentSetElapsedMs
-                              : undefined);
+                            (isCurrent ? currentSetFixedMs : undefined);
                           return (
-                            <Text
+                            <ElapsedText
                               key={set.setNumber}
+                              since={since}
+                              ms={ms}
+                              prefix={`Set ${set.setNumber + 1}: `}
                               style={statsStyles.durationText}
-                              accessibilityLabel={`Set ${set.setNumber + 1}: ${spokenDuration(ms)}`}
-                            >
-                              Set {set.setNumber + 1}: {formatDuration(ms)}
-                            </Text>
+                            />
                           );
                         })}
-                      <Text
+                      <ElapsedText
+                        since={matchSince}
+                        ms={matchFixedMs}
+                        prefix="Match: "
                         style={statsStyles.durationText}
-                        accessibilityLabel={`Match: ${spokenDuration(elapsedMs)}`}
-                      >
-                        Match: {formatDuration(elapsedMs)}
-                      </Text>
+                      />
                     </View>
                   </View>
                 )}
@@ -1977,151 +2052,139 @@ export default function MatchScreen() {
       />
 
       {/* Manage Match sheet */}
-      <Modal
+      <BottomSheetModal
         visible={showManage}
-        transparent
-        animationType="slide"
         onRequestClose={() => {
           if (!managing) setShowManage(false);
         }}
+        backdropLabel="Close match options"
+        // The scoreboard's own dark sheet, down to the home-indicator inset.
+        fillColor={SB.panel}
+        handleColor={SB.controlFill}
+        overlayStyle={styles.manageOverlay}
+        cardStyle={styles.manageCard}
       >
-        <KeyboardAwareBottomSheet style={styles.manageOverlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => {
-              if (!managing) setShowManage(false);
-            }}
-            accessible={false}
-            importantForAccessibility="no"
-          />
-          <View
-            style={styles.manageCard}
-            onStartShouldSetResponder={() => true}
-            accessibilityViewIsModal
-          >
-            <Text style={styles.manageTitle} accessibilityRole="header">
-              {showPostponeOptions ? "Postpone by…" : "Match options"}
-            </Text>
+        <Text style={styles.manageTitle} accessibilityRole="header">
+          {showPostponeOptions ? "Postpone by…" : "Match options"}
+        </Text>
 
-            {managing && (
-              <View
-                style={styles.manageBusy}
-                accessible
-                accessibilityRole="progressbar"
-                accessibilityLabel="Saving"
-              >
-                <ActivityIndicator color={SB.yellow} />
-                <Text style={styles.manageToggleHint}>Saving…</Text>
+        {managing && (
+          <View
+            style={styles.manageBusy}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel="Saving"
+          >
+            <ActivityIndicator color={SB.yellow} />
+            <Text style={styles.manageToggleHint}>Saving…</Text>
+          </View>
+        )}
+
+        {manageError ? (
+          <InlineAlert tone="error" message={manageError} />
+        ) : null}
+
+        {!managing && !showPostponeOptions && (
+          <>
+            {isParticipant && match.status === "in_progress" && (
+              <View style={[styles.manageOption, styles.manageToggleRow]}>
+                <View style={styles.manageToggleCopy}>
+                  <Text style={styles.manageOptionText}>Rule tips</Text>
+                  <Text style={styles.manageToggleHint}>
+                    Explain deuce, tiebreaks, and changeovers
+                  </Text>
+                </View>
+                <Switch
+                  value={match.tipsEnabled}
+                  onValueChange={(value) => void tips.run(value)}
+                  disabled={tips.pending}
+                  trackColor={{ true: SB.yellow, false: SB.ballOff }}
+                  thumbColor={match.tipsEnabled ? SB.onYellow : SB.muted}
+                  accessibilityLabel="Rule tips"
+                  accessibilityHint="Explains deuce, tiebreaks, and changeovers as they happen."
+                />
               </View>
             )}
-
-            {manageError ? (
-              <InlineAlert tone="error" message={manageError} />
-            ) : null}
-
-            {!managing && !showPostponeOptions && (
-              <>
-                {isParticipant && match.status === "in_progress" && (
-                  <View style={[styles.manageOption, styles.manageToggleRow]}>
-                    <View style={styles.manageToggleCopy}>
-                      <Text style={styles.manageOptionText}>Rule tips</Text>
-                      <Text style={styles.manageToggleHint}>
-                        Explain deuce, tiebreaks, and changeovers
-                      </Text>
-                    </View>
-                    <Switch
-                      value={match.tipsEnabled}
-                      onValueChange={(value) => void tips.run(value)}
-                      disabled={tips.pending}
-                      trackColor={{ true: SB.yellow, false: SB.ballOff }}
-                      thumbColor={match.tipsEnabled ? SB.onYellow : SB.muted}
-                      accessibilityLabel="Rule tips"
-                      accessibilityHint="Explains deuce, tiebreaks, and changeovers as they happen."
-                    />
-                  </View>
-                )}
-                {canEditScore && (
-                  <ManageRow
-                    icon="pencil"
-                    label="Edit score"
-                    onPress={() => handleOpenEditScore()}
-                  />
-                )}
-                {watchAppInstalled &&
-                  isParticipant &&
-                  (match.status === "scheduled" ||
-                    match.status === "in_progress") && (
-                    <ManageRow
-                      icon="applewatch"
-                      label={launchingWatch ? "Opening on watch…" : "Open on watch"}
-                      disabled={launchingWatch}
-                      onPress={() => void handleLaunchWatch()}
-                    />
-                  )}
-                {isParticipant && match.status === "scheduled" && (
-                  <ManageRow
-                    icon="calendar"
-                    label="Postpone"
-                    onPress={() => setShowPostponeOptions(true)}
-                  />
-                )}
-                {isParticipant &&
-                  (match.status === "scheduled" ||
-                    match.status === "in_progress") && (
-                    <ManageRow
-                      icon="xmark.circle"
-                      label="Cancel match"
-                      onPress={() => void handleCancelMatch()}
-                    />
-                  )}
-                <ManageRow
-                  icon="trash"
-                  label="Delete match"
-                  danger
-                  onPress={() => void handleDeleteMatch()}
-                />
-              </>
+            {canEditScore && (
+              <ManageRow
+                icon="pencil"
+                label="Edit score"
+                onPress={() => handleOpenEditScore()}
+              />
             )}
-
-            {!managing && showPostponeOptions && (
-              <>
-                {[
-                  { label: "30 minutes", ms: 30 * 60 * 1000 },
-                  { label: "1 hour", ms: 60 * 60 * 1000 },
-                  { label: "2 hours", ms: 2 * 60 * 60 * 1000 },
-                  { label: "1 day", ms: 24 * 60 * 60 * 1000 },
-                ].map(({ label, ms }) => (
-                  <ManageRow
-                    key={label}
-                    icon="calendar"
-                    label={`${label} later`}
-                    hint={formatWhen((match.scheduledAt ?? Date.now()) + ms)}
-                    onPress={() => void handlePostponeBy(ms)}
-                  />
-                ))}
+            {watchAppInstalled &&
+              isParticipant &&
+              (match.status === "scheduled" ||
+                match.status === "in_progress") && (
                 <ManageRow
-                  icon={BACK_ICON}
-                  label="Back to match options"
-                  onPress={() => setShowPostponeOptions(false)}
+                  icon="applewatch"
+                  label={launchingWatch ? "Opening on watch…" : "Open on watch"}
+                  disabled={launchingWatch}
+                  onPress={() => void handleLaunchWatch()}
                 />
-              </>
+              )}
+            {isParticipant && match.status === "scheduled" && (
+              <ManageRow
+                icon="calendar"
+                label="Postpone"
+                onPress={() => setShowPostponeOptions(true)}
+              />
             )}
+            {isParticipant &&
+              (match.status === "scheduled" ||
+                match.status === "in_progress") && (
+                <ManageRow
+                  icon="xmark.circle"
+                  label="Cancel match"
+                  onPress={() => void handleCancelMatch()}
+                />
+              )}
+            <ManageRow
+              icon="trash"
+              label="Delete match"
+              danger
+              onPress={() => void handleDeleteMatch()}
+            />
+          </>
+        )}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.manageCloseBtn,
-                pressed && { backgroundColor: SB.control },
-              ]}
-              onPress={() => setShowManage(false)}
-              disabled={managing}
-              accessibilityRole="button"
-              accessibilityLabel="Close match options"
-            >
-              <Text style={styles.manageCloseBtnText}>Close</Text>
-            </Pressable>
-          </View>
-        </KeyboardAwareBottomSheet>
-      </Modal>
+        {!managing && showPostponeOptions && (
+          <>
+            {[
+              { label: "30 minutes", ms: 30 * 60 * 1000 },
+              { label: "1 hour", ms: 60 * 60 * 1000 },
+              { label: "2 hours", ms: 2 * 60 * 60 * 1000 },
+              { label: "1 day", ms: 24 * 60 * 60 * 1000 },
+            ].map(({ label, ms }) => (
+              <ManageRow
+                key={label}
+                icon="calendar"
+                label={`${label} later`}
+                hint={formatWhen((match.scheduledAt ?? Date.now()) + ms)}
+                onPress={() => void handlePostponeBy(ms)}
+              />
+            ))}
+            <ManageRow
+              icon={BACK_ICON}
+              label="Back to match options"
+              onPress={() => setShowPostponeOptions(false)}
+            />
+          </>
+        )}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.manageCloseBtn,
+            pressed && { backgroundColor: SB.control },
+          ]}
+          onPress={() => setShowManage(false)}
+          disabled={managing}
+          accessibilityRole="button"
+          accessibilityLabel="Close match options"
+        >
+          <Text style={styles.manageCloseBtnText}>Close</Text>
+        </Pressable>
+      </BottomSheetModal>
 
       <EditScoreModal
         visible={showEditScore}
@@ -2141,94 +2204,89 @@ export default function MatchScreen() {
       />
 
       {/* Link Opponent sheet */}
-      <Modal
+      <BottomSheetModal
         visible={showLinkOpponent}
-        transparent
-        animationType="slide"
         onRequestClose={() => {
           if (!link.pending) closeLinkOpponent();
         }}
+        cardStyle={styles.sheetCard}
       >
-        <KeyboardAwareBottomSheet style={styles.sheetOverlay}>
-          <View style={styles.sheetCard} accessibilityViewIsModal>
-            <Text style={styles.sheetTitle} accessibilityRole="header">
-              Link your opponent's account
-            </Text>
-            <Text style={styles.sheetHint}>
-              Find your opponent in your division. They're added to this match
-              in place of the guest.
-            </Text>
-            <FormField
-              label="Opponent's name or email"
-              value={linkSearch}
-              onChangeText={(text) => void handleLinkSearch(text)}
-              placeholder="Start typing a name"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              returnKeyType="search"
-              editable={!link.pending}
-            />
-            {linkSearching ? (
-              <LoadingState inline label="Searching your division" showLabel />
-            ) : null}
-            {linkSearchError ? (
-              <InlineAlert
-                tone="error"
-                message={linkSearchError}
-                actionLabel="Try again"
-                onAction={() => void handleLinkSearch(linkSearch)}
-              />
-            ) : null}
-            {link.error ? (
-              <InlineAlert tone="error" message={link.error} />
-            ) : null}
-            {link.pending ? (
-              <LoadingState inline label="Linking player" showLabel />
-            ) : null}
-            {/* The sheet already scrolls, and a division search returns a
-                short list, so the rows render directly rather than in a
-                nested virtualized list. */}
-            <View>
-              {linkResults.map((item) => (
-                <Pressable
-                  key={item.id}
-                  style={({ pressed }) => [
-                    styles.linkResultRow,
-                    pressed && { backgroundColor: colors.surfaceMuted },
-                  ]}
-                  onPress={() => void link.run(item)}
-                  disabled={link.pending}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Link ${item.displayName ?? "this player"}`}
-                  accessibilityState={{ disabled: link.pending }}
-                >
-                  <AppIcon name="person.crop.circle" color={colors.textMuted} />
-                  <Text style={styles.linkResultName} numberOfLines={1}>
-                    {item.displayName ?? "Unnamed player"}
-                  </Text>
-                  <Text style={styles.linkResultAction}>Link</Text>
-                </Pressable>
-              ))}
-              {linkResults.length === 0 &&
-              linkSearch.trim().length > 0 &&
-              !linkSearching &&
-              !linkSearchError ? (
-                <Text style={styles.linkNoResults}>
-                  No players in your division match "{linkSearch.trim()}".
-                </Text>
-              ) : null}
-            </View>
-            <Button
-              label="Cancel"
-              variant="quiet"
-              fullWidth
+        <Text style={styles.sheetTitle} accessibilityRole="header">
+          Link your opponent's account
+        </Text>
+        <Text style={styles.sheetHint}>
+          Find your opponent in your division. They're added to this match
+          in place of the guest.
+        </Text>
+        <FormField
+          label="Opponent's name or email"
+          value={linkSearch}
+          onChangeText={(text) => void handleLinkSearch(text)}
+          placeholder="Start typing a name"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          returnKeyType="search"
+          editable={!link.pending}
+        />
+        {linkSearching ? (
+          <LoadingState inline label="Searching your division" showLabel />
+        ) : null}
+        {linkSearchError ? (
+          <InlineAlert
+            tone="error"
+            message={linkSearchError}
+            actionLabel="Try again"
+            onAction={() => void handleLinkSearch(linkSearch)}
+          />
+        ) : null}
+        {link.error ? (
+          <InlineAlert tone="error" message={link.error} />
+        ) : null}
+        {link.pending ? (
+          <LoadingState inline label="Linking player" showLabel />
+        ) : null}
+        {/* The sheet already scrolls, and a division search returns a
+            short list, so the rows render directly rather than in a
+            nested virtualized list. */}
+        <View>
+          {linkResults.map((item) => (
+            <Pressable
+              key={item.id}
+              style={({ pressed }) => [
+                styles.linkResultRow,
+                pressed && { backgroundColor: colors.surfaceMuted },
+              ]}
+              onPress={() => void link.run(item)}
               disabled={link.pending}
-              onPress={closeLinkOpponent}
-            />
-          </View>
-        </KeyboardAwareBottomSheet>
-      </Modal>
+              accessibilityRole="button"
+              accessibilityLabel={`Link ${item.displayName ?? "this player"}`}
+              accessibilityState={{ disabled: link.pending }}
+            >
+              <AppIcon name="person.crop.circle" color={colors.textMuted} />
+              <Text style={styles.linkResultName} numberOfLines={1}>
+                {item.displayName ?? "Unnamed player"}
+              </Text>
+              <Text style={styles.linkResultAction}>Link</Text>
+            </Pressable>
+          ))}
+          {linkResults.length === 0 &&
+          linkSearch.trim().length > 0 &&
+          !linkSearching &&
+          !linkSearchError ? (
+            <Text style={styles.linkNoResults}>
+              No players in your division match "{linkSearch.trim()}".
+            </Text>
+          ) : null}
+        </View>
+        <Button
+          label="Cancel"
+          variant="quiet"
+          fullWidth
+          disabled={link.pending}
+          onPress={closeLinkOpponent}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -2291,16 +2349,13 @@ const styles = StyleSheet.create({
   spectatorText: { flex: 1, color: SB.muted, fontSize: 15, lineHeight: 21 },
 
   // Manage match
-  manageOverlay: {
-    flex: 1,
-    backgroundColor: SB.scrim,
-    justifyContent: "flex-end",
-  },
+  manageOverlay: { backgroundColor: SB.scrim },
   manageCard: {
     backgroundColor: SB.panel,
     borderTopWidth: 2,
     borderTopColor: SB.yellow,
     padding: 16,
+    paddingTop: 24,
     paddingBottom: 24,
     gap: 4,
     width: "100%",
@@ -2369,11 +2424,6 @@ const styles = StyleSheet.create({
   tipBody: { color: SB.onYellow, fontSize: 14, lineHeight: 19 },
 
   // Clubhouse sheets (edit score, link opponent)
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "flex-end",
-  },
   sheetCard: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.xl,

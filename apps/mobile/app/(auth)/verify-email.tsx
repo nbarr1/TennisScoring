@@ -49,8 +49,9 @@ export default function VerifyEmailScreen() {
     {
       errorMessage:
         "Couldn't check your verification status. Check your connection and try again.",
-      successMessage: (verified) =>
-        verified ? "Email verified" : "Not verified yet",
+      // "Not verified yet" is spoken by the warning alert below, so only
+      // the verified outcome is announced here.
+      successMessage: (verified) => (verified ? "Email verified" : ""),
       onError: (err) =>
         console.error("Failed to refresh verification status:", err),
     },
