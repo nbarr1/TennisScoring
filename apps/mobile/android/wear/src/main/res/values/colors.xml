@@ -1,8 +1,19 @@
 <resources>
-  <!-- DESIGN.md scoreboard-black, the activity's own background, so launch doesn't flash a second shade. -->
+  <!--
+    The scoreboard palette from DESIGN.md (scoreboard-*, player-blue,
+    player-orange), and the single source for the watch's colors. The phone's
+    live-scoring screen draws from the same tokens (SB in scoreboardTheme.ts).
+  -->
+  <!-- scoreboard-black, also the activity's own background, so launch doesn't flash a second shade. -->
   <color name="watch_background">#000000</color>
-  <color name="watch_green">#1A472A</color>
-  <color name="watch_green_light">#2D6A4F</color>
-  <color name="watch_yellow">#FFDC60</color>
-  <color name="watch_blue">#1B5E7A</color>
+  <color name="scoreboard_panel">#141414</color>
+  <color name="scoreboard_control">#1C1C1C</color>
+  <color name="scoreboard_line">#262626</color>
+  <color name="scoreboard_text">#FFFFFF</color>
+  <color name="scoreboard_muted">#B3B3B3</color>
+  <color name="scoreboard_yellow">#FFD60A</color>
+  <color name="player_blue">#3D8BFF</color>
+  <color name="player_orange">#FF9F1C</color>
+  <!-- Text on a pressed (filled) tile. Black is 6.3:1 on Player Blue and 10:1 on Player Orange; white was 3.3:1 and 2:1. -->
+  <color name="tile_pressed_text">#000000</color>
 </resources>
