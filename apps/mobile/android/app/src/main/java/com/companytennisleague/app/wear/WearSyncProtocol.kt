@@ -17,6 +17,13 @@ data class WearCommand(
   val action: String,
 )
 
+/**
+ * [canScore] is whether the phone will act on commands for this snapshot (see
+ * [isScoreable]). The watch renders a live, tappable scoreboard and keeps its
+ * screen awake only when it is true. It was added inside v1 rather than as a new
+ * version: a watch that predates it ignores the field, and a watch that reads it
+ * falls back to the snapshot's status when a phone that predates it leaves it out.
+ */
 data class WearSnapshot(
   val protocolVersion: Int = CURRENT_VERSION,
   val sessionId: String,
@@ -24,6 +31,7 @@ data class WearSnapshot(
   val sequence: Long,
   val acknowledgedEventIds: Set<String>,
   val scoreJson: String,
+  val canScore: Boolean,
 )
 
 const val CURRENT_VERSION = 1
@@ -47,6 +55,22 @@ const val LEGACY_SNAPSHOT_PATH = "/tennis/score"
 const val LEGACY_SYNC_PATH = "/tennis/sync-request"
 
 val VALID_ACTIONS = setOf("player1", "player2", "undo")
+
+/** The only match status the phone scores from the watch. */
+const val SCOREABLE_STATUS = "in_progress"
+
+/**
+ * The liveness rule both artifacts share: the watch may score a match only while
+ * it is in progress and the phone says its wearer can score it. [canScore] comes
+ * from the match screen (the signed-in player is a participant) and is null when
+ * the screen does not send it, which leaves the decision to the status alone.
+ * A missing [status] reads as in progress, as it always has on the watch.
+ *
+ * The watch mirrors this rule in wear/.../MainActivity.kt for snapshots that
+ * carry no [WearSnapshot.canScore], so a change here must be made there too.
+ */
+fun isScoreable(status: String?, canScore: Boolean?): Boolean =
+  (status ?: SCOREABLE_STATUS) == SCOREABLE_STATUS && canScore != false
 
 /**
  * The remote-launch contract with :wear, which the phone uses to open the watch
@@ -77,15 +101,23 @@ class WearCommandValidator(
 ) {
   private var activeMatchId: String? = null
   private var lastSequence = -1L
+  private var scoreable = false
 
-  @Synchronized fun activate(matchId: String) {
+  /**
+   * Records the snapshot just sent. [scoreable] follows every snapshot, so a
+   * match that leaves in_progress stops accepting commands at once; it never
+   * resets the ordering, which only a new match does.
+   */
+  @Synchronized fun activate(matchId: String, scoreable: Boolean = true) {
     if (activeMatchId != matchId) {
       activeMatchId = matchId
       lastSequence = -1L
     }
+    this.scoreable = scoreable
   }
 
   @Synchronized fun accept(command: WearCommand): Boolean {
+    if (!scoreable) return false
     if (command.protocolVersion != CURRENT_VERSION || command.sessionId != sessionId ||
       command.eventId.isBlank() || command.matchId != activeMatchId ||
       command.sequence <= lastSequence || command.action !in VALID_ACTIONS
@@ -98,11 +130,11 @@ class WearCommandValidator(
   /**
    * A pre-v1 watch sends a bare action string with no session, match, event id or
    * sequence, so the only checks available are whether the action is real and
-   * whether a match is open. Returns the match to attribute the command to, or
-   * null to drop it.
+   * whether a scoreable match is open. Returns the match to attribute the command
+   * to, or null to drop it.
    */
   @Synchronized fun acceptLegacy(action: String): String? {
-    if (action !in VALID_ACTIONS) return null
+    if (action !in VALID_ACTIONS || !scoreable) return null
     return activeMatchId
   }
 }

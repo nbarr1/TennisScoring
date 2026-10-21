@@ -48,4 +48,34 @@ class WearSyncProtocolTest {
     assertEquals("match-1", validator.acceptLegacy("undo"))
     assertNull(validator.acceptLegacy("invalid"))
   }
+
+  @Test fun onlyAnInProgressMatchTheWearerCanScoreIsScoreable() {
+    assertTrue(isScoreable("in_progress", canScore = true))
+    assertTrue("a screen that sends no canScore leaves it to the status", isScoreable("in_progress", canScore = null))
+    assertTrue("a snapshot with no status reads as in progress", isScoreable(null, canScore = null))
+    assertFalse("a spectator", isScoreable("in_progress", canScore = false))
+    for (status in listOf("proposed", "scheduled", "pending_report", "completed", "disputed", "cancelled")) {
+      assertFalse(status, isScoreable(status, canScore = true))
+      assertFalse(status, isScoreable(status, canScore = null))
+    }
+  }
+
+  @Test fun commandsForASnapshotThatIsNotScoreableAreRejected() {
+    val validator = WearCommandValidator(session)
+    validator.activate("match-1", scoreable = false)
+    assertFalse(validator.accept(command(eventId = "early", sequence = 1, action = "player1")))
+    assertNull(validator.acceptLegacy("player1"))
+
+    validator.activate("match-1", scoreable = true)
+    assertTrue(validator.accept(command(eventId = "live", sequence = 2, action = "player1")))
+    assertEquals("match-1", validator.acceptLegacy("undo"))
+
+    // Leaving in_progress stops commands without resetting the ordering.
+    validator.activate("match-1", scoreable = false)
+    assertFalse(validator.accept(command(eventId = "late", sequence = 3, action = "undo")))
+    assertNull(validator.acceptLegacy("undo"))
+    validator.activate("match-1", scoreable = true)
+    assertFalse("sequence 2 was already used", validator.accept(command(eventId = "replay", sequence = 2, action = "player2")))
+    assertTrue(validator.accept(command(eventId = "next", sequence = 3, action = "player2")))
+  }
 }

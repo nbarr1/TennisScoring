@@ -51,4 +51,11 @@ android {
 
 dependencies {
     implementation 'com.google.android.gms:play-services-wearable:18.2.0'
+    // AmbientLifecycleObserver (added in 1.3.0), so a live scoreboard dims to a
+    // low-power ambient view instead of holding the display at full brightness.
+    // Its public API exposes androidx.fragment, which brings androidx.activity's
+    // ComponentActivity, the lifecycle owner the observer attaches to. 1.4.0 has
+    // the same ambient API; 1.3.0 keeps the transitive androidx versions old
+    // enough for compileSdk 35.
+    implementation 'androidx.wear:wear:1.3.0'
 }

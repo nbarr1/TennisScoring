@@ -104,13 +104,21 @@ class WearOsModule(
   @ReactMethod
   fun sendScore(scoreJson: String, promise: Promise) {
     try {
-      val matchId = JSONObject(scoreJson).optString("matchId")
+      val score = JSONObject(scoreJson)
+      val matchId = score.optString("matchId")
       if (matchId.isBlank()) {
         promise.reject("wear_invalid_snapshot", "A Wear score snapshot must include matchId")
         return
       }
-      commandValidator.activate(matchId)
-      val snapshotJson = nextSnapshotEnvelope(matchId, scoreJson)
+      // Whether this phone will act on the watch's commands for this snapshot. The
+      // match screen may say whether its player can score (canScore); without
+      // that, the status decides. The watch renders read-only when it is false.
+      val scoreable = isScoreable(
+        status = score.optString("status").ifBlank { null },
+        canScore = if (score.has("canScore")) score.optBoolean("canScore") else null,
+      )
+      commandValidator.activate(matchId, scoreable)
+      val snapshotJson = nextSnapshotEnvelope(matchId, scoreJson, scoreable)
       Wearable.getNodeClient(reactContext).connectedNodes
         .addOnSuccessListener { nodes ->
           if (nodes.isEmpty()) {
@@ -298,7 +306,7 @@ class WearOsModule(
     sequence?.let { putDouble("sequence", it.toDouble()) }
   }
 
-  private fun nextSnapshotEnvelope(matchId: String, scoreJson: String): String =
+  private fun nextSnapshotEnvelope(matchId: String, scoreJson: String, canScore: Boolean): String =
     synchronized(snapshotLock) {
       snapshotSequence += 1
       JSONObject()
@@ -308,6 +316,7 @@ class WearOsModule(
         .put("sequence", snapshotSequence)
         .put("acknowledgedEventIds", JSONArray(acknowledgedEventIds.toList()))
         .put("scoreJson", scoreJson)
+        .put("canScore", canScore)
         .toString()
     }
 
