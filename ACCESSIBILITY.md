@@ -26,8 +26,8 @@ The project works toward [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Level AA on t
 
 These are known gaps. Each has a workaround where one exists.
 
-- **The phone app is portrait only.** It doesn't rotate to landscape, including on a mounted device. Use the web app in a landscape browser window as an alternative.
-- **Light theme only.** Both apps use a light theme and don't follow the system dark mode setting.
+- **The mobile app is portrait only**, on phones and tablets. It doesn't rotate to landscape, including on a mounted device. Use the web app in a landscape browser window as an alternative.
+- **Light theme only on the web.** The web app uses a light theme and doesn't follow the system dark mode setting. The mobile app follows the system light or dark setting.
 - **Score numerals stop growing with large text.** On the live scoreboard, the point and game numerals scale only slightly with the system text size, because they already fill the screen. All other text scales fully.
 - **Undo on Wear OS is a press-and-hold.** TalkBack offers it as "double-tap and hold." You can also undo from the phone.
 
