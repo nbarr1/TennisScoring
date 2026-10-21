@@ -9,7 +9,14 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import { announce, colors, radii, spacing, typography } from "../theme";
+import {
+  announce,
+  radii,
+  spacing,
+  typography,
+  useColors,
+  makeStyles,
+} from "../theme";
 
 export type FormFieldProps = TextInputProps & {
   label: string;
@@ -47,6 +54,8 @@ export const FormField = forwardRef<TextInput, FormFieldProps>(
     },
     ref,
   ) {
+    const colors = useColors();
+    const styles = useStyles();
     const [focused, setFocused] = useState(false);
     const description = error || helperText;
     // The visible label is hidden from screen readers and folded into the
@@ -142,6 +151,7 @@ export const FormField = forwardRef<TextInput, FormFieldProps>(
  * appears or its contents change.
  */
 export function FormErrorSummary({ errors }: { errors: string[] }) {
+  const styles = useStyles();
   const key = errors.join("\n");
   useEffect(() => {
     if (!errors.length) return;
@@ -163,56 +173,58 @@ export function FormErrorSummary({ errors }: { errors: string[] }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { gap: spacing.xs },
-  label: { color: colors.text, ...typography.label },
-  required: { color: colors.destructive },
-  input: {
-    backgroundColor: colors.surface,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: colors.text,
-    minHeight: 48,
-    padding: spacing.md,
-    ...typography.body,
-  },
-  multiline: { minHeight: 96, textAlignVertical: "top" },
-  focused: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-    padding: spacing.md - 1,
-  },
-  errorInput: {
-    borderColor: colors.destructive,
-    borderWidth: 2,
-    padding: spacing.md - 1,
-  },
-  disabledInput: {
-    backgroundColor: colors.surfaceMuted,
-    color: colors.disabledText,
-  },
-  disabledText: { color: colors.disabledText },
-  metaRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  helper: { color: colors.textMuted, flex: 1, ...typography.caption },
-  errorText: { color: colors.destructive, fontWeight: "600" },
-  count: { color: colors.textMuted, ...typography.caption },
-  summary: {
-    backgroundColor: colors.destructiveSoft,
-    borderColor: colors.destructive,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: 3,
-    padding: spacing.md,
-  },
-  summaryTitle: {
-    color: colors.destructive,
-    ...typography.label,
-    fontWeight: "700",
-  },
-  summaryText: { color: colors.destructive, ...typography.bodySmall },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    container: { gap: spacing.xs },
+    label: { color: colors.text, ...typography.label },
+    required: { color: colors.destructive },
+    input: {
+      backgroundColor: colors.surface,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      color: colors.text,
+      minHeight: 48,
+      padding: spacing.md,
+      ...typography.body,
+    },
+    multiline: { minHeight: 96, textAlignVertical: "top" },
+    focused: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+      padding: spacing.md - 1,
+    },
+    errorInput: {
+      borderColor: colors.destructive,
+      borderWidth: 2,
+      padding: spacing.md - 1,
+    },
+    disabledInput: {
+      backgroundColor: colors.surfaceMuted,
+      color: colors.disabledText,
+    },
+    disabledText: { color: colors.disabledText },
+    metaRow: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+    },
+    helper: { color: colors.textMuted, flex: 1, ...typography.caption },
+    errorText: { color: colors.destructive, fontWeight: "600" },
+    count: { color: colors.textMuted, ...typography.caption },
+    summary: {
+      backgroundColor: colors.destructiveSoft,
+      borderColor: colors.destructive,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      gap: 3,
+      padding: spacing.md,
+    },
+    summaryTitle: {
+      color: colors.destructive,
+      ...typography.label,
+      fontWeight: "700",
+    },
+    summaryText: { color: colors.destructive, ...typography.bodySmall },
+  }),
+);

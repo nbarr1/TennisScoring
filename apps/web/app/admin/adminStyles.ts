@@ -2,8 +2,9 @@ import type { CSSProperties } from "react";
 import { appNavStyles } from "../shared/AppNav";
 import { cardStyle, color, inputStyle, radius, shadow, space, target, type, width } from "../shared/tokens";
 
-// The unassigned amber pair (#fff3cd / #856404) is the tint this app already uses for the
-// leader badge; the unassigned states reuse it rather than introducing a new state color.
+// The unassigned amber pair (unassignedSoft / unassignedText, with a dark variant in
+// tokens.ts) is the tint this app already uses for the leader badge; the unassigned states
+// reuse it rather than introducing a new state color.
 export const WARN_BG = color.unassignedSoft;
 export const WARN_FG = color.unassignedText;
 
@@ -306,8 +307,8 @@ export const styles = {
     flexWrap: "wrap",
     width: "max-content",
     maxWidth: "calc(100vw - 32px)",
-    background: color.clubhouseGreen,
-    color: color.surface,
+    background: color.brandFill,
+    color: color.onBrand,
     borderRadius: radius.card,
     padding: `${space.md}px ${space.lg}px`,
     boxShadow: shadow.raised,

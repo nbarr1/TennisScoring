@@ -1983,7 +1983,7 @@ const styles: Record<string, CSSProperties> = {
     color: color.ink,
     cursor: "pointer",
   },
-  segmentBtnActive: { background: color.clubhouseGreen, color: color.surface },
+  segmentBtnActive: { background: color.brandFill, color: color.onBrand },
   textarea: {
     ...inputStyle,
     minHeight: 160,

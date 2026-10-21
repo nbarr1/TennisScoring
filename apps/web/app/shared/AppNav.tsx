@@ -166,7 +166,7 @@ const styles = {
   logoutForm: { margin: 0 },
   logoutButton: {
     background: "rgba(255,255,255,0.12)",
-    color: color.surface,
+    color: color.onBrand,
     border: "1px solid rgba(255,255,255,0.45)",
     borderRadius: radius.pill,
     minHeight: target.min,
@@ -181,7 +181,7 @@ const styles = {
     minHeight: target.min,
     padding: "0 12px",
     background: "rgba(255,255,255,0.12)",
-    color: color.surface,
+    color: color.onBrand,
     border: "1px solid rgba(255,255,255,0.45)",
     borderRadius: radius.md,
     fontSize: 15,

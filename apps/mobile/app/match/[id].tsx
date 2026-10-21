@@ -26,7 +26,6 @@ import {
   announce,
   Button,
   Card,
-  colors,
   confirmAction as askToConfirm,
   confirmDestructive,
   describeError,
@@ -38,6 +37,9 @@ import {
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  useContentWidth,
 } from "../../theme";
 import {
   useMatch,
@@ -186,6 +188,7 @@ function TipOverlay({
   tip: { title: string; body: string } | null;
   onDismiss: () => void;
 }) {
+  const styles = useStyles();
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -348,6 +351,7 @@ function Panel({
   fontsLoaded: boolean;
   children: React.ReactNode;
 }) {
+  const styles = useStyles();
   return (
     <Card style={styles.panel}>
       {title ? (
@@ -371,6 +375,7 @@ function PanelScore({
   score: LiveScore;
   fontsLoaded: boolean;
 }) {
+  const styles = useStyles();
   return (
     <Text
       style={[styles.panelScore, font(fontsLoaded, "bold")]}
@@ -408,6 +413,9 @@ function EditScoreModal({
   /** A leader entering the correct score for a disputed or unanswered report. */
   resolving?: boolean;
 }) {
+  const colors = useColors();
+  const editScoreStyles = useEditScoreStyles();
+  const styles = useStyles();
   function updateSet(i: number, side: "p1" | "p2", val: string) {
     onChangeSets(
       sets.map((s, idx) =>
@@ -553,6 +561,7 @@ function ManageRow({
   danger?: boolean;
   disabled?: boolean;
 }) {
+  const styles = useStyles();
   return (
     <Pressable
       onPress={onPress}
@@ -582,6 +591,11 @@ function ManageRow({
 }
 
 export default function MatchScreen() {
+  const colors = useColors();
+  const styles = useStyles();
+  // On a tablet the top bar, scoreboard, and panels center at the form width
+  // rather than stretching across the screen. Undefined on phones.
+  const contentWidth = useContentWidth();
   const { width, height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const compact = width < 380 || height < 700;
@@ -1475,6 +1489,7 @@ export default function MatchScreen() {
       <View
         style={[
           styles.sbHeader,
+          contentWidth,
           { paddingTop: Platform.OS === "ios" ? 8 : insets.top },
         ]}
       >
@@ -1523,7 +1538,7 @@ export default function MatchScreen() {
         )}
       </View>
 
-      <View style={styles.body}>
+      <View style={[styles.body, contentWidth]}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[
@@ -2291,167 +2306,177 @@ export default function MatchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: SB.bg },
-  errorScreen: { flex: 1, backgroundColor: colors.canvas },
-  sbHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 52,
-    paddingHorizontal: 4,
-    backgroundColor: SB.bg,
-  },
-  sbHeaderBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sbHeaderBtnPressed: { backgroundColor: SB.control },
-  sbHeaderTitle: { flex: 1, color: SB.text, fontSize: 19, letterSpacing: 1.5 },
-  sbHeaderClock: {
-    color: SB.muted,
-    fontSize: 19,
-    letterSpacing: 1,
-    marginRight: 4,
-  },
-  body: { flex: 1, position: "relative" },
-  scroll: { flex: 1 },
-  fillContent: { flexGrow: 1 },
-  scrollContent: { flexGrow: 1 },
-  sections: { padding: spacing.lg, gap: spacing.lg },
-  center: { justifyContent: "center", alignItems: "center" },
-  courtError: { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 8 },
+const useStyles = makeStyles((colors, scheme) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: SB.bg },
+    errorScreen: { flex: 1, backgroundColor: colors.canvas },
+    sbHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      minHeight: 52,
+      paddingHorizontal: 4,
+      backgroundColor: SB.bg,
+    },
+    sbHeaderBtn: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    sbHeaderBtnPressed: { backgroundColor: SB.control },
+    sbHeaderTitle: { flex: 1, color: SB.text, fontSize: 19, letterSpacing: 1.5 },
+    sbHeaderClock: {
+      color: SB.muted,
+      fontSize: 19,
+      letterSpacing: 1,
+      marginRight: 4,
+    },
+    body: { flex: 1, position: "relative" },
+    scroll: { flex: 1 },
+    fillContent: { flexGrow: 1 },
+    scrollContent: { flexGrow: 1 },
+    sections: { padding: spacing.lg, gap: spacing.lg },
+    center: { justifyContent: "center", alignItems: "center" },
+    courtError: { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 8 },
 
-  // Next-step panels under the scoreboard (clubhouse cards).
-  panel: { gap: spacing.md, borderRadius: radii.lg, padding: spacing.lg },
-  panelTitle: { fontSize: 24, lineHeight: 28, color: colors.primary },
-  panelScore: {
-    fontSize: 30,
-    lineHeight: 34,
-    color: colors.text,
-    letterSpacing: 0.5,
-    fontVariant: ["tabular-nums"],
-  },
-  panelBody: { ...typography.body, color: colors.text },
-  panelMeta: { ...typography.bodySmall, color: colors.textMuted },
-  buttonStack: { gap: spacing.sm, alignSelf: "stretch" },
-  statusWaiting: { ...typography.label, color: colors.warningText, textAlign: "left" },
-  statusConfirmed: { ...typography.label, color: colors.successText, textAlign: "left" },
-  statusMuted: { ...typography.label, color: colors.textMuted, textAlign: "left" },
-  spectatorNote: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  spectatorText: { flex: 1, color: SB.muted, fontSize: 15, lineHeight: 21 },
+    // Next-step panels under the scoreboard (clubhouse cards).
+    panel: {
+      gap: spacing.md,
+      borderRadius: radii.lg,
+      padding: spacing.lg,
+      // A dark card on the black court needs an edge to read as a card.
+      ...(scheme === "dark"
+        ? { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.borderStrong }
+        : null),
+    },
+    panelTitle: { fontSize: 24, lineHeight: 28, color: colors.primary },
+    panelScore: {
+      fontSize: 30,
+      lineHeight: 34,
+      color: colors.text,
+      letterSpacing: 0.5,
+      fontVariant: ["tabular-nums"],
+    },
+    panelBody: { ...typography.body, color: colors.text },
+    panelMeta: { ...typography.bodySmall, color: colors.textMuted },
+    buttonStack: { gap: spacing.sm, alignSelf: "stretch" },
+    statusWaiting: { ...typography.label, color: colors.warningText, textAlign: "left" },
+    statusConfirmed: { ...typography.label, color: colors.successText, textAlign: "left" },
+    statusMuted: { ...typography.label, color: colors.textMuted, textAlign: "left" },
+    spectatorNote: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: spacing.sm,
+      paddingHorizontal: spacing.xs,
+    },
+    spectatorText: { flex: 1, color: SB.muted, fontSize: 15, lineHeight: 21 },
 
-  // Manage match
-  manageOverlay: { backgroundColor: SB.scrim },
-  manageCard: {
-    backgroundColor: SB.panel,
-    borderTopWidth: 2,
-    borderTopColor: SB.yellow,
-    padding: 16,
-    paddingTop: 24,
-    paddingBottom: 24,
-    gap: 4,
-    width: "100%",
-  },
-  manageTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: 1,
-    color: SB.text,
-    marginBottom: 8,
-  },
-  manageBusy: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  manageOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: SB.line,
-    minHeight: 56,
-  },
-  manageOptionText: { fontSize: 17, color: SB.text, fontWeight: "600" },
-  manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
-  manageOptionDangerText: { color: SB.danger },
-  manageToggleRow: { gap: 12 },
-  manageToggleCopy: { flex: 1, gap: 2 },
-  manageToggleHint: { color: SB.muted, fontSize: 13 },
-  manageCloseBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 52,
-    marginTop: 8,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: SB.controlFill,
-  },
-  manageCloseBtnText: { color: SB.text, fontSize: 16, fontWeight: "700" },
+    // Manage match
+    manageOverlay: { backgroundColor: SB.scrim },
+    manageCard: {
+      backgroundColor: SB.panel,
+      borderTopWidth: 2,
+      borderTopColor: SB.yellow,
+      padding: 16,
+      paddingTop: 24,
+      paddingBottom: 24,
+      gap: 4,
+      width: "100%",
+    },
+    manageTitle: {
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: 1,
+      color: SB.text,
+      marginBottom: 8,
+    },
+    manageBusy: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      minHeight: MIN_TOUCH_TARGET,
+    },
+    manageOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      paddingVertical: 12,
+      paddingHorizontal: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: SB.line,
+      minHeight: 56,
+    },
+    manageOptionText: { fontSize: 17, color: SB.text, fontWeight: "600" },
+    manageOptionDanger: { borderBottomWidth: 0, marginTop: 4 },
+    manageOptionDangerText: { color: SB.danger },
+    manageToggleRow: { gap: 12 },
+    manageToggleCopy: { flex: 1, gap: 2 },
+    manageToggleHint: { color: SB.muted, fontSize: 13 },
+    manageCloseBtn: {
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 52,
+      marginTop: 8,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: SB.controlFill,
+    },
+    manageCloseBtnText: { color: SB.text, fontSize: 16, fontWeight: "700" },
 
-  // Tip overlay
-  tipOverlay: {
-    position: "absolute",
-    top: 8,
-    left: 12,
-    right: 12,
-    backgroundColor: SB.text,
-    borderRadius: 6,
-    padding: 14,
-    shadowColor: SB.bg,
-    shadowOpacity: 0.6,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 10,
-  },
-  tipTitle: {
-    color: SB.onYellow,
-    fontWeight: "800",
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  tipBody: { color: SB.onYellow, fontSize: 14, lineHeight: 19 },
+    // Tip overlay
+    tipOverlay: {
+      position: "absolute",
+      top: 8,
+      left: 12,
+      right: 12,
+      backgroundColor: SB.text,
+      borderRadius: 6,
+      padding: 14,
+      shadowColor: SB.bg,
+      shadowOpacity: 0.6,
+      shadowRadius: 15,
+      shadowOffset: { width: 0, height: 10 },
+      elevation: 10,
+    },
+    tipTitle: {
+      color: SB.onYellow,
+      fontWeight: "800",
+      fontSize: 16,
+      marginBottom: 2,
+    },
+    tipBody: { color: SB.onYellow, fontSize: 14, lineHeight: 19 },
 
-  // Clubhouse sheets (edit score, link opponent)
-  sheetCard: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.md,
-    width: "100%",
-  },
-  sheetTitle: { ...typography.heading, color: colors.primary },
-  sheetHint: { ...typography.bodySmall, color: colors.textMuted },
-  linkResultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    minHeight: 52,
-    paddingHorizontal: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  linkResultName: { ...typography.body, flex: 1, fontWeight: "600", color: colors.text },
-  linkResultAction: { ...typography.label, color: colors.primary },
-  linkNoResults: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginVertical: spacing.md,
-  },
-});
+    // Clubhouse sheets (edit score, link opponent)
+    sheetCard: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: radii.xl,
+      borderTopRightRadius: radii.xl,
+      padding: spacing.xl,
+      gap: spacing.md,
+      width: "100%",
+    },
+    sheetTitle: { ...typography.heading, color: colors.primary },
+    sheetHint: { ...typography.bodySmall, color: colors.textMuted },
+    linkResultRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+      minHeight: 52,
+      paddingHorizontal: spacing.xs,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    linkResultName: { ...typography.body, flex: 1, fontWeight: "600", color: colors.text },
+    linkResultAction: { ...typography.label, color: colors.primary },
+    linkNoResults: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      textAlign: "center",
+      marginVertical: spacing.md,
+    },
+  }),
+);
 
 const statsStyles = StyleSheet.create({
   section: {
@@ -2509,45 +2534,47 @@ const statsStyles = StyleSheet.create({
   },
 });
 
-const editScoreStyles = StyleSheet.create({
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 4,
-  },
-  headerSet: {
-    flex: 1.5,
-    ...typography.label,
-    color: colors.textMuted,
-  },
-  headerName: {
-    flex: 2,
-    ...typography.label,
-    color: colors.primary,
-    textAlign: "center",
-  },
-  setRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  setLabel: { flex: 1.5, ...typography.label, color: colors.text },
-  setInput: {
-    flex: 2,
-    minHeight: 48,
-    borderWidth: 1.5,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
-    color: colors.text,
-  },
-  setActionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-});
+const useEditScoreStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 4,
+    },
+    headerSet: {
+      flex: 1.5,
+      ...typography.label,
+      color: colors.textMuted,
+    },
+    headerName: {
+      flex: 2,
+      ...typography.label,
+      color: colors.primary,
+      textAlign: "center",
+    },
+    setRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    setLabel: { flex: 1.5, ...typography.label, color: colors.text },
+    setInput: {
+      flex: 2,
+      minHeight: 48,
+      borderWidth: 1.5,
+      borderColor: colors.borderStrong,
+      borderRadius: radii.md,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      fontSize: 18,
+      fontWeight: "700",
+      textAlign: "center",
+      color: colors.text,
+    },
+    setActionRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+  }),
+);

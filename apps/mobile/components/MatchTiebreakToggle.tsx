@@ -1,7 +1,13 @@
 import React from "react";
 import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { canBeMatchTiebreak } from "@tennis/shared";
-import { colors, MIN_TOUCH_TARGET, spacing, typography } from "../theme";
+import {
+  MIN_TOUCH_TARGET,
+  spacing,
+  typography,
+  useColors,
+  makeStyles,
+} from "../theme";
 
 export type SetDraft = { p1: string; p2: string; matchTiebreak?: boolean };
 
@@ -30,6 +36,8 @@ export function MatchTiebreakToggle({
   index: number;
   onChangeSets: (next: SetDraft[]) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   if (!canBeMatchTiebreak(index, sets.length)) return null;
   const enabled = !!sets[index]?.matchTiebreak;
   const setValue = (value: boolean) =>
@@ -46,7 +54,7 @@ export function MatchTiebreakToggle({
       }
       accessibilityState={{ checked: enabled }}
       onPress={() => setValue(!enabled)}
-      android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
+      android_ripple={{ color: colors.ripple }}
       style={styles.row}
     >
       <View
@@ -57,7 +65,7 @@ export function MatchTiebreakToggle({
           value={enabled}
           onValueChange={setValue}
           trackColor={{ true: colors.primary, false: colors.disabled }}
-          thumbColor={Platform.OS === "android" ? colors.surface : undefined}
+          thumbColor={Platform.OS === "android" ? colors.switchThumbOff : undefined}
           ios_backgroundColor={colors.disabled}
         />
       </View>
@@ -68,13 +76,15 @@ export function MatchTiebreakToggle({
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: spacing.xs,
-  },
-  label: { ...typography.bodySmall, flex: 1, color: colors.text },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+      minHeight: MIN_TOUCH_TARGET,
+      paddingVertical: spacing.xs,
+    },
+    label: { ...typography.bodySmall, flex: 1, color: colors.text },
+  }),
+);

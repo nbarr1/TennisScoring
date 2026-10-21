@@ -6,9 +6,9 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-// Import tokens directly (not the theme index): theme/primitives imports this
-// file, and going through the index would make a require cycle.
-import { colors } from "../theme/tokens";
+// Import the scheme module directly (not the theme index): theme/primitives
+// imports this file, and going through the index would make a require cycle.
+import { makeStyles } from "../theme/scheme";
 
 /** Shared sizes, stroke weights, and semantic colors for product iconography. */
 export const ICON_SIZE = {
@@ -23,17 +23,18 @@ export const ICON_WEIGHT = {
   emphasized: "semibold",
 } as const;
 /**
- * Icon tints. Icons are non-text graphics (3:1 floor); every value here clears
- * 4:1 on white and Paper Canvas.
+ * Icon tints for the current color scheme. Icons are non-text graphics (3:1
+ * floor); every value clears 4:1 on its scheme's surface and canvas (see the
+ * `icon*` tokens). `inverse` is for icons on a `brand` (Clubhouse Green) fill.
  */
-export const ICON_COLOR = {
+export const useIconColors = makeStyles((colors) => ({
   active: colors.primary,
-  inactive: "#767676",
-  inverse: "#FFFFFF",
-  destructive: "#B42318",
-  warning: "#9A6700",
-  success: "#1A6B3C",
-} as const;
+  inactive: colors.iconInactive,
+  inverse: colors.onBrand,
+  destructive: colors.iconDestructive,
+  warning: colors.iconWarning,
+  success: colors.iconSuccess,
+}));
 
 type SymbolName = SymbolViewProps["name"];
 type AndroidSymbol = Exclude<
@@ -124,11 +125,12 @@ type AppIconProps = {
 export function AppIcon({
   name,
   size = ICON_SIZE.action,
-  color = ICON_COLOR.inactive,
+  color,
   emphasized = false,
   style,
   accessibilityLabel,
 }: AppIconProps) {
+  const iconColors = useIconColors();
   const labelled = !!accessibilityLabel;
   // The wrapper carries the accessibility props: on Android expo-symbols draws
   // the glyph as a font ligature in a plain Text, which ignores them and would
@@ -145,7 +147,7 @@ export function AppIcon({
       <SymbolView
         name={platformName(name)}
         size={size}
-        tintColor={color}
+        tintColor={color ?? iconColors.inactive}
         weight={emphasized ? ICON_WEIGHT.emphasized : ICON_WEIGHT.regular}
         accessible={false}
         accessibilityElementsHidden
@@ -158,7 +160,7 @@ export function AppIcon({
 export function IconLabel({
   name,
   children,
-  color = ICON_COLOR.active,
+  color,
   textStyle,
 }: {
   name: SymbolName;
@@ -166,6 +168,7 @@ export function IconLabel({
   color?: string;
   textStyle?: StyleProp<TextStyle>;
 }) {
+  const iconColors = useIconColors();
   return (
     <View
       style={{
@@ -176,7 +179,11 @@ export function IconLabel({
         maxWidth: "100%",
       }}
     >
-      <AppIcon name={name} size={ICON_SIZE.small} color={color} />
+      <AppIcon
+        name={name}
+        size={ICON_SIZE.small}
+        color={color ?? iconColors.active}
+      />
       <Text style={[{ flexShrink: 1 }, textStyle]}>{children}</Text>
     </View>
   );

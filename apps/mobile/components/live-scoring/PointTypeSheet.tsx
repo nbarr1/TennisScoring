@@ -2,6 +2,7 @@ import React from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PointAttribution } from "@tennis/firebase-client";
+import { useContentWidth } from "../../theme";
 import { SB, font } from "./scoreboardTheme";
 
 type Props = {
@@ -45,6 +46,8 @@ export function PointTypeSheet({
   fontsLoaded,
 }: Props) {
   const insets = useSafeAreaInsets();
+  // Centered at the sheet width on a tablet; undefined on phones.
+  const sheetWidth = useContentWidth("sheet");
   const choices = CHOICES.filter((choice) => isServer || choice.attribution !== "ace");
   return (
     <Modal
@@ -62,7 +65,7 @@ export function PointTypeSheet({
         importantForAccessibility="no"
       >
         <Pressable
-          style={[styles.sheet, { paddingBottom: 20 + insets.bottom }]}
+          style={[styles.sheet, sheetWidth, { paddingBottom: 20 + insets.bottom }]}
           accessibilityViewIsModal
           accessible={false}
         >

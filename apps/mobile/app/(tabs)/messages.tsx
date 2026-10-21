@@ -20,7 +20,7 @@ import type { Channel, PublicProfile } from "@tennis/shared";
 import { BottomSheetModal } from "../../components/BottomSheetModal";
 import {
   formatMessageTime,
-  sheetCardStyle,
+  useSheetCardStyle,
   useDirectChannelNames,
 } from "../../components/messages/ChannelView";
 import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
@@ -32,16 +32,22 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
-  colors,
   describeError,
   elevations,
   radii,
   spacing,
   typography,
   useAsyncAction,
+  useColors,
+  makeStyles,
+  useContentWidth,
 } from "../../theme";
 
 export default function MessagesScreen() {
+  const colors = useColors();
+  const styles = useStyles();
+  const sheetCardStyle = useSheetCardStyle();
+  const contentWidth = useContentWidth();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const user = useAppStore((state) => state.user);
@@ -199,11 +205,12 @@ export default function MessagesScreen() {
         contentContainerStyle={[
           styles.channelList,
           channels.length === 0 && styles.channelListEmpty,
+          contentWidth,
         ]}
       />
 
       {/* The tab bar below already owns the home-indicator inset. */}
-      <View style={styles.newMessageBar}>
+      <View style={[styles.newMessageBar, contentWidth]}>
         <Button
           label="New message"
           icon="plus"
@@ -313,61 +320,63 @@ export default function MessagesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  container: { flex: 1, backgroundColor: colors.canvas },
-  channelList: { padding: spacing.lg, gap: spacing.sm },
-  channelListEmpty: { flexGrow: 1 },
-  channelCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    padding: spacing.lg,
-    minHeight: 64,
-    overflow: Platform.OS === "android" ? "hidden" : "visible",
-    ...elevations.low,
-  },
-  channelCardPressed: { backgroundColor: colors.surfaceMuted },
-  channelNameRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: spacing.sm,
-    marginBottom: spacing.xxs,
-  },
-  channelName: {
-    ...typography.subheading,
-    color: colors.text,
-    flexShrink: 1,
-  },
-  channelTime: { ...typography.caption, color: colors.textMuted, marginLeft: "auto" },
-  lastMessage: { ...typography.bodySmall, color: colors.textMuted },
-  lastHidden: { fontStyle: "italic" },
-  newMessageBar: {
-    alignItems: "flex-end",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.canvas,
-  },
-  fab: { borderRadius: radii.pill, ...elevations.medium },
-  modalTitle: { ...typography.heading, color: colors.primary },
-  modalAlert: { marginTop: spacing.xs },
-  resultRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: MIN_TOUCH_TARGET + spacing.sm,
-    paddingHorizontal: spacing.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  resultName: { ...typography.body, fontWeight: "600", color: colors.text },
-  noResults: {
-    ...typography.bodySmall,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginVertical: spacing.md,
-  },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    flex: { flex: 1 },
+    container: { flex: 1, backgroundColor: colors.canvas },
+    channelList: { padding: spacing.lg, gap: spacing.sm },
+    channelListEmpty: { flexGrow: 1 },
+    channelCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.md,
+      backgroundColor: colors.surface,
+      borderRadius: radii.card,
+      padding: spacing.lg,
+      minHeight: 64,
+      overflow: Platform.OS === "android" ? "hidden" : "visible",
+      ...elevations.low,
+    },
+    channelCardPressed: { backgroundColor: colors.surfaceMuted },
+    channelNameRow: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      gap: spacing.sm,
+      marginBottom: spacing.xxs,
+    },
+    channelName: {
+      ...typography.subheading,
+      color: colors.text,
+      flexShrink: 1,
+    },
+    channelTime: { ...typography.caption, color: colors.textMuted, marginLeft: "auto" },
+    lastMessage: { ...typography.bodySmall, color: colors.textMuted },
+    lastHidden: { fontStyle: "italic" },
+    newMessageBar: {
+      alignItems: "flex-end",
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.md,
+      backgroundColor: colors.canvas,
+    },
+    fab: { borderRadius: radii.pill, ...elevations.medium },
+    modalTitle: { ...typography.heading, color: colors.primary },
+    modalAlert: { marginTop: spacing.xs },
+    resultRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: MIN_TOUCH_TARGET + spacing.sm,
+      paddingHorizontal: spacing.xs,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    resultName: { ...typography.body, fontWeight: "600", color: colors.text },
+    noResults: {
+      ...typography.bodySmall,
+      color: colors.textMuted,
+      textAlign: "center",
+      marginVertical: spacing.md,
+    },
+  }),
+);

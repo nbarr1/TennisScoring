@@ -21,7 +21,7 @@ export function ViewModeToggle(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <label htmlFor={selectId} style={{ color: color.surface, fontSize: 14, fontWeight: 500 }}>Layout</label>
+      <label htmlFor={selectId} style={{ color: color.onBrand, fontSize: 14, fontWeight: 500 }}>Layout</label>
       <select
         id={selectId}
         value={preference}
@@ -32,7 +32,7 @@ export function ViewModeToggle(): React.JSX.Element {
           padding: '0 12px',
           border: '1px solid rgba(255,255,255,0.45)',
           background: 'rgba(255,255,255,0.12)',
-          color: color.surface,
+          color: color.onBrand,
           fontSize: 14,
         }}
       >
@@ -50,7 +50,7 @@ export function ViewModeToggle(): React.JSX.Element {
             minHeight: 44,
             border: `1px solid ${color.ballYellow}`,
             background: color.ballYellow,
-            color: color.clubhouseGreen,
+            color: color.onAccent,
             borderRadius: radius.pill,
             padding: '0 14px',
             fontWeight: 700,

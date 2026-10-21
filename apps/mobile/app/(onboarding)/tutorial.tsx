@@ -17,13 +17,14 @@ import { auth, updateUserProfile } from "@tennis/firebase-client";
 import { AppIcon, ICON_SIZE } from "../../components/AppIcon";
 import {
   announce,
-  colors,
   hitSlopFor,
   MIN_TOUCH_TARGET,
   radii,
   spacing,
   typography,
   useReduceMotion,
+  useColors,
+  makeStyles,
 } from "../../theme";
 
 const SLIDES = [
@@ -62,6 +63,7 @@ function DarkButton({
   style,
   ...props
 }: PressableProps & { label: string; filled?: boolean }) {
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -89,6 +91,8 @@ function DarkButton({
 }
 
 export default function TutorialScreen() {
+  const colors = useColors();
+  const styles = useStyles();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReduceMotion();
@@ -200,7 +204,7 @@ export default function TutorialScreen() {
               <AppIcon
                 name={item.icon}
                 size={compact ? ICON_SIZE.feature : ICON_SIZE.brand}
-                color={colors.primary}
+                color={colors.brand}
                 emphasized
               />
             </View>
@@ -289,7 +293,7 @@ export default function TutorialScreen() {
           onPress={next}
         >
           {isSaving ? (
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.brand} />
           ) : (
             <Text style={styles.nextText}>
               {isLast ? "Get started" : "Next"}
@@ -301,128 +305,130 @@ export default function TutorialScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.primary },
-  topBar: {
-    minHeight: MIN_TOUCH_TARGET + spacing.sm,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    paddingHorizontal: spacing.lg,
-  },
-  list: { flex: 1 },
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.brand },
+    topBar: {
+      minHeight: MIN_TOUCH_TARGET + spacing.sm,
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      alignItems: "center",
+      paddingHorizontal: spacing.lg,
+    },
+    list: { flex: 1 },
 
-  slide: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.xxl + spacing.sm,
-  },
-  slideCompact: { paddingHorizontal: spacing.xl },
-  iconBadge: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.xxl,
-  },
-  iconBadgeCompact: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: spacing.xl,
-  },
-  title: {
-    ...typography.title,
-    fontSize: 28,
-    lineHeight: 34,
-    color: colors.onPrimary,
-    textAlign: "center",
-    marginBottom: spacing.lg,
-  },
-  titleCompact: { fontSize: 24, lineHeight: 30, marginBottom: spacing.md },
-  body: {
-    ...typography.body,
-    fontSize: 17,
-    lineHeight: 26,
-    color: ON_PRIMARY_MUTED,
-    textAlign: "center",
-    maxWidth: 440,
-  },
-  bodyCompact: { fontSize: 15, lineHeight: 22 },
+    slide: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: spacing.xxl + spacing.sm,
+    },
+    slideCompact: { paddingHorizontal: spacing.xl },
+    iconBadge: {
+      width: 112,
+      height: 112,
+      borderRadius: 56,
+      backgroundColor: colors.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: spacing.xxl,
+    },
+    iconBadgeCompact: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      marginBottom: spacing.xl,
+    },
+    title: {
+      ...typography.title,
+      fontSize: 28,
+      lineHeight: 34,
+      color: colors.onBrand,
+      textAlign: "center",
+      marginBottom: spacing.lg,
+    },
+    titleCompact: { fontSize: 24, lineHeight: 30, marginBottom: spacing.md },
+    body: {
+      ...typography.body,
+      fontSize: 17,
+      lineHeight: 26,
+      color: ON_PRIMARY_MUTED,
+      textAlign: "center",
+      maxWidth: 440,
+    },
+    bodyCompact: { fontSize: 15, lineHeight: 22 },
 
-  footer: {
-    paddingHorizontal: spacing.xxl,
-    paddingTop: spacing.lg,
-    gap: spacing.md,
-    alignItems: "center",
-  },
-  footerCompact: { paddingHorizontal: spacing.lg },
-  dots: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  dot: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
-  },
-  progressText: {
-    ...typography.label,
-    color: ON_PRIMARY_MUTED,
-  },
-  saveStatus: {
-    alignSelf: "stretch",
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-  saveStatusText: {
-    ...typography.bodySmall,
-    color: colors.onPrimary,
-    textAlign: "center",
-  },
-  saveActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
+    footer: {
+      paddingHorizontal: spacing.xxl,
+      paddingTop: spacing.lg,
+      gap: spacing.md,
+      alignItems: "center",
+    },
+    footerCompact: { paddingHorizontal: spacing.lg },
+    dots: {
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 6,
+    },
+    dot: {
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: colors.accent,
+    },
+    progressText: {
+      ...typography.label,
+      color: ON_PRIMARY_MUTED,
+    },
+    saveStatus: {
+      alignSelf: "stretch",
+      gap: spacing.sm,
+      padding: spacing.md,
+      borderRadius: radii.md,
+      backgroundColor: "rgba(0,0,0,0.35)",
+    },
+    saveStatusText: {
+      ...typography.bodySmall,
+      color: colors.onBrand,
+      textAlign: "center",
+    },
+    saveActions: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      gap: spacing.sm,
+    },
 
-  darkButton: {
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  darkButtonFilled: { backgroundColor: colors.accent },
-  darkButtonPressed: { opacity: 0.8 },
-  darkButtonText: {
-    ...typography.label,
-    fontSize: 16,
-    color: colors.onPrimary,
-  },
-  darkButtonTextFilled: { color: colors.primary },
+    darkButton: {
+      minHeight: MIN_TOUCH_TARGET,
+      paddingHorizontal: spacing.lg,
+      borderRadius: radii.pill,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    darkButtonFilled: { backgroundColor: colors.accent },
+    darkButtonPressed: { opacity: 0.8 },
+    darkButtonText: {
+      ...typography.label,
+      fontSize: 16,
+      color: colors.onBrand,
+    },
+    darkButtonTextFilled: { color: colors.brand },
 
-  nextBtn: {
-    alignSelf: "stretch",
-    minHeight: 52,
-    backgroundColor: colors.accent,
-    borderRadius: radii.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  nextText: {
-    ...typography.subheading,
-    fontWeight: "800",
-    color: colors.primary,
-  },
-});
+    nextBtn: {
+      alignSelf: "stretch",
+      minHeight: 52,
+      backgroundColor: colors.accent,
+      borderRadius: radii.pill,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    nextText: {
+      ...typography.subheading,
+      fontWeight: "800",
+      color: colors.brand,
+    },
+  }),
+);

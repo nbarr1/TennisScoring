@@ -1,12 +1,13 @@
 import { Text, type StyleProp, type TextStyle } from "react-native";
 import { getMatchStatusMetadata } from "@tennis/shared";
 import type { Match } from "@tennis/shared";
-import { statusTextColors, typography } from "../theme/tokens";
+import { typography } from "../theme/tokens";
+import { useStatusTextColors } from "../theme/scheme";
 
 /**
  * A match status as glyph + label (never color alone), e.g. "◐ Pending Report".
- * The color comes from `statusTextColors`, which keeps every status at 4.5:1
- * or better on white and Paper Canvas. Screen readers hear the metadata's
+ * The color comes from `useStatusTextColors()`, which keeps every status at
+ * 4.5:1 or better on the current scheme's surfaces. Screen readers hear the metadata's
  * accessibility label ("Match pending report"), not the glyph.
  */
 export function StatusBadge({
@@ -17,6 +18,7 @@ export function StatusBadge({
   style?: StyleProp<TextStyle>;
 }) {
   const metadata = getMatchStatusMetadata(status);
+  const statusTextColors = useStatusTextColors();
 
   return (
     <Text
