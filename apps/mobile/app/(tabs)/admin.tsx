@@ -151,7 +151,12 @@ export default function AdminScreen() {
     seasonOptions.find((season) => season.id === seasonId) ?? currentSeason;
   const { levels: divisionLevels } = useDivisionLevels(division?.id);
   const levelsForSeason = divisionLevels.filter((l) => l.seasonId === seasonId);
-  const { memberships, loading: membershipsLoading } = useDivisionMemberships(
+  const {
+    memberships,
+    loading: membershipsLoading,
+    error: membershipsError,
+    retry: retryMemberships,
+  } = useDivisionMemberships(
     division?.id,
     seasonId,
     null,
@@ -159,8 +164,15 @@ export default function AdminScreen() {
   );
   // Players move between divisions from one season to the next, so a player
   // rostered only in another season is not listed on this one.
-  const { seasonsByUserId: rosteredSeasonsByUserId } =
-    useDivisionRosteredSeasons(division?.id);
+  const {
+    seasonsByUserId: rosteredSeasonsByUserId,
+    error: rosteredSeasonsError,
+    retry: retryRosteredSeasons,
+  } = useDivisionRosteredSeasons(division?.id);
+  // A failed query returns an empty list, which would read as every player
+  // being unassigned, and a level write made then would turn a waitlisted
+  // player active. Show the error and hold level changes until it loads.
+  const membershipsUnavailable = !!membershipsError || !!rosteredSeasonsError;
   const {
     reports: messageReports,
     loading: reportsLoading,
@@ -687,6 +699,11 @@ export default function AdminScreen() {
   const assignLevel = useAsyncAction(
     async (player: User, level: DivisionLevel) => {
       if (!division) throw new Error("Division not loaded.");
+      if (membershipsUnavailable) {
+        throw new Error(
+          "Levels couldn't be loaded, so this change was not saved. Try again once they load.",
+        );
+      }
       const membership = membershipByUser.get(player.id);
       await upsertDivisionMembership({
         divisionId: division.id,
@@ -720,7 +737,10 @@ export default function AdminScreen() {
   }
 
   const unassignedCount =
-    division && levelsForSeason.length > 0 && !membershipsLoading
+    division &&
+    levelsForSeason.length > 0 &&
+    !membershipsLoading &&
+    !membershipsUnavailable
       ? division.playerIds.filter(
           (id) => !membershipByUser.has(id) && !inOtherSeasonOnly(id),
         ).length
@@ -855,6 +875,19 @@ export default function AdminScreen() {
               unassigned players.
             </Text>
           </View>
+        ) : null}
+
+        {membershipsUnavailable ? (
+          <InlineAlert
+            tone="error"
+            title="Couldn't load player levels"
+            message="Levels and unassigned players can't be shown, and level changes are paused until they load."
+            actionLabel="Try again"
+            onAction={() => {
+              retryMemberships();
+              retryRosteredSeasons();
+            }}
+          />
         ) : null}
 
         {unassignedCount > 0 ? (
@@ -999,7 +1032,10 @@ export default function AdminScreen() {
                     ) : null}
                     {levelLabel ? (
                       <Text style={styles.playerContact}>{levelLabel}</Text>
-                    ) : onRoster && levelsForSeason.length > 0 && !membershipsLoading ? (
+                    ) : onRoster &&
+                      levelsForSeason.length > 0 &&
+                      !membershipsLoading &&
+                      !membershipsUnavailable ? (
                       <View style={styles.unassignedLine}>
                         <AppIcon
                           name="exclamationmark.triangle"
@@ -1011,7 +1047,9 @@ export default function AdminScreen() {
                         </Text>
                       </View>
                     ) : null}
-                    {onRoster && assignableLevels.length > 0 ? (
+                    {onRoster &&
+                    assignableLevels.length > 0 &&
+                    !membershipsUnavailable ? (
                       <Button
                         label={membership ? "Change level" : "Assign level"}
                         accessibilityLabel={`${membership ? "Change" : "Assign"} ${selectedSeason.name} level for ${p.displayName}`}
