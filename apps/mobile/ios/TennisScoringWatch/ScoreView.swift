@@ -4,6 +4,9 @@ import WatchKit
 
 struct ScoreView: View {
   let session: WatchSessionManager
+  /// True in the Always On state, which the workout makes the usual one
+  /// between points: the wrist is down and the screen dimmed.
+  @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
   /// The scoreboard's player colors (DESIGN.md `player-blue` and `player-orange`),
   /// which stay distinguishable with red-green color blindness. Each row also
@@ -14,8 +17,8 @@ struct ScoreView: View {
   var body: some View {
     if let snapshot = session.snapshot {
       scoreboard(snapshot)
-        .onChange(of: session.lastSendFailed) { _, failed in
-          if failed { WKInterfaceDevice.current().play(.failure) }
+        .onChange(of: session.lastResult) { _, result in
+          if let result { confirm(result) }
         }
     } else {
       VStack(spacing: 8) {
@@ -34,35 +37,56 @@ struct ScoreView: View {
     }
   }
 
+  /// Feedback follows the phone's answer, not the tap: a click (or, for an
+  /// undo, a falling tone) once the phone applied it, a failure buzz and a
+  /// VoiceOver announcement when it did not.
+  private func confirm(_ result: WatchSessionManager.CommandResult) {
+    let device = WKInterfaceDevice.current()
+    guard result.applied else {
+      device.play(.failure)
+      AccessibilityNotification.Announcement(failureText(result.command)).post()
+      return
+    }
+    switch result.command {
+    case .point: device.play(.click)
+    case .undo: device.play(.directionDown)
+    }
+  }
+
   /// Built for a glance between points: each row leads with the points in large
   /// numerals, the current set's games beside them, and the set history below.
+  /// In the Always On state only the score stays, larger and without color.
   private func scoreboard(_ snapshot: WatchScoreSnapshot) -> some View {
     let score = snapshot.score
+    let live = snapshot.status == .inProgress
     return ScrollView {
       VStack(spacing: 4) {
         ForEach(Player.allCases, id: \.self) { side in
-          let isServing = snapshot.status == .inProgress && score.server == side
+          let isServing = live && score.server == side
           HStack(spacing: 4) {
             Capsule()
               .fill(color(for: side))
+              .opacity(isLuminanceReduced ? 0.5 : 1)
               .frame(width: 4, height: 22)
               .accessibilityHidden(true)
             Image(systemName: "tennisball.fill")
-              .font(.system(size: 8))
-              .foregroundStyle(.yellow)
+              .font(.caption2)
+              .imageScale(.small)
+              .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.yellow)
               .opacity(isServing ? 1 : 0)
               .accessibilityHidden(true)
             Text(name(snapshot, side))
               .font(.footnote)
+              .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.primary)
               .lineLimit(1)
             Spacer(minLength: 2)
             Text("\(games(score, side))")
               .font(.body.monospacedDigit())
               .foregroundStyle(.secondary)
-            if snapshot.status == .inProgress {
+            if live {
               Text(points(score, side))
-                .font(.title2.monospacedDigit().weight(.semibold))
-                .foregroundStyle(score.isTiebreak ? Color.yellow : Color.primary)
+                .font((isLuminanceReduced ? Font.title : Font.title2).monospacedDigit().weight(.semibold))
+                .foregroundStyle(score.isTiebreak && !isLuminanceReduced ? Color.yellow : Color.primary)
                 .frame(minWidth: 34, alignment: .trailing)
             }
           }
@@ -73,63 +97,130 @@ struct ScoreView: View {
 
         Text(summaryLine(snapshot))
           .font(.caption2.monospacedDigit())
-          .foregroundStyle(score.isTiebreak ? Color.yellow : Color.secondary)
+          .foregroundStyle(score.isTiebreak && !isLuminanceReduced ? Color.yellow : Color.secondary)
           .lineLimit(1)
           .minimumScaleFactor(0.8)
 
-        if snapshot.status == .inProgress {
-          HStack(spacing: 8) {
-            pointButton(.player1, name: snapshot.player1Name)
-            pointButton(.player2, name: snapshot.player2Name)
-          }
-          .disabled(!session.canScore)
-          .padding(.top, 4)
-          if session.lastSendFailed {
-            Text("Point not sent. Check the score on your iPhone.")
-              .font(.caption2)
-              .foregroundStyle(.red)
-              .multilineTextAlignment(.center)
-          } else if !session.canScore {
-            Text(session.isReachable
-              ? "Open this match on your iPhone to score from here."
-              : "iPhone not reachable. Keep it nearby to score.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
+        if !isLuminanceReduced {
+          if live {
+            liveControls(snapshot)
           } else {
-            Text("Tap who won the point. Undo on your iPhone.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
+            finishedOrWaiting(snapshot)
           }
-        } else {
-          Text(snapshot.status.metadata.label)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          if let winner = leader(score), snapshot.status == .pendingReport || snapshot.status == .completed {
-            Text("\(name(snapshot, winner)) wins")
-              .font(.headline)
-              .multilineTextAlignment(.center)
-          }
-          if let next = nextStep(snapshot.status) {
-            Text(next)
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-              .multilineTextAlignment(.center)
-          }
+          workoutLines(live: live && snapshot.canScore)
         }
       }
       .padding(.horizontal, 4)
     }
   }
 
-  private func pointButton(_ side: Player, name: String) -> some View {
+  @ViewBuilder
+  private func liveControls(_ snapshot: WatchScoreSnapshot) -> some View {
+    let names = snapshot.buttonNames
+    HStack(spacing: 8) {
+      pointButton(.player1, label: names.player1, name: snapshot.player1Name)
+      pointButton(.player2, label: names.player2, name: snapshot.player2Name)
+    }
+    .disabled(!session.canScore || session.isSending)
+    .padding(.top, 4)
+    if let failed = session.failedCommand {
+      Text(failureText(failed))
+        .font(.caption2)
+        .foregroundStyle(.red)
+        .multilineTextAlignment(.center)
+    } else if session.isSending {
+      Text("Sending to your iPhone…")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    } else if !session.canScore {
+      Text(session.isReachable
+        ? "Open this match on your iPhone to score from here."
+        : "iPhone not reachable. Keep it nearby to score.")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+    } else {
+      Text("Tap who won the point.")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+    }
+    if snapshot.canUndo { undoButton }
+  }
+
+  @ViewBuilder
+  private func finishedOrWaiting(_ snapshot: WatchScoreSnapshot) -> some View {
+    Text(snapshot.status.metadata.label)
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    if let winner = leader(snapshot.score), snapshot.status == .pendingReport || snapshot.status == .completed {
+      Text("\(name(snapshot, winner)) wins")
+        .font(.headline)
+        .multilineTextAlignment(.center)
+    }
+    if let next = nextStep(snapshot.status) {
+      Text(next)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+    }
+    // The match-winning point can still be taken back until a report is filed.
+    if snapshot.canUndo {
+      if let failed = session.failedCommand {
+        Text(failureText(failed))
+          .font(.caption2)
+          .foregroundStyle(.red)
+          .multilineTextAlignment(.center)
+      }
+      undoButton
+    }
+  }
+
+  /// "Workout recording · 128 BPM" while the match is recorded, or, once after
+  /// Health access was declined, why it isn't.
+  @ViewBuilder
+  private func workoutLines(live: Bool) -> some View {
+    let workout = session.workout
+    if live && workout.isRecording {
+      HStack(spacing: 3) {
+        Image(systemName: "heart.fill")
+          .foregroundStyle(.red)
+          .imageScale(.small)
+          .accessibilityHidden(true)
+        Text(workout.heartRate.map { "Workout recording · \(Int($0.rounded())) BPM" } ?? "Workout recording")
+          .foregroundStyle(.secondary)
+      }
+      .font(.caption2.monospacedDigit())
+      .padding(.top, 2)
+      .accessibilityElement(children: .combine)
+    } else if workout.showsDeniedNotice {
+      Text("Not recording a workout. To record matches and keep the score on screen, allow Tennis League in Health settings.")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.top, 2)
+    }
+  }
+
+  private var undoButton: some View {
     Button {
-      // A click confirms the tap registered without looking down between points.
-      WKInterfaceDevice.current().play(.click)
+      session.sendUndo()
+    } label: {
+      Label("Undo last point", systemImage: "arrow.uturn.backward")
+        .font(.footnote)
+        .frame(maxWidth: .infinity, minHeight: 44)
+    }
+    .buttonStyle(.bordered)
+    .disabled(!session.canUndo || session.isSending)
+    .padding(.top, 2)
+  }
+
+  private func pointButton(_ side: Player, label: String, name: String) -> some View {
+    Button {
+      // The click comes when the phone confirms the point (see `confirm`).
       session.sendPoint(side)
     } label: {
-      Text(firstNames(name))
+      Text(label)
         .font(.headline)
         .lineLimit(1)
         .minimumScaleFactor(0.6)
@@ -141,6 +232,13 @@ struct ScoreView: View {
     .buttonStyle(.borderedProminent)
     .tint(color(for: side))
     .accessibilityLabel("Point to \(name)")
+  }
+
+  private func failureText(_ command: WatchCommand) -> String {
+    switch command {
+    case .point: "Point not scored. Check the score on your iPhone."
+    case .undo: "Undo didn't go through. Check the score on your iPhone."
+    }
   }
 
   private func color(for side: Player) -> Color {
@@ -197,18 +295,12 @@ struct ScoreView: View {
 
   private func nextStep(_ status: MatchStatus) -> String? {
     switch status {
+    case .proposed: return "Waiting for the proposal to be accepted."
     case .scheduled: return "Start the match on your iPhone to score it here."
     case .pendingReport: return "Finish the report on your iPhone."
-    default: return nil
+    case .disputed: return "Your division leader will resolve the result."
+    case .cancelled: return "This match was cancelled."
+    case .inProgress, .completed: return nil
     }
-  }
-
-  /// "Ann Smith / Bob Jones" → "Ann/Bob"; "Sam Rivera" → "Sam".
-  private func firstNames(_ name: String) -> String {
-    let names = name.components(separatedBy: " / ").compactMap { person -> String? in
-      guard let first = person.split(separator: " ").first else { return nil }
-      return String(first)
-    }
-    return names.isEmpty ? name : names.joined(separator: "/")
   }
 }

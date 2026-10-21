@@ -82,5 +82,22 @@ final class SessionModelTests: XCTestCase {
       if case .failed = session.state { return true }
       return false
     }
+
+    // Retry reloads the profile for the same account rather than signing out.
+    session.retry()
+    XCTAssertEqual(session.state, .loading)
+    await eventually("failed again, since the profile is still missing") {
+      if case .failed = session.state { return true }
+      return false
+    }
+  }
+
+  func testRetryDoesNothingUnlessFailed() async {
+    let session = SessionModel(services: DemoBackend.sample(signedIn: true).services)
+    let observation = Task { await session.observe() }
+    defer { observation.cancel() }
+    await eventually("ready") { session.user != nil }
+    session.retry()
+    XCTAssertNotNil(session.user)
   }
 }

@@ -103,6 +103,18 @@ public final class ChannelListModel {
     if !channels.contains(where: { $0.id == channel.id }) { channels.append(channel) }
   }
 
+  /// Bumped by `retry()`. The view keys its `observe()` task on it, so a new
+  /// value restarts the listener that an error ended.
+  public private(set) var attempt = 0
+
+  /// Starts over after an error. Does nothing while the listener is healthy.
+  public func retry() {
+    guard errorMessage != nil else { return }
+    errorMessage = nil
+    isLoading = true
+    attempt += 1
+  }
+
   public func observe() async {
     do {
       for try await channels in repository.observeChannels(userId: user.id) {

@@ -8,8 +8,7 @@ struct RankingsView: View {
   var body: some View {
     List {
       if let error = model.errorMessage {
-        Label(error, systemImage: "exclamationmark.triangle")
-          .foregroundStyle(.red)
+        ListErrorRow(message: error, retry: model.retry)
       }
       if let table = model.selectedTable {
         if model.tables.count > 1 {
@@ -30,6 +29,7 @@ struct RankingsView: View {
         }
       }
     }
+    .refreshable { await model.retry() }
     .overlay {
       if model.isLoading {
         ProgressView()

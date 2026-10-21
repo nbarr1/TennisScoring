@@ -112,8 +112,24 @@ public final class SessionModel {
       state = .signedOut
       return
     }
+    followUser(uid: account.uid)
+  }
+
+  /// Tries again from the failed state: reloads the signed-in player's profile,
+  /// or returns to sign-in when no account is signed in any more.
+  public func retry() {
+    guard case .failed = state else { return }
+    guard let uid = observedUid else {
+      state = .signedOut
+      return
+    }
+    userObservation?.cancel()
+    followUser(uid: uid)
+  }
+
+  private func followUser(uid: String) {
     state = .loading
-    let stream = services.users.observeUser(id: account.uid)
+    let stream = services.users.observeUser(id: uid)
     userObservation = Task { [weak self] in
       do {
         for try await user in stream {

@@ -26,6 +26,9 @@ struct RootView: View {
       case let .failed(message):
         VStack(spacing: 16) {
           ContentUnavailableView("Something went wrong", systemImage: "exclamationmark.triangle", description: Text(message))
+          Button("Try again") { session.retry() }
+            .buttonStyle(.borderedProminent)
+            .foregroundStyle(Color.onLeague)
           Button("Sign out") { session.signOut() }
             .buttonStyle(.bordered)
         }

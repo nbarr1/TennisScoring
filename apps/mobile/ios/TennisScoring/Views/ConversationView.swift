@@ -13,6 +13,7 @@ struct ConversationView: View {
   @State private var confirmingBlock: Message?
   @State private var confirmingShare = false
   @FocusState private var composerFocused: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(channel: Channel, title: String, user: User, repository: any MessagingRepository) {
     _model = State(initialValue: ConversationModel(channel: channel, user: user, repository: repository))
@@ -66,7 +67,8 @@ struct ConversationView: View {
       }
       .onChange(of: model.messages.last?.id) { _, id in
         guard let id else { return }
-        withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+        // Under Reduce Motion the new message is simply there, without a scroll.
+        withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(id, anchor: .bottom) }
       }
     }
     .safeAreaInset(edge: .bottom) { composer }

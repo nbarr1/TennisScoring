@@ -108,6 +108,18 @@ public final class MatchListModel {
     }
   }
 
+  /// Bumped by `retry()`. The view keys its `observe()` task on it, so a new
+  /// value restarts the listener that an error ended.
+  public private(set) var attempt = 0
+
+  /// Starts over after an error. Does nothing while the listener is healthy.
+  public func retry() {
+    guard errorMessage != nil else { return }
+    errorMessage = nil
+    isLoading = true
+    attempt += 1
+  }
+
   /// Follows the player's matches for as long as the caller's task runs.
   public func observe() async {
     do {

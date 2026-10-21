@@ -38,6 +38,60 @@ final class MatchListTests: XCTestCase {
     XCTAssertEqual(sections.first { $0.kind == .upcoming }?.matches.map(\.id), ["sooner", "later"])
     XCTAssertEqual(sections.first { $0.kind == .recent }?.matches.map(\.id), ["r29", "r28", "r27", "r26", "r25"])
   }
+
+  /// The view restarts `observe()` whenever `attempt` changes; this does the same.
+  func testRetryRestartsAListenerThatFailed() async {
+    let repository = FlakyMatchList()
+    let model = MatchListModel(userId: "me", repository: repository)
+    model.retry()
+    XCTAssertEqual(model.attempt, 0, "nothing to retry while healthy")
+
+    await model.observe()
+    XCTAssertEqual(model.errorMessage, "Offline")
+    XCTAssertFalse(model.isLoading)
+
+    model.retry()
+    XCTAssertEqual(model.attempt, 1)
+    XCTAssertNil(model.errorMessage)
+    XCTAssertTrue(model.isLoading)
+    let observation = Task { await model.observe() }
+    defer { observation.cancel() }
+    await eventually("loaded") { !model.isLoading }
+    XCTAssertNil(model.errorMessage)
+    XCTAssertEqual(model.sections.first?.kind, .live)
+  }
+}
+
+/// Fails its first match-list listener, then serves one live match.
+private final class FlakyMatchList: MatchRepository, @unchecked Sendable {
+  private let lock = NSLock()
+  private var failuresLeft = 1
+
+  func observeMatches(playerId: String) -> AsyncThrowingStream<[Match], Error> {
+    let fail = lock.withLock { () -> Bool in
+      defer { failuresLeft = max(0, failuresLeft - 1) }
+      return failuresLeft > 0
+    }
+    return AsyncThrowingStream { continuation in
+      if fail {
+        continuation.finish(throwing: ServiceError("Offline"))
+      } else {
+        continuation.yield([Match(id: "m", divisionId: "d", player1Id: playerId, player2Id: "x", status: .inProgress)])
+      }
+    }
+  }
+
+  func observeMatch(id: String) -> AsyncThrowingStream<Match?, Error> {
+    AsyncThrowingStream { $0.yield(nil) }
+  }
+
+  func scorePoint(matchId: String, scorer: Player) async throws -> ScorePointResponse {
+    throw ServiceError("Not supported")
+  }
+
+  func perform(_ action: MatchAction) async throws {
+    throw ServiceError("Not supported")
+  }
 }
 
 @MainActor
@@ -199,7 +253,89 @@ final class MatchDetailTests: XCTestCase {
     defer { observation.cancel() }
     XCTAssertFalse(model.canScore)
     XCTAssertFalse(model.canSubmitReport)
-    XCTAssertNil(model.watchSnapshot, "a completed match has nothing live to mirror")
+    let snapshot = model.watchSnapshot
+    XCTAssertEqual(snapshot?.status, .completed, "a finished match is still mirrored, read-only")
+    XCTAssertEqual(snapshot?.canScore, false)
+    XCTAssertEqual(snapshot?.canUndo, false)
+    XCTAssertEqual(snapshot?.isParticipant, false)
+  }
+
+  func testWatchCanUndoTheLastPointOfThisMatchOnly() async {
+    let (model, backend, observation) = await load("live")
+    defer { observation.cancel() }
+    XCTAssertEqual(model.watchSnapshot?.canUndo, false)
+    let early = await model.handle(.undo(matchId: "live"))
+    XCTAssertFalse(early, "there is no point to undo yet")
+
+    await model.score(.player1)
+    XCTAssertEqual(model.watchSnapshot?.canUndo, true)
+    let elsewhere = await model.handle(.undo(matchId: "some-other-match"))
+    XCTAssertFalse(elsewhere)
+
+    let undone = await model.handle(.undo(matchId: "live"))
+    XCTAssertTrue(undone)
+    await eventually("undone") { model.match?.liveScore.currentGame == GameScore(player1: .thirty, player2: .fifteen) }
+    XCTAssertEqual(backend.performedActions, [.undoLastPoint(matchId: "live")])
+    XCTAssertEqual(model.lastFeedback?.kind, .undo)
+  }
+
+  func testRejectedWatchCommandsReportFailure() async {
+    let (model, backend, observation) = await load("live")
+    defer { observation.cancel() }
+    backend.failNextWrite("Network unavailable")
+    let applied = await model.handle(.point(matchId: "live", scorer: .player1))
+    XCTAssertFalse(applied, "the watch must not confirm a point the server refused")
+  }
+
+  func testCancelledAndDeletedMatchesStopBeingLiveOnTheWatch() async {
+    let (outgoing, _, first) = await load("outgoing")
+    defer { first.cancel() }
+    await outgoing.declineProposal()
+    await eventually("withdrawn") { outgoing.watchSnapshot?.status == .cancelled }
+    XCTAssertEqual(outgoing.watchSnapshot?.canScore, false)
+
+    let (live, backend, second) = await load("live")
+    defer { second.cancel() }
+    XCTAssertEqual(live.watchSnapshot?.isParticipant, true)
+    XCTAssertFalse(live.wasRemoved)
+    backend.remove(matchId: "live")
+    await eventually("removed") { live.wasRemoved }
+    XCTAssertNil(live.watchSnapshot)
+  }
+
+  func testEachPointIsAnnounced() async {
+    let (model, _, observation) = await load("live")
+    defer { observation.cancel() }
+    XCTAssertNil(model.lastFeedback)
+    await model.score(.player1)
+    XCTAssertEqual(model.lastFeedback?.kind, .point)
+    XCTAssertEqual(model.lastFeedback?.announcement, "Point to Alex Demo. 40 – 15.")
+    let first = model.lastFeedback?.id
+    await model.score(.player1)
+    XCTAssertEqual(model.lastFeedback?.announcement, "Alex Demo wins the game. Games 4-2.")
+    XCTAssertNotEqual(model.lastFeedback?.id, first)
+  }
+
+  func testSetAndMatchAnnouncements() {
+    let names: (Player) -> String = { $0 == .player1 ? "Ann" : "Bob" }
+    let before = LiveScore(
+      sets: [SetScore(setNumber: 0, player1Games: 5, player2Games: 3)],
+      currentGame: GameScore(player1: .forty, player2: .love)
+    )
+    let after = LiveScore(
+      sets: [SetScore(setNumber: 0, player1Games: 6, player2Games: 3, winner: .player1), SetScore(setNumber: 1)],
+      currentSet: 1,
+      player1SetsWon: 1
+    )
+    XCTAssertEqual(
+      MatchDetailModel.pointAnnouncement(scorer: .player1, before: before, after: after, matchWinner: nil, name: names),
+      "Ann wins the set. Sets 1-0."
+    )
+    let final = LiveScore(sets: [SetScore(setNumber: 0, player1Games: 6, player2Games: 3, winner: .player1)], player1SetsWon: 1)
+    XCTAssertEqual(
+      MatchDetailModel.pointAnnouncement(scorer: .player1, before: before, after: final, matchWinner: .player1, name: names),
+      "Ann wins the match, 6-3."
+    )
   }
 }
 

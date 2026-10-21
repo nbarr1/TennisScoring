@@ -12,8 +12,7 @@ struct MessagesView: View {
   var body: some View {
     List {
       if let error = model.errorMessage {
-        Label(error, systemImage: "exclamationmark.triangle")
-          .foregroundStyle(.red)
+        ListErrorRow(message: error, retry: model.retry)
       }
       ForEach(model.rows) { row in
         NavigationLink(value: row.id) {
@@ -21,6 +20,7 @@ struct MessagesView: View {
         }
       }
     }
+    .refreshable { await model.retry() }
     .overlay {
       if model.isLoading {
         ProgressView()

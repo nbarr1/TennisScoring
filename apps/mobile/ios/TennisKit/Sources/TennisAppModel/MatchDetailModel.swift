@@ -84,18 +84,32 @@ public final class MatchDetailModel {
     match?.status == .proposed && mySide == .player1
   }
 
-  /// What the watch should show, or nil when there is nothing live to mirror.
+  /// What the watch should show: the match in every status, so a match that
+  /// ends, is cancelled, or goes to a report stops being live on the watch too.
+  /// Nil until the match loads, and after it is deleted (see `wasRemoved`).
   public var watchSnapshot: WatchScoreSnapshot? {
-    guard let match, match.status == .scheduled || match.status == .inProgress || match.status == .pendingReport else { return nil }
+    guard let match else { return nil }
     return WatchScoreSnapshot(
       matchId: match.id,
       player1Name: match.sideDisplayName(.player1),
       player2Name: match.sideDisplayName(.player2),
       status: match.status,
       score: match.liveScore,
-      canScore: canScore
+      canScore: canScore,
+      canUndo: canUndo,
+      isParticipant: match.isParticipant(userId)
     )
   }
+
+  /// True once a match that had loaded was deleted, so the screen can tell the
+  /// watch to stop showing it.
+  public private(set) var wasRemoved = false
+
+  /// What the last point or undo applied from this screen (or from the watch
+  /// through it) should feel and sound like. A new value for every action, so
+  /// the view can drive a haptic and a VoiceOver announcement from it.
+  public private(set) var lastFeedback: ScoringFeedback?
+  @ObservationIgnored private var feedbackCount = 0
 
   // MARK: - Observation
 
@@ -103,6 +117,7 @@ public final class MatchDetailModel {
   public func observe() async {
     do {
       for try await match in repository.observeMatch(id: matchId) {
+        if match == nil && self.match != nil { wasRemoved = true }
         self.match = match
         isLoading = false
       }
@@ -120,18 +135,23 @@ public final class MatchDetailModel {
     guard canScore else { return }
     await run {
       let response = try await self.repository.scorePoint(matchId: self.matchId, scorer: scorer)
-      self.applyScored(response)
+      self.applyScored(response, scorer: scorer)
     }
   }
 
-  /// Applies a command from the watch, if it is for this match and scoring is
-  /// allowed. Returns whether it was applied.
+  /// Applies a command from the watch, if it is for this match and the action is
+  /// allowed right now. Returns whether it was applied; the phone sends that
+  /// back, and the watch confirms the tap only on true.
   @discardableResult
   public func handle(_ command: WatchCommand) async -> Bool {
-    guard command.matchId == matchId, canScore, !isWorking else { return false }
+    guard command.matchId == matchId, !isWorking else { return false }
     switch command {
     case let .point(_, scorer):
+      guard canScore else { return false }
       await score(scorer)
+    case .undo:
+      guard canUndo else { return false }
+      await undo()
     }
     return errorMessage == nil
   }
@@ -142,9 +162,11 @@ public final class MatchDetailModel {
   }
 
   public func undo() async {
-    guard canUndo else { return }
+    // Checked here too, so a skipped undo is never announced as done.
+    guard canUndo, !isWorking else { return }
     currentTip = nil
     await perform(.undoLastPoint(matchId: matchId))
+    if errorMessage == nil { emitFeedback(.undo, "Last point undone.") }
   }
 
   public func acceptProposal() async {
@@ -192,7 +214,16 @@ public final class MatchDetailModel {
 
   /// Shows the server's result straight away instead of waiting for the listener,
   /// which delivers the same write moments later.
-  private func applyScored(_ response: ScorePointResponse) {
+  private func applyScored(_ response: ScorePointResponse, scorer: Player) {
+    if let match {
+      emitFeedback(.point, Self.pointAnnouncement(
+        scorer: scorer,
+        before: match.liveScore,
+        after: response.nextScore,
+        matchWinner: response.matchWinner,
+        name: match.sideDisplayName
+      ))
+    }
     if var match {
       match.liveScore = response.nextScore
       if let winner = response.matchWinner {
@@ -205,4 +236,49 @@ public final class MatchDetailModel {
     let showTips = tipsEnabledForUser && (match?.tipsEnabled ?? true)
     currentTip = showTips ? TipTrigger.primary(of: response.tips)?.tip : nil
   }
+
+  private func emitFeedback(_ kind: ScoringFeedback.Kind, _ announcement: String) {
+    feedbackCount += 1
+    lastFeedback = ScoringFeedback(id: feedbackCount, kind: kind, announcement: announcement)
+  }
+
+  /// What VoiceOver says after a point: the new game score, or the game, set,
+  /// or match it decided. "Point to Ann Smith. 30 – 15", "Ann Smith wins the
+  /// game. Games 4-2", "Ann Smith wins the set. Sets 1-0", or "Ann Smith wins
+  /// the match, 6-4, 6-3".
+  static func pointAnnouncement(
+    scorer: Player,
+    before: LiveScore,
+    after: LiveScore,
+    matchWinner: Player?,
+    name: (Player) -> String
+  ) -> String {
+    if let matchWinner {
+      return "\(name(matchWinner)) wins the match, \(ScoreEngine.formatScoreDisplay(after))."
+    }
+    let setsBefore = before.setsWon(by: .player1) + before.setsWon(by: .player2)
+    let setsAfter = after.setsWon(by: .player1) + after.setsWon(by: .player2)
+    if setsAfter > setsBefore {
+      return "\(name(scorer)) wins the set. Sets \(after.setsWon(by: .player1))-\(after.setsWon(by: .player2))."
+    }
+    let gamesBefore = before.currentSetScore.player1Games + before.currentSetScore.player2Games
+    let gamesAfter = after.currentSetScore.player1Games + after.currentSetScore.player2Games
+    if gamesAfter > gamesBefore {
+      return "\(name(scorer)) wins the game. Games \(after.currentSetScore.player1Games)-\(after.currentSetScore.player2Games)."
+    }
+    if after.isTiebreak {
+      return "Point to \(name(scorer)). Tiebreak \(ScoreEngine.formatGameScore(after))."
+    }
+    return "Point to \(name(scorer)). \(ScoreEngine.formatGameScore(after))."
+  }
+}
+
+/// One point or undo the phone applied, for haptics and announcements.
+public struct ScoringFeedback: Equatable, Sendable {
+  public enum Kind: Sendable { case point, undo }
+
+  /// Distinct for every action, so two identical points are two events.
+  public let id: Int
+  public let kind: Kind
+  public let announcement: String
 }

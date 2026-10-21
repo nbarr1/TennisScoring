@@ -1,6 +1,7 @@
 import SwiftUI
 import TennisAppModel
 import TennisCore
+import UIKit
 
 struct MatchDetailView: View {
   @State private var model: MatchDetailModel
@@ -36,20 +37,38 @@ struct MatchDetailView: View {
     .navigationBarTitleDisplayMode(.inline)
     .task { await model.observe() }
     .task {
-      for await command in PhoneWatchConnector.shared.commands() {
-        await model.handle(command)
+      for await incoming in PhoneWatchConnector.shared.commands() {
+        // The watch confirms the tap only when this says the command applied.
+        let applied = await model.handle(incoming.command)
+        incoming.reply(applied)
       }
     }
     .onChange(of: model.watchSnapshot, initial: true) { _, snapshot in
       if let snapshot { PhoneWatchConnector.shared.publish(snapshot) }
+    }
+    .onChange(of: model.wasRemoved) { _, removed in
+      if removed { PhoneWatchConnector.shared.publishRemoval(matchId: model.matchId) }
     }
     .onDisappear {
       // Leave the watch showing the score, but read-only: nothing on the phone is
       // listening for its commands any more.
       if var snapshot = model.watchSnapshot {
         snapshot.canScore = false
+        snapshot.canUndo = false
         PhoneWatchConnector.shared.publish(snapshot)
       }
+    }
+    // Every point or undo the server applied, from this screen or the watch: a
+    // tap that registered is felt, and VoiceOver hears the new score.
+    .sensoryFeedback(trigger: model.lastFeedback) { _, feedback in
+      switch feedback?.kind {
+      case .point: return SensoryFeedback.success
+      case .undo: return SensoryFeedback.impact(weight: .light)
+      case nil: return nil
+      }
+    }
+    .onChange(of: model.lastFeedback) { _, feedback in
+      if let feedback { UIAccessibility.post(notification: .announcement, argument: feedback.announcement) }
     }
     .alert("Couldn't update the match", isPresented: showingError) {
       Button("OK", role: .cancel) {}

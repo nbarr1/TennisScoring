@@ -2,31 +2,40 @@ import SwiftUI
 import TennisCore
 import UIKit
 
-extension Color {
-  /// `#RRGGBB` or `#RGB`, as used by `MATCH_STATUS_METADATA`.
-  init(hex: String) {
-    var digits = hex.trimmingCharacters(in: .whitespaces)
-    if digits.hasPrefix("#") { digits.removeFirst() }
-    if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
-    let value = UInt64(digits, radix: 16) ?? 0
+extension UIColor {
+  convenience init(rgb: UInt32) {
     self.init(
-      red: Double((value >> 16) & 0xFF) / 255,
-      green: Double((value >> 8) & 0xFF) / 255,
-      blue: Double(value & 0xFF) / 255
+      red: CGFloat((rgb >> 16) & 0xFF) / 255,
+      green: CGFloat((rgb >> 8) & 0xFF) / 255,
+      blue: CGFloat(rgb & 0xFF) / 255,
+      alpha: 1
     )
   }
 }
 
 extension Color {
+  /// A color that follows the appearance, with optional variants for Increase
+  /// Contrast (`accessibilityContrast == .high`).
+  static func adaptive(light: UInt32, dark: UInt32, highContrastLight: UInt32? = nil, highContrastDark: UInt32? = nil) -> Color {
+    Color(uiColor: UIColor { traits in
+      let high = traits.accessibilityContrast == .high
+      if traits.userInterfaceStyle == .dark {
+        return UIColor(rgb: high ? highContrastDark ?? dark : dark)
+      }
+      return UIColor(rgb: high ? highContrastLight ?? light : light)
+    })
+  }
+
   /// The league's brand green, shared with the web and Expo clients: Clubhouse
   /// Green (#1A472A) in light appearance and Light Green (#A8D5A2) in dark, where
-  /// Clubhouse Green is under 2:1 on the system backgrounds. It is the app's tint,
-  /// so it colors text buttons, links, and filled buttons alike.
-  static let league = Color(uiColor: UIColor { traits in
-    traits.userInterfaceStyle == .dark
-      ? UIColor(red: 0xA8 / 255, green: 0xD5 / 255, blue: 0xA2 / 255, alpha: 1)
-      : UIColor(red: 0x1A / 255, green: 0x47 / 255, blue: 0x2A / 255, alpha: 1)
-  })
+  /// Clubhouse Green is under 2:1 on the system backgrounds. With Increase
+  /// Contrast each moves further from the background (#0E2A18, #C8E6C4). It is
+  /// the app's tint, so it colors text buttons, links, and filled buttons alike.
+  static let league = adaptive(light: 0x1A472A, dark: 0xA8D5A2, highContrastLight: 0x0E2A18, highContrastDark: 0xC8E6C4)
+
+  /// The serving ball on the scoreboard. System yellow is about 1.4:1 on the
+  /// light scoreboard card, so light appearance uses a dark gold (4.4:1).
+  static let serveBall = adaptive(light: 0x8A6D00, dark: 0xFFD60A)
 
   /// Text and icons on a `league` fill: white on Clubhouse Green, black on Light
   /// Green. Filled buttons and the player's own message bubbles use it.
@@ -43,12 +52,30 @@ extension Color {
   }
 }
 
+extension MatchStatusMetadata.Tone {
+  /// The status glyph's color. `MATCH_STATUS_METADATA`'s hex values have no dark
+  /// variants (Scheduled's #1A472A is about 1.5:1 on a dark row) and some fail in
+  /// light too, so each tone has its own pair, every one at least 3.8:1 on the
+  /// system backgrounds with the badge tint behind it.
+  var color: Color {
+    switch self {
+    case .accent: Color.adaptive(light: 0x8E44AD, dark: 0xD2A8E6)
+    case .primary: Color.league
+    case .success: Color.adaptive(light: 0x1E7D45, dark: 0x5FD38D)
+    case .warning: Color.adaptive(light: 0xA84E00, dark: 0xF5B041)
+    case .neutral: Color.adaptive(light: 0x636366, dark: 0xAEAEB2)
+    case .danger: Color.adaptive(light: 0xC0392B, dark: 0xFF8A80)
+    }
+  }
+}
+
 struct StatusBadge: View {
   let status: MatchStatus
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     let metadata = status.metadata
-    let color = Color(hex: metadata.colorHex)
+    let color = metadata.tone.color
     // The status color goes on the glyph and the tint; the label stays in the
     // primary text color, since orange or green text on its own tint fails
     // contrast in both appearances.
@@ -61,7 +88,8 @@ struct StatusBadge: View {
     .font(.caption.weight(.semibold))
     .padding(.horizontal, 8)
     .padding(.vertical, 3)
-    .background(color.opacity(0.14), in: Capsule())
+    // A 14% tint all but disappears on a dark row, so dark uses more.
+    .background(color.opacity(colorScheme == .dark ? 0.22 : 0.14), in: Capsule())
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(metadata.accessibilityLabel)
   }
@@ -71,58 +99,20 @@ struct StatusBadge: View {
 struct Scoreboard: View {
   let match: Match
 
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
   private var score: LiveScore { match.liveScore }
   private var showsServer: Bool { match.status == .inProgress }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
-        GridRow {
-          Text("")
-          ForEach(score.sets.indices, id: \.self) { index in
-            Text("Set \(index + 1)").gridColumnAlignment(.center)
-          }
-          if match.status == .inProgress {
-            Text(score.isTiebreak ? "TB" : "Game").gridColumnAlignment(.center)
-          }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        // Each player's row names its sets and points, so the column headings
-        // would only be read as noise.
-        .accessibilityHidden(true)
-
-        ForEach(Player.allCases, id: \.self) { side in
-          GridRow {
-            HStack(spacing: 6) {
-              Image(systemName: "tennisball.fill")
-                .font(.caption2)
-                .foregroundStyle(.yellow)
-                .opacity(showsServer && score.server == side ? 1 : 0)
-                .accessibilityHidden(true)
-              Text(match.sideDisplayName(side))
-                .font(.headline)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-              if match.winner == side {
-                Image(systemName: "checkmark.circle.fill")
-                  .foregroundStyle(Color.league)
-                  .accessibilityLabel("Winner")
-              }
-            }
-            ForEach(score.sets.indices, id: \.self) { index in
-              setCell(score.sets[index], side: side)
-            }
-            if match.status == .inProgress {
-              Text(currentPoints(for: side))
-                .font(.title3.monospacedDigit().weight(.bold))
-                .foregroundStyle(Color.league)
-                .gridColumnAlignment(.center)
-            }
-          }
-          .accessibilityElement(children: .ignore)
-          .accessibilityLabel(rowAccessibilityLabel(for: side))
-        }
+      // At accessibility text sizes a name column beside three sets and the
+      // game squeezes names to a few letters, so each player gets a block: the
+      // full name on its own line, then the sets.
+      if dynamicTypeSize.isAccessibilitySize {
+        stackedRows
+      } else {
+        grid
       }
 
       if match.status == .inProgress {
@@ -139,6 +129,110 @@ struct Scoreboard: View {
     .padding()
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+  }
+
+  private var stackedRows: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      ForEach(Player.allCases, id: \.self) { side in
+        VStack(alignment: .leading, spacing: 6) {
+          nameLine(side, lineLimit: nil)
+          // Columns when they fit, otherwise one line per set.
+          ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 16) {
+              ForEach(score.sets.indices, id: \.self) { index in
+                VStack(spacing: 2) {
+                  Text("Set \(index + 1)").font(.caption).foregroundStyle(.secondary)
+                  setCell(score.sets[index], side: side)
+                }
+              }
+              if match.status == .inProgress {
+                VStack(spacing: 2) {
+                  Text(score.isTiebreak ? "TB" : "Game").font(.caption).foregroundStyle(.secondary)
+                  pointsText(side)
+                }
+              }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+              ForEach(score.sets.indices, id: \.self) { index in
+                HStack {
+                  Text("Set \(index + 1)").font(.caption).foregroundStyle(.secondary)
+                  Spacer(minLength: 8)
+                  setCell(score.sets[index], side: side)
+                }
+              }
+              if match.status == .inProgress {
+                HStack {
+                  Text(score.isTiebreak ? "Tiebreak" : "Game").font(.caption).foregroundStyle(.secondary)
+                  Spacer(minLength: 8)
+                  pointsText(side)
+                }
+              }
+            }
+          }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel(for: side))
+      }
+    }
+  }
+
+  private func nameLine(_ side: Player, lineLimit: Int?) -> some View {
+    HStack(spacing: 6) {
+      Image(systemName: "tennisball.fill")
+        .font(.caption2)
+        .foregroundStyle(Color.serveBall)
+        .opacity(showsServer && score.server == side ? 1 : 0)
+        .accessibilityHidden(true)
+      Text(match.sideDisplayName(side))
+        .font(.headline)
+        .lineLimit(lineLimit)
+        .minimumScaleFactor(lineLimit == nil ? 1 : 0.7)
+      if match.winner == side {
+        Image(systemName: "checkmark.circle.fill")
+          .foregroundStyle(Color.league)
+          .accessibilityLabel("Winner")
+      }
+    }
+  }
+
+  private func pointsText(_ side: Player) -> some View {
+    Text(currentPoints(for: side))
+      .font(.title3.monospacedDigit().weight(.bold))
+      .foregroundStyle(Color.league)
+  }
+
+  private var grid: some View {
+    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
+      GridRow {
+        Text("")
+        ForEach(score.sets.indices, id: \.self) { index in
+          Text("Set \(index + 1)").gridColumnAlignment(.center)
+        }
+        if match.status == .inProgress {
+          Text(score.isTiebreak ? "TB" : "Game").gridColumnAlignment(.center)
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      // Each player's row names its sets and points, so the column headings
+      // would only be read as noise.
+      .accessibilityHidden(true)
+
+      ForEach(Player.allCases, id: \.self) { side in
+        GridRow {
+          nameLine(side, lineLimit: 1)
+          ForEach(score.sets.indices, id: \.self) { index in
+            setCell(score.sets[index], side: side)
+          }
+          if match.status == .inProgress {
+            pointsText(side)
+              .gridColumnAlignment(.center)
+          }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowAccessibilityLabel(for: side))
+      }
+    }
   }
 
   private func setCell(_ set: SetScore, side: Player) -> some View {
@@ -201,6 +295,24 @@ struct TipCard: View {
     }
     .padding()
     .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+  }
+}
+
+/// A list's load error with a way out: Retry restarts the listener the error
+/// ended (pulling to refresh does the same).
+struct ListErrorRow: View {
+  let message: String
+  let retry: @MainActor () -> Void
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Label(message, systemImage: "exclamationmark.triangle")
+        .foregroundStyle(.red)
+      Spacer(minLength: 8)
+      Button("Retry") { retry() }
+        .buttonStyle(.bordered)
+        .frame(minHeight: 44)
+    }
   }
 }
 
