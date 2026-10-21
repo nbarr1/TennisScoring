@@ -119,7 +119,7 @@ function candidateMatchDetail(match: Match): string {
 
 export default function AdminScreen() {
   const router = useRouter();
-  const { user } = useAppStore();
+  const user = useAppStore((state) => state.user);
   const [division, setDivision] = useState<Division | null>(null);
   const [players, setPlayers] = useState<User[]>([]);
   const [newPlayerName, setNewPlayerName] = useState("");

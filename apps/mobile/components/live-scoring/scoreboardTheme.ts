@@ -3,8 +3,9 @@ import type { MatchMomentTone } from "@tennis/shared";
 
 /**
  * Live-scoring "split scoreboard" palette. Pure black and white for glare on
- * court; every text pairing here is at least 9:1. The two player stripes are
- * blue and orange so they stay distinguishable with red-green colour
+ * court; every text pairing here is at least 7:1 (WCAG AAA). The tightest
+ * are `lost` on `lostSet` (7.6:1) and `muted` on `control` (8.1:1). The two
+ * player stripes are blue and orange so they stay distinguishable with red-green colour
  * blindness, and they are never the only cue: each row also carries a name.
  */
 export const SB = {

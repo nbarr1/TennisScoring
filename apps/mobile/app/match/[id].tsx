@@ -245,6 +245,51 @@ function spokenDuration(ms?: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+/** The current time, refreshed once a second while `active`. */
+function useClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+/**
+ * A duration that counts up from `since` while it is set, or shows the fixed
+ * `ms` otherwise. It owns the once-a-second tick, so only this text
+ * re-renders as the clock runs, not the whole match screen.
+ */
+function ElapsedText({
+  since,
+  ms,
+  prefix = "",
+  spokenPrefix = prefix,
+  style,
+  maxFontSizeMultiplier,
+}: {
+  since?: number;
+  ms?: number;
+  prefix?: string;
+  spokenPrefix?: string;
+  style?: React.ComponentProps<typeof Text>["style"];
+  maxFontSizeMultiplier?: number;
+}) {
+  const now = useClock(since !== undefined);
+  const value = since !== undefined ? now - since : ms;
+  return (
+    <Text
+      style={style}
+      maxFontSizeMultiplier={maxFontSizeMultiplier}
+      accessibilityLabel={`${spokenPrefix}${spokenDuration(value)}`}
+    >
+      {`${prefix}${formatDuration(value)}`}
+    </Text>
+  );
+}
+
 function statPercent(won: number, total: number): string {
   if (total <= 0) return "—";
   return `${Math.round((won / total) * 100)}%`;
@@ -549,7 +594,8 @@ export default function MatchScreen() {
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
   const { match, loading, error: loadError } = useMatch(id ?? null);
-  const { user, divisionId } = useAppStore();
+  const user = useAppStore((state) => state.user);
+  const divisionId = useAppStore((state) => state.divisionId);
   const [currentTip, setCurrentTip] = useState<{
     title: string;
     body: string;
@@ -577,7 +623,6 @@ export default function MatchScreen() {
   const [advancedStatsEnabled, setAdvancedStatsEnabled] = useState(false);
   const [watchAppInstalled, setWatchAppInstalled] = useState(false);
   const [launchingWatch, setLaunchingWatch] = useState(false);
-  const [clockTick, setClockTick] = useState(Date.now());
   // Link opponent modal state
   const [showLinkOpponent, setShowLinkOpponent] = useState(false);
   const [linkSearch, setLinkSearch] = useState("");
@@ -852,7 +897,7 @@ export default function MatchScreen() {
   handleUndoRef.current = handleUndo;
 
   // Kept referentially stable so the Wear listener below is not torn down and
-  // re-registered on every render; the match clock re-renders once a second.
+  // re-registered on every render.
   const handlePoint = useCallback(
     async (
       player: "player1" | "player2",
@@ -956,13 +1001,26 @@ export default function MatchScreen() {
   }, [match?.status, pendingPoint]);
 
   // With advanced stats on, a tap asks for the point type first; see PointTypeSheet.
-  function requestPoint(player: Player) {
-    if (match?.advancedStatsEnabled) {
-      setPendingPoint(player);
-      return;
-    }
-    void handlePoint(player);
-  }
+  // Stable callbacks, so the memoized scoreboard re-renders only when what it
+  // shows changes.
+  const advancedStatsOn = !!match?.advancedStatsEnabled;
+  const requestPoint = useCallback(
+    (player: Player) => {
+      if (advancedStatsOn) {
+        setPendingPoint(player);
+        return;
+      }
+      void handlePoint(player);
+    },
+    [advancedStatsOn, handlePoint],
+  );
+  const handleSwapEnds = useCallback(() => {
+    setSwapped((value) => !value);
+    announce("Ends swapped");
+  }, []);
+  const handleUndoPress = useCallback(() => {
+    void handleUndoRef.current();
+  }, []);
 
   function openManage() {
     setShowPostponeOptions(false);
@@ -1197,12 +1255,6 @@ export default function MatchScreen() {
     await share.run(match.reportUrl);
   }
 
-  useEffect(() => {
-    if (match?.status !== "in_progress") return;
-    const timer = setInterval(() => setClockTick(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [match?.status]);
-
   const refreshWatchAppInstalled = useCallback(async () => {
     setWatchAppInstalled(await isWatchAppInstalled());
   }, []);
@@ -1324,15 +1376,21 @@ export default function MatchScreen() {
     (canManage && match.status === "pending_report") ||
     ((isAdminOrLeader || isAdminRole(user?.role)) &&
       match.status === "completed");
-  const elapsedMs =
-    match.matchDurationMs ??
-    (match.startedAt && match.status === "in_progress"
-      ? clockTick - match.startedAt
-      : undefined);
-  const currentSetElapsedMs =
+  // The clocks tick inside ElapsedText; the screen itself never re-renders
+  // for them. `matchSince` is set only while the match clock is running.
+  const matchSince =
+    match.matchDurationMs === undefined &&
+    match.startedAt &&
+    match.status === "in_progress"
+      ? match.startedAt
+      : undefined;
+  const matchFixedMs = match.matchDurationMs;
+  const currentSetSince =
     match.status === "in_progress" && match.currentSetStartedAt
-      ? clockTick - match.currentSetStartedAt
-      : match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
+      ? match.currentSetStartedAt
+      : undefined;
+  const currentSetFixedMs =
+    match.liveScore.sets[match.liveScore.currentSet]?.durationMs;
   const showCourtSurface = isParticipant && match.status === "in_progress";
   const showSetupSurface = isParticipant && match.status === "scheduled";
   const fillScreen = showCourtSurface || showSetupSurface;
@@ -1343,10 +1401,8 @@ export default function MatchScreen() {
       : match.status === "pending_report" || match.status === "completed"
         ? "FINAL"
         : getMatchStatusMetadata(match.status).label.toUpperCase();
-  const headerClock =
-    match.status === "in_progress" || match.status === "pending_report"
-      ? formatDuration(elapsedMs)
-      : "";
+  const showHeaderClock =
+    match.status === "in_progress" || match.status === "pending_report";
   const undoTarget = match.undoSnapshot?.liveScore;
   const isProposedToMe =
     isParticipant && match.status === "proposed" && mySide === "player2";
@@ -1389,15 +1445,12 @@ export default function MatchScreen() {
       compact={compact}
       fontsLoaded={fontsLoaded}
       swapped={swapped}
-      onSwap={() => {
-        setSwapped((value) => !value);
-        announce("Ends swapped");
-      }}
+      onSwap={handleSwapEnds}
       onPoint={requestPoint}
       scoring={scoring}
       recordingFor={recordingFor}
       lastPoint={lastPoint}
-      onUndo={() => void handleUndo()}
+      onUndo={handleUndoPress}
       canUndo={!!match.undoSnapshot}
       undoHint={
         undoTarget
@@ -1441,14 +1494,14 @@ export default function MatchScreen() {
         >
           {headerTitle}
         </Text>
-        {headerClock !== "" && (
-          <Text
+        {showHeaderClock && (
+          <ElapsedText
+            since={matchSince}
+            ms={matchFixedMs}
+            spokenPrefix="Match time "
             style={[styles.sbHeaderClock, font(fontsLoaded, "semibold")]}
             maxFontSizeMultiplier={1.3}
-            accessibilityLabel={`Match time ${spokenDuration(elapsedMs)}`}
-          >
-            {headerClock}
-          </Text>
+          />
         )}
         {canManage && match.status !== "cancelled" ? (
           <Pressable
@@ -1584,9 +1637,12 @@ export default function MatchScreen() {
                     fontsLoaded={fontsLoaded}
                   >
                     <PanelScore score={match.liveScore} fontsLoaded={fontsLoaded} />
-                    <Text style={styles.panelMeta}>
-                      Match time {formatDuration(elapsedMs)}
-                    </Text>
+                    <ElapsedText
+                      since={matchSince}
+                      ms={matchFixedMs}
+                      prefix="Match time "
+                      style={styles.panelMeta}
+                    />
                     <Text style={styles.panelBody}>
                       Your opponent is a guest, so no one needs to confirm.
                       Save the result now. It counts in the standings once you
@@ -1941,27 +1997,31 @@ export default function MatchScreen() {
                             set.setNumber === match.liveScore.currentSet,
                         )
                         .map((set) => {
+                          const isCurrent =
+                            set.setNumber === match.liveScore.currentSet;
+                          const since =
+                            set.durationMs === undefined && isCurrent
+                              ? currentSetSince
+                              : undefined;
                           const ms =
                             set.durationMs ??
-                            (set.setNumber === match.liveScore.currentSet
-                              ? currentSetElapsedMs
-                              : undefined);
+                            (isCurrent ? currentSetFixedMs : undefined);
                           return (
-                            <Text
+                            <ElapsedText
                               key={set.setNumber}
+                              since={since}
+                              ms={ms}
+                              prefix={`Set ${set.setNumber + 1}: `}
                               style={statsStyles.durationText}
-                              accessibilityLabel={`Set ${set.setNumber + 1}: ${spokenDuration(ms)}`}
-                            >
-                              Set {set.setNumber + 1}: {formatDuration(ms)}
-                            </Text>
+                            />
                           );
                         })}
-                      <Text
+                      <ElapsedText
+                        since={matchSince}
+                        ms={matchFixedMs}
+                        prefix="Match: "
                         style={statsStyles.durationText}
-                        accessibilityLabel={`Match: ${spokenDuration(elapsedMs)}`}
-                      >
-                        Match: {formatDuration(elapsedMs)}
-                      </Text>
+                      />
                     </View>
                   </View>
                 )}

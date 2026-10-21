@@ -136,7 +136,7 @@ function notStartedText(match: Match): string {
  * scores their point, with a status band between the rows that reads the
  * umpire's call or the moment (deuce, break point, change ends).
  */
-export function ScoreboardSurface({
+function ScoreboardSurfaceView({
   match,
   interactive,
   compact,
@@ -581,6 +581,12 @@ export function ScoreboardSurface({
     </View>
   );
 }
+
+/**
+ * Memoized: the match screen re-renders for sheets, notices, and the like,
+ * and none of those change the scoreboard. Callers pass stable callbacks.
+ */
+export const ScoreboardSurface = React.memo(ScoreboardSurfaceView);
 
 const styles = StyleSheet.create({
   surface: { flex: 1, minHeight: 0 },

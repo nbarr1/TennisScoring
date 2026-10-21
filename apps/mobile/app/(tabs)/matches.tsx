@@ -685,7 +685,8 @@ type Sheet = null | "choices" | "live" | "historic" | "propose";
 
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
-  const { user, divisionId } = useAppStore();
+  const user = useAppStore((state) => state.user);
+  const divisionId = useAppStore((state) => state.divisionId);
   const router = useRouter();
   const currentSeasonId = useMemo(() => currentSeasonForDate().id, []);
   const seasonOptions = useMemo(() => defaultSeasonOptions(), []);
