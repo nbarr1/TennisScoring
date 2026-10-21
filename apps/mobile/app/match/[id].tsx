@@ -18,6 +18,7 @@ import {
 import type { SymbolViewProps } from "expo-symbols";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
 import * as Linking from "expo-linking";
 import { AppIcon, IconLabel, ICON_SIZE } from "../../components/AppIcon";
@@ -152,14 +153,25 @@ function formatWhen(ms: number): string {
 }
 
 /**
- * A short confirming buzz on Android, where the app holds the VIBRATE
- * permission. iOS has no light haptic without a native module, and its
- * Vibration API is a long buzz, so iOS relies on the visual and spoken
- * confirmation instead.
+ * A short confirming tap. Android keeps the Vibration API pulses it has always
+ * used (the app holds the VIBRATE permission). iOS uses the Taptic Engine
+ * through expo-haptics, since its Vibration API is a long buzz.
  */
 function haptic(kind: "point" | "undo" | "error"): void {
-  if (Platform.OS !== "android") return;
   try {
+    if (Platform.OS === "ios") {
+      const feedback =
+        kind === "error"
+          ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+          : Haptics.impactAsync(
+              kind === "undo"
+                ? Haptics.ImpactFeedbackStyle.Medium
+                : Haptics.ImpactFeedbackStyle.Light,
+            );
+      feedback.catch(() => undefined);
+      return;
+    }
+    if (Platform.OS !== "android") return;
     Vibration.vibrate(
       kind === "error" ? [0, 40, 70, 40] : kind === "undo" ? 30 : 15,
     );
