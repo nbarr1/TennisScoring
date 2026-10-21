@@ -1188,7 +1188,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 15,
     overflowWrap: "anywhere",
   },
-  bubbleMe: { background: color.clubhouseGreen, color: color.surface, borderBottomRightRadius: 4 },
+  bubbleMe: { background: color.brandFill, color: color.onBrand, borderBottomRightRadius: 4 },
   bubbleThem: { background: color.surface, color: color.ink, borderBottomLeftRadius: 4, boxShadow: shadow.card },
   bubbleSending: { opacity: 0.7 },
   bubbleFailed: { background: color.destructiveSoft, color: color.ink, border: `1px solid ${color.destructive}` },
@@ -1224,7 +1224,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     textDecoration: "underline",
   },
-  contactLinkMe: { color: color.surface },
+  contactLinkMe: { color: color.onBrand },
   inputRow: {
     display: "flex",
     alignItems: "flex-end",

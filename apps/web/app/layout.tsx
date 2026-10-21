@@ -8,14 +8,18 @@ import { ViewModeProvider } from './shared/viewMode';
 import { SessionServices } from './shared/SessionServices';
 import { AnnouncerProvider } from './shared/Announcer';
 import { SkipLink } from './shared/SkipLink';
-import { palette, rootTokenCss } from './shared/tokens';
+import { darkPalette, palette, rootTokenCss } from './shared/tokens';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: palette.clubhouseGreen,
+  // The browser chrome matches the nav bar, which is the brand fill in both schemes.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: palette.brandFill },
+    { media: '(prefers-color-scheme: dark)', color: darkPalette.brandFill },
+  ],
 };
 
 export const metadata: Metadata = {

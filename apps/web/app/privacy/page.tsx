@@ -96,7 +96,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     padding: `${space.sm}px ${space.lg}px`,
-    background: color.clubhouseGreen,
+    background: color.brandFill,
   },
   headerInner: { width: "100%", maxWidth: width.reading - 2 * space.lg, margin: "0 auto" },
   brand: {
@@ -107,7 +107,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "var(--font-display)",
     fontWeight: 700,
     fontSize: 22,
-    color: color.surface,
+    color: color.onBrand,
     textDecoration: "none",
   },
   main: {

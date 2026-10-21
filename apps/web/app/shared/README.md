@@ -18,12 +18,17 @@ its `rootTokenCss` into the document head, declaring every token as a CSS
 variable on `:root` (`--clubhouse-green`, `--text-muted`, `--radius-md`,
 `--space-lg`, `--shadow-card`, ...), which the classes in `globals.css` use.
 `globals.css` itself declares only the font stacks and the focus ring
-(`--focus-ring-color`, ...). For inline styles, `tokens.ts` exports:
+(`--focus-ring-color`, ...). The same style tag redefines the colors and
+shadows from `darkPalette` under `@media (prefers-color-scheme: dark)`, so the
+app follows the device setting with no toggle and nothing else to change: use
+`color.*` and the classes, never a raw hex, and the dark theme comes for free.
+For inline styles, `tokens.ts` exports:
 
 | Export | What it holds |
 |---|---|
 | `color.*` | `var(--…)` references: `clubhouseGreen`, `courtGreen`, `greenSoft`, `ballYellow`, `canvas`, `surface`, `surfaceMuted`, `ink`, `textMuted`, `textSubtle`, `border`, `borderStrong`, `destructive`, `destructiveSoft`, `warningText`, `warningSoft`, `info`, `infoSoft`, `liveGreen`, `liveText`, `proposedPurple`, `unassignedSoft`, `unassignedText`, scoreboard colors |
-| `palette.*` | the same colors as raw hex, for canvas or third-party options |
+| `color.*` fills | `brandFill`, `courtGreenFill`, `destructiveFill` (+ `destructiveFillPressed`, `clubhouseGreenPressed`) for solid fills, `onBrand` for text on them, `onAccent` for text on Ball Yellow or Light Green |
+| `palette.*`, `darkPalette.*` | the same colors as raw hex (light, and the dark overrides), for canvas, contrast maths, the theme-color meta, or third-party options |
 | `radius` | `sm 6`, `md 10`, `card 14`, `lg 16`, `xl 24`, `pill 999` |
 | `space` | `xxs 2`, `xs 4`, `sm 8`, `md 12`, `lg 16`, `xl 24`, `xxl 32`, `xxxl 48` |
 | `type` | spreadable roles: `display`, `headline`, `title`, `body`, `bodySmall`, `label`, `caption` |
@@ -37,6 +42,14 @@ every clubhouse surface). `textSubtle` is about 3:1, so it is for icons and
 dividers only. Live Green, Warning Orange, and `success` fail as small text:
 use `liveText`, `warningText`, and `courtGreen` for text. Ball Yellow never
 carries text on light surfaces. Input borders use `borderStrong` (3:1).
+
+Fills and text are separate tokens: `clubhouseGreen`, `courtGreen`, and
+`destructive` are text and stroke shades that lighten in dark mode, so a solid
+fill uses `brandFill` / `courtGreenFill` / `destructiveFill` with `onBrand`
+text, never `clubhouseGreen` with `surface` text (which would turn into light
+green under dark text). `surface` is a background, not "white". The dark ratios
+are listed above `darkPalette`; `palette` stays light for printed or canvas
+output such as the confetti.
 
 ```tsx
 <section style={{ ...cardStyle, marginBottom: space.lg }}>
