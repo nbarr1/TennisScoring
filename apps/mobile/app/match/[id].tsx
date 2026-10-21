@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Alert,
-  Modal,
   ActivityIndicator,
   ScrollView,
   Switch,
@@ -89,7 +88,7 @@ import {
   spokenUndoTarget,
   undoTargetLabel,
 } from "../../components/live-scoring/scoreSpeech";
-import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
+import { BottomSheetModal } from "../../components/BottomSheetModal";
 import {
   addWearScoreInputListener,
   addWearSyncRequestListener,
@@ -417,128 +416,125 @@ function EditScoreModal({
     );
   }
   return (
-    <Modal
+    // The same rising sheet as the others: a card pinned to the bottom that
+    // scrolls when the keyboard or a long score needs the room.
+    <BottomSheetModal
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onCancel}
+      onRequestClose={() => {
+        if (!saving) onCancel();
+      }}
+      cardStyle={styles.sheetCard}
     >
-      {/* The same rising sheet as the others: a card pinned to the bottom that
-          scrolls when the keyboard or a long score needs the room. */}
-      <KeyboardAwareBottomSheet style={styles.sheetOverlay}>
-        <View style={styles.sheetCard} accessibilityViewIsModal>
-          <Text style={styles.sheetTitle} accessibilityRole="header">
-            {resolving ? "Set the correct score" : "Edit score"}
-          </Text>
-          {resolving && (
-            <Text style={styles.sheetHint}>
-              This score is final. It counts in the standings without another
-              confirmation from the players.
-            </Text>
-          )}
-          {!resolving && isCompleted && (
-            <InlineAlert
-              tone="warning"
-              message="Changing a confirmed score sends it back to both players to confirm again."
-            />
-          )}
-          <View
-            style={editScoreStyles.headerRow}
-            importantForAccessibility="no-hide-descendants"
-            accessibilityElementsHidden
-          >
-            <Text style={editScoreStyles.headerSet}>Set</Text>
-            <Text style={editScoreStyles.headerName} numberOfLines={1}>
-              {p1Name}
-            </Text>
-            <Text style={editScoreStyles.headerName} numberOfLines={1}>
-              {p2Name}
-            </Text>
-          </View>
-          {sets.map((s, i) => {
-            const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
-            const unit = s.matchTiebreak ? "points" : "games";
-            return (
-              <React.Fragment key={i}>
-                <View style={editScoreStyles.setRow}>
-                  <Text
-                    style={editScoreStyles.setLabel}
-                    importantForAccessibility="no"
-                    accessibilityElementsHidden
-                  >
-                    {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
-                  </Text>
-                  <TextInput
-                    style={editScoreStyles.setInput}
-                    value={s.p1}
-                    onChangeText={(v) => updateSet(i, "p1", v)}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    placeholder="0"
-                    placeholderTextColor={colors.placeholder}
-                    accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
-                    editable={!saving}
-                  />
-                  <TextInput
-                    style={editScoreStyles.setInput}
-                    value={s.p2}
-                    onChangeText={(v) => updateSet(i, "p2", v)}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    placeholder="0"
-                    placeholderTextColor={colors.placeholder}
-                    accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
-                    editable={!saving}
-                  />
-                </View>
-                <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
-              </React.Fragment>
-            );
-          })}
-          <View style={editScoreStyles.setActionRow}>
-            {sets.length < 5 && (
-              <Button
-                label="Add set"
-                icon="plus"
-                variant="quiet"
-                size="compact"
-                disabled={saving}
-                onPress={() =>
-                  onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
-                }
+      <Text style={styles.sheetTitle} accessibilityRole="header">
+        {resolving ? "Set the correct score" : "Edit score"}
+      </Text>
+      {resolving && (
+        <Text style={styles.sheetHint}>
+          This score is final. It counts in the standings without another
+          confirmation from the players.
+        </Text>
+      )}
+      {!resolving && isCompleted && (
+        <InlineAlert
+          tone="warning"
+          message="Changing a confirmed score sends it back to both players to confirm again."
+        />
+      )}
+      <View
+        style={editScoreStyles.headerRow}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
+        <Text style={editScoreStyles.headerSet}>Set</Text>
+        <Text style={editScoreStyles.headerName} numberOfLines={1}>
+          {p1Name}
+        </Text>
+        <Text style={editScoreStyles.headerName} numberOfLines={1}>
+          {p2Name}
+        </Text>
+      </View>
+      {sets.map((s, i) => {
+        const setName = s.matchTiebreak ? "Match tiebreak" : `Set ${i + 1}`;
+        const unit = s.matchTiebreak ? "points" : "games";
+        return (
+          <React.Fragment key={i}>
+            <View style={editScoreStyles.setRow}>
+              <Text
+                style={editScoreStyles.setLabel}
+                importantForAccessibility="no"
+                accessibilityElementsHidden
+              >
+                {s.matchTiebreak ? "TB" : `Set ${i + 1}`}
+              </Text>
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p1}
+                onChangeText={(v) => updateSet(i, "p1", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor={colors.placeholder}
+                accessibilityLabel={`${setName}, ${p1Name} ${unit}`}
+                editable={!saving}
               />
-            )}
-            {sets.length > 1 && (
-              <Button
-                label="Remove last set"
-                variant="quiet"
-                size="compact"
-                disabled={saving}
-                onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+              <TextInput
+                style={editScoreStyles.setInput}
+                value={s.p2}
+                onChangeText={(v) => updateSet(i, "p2", v)}
+                keyboardType="number-pad"
+                maxLength={2}
+                placeholder="0"
+                placeholderTextColor={colors.placeholder}
+                accessibilityLabel={`${setName}, ${p2Name} ${unit}`}
+                editable={!saving}
               />
-            )}
-          </View>
-          {error ? (
-            <InlineAlert tone="error" title="Score not saved" message={error} />
-          ) : null}
-          <View style={styles.buttonStack}>
-            <Button
-              label={resolving ? "Save final score" : "Save score"}
-              pending={saving}
-              fullWidth
-              onPress={onSave}
-            />
-            <Button
-              label="Cancel"
-              variant="quiet"
-              fullWidth
-              disabled={saving}
-              onPress={onCancel}
-            />
-          </View>
-        </View>
-      </KeyboardAwareBottomSheet>
-    </Modal>
+            </View>
+            <MatchTiebreakToggle sets={sets} index={i} onChangeSets={onChangeSets} />
+          </React.Fragment>
+        );
+      })}
+      <View style={editScoreStyles.setActionRow}>
+        {sets.length < 5 && (
+          <Button
+            label="Add set"
+            icon="plus"
+            variant="quiet"
+            size="compact"
+            disabled={saving}
+            onPress={() =>
+              onChangeSets(withEligibleTiebreaks([...sets, { p1: "", p2: "" }]))
+            }
+          />
+        )}
+        {sets.length > 1 && (
+          <Button
+            label="Remove last set"
+            variant="quiet"
+            size="compact"
+            disabled={saving}
+            onPress={() => onChangeSets(withEligibleTiebreaks(sets.slice(0, -1)))}
+          />
+        )}
+      </View>
+      {error ? (
+        <InlineAlert tone="error" title="Score not saved" message={error} />
+      ) : null}
+      <View style={styles.buttonStack}>
+        <Button
+          label={resolving ? "Save final score" : "Save score"}
+          pending={saving}
+          fullWidth
+          onPress={onSave}
+        />
+        <Button
+          label="Cancel"
+          variant="quiet"
+          fullWidth
+          disabled={saving}
+          onPress={onCancel}
+        />
+      </View>
+    </BottomSheetModal>
   );
 }
 
@@ -2049,151 +2045,139 @@ export default function MatchScreen() {
       />
 
       {/* Manage Match sheet */}
-      <Modal
+      <BottomSheetModal
         visible={showManage}
-        transparent
-        animationType="slide"
         onRequestClose={() => {
           if (!managing) setShowManage(false);
         }}
+        backdropLabel="Close match options"
+        // The scoreboard's own dark sheet, down to the home-indicator inset.
+        fillColor={SB.panel}
+        handleColor={SB.controlFill}
+        overlayStyle={styles.manageOverlay}
+        cardStyle={styles.manageCard}
       >
-        <KeyboardAwareBottomSheet style={styles.manageOverlay}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={() => {
-              if (!managing) setShowManage(false);
-            }}
-            accessible={false}
-            importantForAccessibility="no"
-          />
-          <View
-            style={styles.manageCard}
-            onStartShouldSetResponder={() => true}
-            accessibilityViewIsModal
-          >
-            <Text style={styles.manageTitle} accessibilityRole="header">
-              {showPostponeOptions ? "Postpone by…" : "Match options"}
-            </Text>
+        <Text style={styles.manageTitle} accessibilityRole="header">
+          {showPostponeOptions ? "Postpone by…" : "Match options"}
+        </Text>
 
-            {managing && (
-              <View
-                style={styles.manageBusy}
-                accessible
-                accessibilityRole="progressbar"
-                accessibilityLabel="Saving"
-              >
-                <ActivityIndicator color={SB.yellow} />
-                <Text style={styles.manageToggleHint}>Saving…</Text>
+        {managing && (
+          <View
+            style={styles.manageBusy}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel="Saving"
+          >
+            <ActivityIndicator color={SB.yellow} />
+            <Text style={styles.manageToggleHint}>Saving…</Text>
+          </View>
+        )}
+
+        {manageError ? (
+          <InlineAlert tone="error" message={manageError} />
+        ) : null}
+
+        {!managing && !showPostponeOptions && (
+          <>
+            {isParticipant && match.status === "in_progress" && (
+              <View style={[styles.manageOption, styles.manageToggleRow]}>
+                <View style={styles.manageToggleCopy}>
+                  <Text style={styles.manageOptionText}>Rule tips</Text>
+                  <Text style={styles.manageToggleHint}>
+                    Explain deuce, tiebreaks, and changeovers
+                  </Text>
+                </View>
+                <Switch
+                  value={match.tipsEnabled}
+                  onValueChange={(value) => void tips.run(value)}
+                  disabled={tips.pending}
+                  trackColor={{ true: SB.yellow, false: SB.ballOff }}
+                  thumbColor={match.tipsEnabled ? SB.onYellow : SB.muted}
+                  accessibilityLabel="Rule tips"
+                  accessibilityHint="Explains deuce, tiebreaks, and changeovers as they happen."
+                />
               </View>
             )}
-
-            {manageError ? (
-              <InlineAlert tone="error" message={manageError} />
-            ) : null}
-
-            {!managing && !showPostponeOptions && (
-              <>
-                {isParticipant && match.status === "in_progress" && (
-                  <View style={[styles.manageOption, styles.manageToggleRow]}>
-                    <View style={styles.manageToggleCopy}>
-                      <Text style={styles.manageOptionText}>Rule tips</Text>
-                      <Text style={styles.manageToggleHint}>
-                        Explain deuce, tiebreaks, and changeovers
-                      </Text>
-                    </View>
-                    <Switch
-                      value={match.tipsEnabled}
-                      onValueChange={(value) => void tips.run(value)}
-                      disabled={tips.pending}
-                      trackColor={{ true: SB.yellow, false: SB.ballOff }}
-                      thumbColor={match.tipsEnabled ? SB.onYellow : SB.muted}
-                      accessibilityLabel="Rule tips"
-                      accessibilityHint="Explains deuce, tiebreaks, and changeovers as they happen."
-                    />
-                  </View>
-                )}
-                {canEditScore && (
-                  <ManageRow
-                    icon="pencil"
-                    label="Edit score"
-                    onPress={() => handleOpenEditScore()}
-                  />
-                )}
-                {watchAppInstalled &&
-                  isParticipant &&
-                  (match.status === "scheduled" ||
-                    match.status === "in_progress") && (
-                    <ManageRow
-                      icon="applewatch"
-                      label={launchingWatch ? "Opening on watch…" : "Open on watch"}
-                      disabled={launchingWatch}
-                      onPress={() => void handleLaunchWatch()}
-                    />
-                  )}
-                {isParticipant && match.status === "scheduled" && (
-                  <ManageRow
-                    icon="calendar"
-                    label="Postpone"
-                    onPress={() => setShowPostponeOptions(true)}
-                  />
-                )}
-                {isParticipant &&
-                  (match.status === "scheduled" ||
-                    match.status === "in_progress") && (
-                    <ManageRow
-                      icon="xmark.circle"
-                      label="Cancel match"
-                      onPress={() => void handleCancelMatch()}
-                    />
-                  )}
-                <ManageRow
-                  icon="trash"
-                  label="Delete match"
-                  danger
-                  onPress={() => void handleDeleteMatch()}
-                />
-              </>
+            {canEditScore && (
+              <ManageRow
+                icon="pencil"
+                label="Edit score"
+                onPress={() => handleOpenEditScore()}
+              />
             )}
-
-            {!managing && showPostponeOptions && (
-              <>
-                {[
-                  { label: "30 minutes", ms: 30 * 60 * 1000 },
-                  { label: "1 hour", ms: 60 * 60 * 1000 },
-                  { label: "2 hours", ms: 2 * 60 * 60 * 1000 },
-                  { label: "1 day", ms: 24 * 60 * 60 * 1000 },
-                ].map(({ label, ms }) => (
-                  <ManageRow
-                    key={label}
-                    icon="calendar"
-                    label={`${label} later`}
-                    hint={formatWhen((match.scheduledAt ?? Date.now()) + ms)}
-                    onPress={() => void handlePostponeBy(ms)}
-                  />
-                ))}
+            {watchAppInstalled &&
+              isParticipant &&
+              (match.status === "scheduled" ||
+                match.status === "in_progress") && (
                 <ManageRow
-                  icon={BACK_ICON}
-                  label="Back to match options"
-                  onPress={() => setShowPostponeOptions(false)}
+                  icon="applewatch"
+                  label={launchingWatch ? "Opening on watch…" : "Open on watch"}
+                  disabled={launchingWatch}
+                  onPress={() => void handleLaunchWatch()}
                 />
-              </>
+              )}
+            {isParticipant && match.status === "scheduled" && (
+              <ManageRow
+                icon="calendar"
+                label="Postpone"
+                onPress={() => setShowPostponeOptions(true)}
+              />
             )}
+            {isParticipant &&
+              (match.status === "scheduled" ||
+                match.status === "in_progress") && (
+                <ManageRow
+                  icon="xmark.circle"
+                  label="Cancel match"
+                  onPress={() => void handleCancelMatch()}
+                />
+              )}
+            <ManageRow
+              icon="trash"
+              label="Delete match"
+              danger
+              onPress={() => void handleDeleteMatch()}
+            />
+          </>
+        )}
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.manageCloseBtn,
-                pressed && { backgroundColor: SB.control },
-              ]}
-              onPress={() => setShowManage(false)}
-              disabled={managing}
-              accessibilityRole="button"
-              accessibilityLabel="Close match options"
-            >
-              <Text style={styles.manageCloseBtnText}>Close</Text>
-            </Pressable>
-          </View>
-        </KeyboardAwareBottomSheet>
-      </Modal>
+        {!managing && showPostponeOptions && (
+          <>
+            {[
+              { label: "30 minutes", ms: 30 * 60 * 1000 },
+              { label: "1 hour", ms: 60 * 60 * 1000 },
+              { label: "2 hours", ms: 2 * 60 * 60 * 1000 },
+              { label: "1 day", ms: 24 * 60 * 60 * 1000 },
+            ].map(({ label, ms }) => (
+              <ManageRow
+                key={label}
+                icon="calendar"
+                label={`${label} later`}
+                hint={formatWhen((match.scheduledAt ?? Date.now()) + ms)}
+                onPress={() => void handlePostponeBy(ms)}
+              />
+            ))}
+            <ManageRow
+              icon={BACK_ICON}
+              label="Back to match options"
+              onPress={() => setShowPostponeOptions(false)}
+            />
+          </>
+        )}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.manageCloseBtn,
+            pressed && { backgroundColor: SB.control },
+          ]}
+          onPress={() => setShowManage(false)}
+          disabled={managing}
+          accessibilityRole="button"
+          accessibilityLabel="Close match options"
+        >
+          <Text style={styles.manageCloseBtnText}>Close</Text>
+        </Pressable>
+      </BottomSheetModal>
 
       <EditScoreModal
         visible={showEditScore}
@@ -2213,94 +2197,89 @@ export default function MatchScreen() {
       />
 
       {/* Link Opponent sheet */}
-      <Modal
+      <BottomSheetModal
         visible={showLinkOpponent}
-        transparent
-        animationType="slide"
         onRequestClose={() => {
           if (!link.pending) closeLinkOpponent();
         }}
+        cardStyle={styles.sheetCard}
       >
-        <KeyboardAwareBottomSheet style={styles.sheetOverlay}>
-          <View style={styles.sheetCard} accessibilityViewIsModal>
-            <Text style={styles.sheetTitle} accessibilityRole="header">
-              Link your opponent's account
-            </Text>
-            <Text style={styles.sheetHint}>
-              Find your opponent in your division. They're added to this match
-              in place of the guest.
-            </Text>
-            <FormField
-              label="Opponent's name or email"
-              value={linkSearch}
-              onChangeText={(text) => void handleLinkSearch(text)}
-              placeholder="Start typing a name"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              returnKeyType="search"
-              editable={!link.pending}
-            />
-            {linkSearching ? (
-              <LoadingState inline label="Searching your division" showLabel />
-            ) : null}
-            {linkSearchError ? (
-              <InlineAlert
-                tone="error"
-                message={linkSearchError}
-                actionLabel="Try again"
-                onAction={() => void handleLinkSearch(linkSearch)}
-              />
-            ) : null}
-            {link.error ? (
-              <InlineAlert tone="error" message={link.error} />
-            ) : null}
-            {link.pending ? (
-              <LoadingState inline label="Linking player" showLabel />
-            ) : null}
-            {/* The sheet already scrolls, and a division search returns a
-                short list, so the rows render directly rather than in a
-                nested virtualized list. */}
-            <View>
-              {linkResults.map((item) => (
-                <Pressable
-                  key={item.id}
-                  style={({ pressed }) => [
-                    styles.linkResultRow,
-                    pressed && { backgroundColor: colors.surfaceMuted },
-                  ]}
-                  onPress={() => void link.run(item)}
-                  disabled={link.pending}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Link ${item.displayName ?? "this player"}`}
-                  accessibilityState={{ disabled: link.pending }}
-                >
-                  <AppIcon name="person.crop.circle" color={colors.textMuted} />
-                  <Text style={styles.linkResultName} numberOfLines={1}>
-                    {item.displayName ?? "Unnamed player"}
-                  </Text>
-                  <Text style={styles.linkResultAction}>Link</Text>
-                </Pressable>
-              ))}
-              {linkResults.length === 0 &&
-              linkSearch.trim().length > 0 &&
-              !linkSearching &&
-              !linkSearchError ? (
-                <Text style={styles.linkNoResults}>
-                  No players in your division match "{linkSearch.trim()}".
-                </Text>
-              ) : null}
-            </View>
-            <Button
-              label="Cancel"
-              variant="quiet"
-              fullWidth
+        <Text style={styles.sheetTitle} accessibilityRole="header">
+          Link your opponent's account
+        </Text>
+        <Text style={styles.sheetHint}>
+          Find your opponent in your division. They're added to this match
+          in place of the guest.
+        </Text>
+        <FormField
+          label="Opponent's name or email"
+          value={linkSearch}
+          onChangeText={(text) => void handleLinkSearch(text)}
+          placeholder="Start typing a name"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoFocus
+          returnKeyType="search"
+          editable={!link.pending}
+        />
+        {linkSearching ? (
+          <LoadingState inline label="Searching your division" showLabel />
+        ) : null}
+        {linkSearchError ? (
+          <InlineAlert
+            tone="error"
+            message={linkSearchError}
+            actionLabel="Try again"
+            onAction={() => void handleLinkSearch(linkSearch)}
+          />
+        ) : null}
+        {link.error ? (
+          <InlineAlert tone="error" message={link.error} />
+        ) : null}
+        {link.pending ? (
+          <LoadingState inline label="Linking player" showLabel />
+        ) : null}
+        {/* The sheet already scrolls, and a division search returns a
+            short list, so the rows render directly rather than in a
+            nested virtualized list. */}
+        <View>
+          {linkResults.map((item) => (
+            <Pressable
+              key={item.id}
+              style={({ pressed }) => [
+                styles.linkResultRow,
+                pressed && { backgroundColor: colors.surfaceMuted },
+              ]}
+              onPress={() => void link.run(item)}
               disabled={link.pending}
-              onPress={closeLinkOpponent}
-            />
-          </View>
-        </KeyboardAwareBottomSheet>
-      </Modal>
+              accessibilityRole="button"
+              accessibilityLabel={`Link ${item.displayName ?? "this player"}`}
+              accessibilityState={{ disabled: link.pending }}
+            >
+              <AppIcon name="person.crop.circle" color={colors.textMuted} />
+              <Text style={styles.linkResultName} numberOfLines={1}>
+                {item.displayName ?? "Unnamed player"}
+              </Text>
+              <Text style={styles.linkResultAction}>Link</Text>
+            </Pressable>
+          ))}
+          {linkResults.length === 0 &&
+          linkSearch.trim().length > 0 &&
+          !linkSearching &&
+          !linkSearchError ? (
+            <Text style={styles.linkNoResults}>
+              No players in your division match "{linkSearch.trim()}".
+            </Text>
+          ) : null}
+        </View>
+        <Button
+          label="Cancel"
+          variant="quiet"
+          fullWidth
+          disabled={link.pending}
+          onPress={closeLinkOpponent}
+        />
+      </BottomSheetModal>
     </View>
   );
 }
@@ -2363,16 +2342,13 @@ const styles = StyleSheet.create({
   spectatorText: { flex: 1, color: SB.muted, fontSize: 15, lineHeight: 21 },
 
   // Manage match
-  manageOverlay: {
-    flex: 1,
-    backgroundColor: SB.scrim,
-    justifyContent: "flex-end",
-  },
+  manageOverlay: { backgroundColor: SB.scrim },
   manageCard: {
     backgroundColor: SB.panel,
     borderTopWidth: 2,
     borderTopColor: SB.yellow,
     padding: 16,
+    paddingTop: 24,
     paddingBottom: 24,
     gap: 4,
     width: "100%",
@@ -2441,11 +2417,6 @@ const styles = StyleSheet.create({
   tipBody: { color: SB.onYellow, fontSize: 14, lineHeight: 19 },
 
   // Clubhouse sheets (edit score, link opponent)
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "flex-end",
-  },
   sheetCard: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.xl,

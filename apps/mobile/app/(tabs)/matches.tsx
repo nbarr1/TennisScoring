@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,7 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { onSnapshot } from "firebase/firestore";
 import {
-  divisionMatchesQuery,
+  divisionSeasonMatchesQuery,
   createMatch,
   recordHistoricMatch,
   recordMatchOnBehalf,
@@ -67,7 +72,7 @@ import {
 } from "../../theme";
 import { useAppStore } from "../../store/appStore";
 import { StatusBadge } from "../../components/StatusBadge";
-import { KeyboardAwareBottomSheet } from "../../components/KeyboardSafeView";
+import { BottomSheetModal } from "../../components/BottomSheetModal";
 import {
   MatchTiebreakToggle,
   withEligibleTiebreaks,
@@ -423,24 +428,19 @@ function FormSheet({
   children: React.ReactNode;
 }) {
   return (
-    <Modal
+    <BottomSheetModal
       visible
-      transparent
-      animationType="slide"
       onRequestClose={onRequestClose}
+      cardStyle={styles.modalCard}
     >
-      <KeyboardAwareBottomSheet style={styles.modalOverlay}>
-        <View style={styles.modalCard} accessibilityViewIsModal>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle} accessibilityRole="header">
-              {title}
-            </Text>
-            <IconButton label="Close" icon="xmark" onPress={onRequestClose} />
-          </View>
-          {children}
-        </View>
-      </KeyboardAwareBottomSheet>
-    </Modal>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle} accessibilityRole="header">
+          {title}
+        </Text>
+        <IconButton label="Close" icon="xmark" onPress={onRequestClose} />
+      </View>
+      {children}
+    </BottomSheetModal>
   );
 }
 
@@ -448,17 +448,21 @@ function FormSheet({
 // Match card
 // ---------------------------------------------------------------------------
 
-function MatchCard({
+/**
+ * Memoized, with stable `onOpen` and `onNotice`: a snapshot or a keystroke in
+ * the player search then re-renders only the cards whose match changed.
+ */
+const MatchCard = React.memo(function MatchCard({
   match,
   uid,
   kind,
-  onOpen,
+  onOpen: onOpenMatch,
   onNotice,
 }: {
   match: Match;
   uid: string | undefined;
   kind: CardKind;
-  onOpen: () => void;
+  onOpen: (matchId: string) => void;
   /** Shows an action's outcome above the list, since the card moves or leaves. */
   onNotice: (message: string) => void;
 }) {
@@ -472,6 +476,7 @@ function MatchCard({
   const player2Name = sideDisplayName(match, "player2") || "Player 2";
   const opponent = opponentName(match, uid);
   const mine = !!uid && isMatchParticipant(match, uid);
+  const onOpen = () => onOpenMatch(match.id);
 
   const acceptMessage = `Match with ${opponent} accepted. It's now in your upcoming matches.`;
   const declineMessage =
@@ -675,7 +680,7 @@ function MatchCard({
       )}
     </View>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -702,6 +707,8 @@ export default function MatchesScreen() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Only the season on screen is subscribed, so reads and memory stay flat as
+  // past seasons pile up. Matches with no season were never shown here.
   useEffect(() => {
     if (!divisionId) {
       setMatches([]);
@@ -711,7 +718,7 @@ export default function MatchesScreen() {
     setLoading(true);
     setLoadError(false);
     const unsub = onSnapshot(
-      divisionMatchesQuery(divisionId),
+      divisionSeasonMatchesQuery(divisionId, selectedSeasonId),
       (snap) => {
         setMatches(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as Match));
         setLoading(false);
@@ -723,7 +730,97 @@ export default function MatchesScreen() {
       },
     );
     return unsub;
-  }, [divisionId, loadRetryKey]);
+  }, [divisionId, selectedSeasonId, loadRetryKey]);
+
+  const uid = user?.id;
+  const openMatch = useCallback(
+    (matchId: string) => router.push(`/match/${matchId}`),
+    [router],
+  );
+
+  const normalizedSearch = playerSearch.trim().toLocaleLowerCase();
+  // The query already holds one season; the filter guards the moment between
+  // a season switch and the new snapshot.
+  const seasonMatches = useMemo(
+    () => matches.filter((match) => match.seasonId === selectedSeasonId),
+    [matches, selectedSeasonId],
+  );
+  const buckets = useMemo(() => {
+    const next: Record<Bucket, Match[]> = {
+      needsYou: [],
+      next: [],
+      waiting: [],
+      live: [],
+      divisionUpcoming: [],
+      review: [],
+      history: [],
+    };
+    for (const match of seasonMatches) {
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          match.player1Name,
+          match.player2Name,
+          match.side1?.displayName,
+          match.side2?.displayName,
+        ].some((name) => name?.toLocaleLowerCase().includes(normalizedSearch));
+      if (!matchesSearch) continue;
+      const bucket = bucketOf(match, uid);
+      if (bucket) next[bucket].push(match);
+    }
+    const byPlayDateAsc = (a: Match, b: Match) =>
+      (a.scheduledAt ?? Number.MAX_SAFE_INTEGER) -
+      (b.scheduledAt ?? Number.MAX_SAFE_INTEGER);
+    // Invitations first, then results to confirm, each soonest first.
+    next.needsYou.sort(
+      (a, b) =>
+        Number(a.status !== "proposed") - Number(b.status !== "proposed") ||
+        byPlayDateAsc(a, b),
+    );
+    // A live match of yours first, then the next scheduled one.
+    next.next.sort(
+      (a, b) =>
+        Number(b.status === "in_progress") -
+          Number(a.status === "in_progress") || byPlayDateAsc(a, b),
+    );
+    next.waiting.sort(byPlayDateAsc);
+    next.live.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+    next.divisionUpcoming.sort(byPlayDateAsc);
+    next.review.sort((a, b) => playDate(b) - playDate(a));
+    next.history.sort((a, b) => playDate(b) - playDate(a));
+    return next;
+  }, [seasonMatches, normalizedSearch, uid]);
+
+  const historyExpanded = historyOpen ?? activeFilter === "history";
+  const sections = useMemo<MatchSection[]>(() => {
+    const titles: Record<Bucket, string> = {
+      needsYou: "Needs you",
+      next: buckets.next.length === 1 ? "Your next match" : "Your matches",
+      waiting: "Waiting on others",
+      live: "Live in your division",
+      divisionUpcoming: "Scheduled in your division",
+      review: "Results in review",
+      history: "History",
+    };
+    return (Object.keys(buckets) as Bucket[])
+      .filter(
+        (key) =>
+          BUCKET_FILTERS[key].includes(activeFilter) && buckets[key].length > 0,
+      )
+      .map((key) => ({
+        key,
+        title: titles[key],
+        total: buckets[key].length,
+        data:
+          key === "history" && !historyExpanded
+            ? []
+            : buckets[key].map((match) => ({
+                id: match.id,
+                match,
+                kind: kindOf(match, key),
+              })),
+      }));
+  }, [buckets, activeFilter, historyExpanded]);
 
   if (loading) return <LoadingState label="Loading matches" />;
 
@@ -749,89 +846,11 @@ export default function MatchesScreen() {
       </View>
     );
 
-  const uid = user.id;
   const canRecordOnBehalf =
     user.role === "admin" ||
     user.role === "division_leader" ||
     user.role === "app_developer";
-
-  const normalizedSearch = playerSearch.trim().toLocaleLowerCase();
-  const seasonMatches = matches.filter(
-    (match) => match.seasonId === selectedSeasonId,
-  );
-  const visibleMatches = seasonMatches.filter((match) => {
-    if (!normalizedSearch) return true;
-    return [
-      match.player1Name,
-      match.player2Name,
-      match.side1?.displayName,
-      match.side2?.displayName,
-    ].some((name) => name?.toLocaleLowerCase().includes(normalizedSearch));
-  });
-
-  const buckets: Record<Bucket, Match[]> = {
-    needsYou: [],
-    next: [],
-    waiting: [],
-    live: [],
-    divisionUpcoming: [],
-    review: [],
-    history: [],
-  };
-  for (const match of visibleMatches) {
-    const bucket = bucketOf(match, uid);
-    if (bucket) buckets[bucket].push(match);
-  }
-  const byPlayDateAsc = (a: Match, b: Match) =>
-    (a.scheduledAt ?? Number.MAX_SAFE_INTEGER) -
-    (b.scheduledAt ?? Number.MAX_SAFE_INTEGER);
-  // Invitations first, then results to confirm, each soonest first.
-  buckets.needsYou.sort(
-    (a, b) =>
-      Number(a.status !== "proposed") - Number(b.status !== "proposed") ||
-      byPlayDateAsc(a, b),
-  );
-  // A live match of yours first, then the next scheduled one.
-  buckets.next.sort(
-    (a, b) =>
-      Number(b.status === "in_progress") - Number(a.status === "in_progress") ||
-      byPlayDateAsc(a, b),
-  );
-  buckets.waiting.sort(byPlayDateAsc);
-  buckets.live.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-  buckets.divisionUpcoming.sort(byPlayDateAsc);
-  buckets.review.sort((a, b) => playDate(b) - playDate(a));
-  buckets.history.sort((a, b) => playDate(b) - playDate(a));
-
   const needsYouCount = buckets.needsYou.length;
-  const historyExpanded = historyOpen ?? activeFilter === "history";
-  const titles: Record<Bucket, string> = {
-    needsYou: "Needs you",
-    next: buckets.next.length === 1 ? "Your next match" : "Your matches",
-    waiting: "Waiting on others",
-    live: "Live in your division",
-    divisionUpcoming: "Scheduled in your division",
-    review: "Results in review",
-    history: "History",
-  };
-  const sections: MatchSection[] = (Object.keys(buckets) as Bucket[])
-    .filter(
-      (key) =>
-        BUCKET_FILTERS[key].includes(activeFilter) && buckets[key].length > 0,
-    )
-    .map((key) => ({
-      key,
-      title: titles[key],
-      total: buckets[key].length,
-      data:
-        key === "history" && !historyExpanded
-          ? []
-          : buckets[key].map((match) => ({
-              id: match.id,
-              match,
-              kind: kindOf(match, key),
-            })),
-    }));
 
   const seasonName =
     seasonOptions.find((s) => s.id === selectedSeasonId)?.name ??
@@ -853,7 +872,7 @@ export default function MatchesScreen() {
             match={item.match}
             uid={uid}
             kind={item.kind}
-            onOpen={() => router.push(`/match/${item.id}`)}
+            onOpen={openMatch}
             onNotice={setNotice}
           />
         )}
@@ -995,12 +1014,8 @@ export default function MatchesScreen() {
         contentContainerStyle={styles.list}
       />
 
-      <View
-        style={[
-          styles.fabGroup,
-          { paddingBottom: Math.max(insets.bottom, spacing.md) },
-        ]}
-      >
+      {/* The tab bar below already owns the home-indicator inset. */}
+      <View style={styles.fabGroup}>
         <Button
           label="New match"
           icon="plus"
@@ -1010,80 +1025,68 @@ export default function MatchesScreen() {
         />
       </View>
 
-      <Modal
+      <BottomSheetModal
         visible={sheet === "choices"}
-        transparent
-        animationType="fade"
         onRequestClose={() => setSheet(null)}
+        backdropLabel="Close new match choices"
+        keyboardAware={false}
+        cardStyle={[
+          styles.newMatchSheet,
+          { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+        ]}
       >
-        <View style={styles.newMatchOverlay}>
+        <Text style={styles.newMatchTitle} accessibilityRole="header">
+          New match
+        </Text>
+        {(
+          [
+            [
+              "calendar.badge.plus",
+              "Propose a match",
+              "Invite an opponent and pick a time. They accept or decline.",
+              "propose",
+            ],
+            [
+              "figure.tennis",
+              "Start live scoring",
+              "Score every point as you play.",
+              "live",
+            ],
+            [
+              "doc.text",
+              "Record a result",
+              "Enter the final score of a match you've played.",
+              "historic",
+            ],
+          ] as const
+        ).map(([icon, title, description, action]) => (
           <Pressable
+            key={action}
             accessibilityRole="button"
-            accessibilityLabel="Close new match choices"
-            style={StyleSheet.absoluteFill}
-            onPress={() => setSheet(null)}
-          />
-          <View
-            accessibilityViewIsModal
-            style={[
-              styles.newMatchSheet,
-              { paddingBottom: Math.max(insets.bottom, spacing.xl) },
+            accessibilityLabel={title}
+            accessibilityHint={description}
+            android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
+            style={({ pressed }) => [
+              styles.newMatchChoice,
+              !IS_ANDROID && pressed && styles.cardBodyPressed,
             ]}
+            onPress={() => setSheet(action)}
           >
-            <Text style={styles.newMatchTitle} accessibilityRole="header">
-              New match
+            <IconLabel name={icon} textStyle={styles.newMatchChoiceTitle}>
+              {title}
+            </IconLabel>
+            <Text style={styles.newMatchChoiceDescription}>
+              {description}
             </Text>
-            {(
-              [
-                [
-                  "calendar.badge.plus",
-                  "Propose a match",
-                  "Invite an opponent and pick a time. They accept or decline.",
-                  "propose",
-                ],
-                [
-                  "figure.tennis",
-                  "Start live scoring",
-                  "Score every point as you play.",
-                  "live",
-                ],
-                [
-                  "doc.text",
-                  "Record a result",
-                  "Enter the final score of a match you've played.",
-                  "historic",
-                ],
-              ] as const
-            ).map(([icon, title, description, action]) => (
-              <Pressable
-                key={action}
-                accessibilityRole="button"
-                accessibilityLabel={title}
-                accessibilityHint={description}
-                android_ripple={{ color: "rgba(26, 71, 42, 0.12)" }}
-                style={({ pressed }) => [
-                  styles.newMatchChoice,
-                  !IS_ANDROID && pressed && styles.cardBodyPressed,
-                ]}
-                onPress={() => setSheet(action)}
-              >
-                <IconLabel name={icon} textStyle={styles.newMatchChoiceTitle}>
-                  {title}
-                </IconLabel>
-                <Text style={styles.newMatchChoiceDescription}>
-                  {description}
-                </Text>
-              </Pressable>
-            ))}
-            <Button
-              label="Cancel"
-              variant="quiet"
-              accessibilityLabel="Close new match choices"
-              onPress={() => setSheet(null)}
-            />
-          </View>
-        </View>
-      </Modal>
+          </Pressable>
+        ))}
+        <Button
+          label="Cancel"
+          variant="quiet"
+          accessibilityLabel="Close new match choices"
+          onPress={() => setSheet(null)}
+        />
+      </BottomSheetModal>
 
       {sheet === "propose" && (
         <ProposeMatchSheet
@@ -1954,6 +1957,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
     justifyContent: "flex-end",
     backgroundColor: colors.canvas,
   },
@@ -1962,11 +1966,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     borderRadius: radii.lg,
     ...elevations.medium,
-  },
-  newMatchOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: colors.overlay,
   },
   newMatchSheet: {
     backgroundColor: colors.surface,
@@ -1999,17 +1998,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "flex-end",
-  },
   modalCard: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     padding: spacing.xl,
-    paddingTop: spacing.lg,
     width: "100%",
     maxWidth: 640,
     alignSelf: "center",
@@ -2037,7 +2030,7 @@ const styles = StyleSheet.create({
   dateField: { flexGrow: 3, flexBasis: 160 },
   timeField: { flexGrow: 2, flexBasis: 120 },
   setRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  setLabel: { ...typography.label, color: colors.textMuted, width: 44 },
+  setLabel: { ...typography.label, color: colors.textMuted, minWidth: 44 },
   setInput: {
     minHeight: 48,
     width: 64,

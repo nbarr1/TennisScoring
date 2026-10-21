@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  Animated,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -26,6 +27,15 @@ type KeyboardAwareBottomSheetProps = {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /**
+   * The color painted under the sheet in the home-indicator inset. Match the
+   * sheet card's background, or a dark sheet sits on a white strip.
+   */
+  fillColor?: string;
+  /** Moves the sheet and its inset filler together (the drag-to-dismiss offset). */
+  sheetTranslateY?: Animated.Value;
+  /** Drawn behind the sheet, filling the overlay (a tap-to-close backdrop). */
+  backdrop?: React.ReactNode;
 };
 
 const DEFAULT_KEYBOARD_BEHAVIOR: KeyboardAvoidingViewProps["behavior"] =
@@ -78,6 +88,9 @@ export function KeyboardAwareBottomSheet({
   children,
   style,
   contentContainerStyle,
+  fillColor = colors.surface,
+  sheetTranslateY,
+  backdrop,
 }: KeyboardAwareBottomSheetProps) {
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -102,6 +115,14 @@ export function KeyboardAwareBottomSheet({
   // painted inside the sheet instead (the filler below), so no strip of dimmed
   // backdrop shows between the white sheet and the bottom edge.
   const homeInset = keyboardHeight > 0 ? 0 : insets.bottom;
+  const filler =
+    homeInset > 0 ? (
+      <View
+        style={{ height: homeInset, backgroundColor: fillColor }}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
+    ) : null;
 
   return (
     <View style={[{ flex: 1, paddingBottom: keyboardHeight }, style]}>
@@ -116,14 +137,20 @@ export function KeyboardAwareBottomSheet({
         bounces={false}
         automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       >
-        {children}
-        {homeInset > 0 ? (
-          <View
-            style={{ height: homeInset, backgroundColor: colors.surface }}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          />
-        ) : null}
+        {backdrop}
+        {sheetTranslateY ? (
+          <Animated.View
+            style={{ transform: [{ translateY: sheetTranslateY }] }}
+          >
+            {children}
+            {filler}
+          </Animated.View>
+        ) : (
+          <>
+            {children}
+            {filler}
+          </>
+        )}
       </ScrollView>
     </View>
   );

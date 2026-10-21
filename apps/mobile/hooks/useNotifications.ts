@@ -60,6 +60,8 @@ export function useNotifications(userId: string | null | undefined) {
         router.push(`/match/${data.matchId}` as never);
       } else if (data.type === 'match_proposal_cancelled' || data.type === 'match_started') {
         router.push('/(tabs)/matches' as never);
+      } else if (data.type === 'message' && data.channelId) {
+        router.push({ pathname: '/conversation/[channelId]', params: { channelId: data.channelId } } as never);
       } else if (data.type === 'message') {
         router.push('/(tabs)/messages' as never);
       }
