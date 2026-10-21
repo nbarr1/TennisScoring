@@ -6,7 +6,7 @@ import HealthKit
 /// wrist drops, so the player raises their wrist to the clock between points.
 ///
 /// The session only holds the app in front: it collects no samples and saves no
-/// workout to Health. It starts on the first snapshot of a live match and ends
+/// workout to Health. It starts on the first snapshot of a live match this watch can score, and ends
 /// when the match is no longer live, or after `idleTimeout` with no snapshot,
 /// which covers a phone that closed the match screen mid-match.
 @MainActor

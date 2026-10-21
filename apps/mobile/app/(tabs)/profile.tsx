@@ -44,6 +44,7 @@ import {
   KeyboardAwareScrollView,
   KeyboardSafeView,
 } from "../../components/KeyboardSafeView";
+import { DateTimeField, formatFieldValue } from "../../components/DateTimeField";
 import { FormErrorSummary, FormField } from "../../components/FormField";
 import {
   Button,
@@ -706,7 +707,9 @@ export default function ProfileScreen() {
         {!editing &&
           availabilitySlots.map((slot, idx) => (
             <Text key={idx} style={styles.slotSummary}>
-              {DAY_NAMES[slot.day]}, {slot.from}–{slot.to}
+              {DAY_NAMES[slot.day]},{" "}
+              {formatFieldValue(slot.from, "time") ?? slot.from}–
+              {formatFieldValue(slot.to, "time") ?? slot.to}
             </Text>
           ))}
 
@@ -745,30 +748,26 @@ export default function ProfileScreen() {
                 ))}
               </View>
               <View style={styles.timeRow}>
-                <FormField
+                <DateTimeField
+                  mode="time"
                   label="From"
-                  accessibilityLabel={`Time ${idx + 1} start, 24-hour`}
+                  accessibilityLabel={`Time ${idx + 1} start`}
                   containerStyle={styles.timeField}
-                  inputStyle={styles.timeInput}
                   value={slot.from}
-                  onChangeText={(t) => updateSlot(idx, { from: t })}
-                  placeholder="18:00"
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
+                  onChange={(t) => updateSlot(idx, { from: t })}
+                  defaultValue="18:00"
                 />
                 <Text style={styles.slotDash} accessible={false}>
                   –
                 </Text>
-                <FormField
+                <DateTimeField
+                  mode="time"
                   label="To"
-                  accessibilityLabel={`Time ${idx + 1} end, 24-hour`}
+                  accessibilityLabel={`Time ${idx + 1} end`}
                   containerStyle={styles.timeField}
-                  inputStyle={styles.timeInput}
                   value={slot.to}
-                  onChangeText={(t) => updateSlot(idx, { to: t })}
-                  placeholder="20:00"
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={5}
+                  onChange={(t) => updateSlot(idx, { to: t })}
+                  defaultValue="20:00"
                 />
               </View>
             </View>
@@ -776,9 +775,6 @@ export default function ProfileScreen() {
 
         {editing && (
           <>
-            <Text style={styles.helper}>
-              Use 24-hour time, like 07:30 or 18:00.
-            </Text>
             {formErrors.availability ? (
               <Text style={styles.fieldError} accessibilityLiveRegion="polite">
                 {formErrors.availability}
@@ -1167,16 +1163,10 @@ const styles = StyleSheet.create({
   dayChip: { minWidth: 48, paddingHorizontal: spacing.sm },
   timeRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm },
   timeField: { flex: 1 },
-  timeInput: { textAlign: "center" },
   slotDash: {
     ...typography.body,
     color: colors.textMuted,
     paddingBottom: spacing.md,
-  },
-  helper: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
   },
   fieldError: {
     ...typography.caption,

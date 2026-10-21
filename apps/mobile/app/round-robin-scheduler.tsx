@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View, type TextInput } from "react-native";
+import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   publishRoundRobinSchedule,
@@ -16,7 +16,10 @@ import {
 import { useAppStore } from "../store/appStore";
 import { KeyboardAwareScrollView } from "../components/KeyboardSafeView";
 import { AppIcon, ICON_SIZE } from "../components/AppIcon";
-import { FormField } from "../components/FormField";
+import {
+  DateTimeField,
+  type DateTimeFieldHandle,
+} from "../components/DateTimeField";
 import {
   Button,
   Card,
@@ -41,7 +44,7 @@ const INTERVAL_OPTIONS = [3, 7, 14];
 
 /** Parses YYYY-MM-DD as 6:00 PM local time, or returns a reason it can't. */
 function parseStartDate(value: string): { startAt: number } | { error: string } {
-  if (!value.trim()) return { error: "Enter the date round 1 starts." };
+  if (!value.trim()) return { error: "Choose the date round 1 starts." };
   if (!DATE_RE.test(value)) {
     return { error: "Use the format YYYY-MM-DD, for example 2026-11-02." };
   }
@@ -115,7 +118,7 @@ export default function RoundRobinSchedulerScreen() {
   const [intervalDays, setIntervalDays] = useState(7);
   const [startDate, setStartDate] = useState("");
   const [startDateError, setStartDateError] = useState<string | undefined>();
-  const startDateRef = useRef<TextInput>(null);
+  const startDateRef = useRef<DateTimeFieldHandle>(null);
   const [seedByRankings, setSeedByRankings] = useState(true);
   const [clearExisting, setClearExisting] = useState(false);
 
@@ -427,22 +430,19 @@ export default function RoundRobinSchedulerScreen() {
               ))}
             </View>
 
-            <FormField
+            <DateTimeField
               ref={startDateRef}
+              mode="date"
               label="Round 1 start date"
               required
               containerStyle={styles.field}
               value={startDate}
-              onChangeText={(text) => {
+              onChange={(text) => {
                 setStartDate(text);
                 if (startDateError) setStartDateError(undefined);
               }}
-              placeholder="YYYY-MM-DD"
               helperText="Matches are set for 6:00 PM on each round's date."
               error={startDateError}
-              keyboardType="numbers-and-punctuation"
-              autoCorrect={false}
-              maxLength={10}
             />
             {startsInPast && !startDateError ? (
               <InlineAlert
@@ -548,7 +548,7 @@ export default function RoundRobinSchedulerScreen() {
 
           {startDate.trim() === "" ? (
             <Text style={styles.hint}>
-              Enter the round 1 start date above to see each round's date and
+              Choose the round 1 start date to see each round's date and
               publish.
             </Text>
           ) : null}

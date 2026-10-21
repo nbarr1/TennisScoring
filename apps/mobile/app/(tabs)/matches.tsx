@@ -75,6 +75,10 @@ import {
 } from "../../components/MatchTiebreakToggle";
 import { PlayerSlotPicker } from "../../components/PlayerSlotPicker";
 import { AppIcon, IconLabel, ICON_SIZE } from "../../components/AppIcon";
+import {
+  DateTimeField,
+  type DateTimeFieldHandle,
+} from "../../components/DateTimeField";
 import { FormErrorSummary, FormField } from "../../components/FormField";
 
 const IS_ANDROID = Platform.OS === "android";
@@ -1545,8 +1549,8 @@ function ProposeMatchSheet({
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [attempted, setAttempted] = useState(false);
-  const dateRef = useRef<TextInput>(null);
-  const timeRef = useRef<TextInput>(null);
+  const dateRef = useRef<DateTimeFieldHandle>(null);
+  const timeRef = useRef<DateTimeFieldHandle>(null);
   const days = useMemo(() => upcomingDays(), []);
   // The typed date and time read back in words, so a wrong day is visible.
   const proposedTs =
@@ -1589,12 +1593,12 @@ function ProposeMatchSheet({
         ? "Choose your partner and both opponents."
         : "Choose your opponent.";
     if (!DATE_RE.test(date.trim()))
-      next.date = "Enter the date as YYYY-MM-DD, for example 2026-10-24.";
+      next.date = "Choose a date.";
     if (!TIME_RE.test(time.trim()))
-      next.time = "Enter a 24-hour time as HH:MM, for example 18:30.";
+      next.time = "Choose a time.";
     const ts = Date.parse(`${date.trim()}T${time.trim()}`);
     if (!next.date && !next.time && Number.isNaN(ts))
-      next.date = "That date doesn't exist. Check the month and day.";
+      next.date = "Choose a date.";
     else if (!next.date && !next.time && ts < Date.now())
       next.date = "Choose a date and time in the future.";
     if (choice.loading)
@@ -1740,38 +1744,28 @@ function ProposeMatchSheet({
       </View>
 
       <View style={styles.dateTimeRow}>
-        <FormField
+        <DateTimeField
           ref={dateRef}
+          mode="date"
           label="Date"
           required
-          helperText="Pick a day above, or type YYYY-MM-DD"
+          helperText="Pick a day above, or choose any date"
           error={errors.date}
           containerStyle={styles.dateField}
           value={date}
-          onChangeText={setDate}
-          placeholder="2026-10-24"
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
-          maxLength={10}
-          returnKeyType="next"
-          onSubmitEditing={() => timeRef.current?.focus()}
+          onChange={setDate}
+          minimumDate={new Date()}
         />
-        <FormField
+        <DateTimeField
           ref={timeRef}
+          mode="time"
           label="Time"
           required
-          helperText="24-hour HH:MM"
           error={errors.time}
           containerStyle={styles.timeField}
           value={time}
-          onChangeText={setTime}
-          placeholder="18:30"
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
-          maxLength={5}
-          returnKeyType="done"
+          onChange={setTime}
+          defaultValue="18:00"
         />
       </View>
       {Number.isFinite(proposedTs) && (
