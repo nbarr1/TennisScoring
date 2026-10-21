@@ -7,6 +7,11 @@ struct ScoreView: View {
   /// True in the Always On state, which the workout makes the usual one
   /// between points: the wrist is down and the screen dimmed.
   @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  /// Grow with the text, so the points column and the player stripe keep their
+  /// proportions at large sizes instead of clipping a two-digit tiebreak score.
+  @ScaledMetric(relativeTo: .title2) private var pointsMinWidth: CGFloat = 34
+  @ScaledMetric(relativeTo: .footnote) private var stripeHeight: CGFloat = 22
 
   /// The scoreboard's player colors (DESIGN.md `player-blue` and `player-orange`),
   /// which stay distinguishable with red-green color blindness. Each row also
@@ -21,19 +26,25 @@ struct ScoreView: View {
           if let result { confirm(result) }
         }
     } else {
-      VStack(spacing: 8) {
-        Image(systemName: "tennisball")
-          .font(.title2)
-          .accessibilityHidden(true)
-        Text("No live match")
-          .font(.headline)
-        Text("Open a match on your iPhone to score it here.")
-          .font(.footnote)
-          .multilineTextAlignment(.center)
-          .foregroundStyle(.secondary)
+      ScrollView {
+        VStack(spacing: 8) {
+          Image(systemName: session.isReachable ? "tennisball" : "iphone.slash")
+            .font(.title2)
+            .accessibilityHidden(true)
+          Text("No live match")
+            .font(.headline)
+          // Without a reachable iPhone, opening a match there changes nothing
+          // here, so the first step is getting the phone in range.
+          Text(session.isReachable
+            ? "Open a match on your iPhone to score it here."
+            : "Keep your iPhone nearby with Tennis League open, then open a match.")
+            .font(.footnote)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        .accessibilityElement(children: .combine)
       }
-      .padding()
-      .accessibilityElement(children: .combine)
     }
   }
 
@@ -62,44 +73,17 @@ struct ScoreView: View {
     return ScrollView {
       VStack(spacing: 4) {
         ForEach(Player.allCases, id: \.self) { side in
-          let isServing = live && score.server == side
-          HStack(spacing: 4) {
-            Capsule()
-              .fill(color(for: side))
-              .opacity(isLuminanceReduced ? 0.5 : 1)
-              .frame(width: 4, height: 22)
-              .accessibilityHidden(true)
-            Image(systemName: "tennisball.fill")
-              .font(.caption2)
-              .imageScale(.small)
-              .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.yellow)
-              .opacity(isServing ? 1 : 0)
-              .accessibilityHidden(true)
-            Text(name(snapshot, side))
-              .font(.footnote)
-              .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.primary)
-              .lineLimit(1)
-            Spacer(minLength: 2)
-            Text("\(games(score, side))")
-              .font(.body.monospacedDigit())
-              .foregroundStyle(.secondary)
-            if live {
-              Text(points(score, side))
-                .font((isLuminanceReduced ? Font.title : Font.title2).monospacedDigit().weight(.semibold))
-                .foregroundStyle(score.isTiebreak && !isLuminanceReduced ? Color.yellow : Color.primary)
-                .frame(minWidth: 34, alignment: .trailing)
-            }
-          }
-          // One sentence per player, instead of bare numbers with no context.
-          .accessibilityElement(children: .ignore)
-          .accessibilityLabel(rowAccessibilityLabel(snapshot, side, isServing: isServing))
+          playerRow(snapshot, side, live: live)
         }
 
         Text(summaryLine(snapshot))
           .font(.caption2.monospacedDigit())
           .foregroundStyle(score.isTiebreak && !isLuminanceReduced ? Color.yellow : Color.secondary)
-          .lineLimit(1)
+          // A three-set history at accessibility sizes wraps rather than
+          // shrinking below legibility or dropping the game score.
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
           .minimumScaleFactor(0.8)
+          .multilineTextAlignment(.center)
 
         if !isLuminanceReduced {
           if live {
@@ -112,6 +96,81 @@ struct ScoreView: View {
       }
       .padding(.horizontal, 4)
     }
+  }
+
+  /// One player's line. At accessibility sizes a name beside the games and
+  /// points shrinks to a letter or two, so the name takes a line of its own and
+  /// the numbers sit under it.
+  @ViewBuilder
+  private func playerRow(_ snapshot: WatchScoreSnapshot, _ side: Player, live: Bool) -> some View {
+    let score = snapshot.score
+    let isServing = live && score.server == side
+    Group {
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 4) {
+            stripe(side)
+            serveBall(isServing)
+            nameText(snapshot, side)
+              .lineLimit(2)
+          }
+          HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            gamesText(score, side)
+            if live { pointsText(score, side) }
+          }
+        }
+      } else {
+        HStack(spacing: 4) {
+          stripe(side)
+          serveBall(isServing)
+          nameText(snapshot, side)
+            .lineLimit(1)
+          Spacer(minLength: 2)
+          gamesText(score, side)
+          if live { pointsText(score, side) }
+        }
+      }
+    }
+    // One sentence per player, instead of bare numbers with no context.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(rowAccessibilityLabel(snapshot, side, isServing: isServing))
+  }
+
+  private func stripe(_ side: Player) -> some View {
+    Capsule()
+      .fill(color(for: side))
+      .opacity(isLuminanceReduced ? 0.5 : 1)
+      .frame(width: 4, height: stripeHeight)
+      .accessibilityHidden(true)
+  }
+
+  private func serveBall(_ isServing: Bool) -> some View {
+    Image(systemName: "tennisball.fill")
+      .font(.caption2)
+      .imageScale(.small)
+      .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.yellow)
+      .opacity(isServing ? 1 : 0)
+      .accessibilityHidden(true)
+  }
+
+  private func nameText(_ snapshot: WatchScoreSnapshot, _ side: Player) -> some View {
+    Text(name(snapshot, side))
+      .font(.footnote)
+      .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.primary)
+  }
+
+  private func gamesText(_ score: LiveScore, _ side: Player) -> some View {
+    Text("\(games(score, side))")
+      .font(.body.monospacedDigit())
+      .foregroundStyle(.secondary)
+  }
+
+  private func pointsText(_ score: LiveScore, _ side: Player) -> some View {
+    Text(points(score, side))
+      .font((isLuminanceReduced ? Font.title : Font.title2).monospacedDigit().weight(.semibold))
+      .foregroundStyle(score.isTiebreak && !isLuminanceReduced ? Color.yellow : Color.primary)
+      .frame(minWidth: pointsMinWidth, alignment: .trailing)
   }
 
   @ViewBuilder
@@ -133,9 +192,7 @@ struct ScoreView: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
     } else if !session.canScore {
-      Text(session.isReachable
-        ? "Open this match on your iPhone to score from here."
-        : "iPhone not reachable. Keep it nearby to score.")
+      Text(readOnlyReason(snapshot))
         .font(.caption2)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
@@ -145,7 +202,37 @@ struct ScoreView: View {
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
     }
+    staleNotice
     if snapshot.canUndo { undoButton }
+  }
+
+  /// Why a live match can't be scored from this watch. A spectator was told to
+  /// open the match on their iPhone, which can never let them score it.
+  private func readOnlyReason(_ snapshot: WatchScoreSnapshot) -> LocalizedStringKey {
+    if !snapshot.matchId.isEmpty && !snapshot.isParticipant {
+      return "View only. Only the players in this match can score it."
+    }
+    if !session.isReachable { return "iPhone not reachable. Keep it nearby to score." }
+    return "Open this match on your iPhone to score from here."
+  }
+
+  /// "Last update 12 minutes ago" once the score on screen is older than a live
+  /// match's usual gap, as it is when the application context replays a match
+  /// the phone stopped sending. The buttons stay: the phone decides whether a
+  /// point applies, and answers no for a match it no longer has open.
+  @ViewBuilder
+  private var staleNotice: some View {
+    if let sentAt = session.snapshotSentAt {
+      let maxAge = WatchSessionManager.liveSnapshotMaxAge
+      TimelineView(.periodic(from: .now, by: 30)) { context in
+        if context.date.timeIntervalSince(sentAt) > maxAge {
+          Label("Last update \(sentAt.formatted(.relative(presentation: .named)))", systemImage: "clock")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
+      }
+    }
   }
 
   @ViewBuilder

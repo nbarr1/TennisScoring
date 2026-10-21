@@ -53,24 +53,31 @@ struct MessagesView: View {
 
 private struct ChannelRowView: View {
   let row: ChannelRow
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .title2) private var iconWidth: CGFloat = 36
 
   var body: some View {
     HStack(spacing: 12) {
       Image(systemName: row.isDirect ? "person.crop.circle.fill" : "person.3.fill")
         .font(.title2)
         .foregroundStyle(Color.league)
-        .frame(width: 36)
+        .frame(width: iconWidth)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
-        HStack {
+        // At accessibility sizes "2 hours ago" beside the title left the
+        // title a few letters, so the time goes under it.
+        if dynamicTypeSize.isAccessibilitySize {
           Text(row.title)
             .font(.headline)
-            .lineLimit(1)
-          Spacer()
-          if row.lastActivity > 0 {
-            Text(row.lastActivity.dateFromMillis, format: .relative(presentation: .named))
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            .lineLimit(2)
+          lastActivityText
+        } else {
+          HStack {
+            Text(row.title)
+              .font(.headline)
+              .lineLimit(1)
+            Spacer()
+            lastActivityText
           }
         }
         Text(row.preview ?? "No messages yet")
@@ -80,6 +87,15 @@ private struct ChannelRowView: View {
       }
     }
     .padding(.vertical, 2)
+  }
+
+  @ViewBuilder
+  private var lastActivityText: some View {
+    if row.lastActivity > 0 {
+      Text(row.lastActivity.dateFromMillis, format: .relative(presentation: .named))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
   }
 }
 

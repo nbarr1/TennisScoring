@@ -41,6 +41,17 @@ final class WatchMessageTests: XCTestCase {
     XCTAssertFalse(snapshot.isParticipant)
   }
 
+  func testBlankNamesFallBackToPlayerLabels() throws {
+    let json = String(decoding: try JSONEncoder().encode(LiveScore()), as: UTF8.self)
+    let snapshot = try XCTUnwrap(WatchScoreSnapshot(message: [
+      "score": json, "matchId": "m1", "player1Name": "", "player2Name": "  ",
+    ]))
+    XCTAssertEqual(snapshot.player1Name, "Player 1")
+    XCTAssertEqual(snapshot.player2Name, "Player 2")
+    XCTAssertEqual(snapshot.buttonNames.player1, "Player 1", "a point button is never blank")
+    XCTAssertEqual(snapshot.buttonNames.player2, "Player 2")
+  }
+
   func testSnapshotRejectsGarbage() {
     XCTAssertNil(WatchScoreSnapshot(message: [:]))
     XCTAssertNil(WatchScoreSnapshot(message: ["score": "not json"]))
