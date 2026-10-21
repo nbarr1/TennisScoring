@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   getDoc,
   getDocs,
@@ -58,15 +58,21 @@ export function useDivisionLevels(
  * `['active', 'waitlisted']`: a waitlisted player left out of the snapshot renders as
  * unassigned, is counted in the "no division" warning, and gets silently flipped back to
  * active by the next assignment, because the caller can no longer see their real status.
+ *
+ * A failed query reports `error` and leaves `memberships` empty. That empty list is not a
+ * roster: a caller must show the error (and offer `retry`) rather than render every player as
+ * unassigned, and must not write memberships based on it, for the same waitlist reason.
  */
 export function useDivisionMemberships(
   divisionId: string | null | undefined,
   seasonId: string | null | undefined,
   divisionLevelId?: string | null,
   statuses: readonly DivisionMembershipStatus[] = ['active'],
-): { memberships: DivisionMembership[]; loading: boolean } {
+): { memberships: DivisionMembership[]; loading: boolean; error: FirestoreError | null; retry: () => void } {
   const [memberships, setMemberships] = useState<DivisionMembership[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   // Callers pass an array literal, so depend on its contents rather than its identity or the
   // subscription tears down and rebuilds on every render. An empty list falls back to the
   // default: Firestore rejects an empty `in`, and a caller asking for no statuses at all is
@@ -76,11 +82,13 @@ export function useDivisionMemberships(
   useEffect(() => {
     if (!divisionId || !seasonId) {
       setMemberships([]);
+      setError(null);
       setLoading(false);
       return;
     }
     const statusFilter = statusKey.split(',') as DivisionMembershipStatus[];
     setLoading(true);
+    setError(null);
     return onSnapshot(
       divisionMembershipsQuery(
         divisionId,
@@ -94,16 +102,19 @@ export function useDivisionMemberships(
             .map((docSnap) => ({ ...docSnap.data(), id: docSnap.id }))
             .sort((a, b) => a.displayNameSnapshot.localeCompare(b.displayNameSnapshot)),
         );
+        setError(null);
         setLoading(false);
       },
-      () => {
+      (snapshotError) => {
         setMemberships([]);
+        setError(snapshotError);
         setLoading(false);
       },
     );
-  }, [divisionId, divisionLevelId, seasonId, statusKey]);
+  }, [divisionId, divisionLevelId, seasonId, statusKey, retryCount]);
 
-  return { memberships, loading };
+  const retry = useCallback(() => setRetryCount((count) => count + 1), []);
+  return { memberships, loading, error, retry };
 }
 
 /**
@@ -113,20 +124,27 @@ export function useDivisionMemberships(
  * Players move between divisions from one season to the next. An admin roster uses this to
  * tell a player who is new to the division (no rostered season anywhere, so genuinely
  * unassigned) from one who belongs to another season and must not be listed on this one.
+ *
+ * Like `useDivisionMemberships`, a failed query reports `error` with an empty map, which
+ * callers must not read as "nobody is rostered anywhere".
  */
 export function useDivisionRosteredSeasons(
   divisionId: string | null | undefined,
-): { seasonsByUserId: Map<string, Set<string>>; loading: boolean } {
+): { seasonsByUserId: Map<string, Set<string>>; loading: boolean; error: FirestoreError | null; retry: () => void } {
   const [seasonsByUserId, setSeasonsByUserId] = useState<Map<string, Set<string>>>(() => new Map());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (!divisionId) {
       setSeasonsByUserId(new Map());
+      setError(null);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setError(null);
     return onSnapshot(
       query(divisionMembershipsCol(divisionId), where('status', 'in', ['active', 'waitlisted'])),
       (snap) => {
@@ -139,16 +157,19 @@ export function useDivisionRosteredSeasons(
           next.set(userId, seasons);
         });
         setSeasonsByUserId(next);
+        setError(null);
         setLoading(false);
       },
-      () => {
+      (snapshotError) => {
         setSeasonsByUserId(new Map());
+        setError(snapshotError);
         setLoading(false);
       },
     );
-  }, [divisionId]);
+  }, [divisionId, retryCount]);
 
-  return { seasonsByUserId, loading };
+  const retry = useCallback(() => setRetryCount((count) => count + 1), []);
+  return { seasonsByUserId, loading, error, retry };
 }
 
 export async function upsertDivisionLevel(input: {

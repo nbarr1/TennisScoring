@@ -12,18 +12,11 @@ import {
   useAuthUser,
 } from '@tennis/firebase-client';
 import { Button, InlineAlert, color, describeError, radius, shadow, space, type } from '../shared/ui';
+import { safeNextPath } from '../../lib/safeNextPath';
 
 // How long the resend button waits after a send, so players don't trip
 // Firebase's rate limit by pressing it repeatedly.
 const RESEND_COOLDOWN_SECONDS = 60;
-
-// Only same-site paths, so the page cannot be used to redirect elsewhere.
-function safeNextPath(next: string | null): string {
-  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) {
-    return '/dashboard';
-  }
-  return next;
-}
 
 export default function VerifyEmailPage(): React.JSX.Element {
   return (
@@ -43,6 +36,7 @@ function VerifyEmailContent(): React.JSX.Element {
   const [pending, setPending] = useState<Pending>(null);
   const [message, setMessage] = useState<Message>(null);
   const [cooldown, setCooldown] = useState(0);
+  // Only same-site paths, so the page cannot be used to redirect elsewhere.
   const nextPath = safeNextPath(params.get('next'));
   const busy = pending !== null;
 

@@ -1,96 +1,14 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Design tokens. These mirror the DESIGN.md frontmatter, and
-   app/shared/tokens.ts carries the same values for inline style objects.
-   Change a value in both places. */
+/* Design tokens. The colors, radii, spacing, type sizes, shadows, size
+   floors, and motion timings (--clubhouse-green, --radius-md, --space-lg,
+   --shadow-card, --target-min, ...) are declared on :root by the root layout
+   from app/shared/tokens.ts, the one place their values live. Only the tokens
+   tokens.ts does not carry are declared here. */
 :root {
-  /* Brand and accent */
-  --clubhouse-green: #1a472a;
-  --clubhouse-green-pressed: #12351f;
-  --court-green: #2d6a4f;
-  --green-soft: #e8f5e9;
-  --green-light: #a8d5a2;
-  --ball-yellow: #ffdc60;
-
-  /* Neutrals */
-  --canvas: #f5f5f0;
-  --surface: #ffffff;
-  --surface-muted: #f0f2ed;
-  --ink: #1a1a1a;
-  /* 4.67:1 or better on every clubhouse surface and tint: safe for text. */
-  --text-muted: #666b68;
-  /* About 3:1. Icons, dividers, and large text only, never small text. */
-  --text-subtle: #888d8a;
-  --border: #daddd8;
-  /* Input and control strokes, 3:1 against white so field edges are visible. */
-  --border-strong: #8a8f8c;
-  --disabled: #c8ccc9;
-  --disabled-text: #777c79;
-
-  /* Status and alert tones */
-  --destructive: #c0392b;
-  --destructive-pressed: #962d22;
-  --destructive-soft: #fbeaea;
-  --warning: #e67e22;
-  --warning-text: #7a410d;
-  --warning-soft: #fff3e0;
-  --success: #278b50;
-  --info: #2d6a8a;
-  --info-soft: #e8f2f7;
-  --live-green: #27ae60;
-  /* Text shade of Live Green (Live Green itself is 2.9:1 on white). */
-  --live-text: #1e7b45;
-  --proposed-purple: #8e44ad;
-  --unassigned-soft: #fff3cd;
-  --unassigned-text: #856404;
-
-  /* Scoreboard (live play only) */
-  --scoreboard-black: #000000;
-  --scoreboard-row: #0a0a0a;
-  --scoreboard-panel: #141414;
-  --scoreboard-control: #1c1c1c;
-  --scoreboard-line: #262626;
-  --scoreboard-text: #ffffff;
-  --scoreboard-muted: #b3b3b3;
-  --scoreboard-yellow: #ffd60a;
-  --player-blue: #3d8bff;
-  --player-orange: #ff9f1c;
-  --match-point-pink: #ff6b81;
-  --confirmed-green: #3ddc84;
-
-  /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-card: 14px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-pill: 999px;
-
-  /* Spacing (4px base) */
-  --space-xxs: 2px;
-  --space-xs: 4px;
-  --space-sm: 8px;
-  --space-md: 12px;
-  --space-lg: 16px;
-  --space-xl: 24px;
-  --space-xxl: 32px;
-  --space-xxxl: 48px;
-
   /* Type */
   --font-body: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Barlow Condensed', 'Arial Narrow', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-size-display: 28px;
-  --font-size-headline: 24px;
-  --font-size-title: 20px;
-  --font-size-body: 16px;
-  --font-size-body-small: 14px;
-  --font-size-label: 14px;
-  --font-size-caption: 12px;
-
-  /* Elevation */
-  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.06);
-  --shadow-raised: 0 4px 24px rgba(0, 0, 0, 0.08);
-  --shadow-live: 0 4px 16px rgba(39, 174, 96, 0.15);
 
   /* Focus ring: a Ball Yellow ring with a Clubhouse Green inner edge, so it is
      visible (3:1 or better) on light surfaces as well as on the green nav. */
@@ -98,25 +16,6 @@
   --focus-ring-inner: var(--clubhouse-green);
   --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
-
-  /* Motion */
-  --duration-fast: 150ms;
-  --duration-page: 220ms;
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-
-  /* Interactive size floors */
-  --target-min: 44px;
-  --target-control: 48px;
-
-  /* Legacy names still used by pages. Prefer the names above in new code. */
-  --green-dark: var(--clubhouse-green);
-  --green-mid: var(--court-green);
-  --gold: var(--ball-yellow);
-  --bg: var(--canvas);
-  --text: var(--ink);
-  --muted: var(--text-muted);
-  --card: var(--surface);
-  --radius: 12px;
 
   color-scheme: light;
   accent-color: var(--clubhouse-green);
@@ -477,7 +376,7 @@ table,
   gap: 16px;
   padding: 10px 32px;
   background: var(--clubhouse-green);
-  color: #ffffff;
+  color: var(--surface);
 }
 
 .tl-nav__brand {
@@ -488,7 +387,7 @@ table,
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 22px;
-  color: #ffffff;
+  color: var(--surface);
   white-space: nowrap;
 }
 
@@ -526,11 +425,11 @@ table,
 }
 
 .tl-nav__link:hover {
-  color: #ffffff;
+  color: var(--surface);
 }
 
 .tl-nav__link[aria-current='page'] {
-  color: #ffffff;
+  color: var(--surface);
   text-decoration-color: var(--ball-yellow);
 }
 

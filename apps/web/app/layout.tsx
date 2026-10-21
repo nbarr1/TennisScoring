@@ -4,18 +4,18 @@ import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/700.css';
 import 'react-loading-skeleton/dist/skeleton.css';
 import './globals.css';
-import { FcmProvider } from './FcmProvider';
 import { ViewModeProvider } from './shared/viewMode';
-import { EmailVerificationGate } from './shared/EmailVerificationGate';
+import { SessionServices } from './shared/SessionServices';
 import { AnnouncerProvider } from './shared/Announcer';
 import { SkipLink } from './shared/SkipLink';
+import { palette, rootTokenCss } from './shared/tokens';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#1a472a',
+  themeColor: palette.clubhouseGreen,
 };
 
 export const metadata: Metadata = {
@@ -34,10 +34,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
+      <head>
+        {/* The design tokens as CSS variables, from tokens.ts (static values). */}
+        <style dangerouslySetInnerHTML={{ __html: rootTokenCss }} />
+      </head>
       <body>
         <SkipLink />
-        <FcmProvider />
-        <EmailVerificationGate />
+        {/* Push registration and the email-verification gate. Nothing else in
+            this layout may import @tennis/firebase-client: it would put the
+            whole SDK into every page, the public privacy policy included. */}
+        <SessionServices />
         <AnnouncerProvider>
           <ViewModeProvider>{children}</ViewModeProvider>
         </AnnouncerProvider>

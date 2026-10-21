@@ -133,9 +133,12 @@ const styles: Record<string, React.CSSProperties> = {
     columnGap: space.xl,
     color: color.textMuted,
   },
+  // inline-flex so minHeight applies: the project's 44px target floor.
   tocLink: {
-    display: "inline-block",
-    padding: `${space.sm}px 0`,
+    display: "inline-flex",
+    alignItems: "center",
+    minHeight: target.min,
+    padding: `${space.xxs}px 0`,
     color: color.clubhouseGreen,
     fontWeight: 500,
     textDecoration: "underline",
@@ -149,7 +152,9 @@ const styles: Record<string, React.CSSProperties> = {
     scrollMarginTop: space.lg,
   },
   sectionTitle: { ...type.headline, color: color.clubhouseGreen, margin: `0 0 ${space.md}px` },
-  paragraph: { ...type.body, lineHeight: 1.65, color: color.ink, margin: `0 0 ${space.md}px`, maxWidth: "68ch" },
+  // `ch` is the width of "0", narrower than average Inter text: 60ch keeps
+  // lines under 80 characters at desktop width (68ch measured 88-90).
+  paragraph: { ...type.body, lineHeight: 1.65, color: color.ink, margin: `0 0 ${space.md}px`, maxWidth: "60ch" },
   term: { fontWeight: 600 },
   backLink: {
     display: "inline-flex",

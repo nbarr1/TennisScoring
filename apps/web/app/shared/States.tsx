@@ -10,6 +10,20 @@ import { describeError } from "./useAsyncAction";
 export { LoadingBlock };
 
 /**
+ * What a state's title renders as. A state that stands in for a whole page (a
+ * dead link, a failed load) passes 1 so the page still has a heading; one
+ * inside a section keeps the default paragraph.
+ */
+export type StateHeadingLevel = 1 | 2 | 3;
+
+function StateTitle({ level, style, children }: { level?: StateHeadingLevel; style: CSSProperties; children: ReactNode }) {
+  // Body face either way: globals.css gives h1-h3 the display face.
+  if (!level) return <p style={style}>{children}</p>;
+  const Heading = `h${level}` as const;
+  return <Heading style={{ fontFamily: "var(--font-body)", letterSpacing: "normal", ...style }}>{children}</Heading>;
+}
+
+/**
  * What a list or section shows when there is genuinely nothing in it. Say
  * what would appear here and give the next step as `action`.
  */
@@ -19,6 +33,7 @@ export function EmptyState({
   description,
   action,
   compact = false,
+  headingLevel,
   style,
 }: {
   /** Decorative Tabler icon, e.g. <IconCalendar size={32} aria-hidden="true" />. */
@@ -28,6 +43,8 @@ export function EmptyState({
   action?: ReactNode;
   /** Smaller padding, for a section inside a page rather than a whole page. */
   compact?: boolean;
+  /** Render the title as a heading of this level instead of a paragraph. */
+  headingLevel?: StateHeadingLevel;
   style?: CSSProperties;
 }): React.JSX.Element {
   return (
@@ -44,7 +61,9 @@ export function EmptyState({
       }}
     >
       {icon && <div style={{ color: color.textSubtle, marginBottom: space.xs }}>{icon}</div>}
-      <p style={{ ...type.label, fontSize: 16, color: color.ink }}>{title}</p>
+      <StateTitle level={headingLevel} style={{ ...type.label, fontSize: 16, color: color.ink }}>
+        {title}
+      </StateTitle>
       {description && <p style={{ ...type.bodySmall, maxWidth: "48ch" }}>{description}</p>}
       {action && <div style={{ marginTop: space.sm, display: "flex", flexWrap: "wrap", gap: space.sm, justifyContent: "center" }}>{action}</div>}
     </div>
@@ -63,6 +82,7 @@ export function ErrorState({
   retryLabel = "Try again",
   retrying = false,
   compact = false,
+  headingLevel,
   style,
 }: {
   title?: ReactNode;
@@ -74,6 +94,8 @@ export function ErrorState({
   retryLabel?: string;
   retrying?: boolean;
   compact?: boolean;
+  /** Render the title as a heading of this level instead of a paragraph. */
+  headingLevel?: StateHeadingLevel;
   style?: CSSProperties;
 }): React.JSX.Element {
   const body =
@@ -95,7 +117,9 @@ export function ErrorState({
       }}
     >
       <IconAlertCircle size={28} aria-hidden="true" />
-      <p style={{ ...type.label, fontSize: 16 }}>{title}</p>
+      <StateTitle level={headingLevel} style={{ ...type.label, fontSize: 16 }}>
+        {title}
+      </StateTitle>
       <p style={{ ...type.bodySmall, maxWidth: "48ch" }}>{body}</p>
       {onRetry && (
         <Button

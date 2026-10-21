@@ -222,13 +222,21 @@ export default function MatchPage(): React.JSX.Element {
   }, [match?.status, match?.player2IsGuest]);
 
   if (loading) {
-    return <LoadingBlock label="Loading match…" rows={4} rowHeight={48} style={styles.loadingPage} />;
+    // A landmark and heading while loading too, so the skip link has a target
+    // and a screen reader hears where it is before the match arrives.
+    return (
+      <main style={styles.loadingPage}>
+        <h1 className="sr-only">Match</h1>
+        <LoadingBlock label="Loading match…" rows={4} rowHeight={48} />
+      </main>
+    );
   }
 
   if (loadError && !match) {
     return (
       <StatePage>
         <ErrorState
+          headingLevel={1}
           title="Couldn't load this match."
           error={loadError}
           onRetry={() => window.location.reload()}
@@ -241,6 +249,7 @@ export default function MatchPage(): React.JSX.Element {
     return (
       <StatePage>
         <EmptyState
+          headingLevel={1}
           title="Match not found"
           description="It may have been deleted, or the link is incomplete."
           action={
@@ -353,7 +362,7 @@ export default function MatchPage(): React.JSX.Element {
   }
 
   async function handleStartLive(server: 'player1' | 'player2') {
-    if (!match || !id) return;
+    if (!match || !id || liveActionLoading) return;
     setLiveError(null);
     setLiveActionLoading(true);
     try {
@@ -367,7 +376,9 @@ export default function MatchPage(): React.JSX.Element {
   }
 
   async function handlePoint(player: 'player1' | 'player2') {
-    if (!match || !id || tapLock) return;
+    // The point buttons stay enabled while locked (see blockScoring), so the
+    // lock is enforced here rather than by the browser.
+    if (!match || !id || tapLock || liveActionLoading || match.status !== 'in_progress') return;
     setTapLock(true);
     setTimeout(() => setTapLock(false), 300);
     setLiveError(null);
@@ -383,7 +394,7 @@ export default function MatchPage(): React.JSX.Element {
   }
 
   async function handleUndoPoint() {
-    if (!match || !id) return;
+    if (!match || !id || liveActionLoading || !match.undoSnapshot) return;
     setLiveError(null);
     setLiveActionLoading(true);
     try {
@@ -408,7 +419,11 @@ export default function MatchPage(): React.JSX.Element {
   const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
   const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
   const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
+  // Applied as aria-disabled, never `disabled`: a focused button that becomes
+  // disabled is blurred, and a keyboard scorer would have to Tab back to the
+  // point buttons after every point.
   const blockScoring = liveActionLoading || tapLock || match.status !== 'in_progress';
+  const blockUndo = liveActionLoading || !match.undoSnapshot;
   const deleteMessage = match.status === 'completed'
     ? 'Deleting a completed match removes it from the standings, and rankings are recalculated without it.'
     : `The match with ${opponent} and everything recorded for it will be permanently deleted.`;
@@ -558,43 +573,45 @@ export default function MatchPage(): React.JSX.Element {
               <IconDotsVertical size={24} aria-hidden="true" />
             </button>
           </div>
-          <table style={styles.scoreTable}>
-            <caption className="sr-only">Live score</caption>
-            <thead>
-              <tr>
-                <th scope="col" style={styles.headCell}>
-                  <span className="sr-only">Player</span>
-                </th>
-                <th scope="col" style={styles.headCellNum}>Game</th>
-                {Array.from({ length: columns }).map((_, idx) => (
-                  <th key={idx} scope="col" style={styles.headCellNum}>
-                    <abbr title={`Set ${idx + 1}`} style={styles.abbr}>S{idx + 1}</abbr>
+          <div style={styles.scoreTableScroll}>
+            <table style={styles.scoreTable}>
+              <caption className="sr-only">Live score</caption>
+              <thead>
+                <tr>
+                  <th scope="col" style={styles.headCell}>
+                    <span className="sr-only">Player</span>
                   </th>
-                ))}
-                <th scope="col" style={styles.headCellNum}>Sets</th>
-              </tr>
-            </thead>
-            <tbody>
-              {([['player1', p1Last], ['player2', p2Last]] as const).map(([pl, name]) => {
-                const lead = pl === 'player1' ? match.liveScore.player1SetsWon > match.liveScore.player2SetsWon : match.liveScore.player2SetsWon > match.liveScore.player1SetsWon;
-                const serving = match.liveScore.server === pl && match.status === 'in_progress';
-                return (
-                  <tr key={pl}>
-                    <th scope="row" style={{ ...styles.nameCell, borderLeftColor: pl === 'player1' ? color.playerBlue : color.playerOrange }}>
-                      {serving && <span aria-hidden="true" style={styles.serveDot}>● </span>}
-                      {name}
-                      {serving && <span className="sr-only"> (serving)</span>}
+                  <th scope="col" style={styles.headCellNum}>Game</th>
+                  {Array.from({ length: columns }).map((_, idx) => (
+                    <th key={idx} scope="col" style={styles.headCellNum}>
+                      <abbr title={`Set ${idx + 1}`} style={styles.abbr}>S{idx + 1}</abbr>
                     </th>
-                    <td style={{ ...styles.scoreCell, ...(lead ? styles.leadingCell : {}) }}>{pl === 'player1' ? match.liveScore.currentGame.player1 : match.liveScore.currentGame.player2}</td>
-                    {Array.from({ length: columns }).map((_, idx) => (
-                      <td key={idx} style={styles.scoreCell}>{match.liveScore.sets[idx]?.[pl === 'player1' ? 'player1Games' : 'player2Games'] ?? 0}</td>
-                    ))}
-                    <td style={styles.scoreCell}>{pl === 'player1' ? match.liveScore.player1SetsWon : match.liveScore.player2SetsWon}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  ))}
+                  <th scope="col" style={styles.headCellNum}>Sets</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([['player1', p1Last], ['player2', p2Last]] as const).map(([pl, name]) => {
+                  const lead = pl === 'player1' ? match.liveScore.player1SetsWon > match.liveScore.player2SetsWon : match.liveScore.player2SetsWon > match.liveScore.player1SetsWon;
+                  const serving = match.liveScore.server === pl && match.status === 'in_progress';
+                  return (
+                    <tr key={pl}>
+                      <th scope="row" style={{ ...styles.nameCell, borderLeftColor: pl === 'player1' ? color.playerBlue : color.playerOrange }}>
+                        {serving && <span aria-hidden="true" style={styles.serveDot}>● </span>}
+                        {name}
+                        {serving && <span className="sr-only"> (serving)</span>}
+                      </th>
+                      <td style={{ ...styles.scoreCell, ...(lead ? styles.leadingCell : {}) }}>{pl === 'player1' ? match.liveScore.currentGame.player1 : match.liveScore.currentGame.player2}</td>
+                      {Array.from({ length: columns }).map((_, idx) => (
+                        <td key={idx} style={styles.scoreCell}>{match.liveScore.sets[idx]?.[pl === 'player1' ? 'player1Games' : 'player2Games'] ?? 0}</td>
+                      ))}
+                      <td style={styles.scoreCell}>{pl === 'player1' ? match.liveScore.player1SetsWon : match.liveScore.player2SetsWon}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           {/* Mounted with the scoreboard, before the match starts: screen
               readers often skip text that arrives together with a new live
               region, which would swallow the first point. */}
@@ -620,7 +637,12 @@ export default function MatchPage(): React.JSX.Element {
             </span>
           )}
           {match.status === 'in_progress' && (
-            <button type="button" style={styles.liveUndoStripBtn} onClick={handleUndoPoint} disabled={liveActionLoading || !match.undoSnapshot}>
+            <button
+              type="button"
+              style={{ ...styles.liveUndoStripBtn, ...(!match.undoSnapshot ? styles.liveUnavailable : {}) }}
+              onClick={() => void handleUndoPoint()}
+              aria-disabled={blockUndo || undefined}
+            >
               <IconArrowBackUp size={18} aria-hidden="true" /> Undo
             </button>
           )}
@@ -633,7 +655,7 @@ export default function MatchPage(): React.JSX.Element {
                 type="button"
                 style={{ ...styles.liveHalfBtn, borderTopColor: pl === 'player1' ? color.playerBlue : color.playerOrange }}
                 onClick={() => void handleStartLive(pl)}
-                disabled={liveActionLoading}
+                aria-disabled={liveActionLoading || undefined}
                 aria-busy={liveActionLoading || undefined}
               >
                 {pl === 'player1' ? p1Last : p2Last} serves first
@@ -650,7 +672,7 @@ export default function MatchPage(): React.JSX.Element {
                   type="button"
                   aria-label={`Point to ${name}`}
                   style={{ ...styles.liveHalfBtn, borderTopColor: pl === 'player1' ? color.playerBlue : color.playerOrange }}
-                  disabled={blockScoring}
+                  aria-disabled={blockScoring || undefined}
                   onClick={() => void handlePoint(pl)}
                 >
                   + {name}
@@ -1368,7 +1390,9 @@ const styles: Record<string, CSSProperties> = {
   statePage: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: space.lg, background: color.canvas },
 
   // Live court view (participants): the black scoreboard.
-  livePage: { height: '100dvh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: color.scoreboardBlack, color: color.scoreboardText },
+  // At least the viewport, never locked to it: large text, a short landscape
+  // window, or a five-set table grows the page instead of clipping Undo.
+  livePage: { minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: color.scoreboardBlack, color: color.scoreboardText },
   liveScoreboardRegion: { position: 'relative', padding: `${space.sm}px ${space.md}px ${space.sm}px`, flex: '0 0 auto', background: color.scoreboardRow },
   liveTopBar: { display: 'flex', alignItems: 'center', gap: space.sm, marginBottom: space.xs },
   liveBackBtn: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, padding: `0 ${space.sm}px 0 0`, background: 'transparent', border: 'none', color: color.scoreboardMuted, ...type.label, cursor: 'pointer' },
@@ -1377,20 +1401,28 @@ const styles: Record<string, CSSProperties> = {
   liveBackLink: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, paddingRight: space.sm, color: color.scoreboardMuted, ...type.label, textDecoration: 'none' },
   timerRow: { flex: 1, display: 'flex', justifyContent: 'space-between', gap: space.sm, ...type.bodySmall, color: color.scoreboardMuted, fontVariantNumeric: 'tabular-nums' },
   actionsIconBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: target.control, minHeight: target.control, background: 'transparent', border: 'none', borderRadius: radius.md, color: color.scoreboardText, cursor: 'pointer' },
+  // A safety net only: the name column shrinks first (nameCell), so a
+  // best-of-five table fits a 320px screen without scrolling.
+  scoreTableScroll: { overflowX: 'auto' },
   scoreTable: { width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' },
   headCell: { padding: '4px', textAlign: 'left' },
   headCellNum: { padding: '4px', textAlign: 'center', ...type.caption, color: color.scoreboardMuted, fontWeight: 600 },
   abbr: { textDecoration: 'none' },
-  nameCell: { padding: '10px 8px', minWidth: 90, textAlign: 'left', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 20, borderBottom: `1px solid ${color.scoreboardLine}`, borderLeft: '4px solid transparent' },
+  // width 100% with maxWidth 0 gives the name the space the score columns
+  // leave, and ellipsizes it rather than pushing the last column off screen.
+  nameCell: { padding: '10px 8px', width: '100%', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 20, borderBottom: `1px solid ${color.scoreboardLine}`, borderLeft: '4px solid transparent' },
   serveDot: { color: color.scoreboardYellow },
   scoreCell: { textAlign: 'center', padding: '10px 2px', minWidth: 32, fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, borderBottom: `1px solid ${color.scoreboardLine}` },
   leadingCell: { color: color.scoreboardYellow },
   hintStrip: { flex: '0 0 auto', minHeight: 60, padding: `${space.sm}px ${space.md}px`, borderTop: `1px solid ${color.scoreboardLine}`, borderBottom: `1px solid ${color.scoreboardLine}`, background: color.scoreboardPanel, color: color.scoreboardMuted, ...type.bodySmall, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
   liveErrorText: { display: 'inline-flex', alignItems: 'center', gap: space.xs, color: color.scoreboardText, fontWeight: 600 },
+  // Nothing to undo yet. The button stays focusable (aria-disabled), so it is
+  // dimmed to show it does nothing.
+  liveUnavailable: { opacity: 0.5 },
   liveUndoStripBtn: { flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: space.xs, minHeight: target.min, padding: '0 16px', borderRadius: radius.md, border: `1px solid ${color.scoreboardMuted}`, background: 'transparent', color: color.scoreboardText, ...type.label, fontSize: 15, cursor: 'pointer' },
   scoreButtonsRegion: { flex: 1, display: 'flex' },
   serverSelectWrap: { flex: 1, display: 'flex' },
-  liveHalfBtn: { flex: 1, width: '50%', border: `1px solid ${color.scoreboardLine}`, borderTop: '6px solid transparent', background: color.scoreboardControl, color: color.scoreboardText, fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, cursor: 'pointer', padding: space.md, overflowWrap: 'anywhere' },
+  liveHalfBtn: { flex: 1, width: '50%', minHeight: 160, border: `1px solid ${color.scoreboardLine}`, borderTop: '6px solid transparent', background: color.scoreboardControl, color: color.scoreboardText, fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, cursor: 'pointer', padding: space.md, overflowWrap: 'anywhere' },
 
   // Clubhouse view
   page: { minHeight: '100vh', background: color.canvas },
