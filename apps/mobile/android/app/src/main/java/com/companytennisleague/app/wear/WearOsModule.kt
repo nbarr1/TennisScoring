@@ -338,10 +338,21 @@ class WearOsModule(
     null
   }
 
+  /**
+   * Runs on the Wearable callback thread, where an exception is not caught by
+   * anything and takes the whole app down. A watch can deliver a command just as
+   * the React instance is torn down or reloaded, and the JS module lookup throws
+   * then, so a failed emit is logged and the command dropped; the watch reports
+   * a command that brings no new snapshot back.
+   */
   private fun emit(eventName: String, payload: Any?) {
-    reactContext
-      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-      .emit(eventName, payload)
+    try {
+      reactContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(eventName, payload)
+    } catch (e: Exception) {
+      Log.w(TAG, "Could not deliver $eventName to JavaScript", e)
+    }
   }
 
   private fun registerListener() {

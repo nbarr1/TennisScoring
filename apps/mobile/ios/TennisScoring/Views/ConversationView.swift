@@ -55,6 +55,7 @@ struct ConversationView: View {
           }
         }
         .padding()
+        .readableContentWidth()
       }
       .defaultScrollAnchor(.bottom)
       .scrollDismissesKeyboard(.interactively)
@@ -156,6 +157,8 @@ struct ConversationView: View {
     }
     .padding(.horizontal)
     .padding(.vertical, 8)
+    // The field lines up with the messages above it; the bar still spans the screen.
+    .readableContentWidth()
     .background(.bar)
   }
 

@@ -17,6 +17,7 @@
   <string name="status_no_phone">NO PHONE</string>
   <string name="status_not_sent">NOT SENT</string>
   <string name="status_undo_sent">UNDO SENT</string>
+  <string name="status_no_reply">NO REPLY</string>
 
   <!-- The sets-and-games plate. -->
   <string name="plate_sets">Sets %1$d-%2$d</string>
@@ -80,6 +81,9 @@
   <string name="feedback_sync_no_phone_body">Install and open %1$s on your paired phone.</string>
   <string name="feedback_not_sent">Not sent</string>
   <string name="feedback_not_sent_body">Your phone didn\'t receive that. Check the score there, then tap again.</string>
+  <!-- The phone took a point or undo but sent no new score back within a few seconds. -->
+  <string name="feedback_no_reply">No reply from your phone</string>
+  <string name="feedback_no_reply_body">Check the score on your phone before you tap again. The match may have closed there.</string>
   <string name="feedback_looking">Looking for a match</string>
   <string name="feedback_looking_body">Open the live match on your phone if the score doesn\'t appear.</string>
 </resources>

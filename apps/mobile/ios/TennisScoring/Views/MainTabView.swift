@@ -143,15 +143,25 @@ struct MatchListView: View {
 struct MatchRow: View {
   let match: Match
   let userId: String
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      HStack {
+      // At accessibility sizes the badge beside the name left room for a few
+      // letters of it, so the badge moves under the name, which may wrap.
+      if dynamicTypeSize.isAccessibilitySize {
         Text(opponentLine)
           .font(.headline)
-          .lineLimit(1)
-        Spacer()
+          .lineLimit(3)
         StatusBadge(status: match.status)
+      } else {
+        HStack {
+          Text(opponentLine)
+            .font(.headline)
+            .lineLimit(1)
+          Spacer()
+          StatusBadge(status: match.status)
+        }
       }
       if let detail {
         Text(detail)

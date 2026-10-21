@@ -97,12 +97,20 @@ public struct WatchScoreSnapshot: Equatable, Sendable {
     else { return nil }
     self.score = score
     matchId = message[WatchMessageKey.matchId] as? String ?? ""
-    player1Name = message[WatchMessageKey.player1Name] as? String ?? "Player 1"
-    player2Name = message[WatchMessageKey.player2Name] as? String ?? "Player 2"
+    // A side with no name and no player id reaches the phone as "" (see
+    // `Match.sideDisplayName`), which drew a blank point button on the watch.
+    player1Name = Self.nonBlank(message[WatchMessageKey.player1Name]) ?? "Player 1"
+    player2Name = Self.nonBlank(message[WatchMessageKey.player2Name]) ?? "Player 2"
     status = (message[WatchMessageKey.status] as? String).flatMap(MatchStatus.init(rawValue:)) ?? .inProgress
     canScore = !matchId.isEmpty && (message[WatchMessageKey.canScore] as? String) == "true"
     canUndo = !matchId.isEmpty && (message[WatchMessageKey.canUndo] as? String) == "true"
     isParticipant = !matchId.isEmpty && (message[WatchMessageKey.isParticipant] as? String) == "true"
+  }
+
+  /// A message value as trimmed text, or nil when it is missing, not a string, or blank.
+  private static func nonBlank(_ value: Any?) -> String? {
+    guard let text = (value as? String)?.trimmedForId, !text.isEmpty else { return nil }
+    return text
   }
 
   /// When the phone sent `message`, or nil when it carries no timestamp (the
