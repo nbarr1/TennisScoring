@@ -29,6 +29,7 @@ import {
   type,
 } from '../shared/ui';
 import { DEFAULT_NEXT_PATH, safeNextPath } from '../../lib/safeNextPath';
+import { fetchWithTimeout } from '../shared/network';
 
 type Mode = 'signin' | 'signup';
 type FieldName = 'displayName' | 'email' | 'password';
@@ -177,7 +178,7 @@ export default function LoginPage(): React.JSX.Element {
 
       // Exchange the Firebase ID token for a server-side session cookie via the middleware's loginPath
       const idToken = await user.getIdToken();
-      const sessionResponse = await fetch('/api/auth/login', {
+      const sessionResponse = await fetchWithTimeout('/api/auth/login', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });

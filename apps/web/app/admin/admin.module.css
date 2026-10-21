@@ -175,14 +175,19 @@
 
 .chip {
   min-height: 44px;
-  padding: 0 14px;
+  padding: 6px 14px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 18px;
+  /* A long division level name wraps inside its chip instead of running
+     past the card edge at 320px. */
+  max-width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
   cursor: pointer;
   display: inline-flex;
   align-items: center;

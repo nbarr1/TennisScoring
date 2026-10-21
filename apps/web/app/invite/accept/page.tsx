@@ -26,6 +26,7 @@ import {
   target,
   type,
 } from '../../shared/ui';
+import { fetchWithTimeout } from '../../shared/network';
 
 type InvitePreview = {
   email?: string; // only present when caller is authenticated as the invited address
@@ -35,6 +36,12 @@ type InvitePreview = {
 
 const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** A failure of the connection or the server, as opposed to an invalid or used invite. */
+function isTransientError(error: unknown): boolean {
+  const code = String((error as { code?: unknown } | null)?.code ?? '').replace(/^functions\//, '');
+  return ['unavailable', 'deadline-exceeded', 'internal', 'unknown', 'resource-exhausted'].includes(code);
+}
 
 export default function AcceptInvitePage(): React.JSX.Element {
   return (
@@ -78,6 +85,9 @@ function AcceptInviteContent(): React.JSX.Element {
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // A dropped connection is not a dead invite: it gets Try again, not "ask for a new invite".
+  const [loadRetryable, setLoadRetryable] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState('');
   const [existingAccount, setExistingAccount] = useState(false);
@@ -92,18 +102,27 @@ function AcceptInviteContent(): React.JSX.Element {
       return;
     }
 
-    const callable = httpsCallable(functions, 'getInvitePreview');
+    let cancelled = false;
+    const callable = httpsCallable(functions, 'getInvitePreview', { timeout: 20000 });
     setLoading(true);
     setLoadError('');
+    setLoadRetryable(false);
     callable({ token })
       .then((res) => {
-        setPreview(res.data as InvitePreview);
+        if (!cancelled) setPreview(res.data as InvitePreview);
       })
       .catch((e) => {
+        if (cancelled) return;
+        setLoadRetryable(isTransientError(e));
         setLoadError(describeError(e, 'This invite is invalid or has expired.'));
       })
-      .finally(() => setLoading(false));
-  }, [token]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, loadAttempt]);
 
   async function acceptAsCurrentUser() {
     if (!token || accepting) return;
@@ -159,11 +178,14 @@ function AcceptInviteContent(): React.JSX.Element {
       });
 
       const idToken = await credential.user.getIdToken();
-      const sessionResponse = await fetch('/api/auth/login', {
+      // A timed-out or dropped request is the same case as a refused one: the
+      // account already exists, so it must not fall through to the generic
+      // error, whose "Try again" would only hit email-already-in-use.
+      const sessionOk = await fetchWithTimeout('/api/auth/login', {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!sessionResponse.ok) {
+      }).then((response) => response.ok, () => false);
+      if (!sessionOk) {
         // The account exists now; only the web session failed, so signing in
         // (which comes back here) finishes the job.
         setError('Your account was created, but the web session couldn\'t start. Sign in to continue; you\'ll come back to this invite.');
@@ -205,6 +227,20 @@ function AcceptInviteContent(): React.JSX.Element {
       <InviteShell>
         <h1 style={styles.title}>Join Tennis League</h1>
         <LoadingBlock label="Loading your invite…" rows={3} />
+      </InviteShell>
+    );
+  }
+
+  if (!preview && loadRetryable) {
+    return (
+      <InviteShell>
+        <h1 style={styles.title}>Couldn&apos;t open your invite</h1>
+        {/* Not loadError: describeError falls back to the "invalid" copy for a server error. */}
+        <InlineAlert tone="error">Couldn&apos;t reach the server to check this invite.</InlineAlert>
+        <p style={styles.body}>Your invite is probably fine. Check your connection, then try again.</p>
+        <Button fullWidth onClick={() => setLoadAttempt((n) => n + 1)}>
+          Try again
+        </Button>
       </InviteShell>
     );
   }

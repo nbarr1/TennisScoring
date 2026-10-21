@@ -224,12 +224,34 @@ export const width = {
   wide: 1200,
 } as const;
 
+/**
+ * Side gutter for page content: 16px on a 320px phone, growing to 24px by
+ * about 600px. A fixed 24px gutter plus 24px of card padding left a 320px
+ * screen (or a 640px window at 200% zoom) about 224px for content.
+ */
+export const gutter = "clamp(16px, 4vw, 24px)";
+
+/** Padding inside a large card or section: 16px on narrow screens, 24px from about 480px. */
+export const sectionPadding = "clamp(16px, 5vw, 24px)";
+
+/**
+ * The `<main>` of a page under AppNav: centered at `maxWidth` (a `width.*`
+ * value), with the responsive gutter and less top space on a phone.
+ */
+export function pageMainStyle(maxWidth: number, bottom: number | string = space.xxl): React.CSSProperties {
+  return {
+    maxWidth,
+    margin: "0 auto",
+    padding: `clamp(24px, 6vw, 40px) ${gutter} ${typeof bottom === "number" ? `${bottom}px` : bottom}`,
+  };
+}
+
 /** Card surface used across clubhouse pages. */
 export const cardStyle: React.CSSProperties = {
   background: color.surface,
   borderRadius: radius.card,
   boxShadow: shadow.card,
-  padding: 20,
+  padding: "clamp(16px, 4.5vw, 20px)",
 };
 
 /** Text input / select / textarea base style (48px, Hairline-strong stroke, 16px text). */
@@ -276,4 +298,4 @@ export const rootTokenCss = `:root{${[
   ...Object.entries(darkShadowValues).map(([key, value]) => `--shadow-${key}:${value}`),
 ].join(";")}}}`;
 
-export const tokens = { palette, darkPalette, color, radius, space, font, type, shadow, target, motion, width } as const;
+export const tokens = { palette, darkPalette, color, radius, space, font, type, shadow, target, motion, width, gutter, sectionPadding } as const;

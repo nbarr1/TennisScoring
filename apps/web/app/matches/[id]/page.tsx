@@ -30,6 +30,8 @@ import {
   useAnnounce,
   useAsyncAction,
   useDialogClose,
+  gutter,
+  sectionPadding,
   width,
 } from '../../shared/ui';
 import {
@@ -64,6 +66,7 @@ import {
 } from '@tennis/shared';
 import Link from 'next/link';
 import { useViewMode } from '../../shared/viewMode';
+import { useSlow } from '../../shared/network';
 
 type ConfirmAction =
   | { type: 'cancel' }
@@ -181,6 +184,9 @@ export default function MatchPage(): React.JSX.Element {
   const [onCourt, setOnCourt] = useState(false);
   const [postponeAt, setPostponeAt] = useState('');
   const [postponeError, setPostponeError] = useState<string | null>(null);
+  // A point write that hangs (a dropped connection holds it until the network
+  // returns) blocks the next tap; after a few seconds the strip says why.
+  const slowLiveAction = useSlow(liveActionLoading, 4000);
 
   const uid = firebaseUser?.uid;
   const opponent = match ? opponentOf(match, uid) : 'your opponent';
@@ -625,6 +631,10 @@ export default function MatchPage(): React.JSX.Element {
           {liveError ? (
             <span role="alert" style={styles.liveErrorText}>
               <IconAlertTriangle size={18} aria-hidden="true" /> {liveError}
+            </span>
+          ) : slowLiveAction ? (
+            <span role="status" style={styles.liveErrorText}>
+              <span className="tl-spinner" aria-hidden="true" /> Still saving. Check your connection; scoring resumes once it lands.
             </span>
           ) : (
             <span style={styles.hintText}>
@@ -1386,7 +1396,7 @@ function StatRow({ label, v1, v2, header }: { label: string; v1: string; v2: str
 const onGreenMuted = color.greenLight;
 
 const styles: Record<string, CSSProperties> = {
-  loadingPage: { maxWidth: width.reading, margin: '48px auto', padding: '0 24px' },
+  loadingPage: { maxWidth: width.reading, margin: '48px auto', padding: `0 ${gutter}` },
   statePage: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: space.lg, background: color.canvas },
 
   // Live court view (participants): the black scoreboard.
@@ -1426,15 +1436,15 @@ const styles: Record<string, CSSProperties> = {
 
   // Clubhouse view
   page: { minHeight: '100vh', background: color.canvas },
-  heroBand: { background: color.brandFill, padding: `0 ${space.xl}px` },
+  heroBand: { background: color.brandFill, padding: `0 ${gutter}` },
   heroWhen: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: space.sm, margin: `${space.sm}px 0 0`, fontFamily: 'var(--font-display)', color: color.onBrand, fontSize: 28, fontWeight: 700, overflowWrap: 'anywhere' },
   postponeForm: { marginTop: space.sm },
   iosPage: { minHeight: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' },
-  nav: { background: color.brandFill, padding: '12px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
+  nav: { background: color.brandFill, padding: `12px ${gutter}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.md, flexWrap: 'wrap' },
   iosNav: { position: 'sticky', top: 0, zIndex: 5, background: color.brandFill, paddingTop: 'max(12px, env(safe-area-inset-top))', paddingLeft: space.lg, paddingRight: space.lg },
   back: { display: 'inline-flex', alignItems: 'center', gap: space.xxs, minHeight: target.min, color: color.onBrand, ...type.label, fontSize: 15, textDecoration: 'none' },
   navBrand: { display: 'inline-flex', alignItems: 'center', gap: space.xs, fontFamily: 'var(--font-display)', color: color.onBrand, fontWeight: 700, fontSize: 20 },
-  main: { maxWidth: width.reading, margin: '0 auto', padding: `${space.lg}px ${space.xl}px ${space.xxl}px` },
+  main: { maxWidth: width.reading, margin: '0 auto', padding: `${space.lg}px ${gutter} ${space.xxl}px` },
   iosMain: { padding: `${space.lg}px ${space.lg}px ${space.xl}px` },
   scoreboard: { maxWidth: width.reading, margin: '0 auto', textAlign: 'center', padding: '24px 0 32px' },
   iosScoreboard: { padding: '16px 0 24px' },
@@ -1451,10 +1461,11 @@ const styles: Record<string, CSSProperties> = {
   setsRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: space.md, marginBottom: space.sm },
   setsLabel: { color: onGreenMuted, fontSize: 16 },
   setsScore: { fontFamily: 'var(--font-display)', color: color.onBrand, fontSize: 28, fontWeight: 700 },
-  score: { fontFamily: 'var(--font-display)', color: color.onBrand, fontSize: 56, fontWeight: 700, letterSpacing: 4, marginBottom: space.sm, overflowWrap: 'anywhere' },
+  // Scales from 36px on a 320px phone to 56px, so a five-set line wraps between sets, not inside one.
+  score: { fontFamily: 'var(--font-display)', color: color.onBrand, fontSize: 'clamp(36px, 11vw, 56px)', fontWeight: 700, letterSpacing: '0.04em', lineHeight: 1.1, marginBottom: space.sm, wordSpacing: '0.12em' },
   gameScore: { fontFamily: 'var(--font-display)', color: color.greenLight, fontSize: 28, fontWeight: 600, marginBottom: space.lg },
   server: { color: color.ballYellow, ...type.label },
-  section: { ...cardStyle, padding: 24, marginBottom: space.lg },
+  section: { ...cardStyle, padding: sectionPadding, marginBottom: space.lg },
   iosSection: { padding: space.lg },
   stepPanel: { display: 'flex', flexDirection: 'column', gap: space.md },
   stepTitle: { ...type.headline, color: color.clubhouseGreen, margin: 0 },
@@ -1471,7 +1482,7 @@ const styles: Record<string, CSSProperties> = {
   setScore: { fontFamily: 'var(--font-display)', fontSize: 22, color: color.ink, width: 32, textAlign: 'center', fontVariantNumeric: 'tabular-nums' },
   setDash: { color: color.textMuted },
   tbScore: { ...type.caption, color: color.textMuted },
-  setWinner: { display: 'inline-flex', alignItems: 'center', gap: space.xs, color: color.courtGreen, ...type.label, marginLeft: 'auto' },
+  setWinner: { display: 'inline-flex', alignItems: 'center', gap: space.xs, color: color.courtGreen, ...type.label, marginLeft: 'auto', minWidth: 0, overflowWrap: 'anywhere' },
   statsTable: { borderRadius: radius.md, overflow: 'hidden', border: `1px solid ${color.border}` },
   statRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(72px, 120px) minmax(72px, 120px)', gap: space.sm, padding: '10px 16px', borderBottom: `1px solid ${color.border}`, alignItems: 'center' },
   statRowHeader: { background: color.surfaceMuted, ...type.label, color: color.clubhouseGreen },

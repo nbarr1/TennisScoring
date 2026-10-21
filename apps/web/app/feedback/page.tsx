@@ -23,6 +23,7 @@ import {
   target,
   type,
   width,
+  pageMainStyle,
 } from "../shared/ui";
 import {
   submitFeedback,
@@ -32,6 +33,8 @@ import {
 } from "@tennis/firebase-client";
 
 const MIN_MESSAGE_LENGTH = 8;
+/** submitFeedback truncates the issue body at 8,000 characters; stop typing there instead. */
+const MAX_MESSAGE_LENGTH = 8000;
 
 const CATEGORY_OPTIONS: Array<{ value: FeedbackCategory; label: string }> = [
   { value: "bug", label: "Bug report" },
@@ -228,12 +231,16 @@ export default function FeedbackPage(): React.JSX.Element {
                 }}
                 placeholder="What happened? What did you expect to happen?"
                 minLength={MIN_MESSAGE_LENGTH}
+                maxLength={MAX_MESSAGE_LENGTH}
                 required
                 aria-invalid={messageError ? true : undefined}
                 aria-describedby={["feedback-message-hint", messageError ? "feedback-message-error" : ""].filter(Boolean).join(" ")}
               />
               <div id="feedback-message-hint" style={styles.hint}>
                 For a bug, include the steps that led to it and the match or page you were on.
+                {MAX_MESSAGE_LENGTH - message.length <= 500
+                  ? ` ${(MAX_MESSAGE_LENGTH - message.length).toLocaleString()} characters left.`
+                  : ""}
               </div>
               <FieldError id="feedback-message-error">{messageError}</FieldError>
             </div>
@@ -272,7 +279,7 @@ export default function FeedbackPage(): React.JSX.Element {
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: width.reading, margin: "0 auto", padding: `40px ${space.lg}px` },
+  main: pageMainStyle(width.reading),
   pageTitle: { ...type.display, color: color.clubhouseGreen, margin: `0 0 ${space.sm}px` },
   subtitle: { ...type.body, color: color.textMuted, margin: `0 0 ${space.xl}px`, maxWidth: "60ch" },
   card: {
