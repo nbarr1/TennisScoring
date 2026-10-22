@@ -218,6 +218,8 @@ export const motion = {
 
 /** Readable widths for page content (DESIGN.md Layout). */
 export const width = {
+  /** Sign-in, verify-email, invite, and division onboarding cards. */
+  auth: 480,
   dialog: 500,
   reading: 720,
   list: 960,
@@ -265,6 +267,38 @@ export const inputStyle: React.CSSProperties = {
   color: color.ink,
   fontSize: 16,
   lineHeight: 1.5,
+};
+
+/**
+ * Added to `inputStyle` on a field with an error: a red stroke doubled by an
+ * inset ring, so the change reads without relying on color alone.
+ */
+export const inputInvalidStyle: React.CSSProperties = {
+  border: `1px solid ${color.destructive}`,
+  boxShadow: `inset 0 0 0 1px ${color.destructive}`,
+};
+
+/**
+ * The page and card of a standalone, nav-less screen (sign-in, verify email,
+ * invite, division onboarding): one centered card on the canvas, so moving
+ * from one of these screens to the next never changes the card's width.
+ */
+export const authPageStyle: React.CSSProperties = {
+  minHeight: "100dvh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: color.canvas,
+  padding: `${space.xl}px ${gutter}`,
+};
+
+export const authCardStyle: React.CSSProperties = {
+  width: "100%",
+  maxWidth: width.auth,
+  background: color.surface,
+  borderRadius: radius.lg,
+  padding: "clamp(24px, 6vw, 40px)",
+  boxShadow: shadow.raised,
 };
 
 /** Form label above a field. */

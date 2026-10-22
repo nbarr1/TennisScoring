@@ -291,7 +291,7 @@ export default function DashboardPage(): React.JSX.Element {
                       <ul style={styles.waitingList}>
                         {waiting.map((item) => (
                           <li key={item.key}>
-                            <Link href={item.href} style={styles.waitingLink}>
+                            <Link href={item.href} className="tl-tint" style={styles.waitingLink}>
                               <span style={styles.waitingIcon}>{item.icon}</span>
                               <span style={styles.waitingText}>{item.text}</span>
                               <IconChevronRight size={18} aria-hidden="true" />
@@ -304,7 +304,7 @@ export default function DashboardPage(): React.JSX.Element {
                   <div style={styles.nextMatch}>
                     <h3 style={styles.subTitle}>Your next match</h3>
                     {nextMatch && uid ? (
-                      <Link href={`/matches/${nextMatch.id}`} style={styles.nextMatchLink}>
+                      <Link href={`/matches/${nextMatch.id}`} className="tl-tint" style={styles.nextMatchLink}>
                         <span>
                           <span style={styles.nextMatchOpponent}>
                             vs {sideDisplayName(nextMatch, opposingSide(sideOfPlayer(nextMatch, uid) ?? "player1")) || "Opponent"}
@@ -316,7 +316,7 @@ export default function DashboardPage(): React.JSX.Element {
                     ) : (
                       <p style={styles.todoDetail}>
                         No match scheduled.{" "}
-                        <Link href="/matches" style={styles.inlineLink}>
+                        <Link href="/matches" className="tl-link" style={styles.inlineLink}>
                           Propose one on Matches
                         </Link>
                         .
@@ -611,7 +611,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   nextMatchOpponent: { display: "block", ...type.label, fontSize: 16, overflowWrap: "anywhere" },
   nextMatchWhen: { display: "block", ...type.bodySmall, color: color.textMuted },
-  inlineLink: { color: color.clubhouseGreen, fontWeight: 600, textDecoration: "underline" },
+  inlineLink: { color: color.clubhouseGreen, fontWeight: 600 },
   filterBar: {
     display: "flex",
     gap: space.md,

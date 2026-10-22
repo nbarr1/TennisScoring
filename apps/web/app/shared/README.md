@@ -34,8 +34,10 @@ For inline styles, `tokens.ts` exports:
 | `type` | spreadable roles: `display`, `headline`, `title`, `body`, `bodySmall`, `label`, `caption` |
 | `shadow` | `card`, `raised`, `live` |
 | `target` | `min 44` (any tap target), `control 48` (buttons, inputs) |
-| `width` | `dialog 500`, `reading 720`, `list 960`, `wide 1200` |
+| `width` | `auth 480`, `dialog 500`, `reading 720`, `list 960`, `wide 1200` |
 | `cardStyle`, `inputStyle`, `fieldLabelStyle` | ready-made style objects |
+| `inputInvalidStyle` | spread after `inputStyle` on a field with an error |
+| `authPageStyle`, `authCardStyle` | the page and card of a nav-less screen (sign-in, verify email, invite, division onboarding) |
 | `gutter`, `sectionPadding` | `clamp()` side gutter (16px at 320 to 24px) and card/section padding, so a 320px screen keeps its content width |
 | `pageMainStyle(maxWidth, bottom?)` | a page's `<main>`: centered at `maxWidth`, `gutter` sides, fluid top padding. Use it for any new page |
 
@@ -82,6 +84,16 @@ because the variant background is an inline style and an inline background
 beats any class rule. Don't set `boxShadow` inline on a Button, or its states
 disappear. A button on Clubhouse Green, or one given its own background,
 takes `className="tl-btn--on-dark"` for a neutral light veil instead.
+
+Anything else that is clickable but is not a `<Button>` (an icon button, a
+list row, a segment or switcher option, a link styled as a row) takes
+`className="tl-tint"`: hover and press draw a veil mixed from its own text
+color, so it works on any surface. Use it too on a Button recolored for one
+meaning (a red Dispute, the amber Unassigned button), where the variant's
+green hover would contradict the label. Text links in copy take
+`className="tl-link"` for the shared underline; the color stays inline.
+Hover styles apply only under `@media (hover: hover)`, so a tap on a phone
+never leaves one stuck on.
 
 ```tsx
 <Button pending={save.pending} pendingLabel="Saving…" onClick={() => void save.run()}>

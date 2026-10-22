@@ -14,7 +14,7 @@ const SLIDES = [
   {
     Icon: IconBallTennis,
     title: 'Welcome to Tennis League',
-    body: 'Schedule matches, keep score, and follow your division’s standings, all in one place.',
+    body: "Schedule matches, keep score, and follow your division's standings, all in one place.",
   },
   {
     Icon: IconTarget,
@@ -34,12 +34,12 @@ const SLIDES = [
   {
     Icon: IconMessageCircle,
     title: 'Message other players',
-    body: 'Chat in your division’s channel or start a direct message to set up your next match.',
+    body: "Chat in your division's channel or start a direct message to set up your next match.",
   },
   {
     Icon: IconTrophy,
-    title: 'You’re all set',
-    body: 'Propose your first match and start climbing the standings. Good luck on the court!',
+    title: "You're all set",
+    body: 'Propose your first match and start climbing the standings. Good luck on the court.',
   },
 ] as const;
 
@@ -80,7 +80,7 @@ export default function WebTutorialPage(): React.JSX.Element {
       // division onboarding itself to anyone who reaches it without one.
       router.replace('/dashboard');
     } catch (err: unknown) {
-      setError(describeError(err, 'Couldn’t finish the tutorial. Try again.'));
+      setError(describeError(err, "Couldn't finish the tutorial. Try again."));
       setFinishing(false);
     }
   }, [authLoading, finishing, firebaseUser, router]);
@@ -214,7 +214,7 @@ const styles: Record<string, React.CSSProperties> = {
   body: { ...type.body, fontSize: 17, color: ON_GREEN_MUTED, margin: 0 },
   error: { marginTop: space.lg, textAlign: 'left' },
   dots: { display: 'flex', gap: space.sm, marginTop: space.xxl, marginBottom: space.xxl },
-  dot: { width: 8, height: 8, borderRadius: radius.pill, background: 'rgba(255, 220, 96, 0.4)', transition: 'width 150ms ease-out, background-color 150ms ease-out' },
+  dot: { width: 8, height: 8, borderRadius: radius.pill, background: 'rgba(255, 220, 96, 0.4)', transition: 'width var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out)' },
   dotActive: { width: 24, background: color.ballYellow },
   actions: { display: 'flex', alignItems: 'center', gap: space.lg, justifyContent: 'space-between', width: '100%', maxWidth: 480 },
   backBtn: { color: color.onBrand },

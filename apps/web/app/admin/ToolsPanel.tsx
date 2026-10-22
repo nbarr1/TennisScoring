@@ -174,7 +174,7 @@ export function ToolsPanel({
             <ul style={styles.resolveList}>
               {reportsAwaitingResolution.map((m) => (
                 <li key={m.id} style={styles.resolveItem}>
-                  <Link href={`/matches/${encodeURIComponent(m.id)}`} style={styles.resolveLink}>
+                  <Link href={`/matches/${encodeURIComponent(m.id)}`} className="tl-link" style={styles.resolveLink}>
                     {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
                   </Link>
                   <StatusBadge status={m.status} />

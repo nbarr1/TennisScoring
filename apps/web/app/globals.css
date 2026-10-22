@@ -168,17 +168,53 @@ table,
     background-color var(--duration-fast) ease;
 }
 
-:where(button:not(:disabled):not([aria-disabled='true'])):hover {
-  filter: brightness(1.1);
+/* Hover is gated to pointers that can hover: on a touchscreen a tap would
+   otherwise leave the hover state stuck on the control until the next tap. */
+@media (hover: hover) {
+  :where(button:not(:disabled):not([aria-disabled='true'])):hover {
+    filter: brightness(1.1);
+  }
+
+  /* Cards that open something rise slightly under the pointer. */
+  .lift:hover {
+    transform: translateY(-2px);
+  }
 }
 
 :where(button:not(:disabled):not([aria-disabled='true'])):active {
   transform: translateY(1px);
 }
 
-/* Cards that open something rise slightly under the pointer. */
-.lift:hover {
-  transform: translateY(-2px);
+/* Text links inside copy: an underline that sits clear of descenders and
+   thickens under the pointer. The color stays with the element, since links
+   appear on the canvas, on cards, and on Clubhouse Green. */
+.tl-link {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+@media (hover: hover) {
+  .tl-link:hover {
+    text-decoration-thickness: 2px;
+  }
+}
+
+/* Controls whose hover and press fill comes from their own label color:
+   icon buttons, list rows, segment and switcher options, and Buttons
+   recolored for one meaning (Dispute in red, Unassigned in amber), where the
+   variant's green tint would contradict the label. Works on any surface,
+   from white cards to the green nav and the black scoreboard. */
+@media (hover: hover) {
+  .tl-tint.tl-tint:not(:disabled):not([aria-disabled='true']):hover {
+    filter: none;
+    box-shadow: inset 0 0 0 100vmax color-mix(in srgb, currentColor 8%, transparent);
+  }
+}
+
+.tl-tint.tl-tint:not(:disabled):not([aria-disabled='true']):active {
+  filter: none;
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, currentColor 14%, transparent);
 }
 
 /* Ring that spreads from the live-match dot on the matches page. */
@@ -208,10 +244,12 @@ table,
   -webkit-tap-highlight-color: transparent;
 }
 
-.tl-btn--secondary:not(:disabled):not([aria-disabled='true']):hover,
-.tl-btn--quiet:not(:disabled):not([aria-disabled='true']):hover {
-  filter: none;
-  box-shadow: inset 0 0 0 100vmax var(--green-soft);
+@media (hover: hover) {
+  .tl-btn--secondary:not(:disabled):not([aria-disabled='true']):hover,
+  .tl-btn--quiet:not(:disabled):not([aria-disabled='true']):hover {
+    filter: none;
+    box-shadow: inset 0 0 0 100vmax var(--green-soft);
+  }
 }
 
 .tl-btn--secondary:not(:disabled):not([aria-disabled='true']):active,
@@ -227,18 +265,26 @@ table,
   box-shadow: inset 0 0 0 100vmax var(--destructive-fill-pressed);
 }
 
-.tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):hover,
+@media (hover: hover) {
+  .tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):hover {
+    filter: none;
+    box-shadow: inset 0 0 0 100vmax var(--destructive-soft);
+  }
+}
+
 .tl-btn--quiet-danger:not(:disabled):not([aria-disabled='true']):active {
   filter: none;
   box-shadow: inset 0 0 0 100vmax var(--destructive-soft);
 }
 
-/* Buttons drawn on Clubhouse Green (the tutorial) or with their own fill:
-   a light veil instead of the clubhouse tints, which would hide a white
-   label or swap a custom fill for green. */
-.tl-btn.tl-btn--on-dark:not(:disabled):not([aria-disabled='true']):hover {
-  filter: none;
-  box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.12);
+/* Buttons drawn on Clubhouse Green (the tutorial) or with their own fill
+   (Confirm score on Court Green): a light veil instead of the clubhouse
+   tints, which would hide a white label or swap a custom fill for green. */
+@media (hover: hover) {
+  .tl-btn.tl-btn--on-dark:not(:disabled):not([aria-disabled='true']):hover {
+    filter: none;
+    box-shadow: inset 0 0 0 100vmax rgba(255, 255, 255, 0.12);
+  }
 }
 
 .tl-btn.tl-btn--on-dark:not(:disabled):not([aria-disabled='true']):active {
@@ -432,8 +478,10 @@ table,
   text-underline-offset: 6px;
 }
 
-.tl-nav__link:hover {
-  color: var(--on-brand);
+@media (hover: hover) {
+  .tl-nav__link:hover {
+    color: var(--on-brand);
+  }
 }
 
 .tl-nav__link[aria-current='page'] {
@@ -551,7 +599,7 @@ table,
   }
 
   .lift:hover,
-  :where(button:not(:disabled)):active {
+  :where(button:not(:disabled):not([aria-disabled='true'])):active {
     transform: none;
   }
 

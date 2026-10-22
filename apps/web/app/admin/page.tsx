@@ -1824,7 +1824,7 @@ export default function AdminPage(): React.JSX.Element {
                     <strong>{plural(unassignedCount, "player has", "players have")}</strong> no division level
                     for {adminSeason.name}. They won&rsquo;t appear in any schedule or standings.
                   </span>
-                  <Button size="sm" variant="secondary" onClick={goToUnassigned} style={styles.unassignedButton}>
+                  <Button size="sm" variant="secondary" onClick={goToUnassigned} className="tl-tint" style={styles.unassignedButton}>
                     Show unassigned
                   </Button>
                 </li>

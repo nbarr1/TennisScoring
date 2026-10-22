@@ -43,6 +43,7 @@ import {
   color,
   describeError,
   fieldLabelStyle,
+  inputInvalidStyle,
   inputStyle,
   radius,
   space,
@@ -291,7 +292,7 @@ export default function ProfilePage(): React.JSX.Element {
       }
       setSavedAt(Date.now());
     },
-    { successMessage: "Profile saved", errorMessage: "Couldn't save your profile. Please try again." },
+    { successMessage: "Profile saved.", errorMessage: "Couldn't save your profile. Try again." },
   );
 
   const canEditRestrictedFields = isAdminRole(user?.role);
@@ -325,7 +326,7 @@ export default function ProfilePage(): React.JSX.Element {
       await unblockUser(firebaseUser.uid, entry.id);
       announce(`${entry.displayName ?? "Player"} unblocked. Their messages will show again.`, { toast: true });
     } catch (e) {
-      setUnblockError(describeError(e, "Couldn't unblock this player. Please try again."));
+      setUnblockError(describeError(e, "Couldn't unblock this player. Try again."));
     } finally {
       setUnblockingId(null);
     }
@@ -405,7 +406,7 @@ export default function ProfilePage(): React.JSX.Element {
       } else if (code === "auth/too-many-requests") {
         setDeleteError("Too many attempts. Wait a few minutes and try again.");
       } else {
-        setDeleteError(describeError(err, "Couldn't delete your account. Please try again."));
+        setDeleteError(describeError(err, "Couldn't delete your account. Try again."));
       }
     } finally {
       if (!deleted) setDeleting(false);
@@ -751,7 +752,7 @@ export default function ProfilePage(): React.JSX.Element {
           {blockedLoading ? (
             <LoadingBlock label="Loading blocked players…" rows={2} rowHeight={44} />
           ) : blocked.length === 0 ? (
-            <EmptyState compact title="You haven't blocked anyone." description="Block a player from the menu on any of their messages." style={{ padding: space.lg }} />
+            <EmptyState compact title="You haven't blocked anyone" description="Block a player from the menu on any of their messages." style={{ padding: space.lg }} />
           ) : (
             <ul style={styles.blockedList}>
               {blocked.map((entry) => {
@@ -843,7 +844,7 @@ export default function ProfilePage(): React.JSX.Element {
 }
 
 function inputFieldStyle(invalid: boolean): React.CSSProperties {
-  return invalid ? { ...inputStyle, borderColor: color.destructive } : inputStyle;
+  return invalid ? { ...inputStyle, ...inputInvalidStyle } : inputStyle;
 }
 
 function Field({

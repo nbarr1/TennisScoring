@@ -108,6 +108,7 @@ export function PlayerSlotPicker({
           <button
             ref={changeRef}
             type="button"
+            className="tl-tint"
             style={pickerStyles.changeBtn}
             aria-label={`Change ${label} (${selected.displayName})`}
             onClick={() => {
@@ -144,7 +145,7 @@ export function PlayerSlotPicker({
         style={pickerStyles.input}
         value={searchText}
         onChange={(e) => setSearchText(e.target.value)}
-        placeholder={placeholder ?? "Search by name…"}
+        placeholder={placeholder ?? "Search by name"}
         aria-describedby={statusId}
       />
       <div id={statusId} role="status" style={pickerStyles.muted}>
@@ -153,18 +154,19 @@ export function PlayerSlotPicker({
       {searchFailed && (
         <div role="alert" style={pickerStyles.error}>
           <span>Couldn&apos;t search players. Check your connection.</span>
-          <button type="button" style={pickerStyles.retryBtn} onClick={() => setRetryToken((n) => n + 1)}>
+          <button type="button" className="tl-tint tl-link" style={pickerStyles.retryBtn} onClick={() => setRetryToken((n) => n + 1)}>
             Try again
           </button>
         </div>
       )}
       {results.length > 0 && (
-        <ul style={pickerStyles.results} aria-label={`Players matching “${trimmed}”`}>
+        <ul style={pickerStyles.results} aria-label={`Players matching "${trimmed}"`}>
           {results.map((u) => (
             <li key={u.id} style={pickerStyles.resultItem}>
               <button
                 type="button"
                 aria-label={`Select ${u.displayName} as ${label}`}
+                className="tl-tint"
                 style={pickerStyles.resultRow}
                 onClick={() => {
                   focusNext.current = "change";
@@ -204,8 +206,6 @@ const pickerStyles: Record<string, CSSProperties> = {
     borderRadius: radius.md,
     color: color.clubhouseGreen,
     ...type.label,
-    textDecoration: "underline",
-    textUnderlineOffset: 3,
   },
   results: {
     listStyle: "none",
