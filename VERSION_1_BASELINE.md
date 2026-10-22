@@ -129,19 +129,24 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
   - `/admin`
   - `/feedback`
   - `/invite/accept`
+  - `/onboarding/division`
   - `/onboarding/tutorial`
+  - `/verify-email`
   - `/privacy` (public, excluded from the auth middleware)
 
 ### Mobile application
 
 - Location: `apps/mobile`
 - Framework: Expo 57 / React Native 0.86 with Expo Router
-- Authentication: Firebase email/password sign in and sign up
+- Authentication: Firebase email/password sign in and sign up, with required email verification
 - Major route groups:
-  - `(auth)` for login/signup
+  - `(auth)` for login/signup and email verification
   - `(onboarding)` for division selection and tutorial
   - `(tabs)` for dashboard, matches, messages, profile, and admin
   - `match/[id]` for setup, live scoring, reporting, guest linking, and score correction
+  - `conversation/[channelId]` for a single conversation
+  - `round-robin-scheduler` for the leader/admin fixture generator
+  - `privacy-policy` for the privacy policy
   - `feedback` for user feedback submission
 
 ### Firebase backend
@@ -149,12 +154,13 @@ A Git tag named `v1.0.0` points to the commit containing this baseline (`0211f1f
 - Location: `firebase`
 - Includes Cloud Functions, Firestore rules/indexes, Storage rules, and emulator configuration
 - Major callable/event functions include:
-  - match scoring/reporting/ranking functions: `scoreMatchPoint`, `recordHistoricMatch`, `recordMatchOnBehalf`, `resolveDisputedReport`, `recalculateDivisionRankings`, `repairAllDivisionRankings`, `onMatchUpdate`
+  - match scoring/reporting/ranking functions: `scoreMatchPoint`, `recordHistoricMatch`, `recordMatchOnBehalf`, `createDoublesMatch`, `resolveDisputedReport`, `recalculateDivisionRankings`, `repairAllDivisionRankings`, `onMatchUpdate`
+  - report PDF trigger: `generateMatchReport`
   - division/player management functions: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `removeDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles`, `exportDivisionCsv`
   - invite functions: `sendInvite`, `getInvitePreview`, `acceptInvite`
   - account management: `deleteAccount`
   - scheduling: `publishRoundRobinSchedule`
-  - messaging and notification trigger: `onNewMessage`
+  - messaging and moderation: `onNewMessage` (trigger) and `resolveMessageReport`
   - feedback integration: `submitFeedback`
   - auth trigger: `onUserCreated` (see the 2026-08-10 update above for a known deployment limitation)
   - operational: `health`, `readiness`
@@ -213,12 +219,15 @@ Additional deployment checks:
 
 ```bash
 pnpm audit --audit-level=high
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm --filter @tennis/firebase-functions test:functions
 pnpm --filter @tennis/firebase-functions build:targeted-deploy
 pnpm --filter @tennis/mobile build:android
 pnpm --filter @tennis/mobile build:ios
 ```
 
-Cloud/mobile build commands may require configured Firebase, EAS, Apple, Android, and GitHub credentials.
+The `test:rules` and `test:functions` commands start the Firebase emulators, which need JDK 21 or later. Cloud/mobile build commands may require configured Firebase, EAS, Apple, Android, and GitHub credentials.
 
 ---
 

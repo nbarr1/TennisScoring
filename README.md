@@ -6,7 +6,7 @@
 
 Native entry points are `pnpm android:test` (Kotlin unit tests), `pnpm android:build`, `pnpm android:release`, `pnpm ios:test`, and `pnpm ios:typecheck`. The Android Gradle build resolves its React Native and Expo plugins through Node, so run `pnpm install` before any `android:*` task. `ios:test` runs the tests of `apps/mobile/ios/TennisKit`, the Swift package that holds the iOS client's scoring and ranking engines and view models, and works on macOS or Linux with Swift 6. There is no Xcode project yet, so `ios:typecheck` (macOS only) typechecks the SwiftUI app and watch sources against the simulator SDKs instead of building them; [`apps/mobile/ios/README.md`](apps/mobile/ios/README.md) covers what the iOS client does and how to create the project. Platform Firebase files come from the existing environment credential workflow rather than from migration commits.
 
-TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marked the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features; `1.0.2` added mobile account deletion and message reporting/blocking; `1.0.3` added the round-robin match scheduler; `1.0.4` adds a privacy policy (in-app screen and a public web page); `1.0.5` fixes the mobile privacy policy screen so it's reachable before signing in, and links it from the login/signup screen; `1.1.0` adds doubles match tracking and fixed-partnership team standings.
+TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league tennis scoring across a Next.js web app, an Expo React Native mobile app, Firebase Cloud Functions, Firestore/Storage security rules, and companion wearable code for Wear OS and Apple Watch. Version `1.0.1` marked the first documented repository baseline that is ready to build, test, deploy, and extend with the next round of web and mobile features; `1.0.2` added mobile account deletion and message reporting/blocking; `1.0.3` added the round-robin match scheduler; `1.0.4` adds a privacy policy (in-app screen and a public web page); `1.0.5` fixes the mobile privacy policy screen so it's reachable before signing in, and links it from the login/signup screen; `1.1.0` adds doubles match tracking and fixed-partnership team standings; `1.2.0` adds required email verification, a dark theme that follows the device setting on web and mobile, portrait tablet layouts, leader resolution of match results, password reset, and 10-point match tiebreaks for hand-recorded results. [CHANGELOG.md](./CHANGELOG.md) lists every change.
 
 **Status:** the web application is live and functional. The mobile application is usable today via a sideloaded Android APK build, but is still being refined — the Google Play Store listing is being finalized ahead of a public release.
 
@@ -20,8 +20,8 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 - **Repository shape:** monorepo with web, mobile, Firebase Functions, Firebase client utilities, and shared domain logic.
 - **Auth model:** Firebase Authentication email/password on web and mobile. The web app exchanges Firebase ID tokens for an httpOnly `tennis-auth` session cookie through `next-firebase-auth-edge` middleware.
 - **Data model:** Firestore collections for users, divisions, matches, channels/messages, head-to-head data, and division ranking subcollections.
-- **Deploy targets:** Vercel/Next.js for web, EAS/Expo for mobile Android/iOS builds, Firebase CLI/GitHub Actions for targeted Cloud Functions deploys, and Firebase rules/indexes for Firestore/Storage.
-- **Validation status:** shared Jest tests, TypeScript type checks, lint tasks, CI workflow, security review, and UI/UX review are documented in this repository.
+- **Deploy targets:** Vercel/Next.js for web, EAS/Expo for mobile Android/iOS builds, and GitHub Actions workflows for targeted Cloud Functions deploys and for Firestore/Storage rules and Firestore indexes.
+- **Validation status:** CI runs type checks, lint, a full build, the shared Jest tests, the Firestore/Storage rules and Cloud Functions tests against the Firebase emulators, a dependency audit, a release bundle and native Android build with Kotlin unit tests, and (on macOS) the Swift `TennisKit` tests. Point-in-time security and UI/UX reviews are kept in this repository.
 
 ---
 
@@ -42,7 +42,8 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 - Record historic results and leader-entered results.
 - Support guest opponents, later linking guest matches to registered users.
 - Edit completed/pending scores when correction is needed.
-- Submit reports, confirm reports, dispute reports, and resolve disputed reports.
+- Submit reports, confirm reports, and dispute reports. Division leaders and admins settle disputed results and reports the opposing side has not answered.
+- Record a hand-entered result with a 10-point match tiebreak in place of a deciding set.
 
 ### Scoring and rankings
 
@@ -60,8 +61,9 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 ### Profiles and onboarding
 
-- Email/password sign in, sign up, and explicit sign out on web and mobile.
+- Email/password sign in, sign up, password reset, and explicit sign out on web and mobile. A new account must verify its email address before it can use the app.
 - Division selection/onboarding tutorial gates.
+- A light and a dark theme on web and mobile that follow the device's setting, with no in-app toggle.
 - Profile editing for display name, phone, avatar URL, contact preferences, weekly availability, and scoring tips preference.
 - Shared profile utility functions for availability validation and profile update payloads.
 
@@ -78,11 +80,11 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 - **Monorepo:** pnpm workspaces and Turborepo.
 - **Language:** TypeScript with strict settings for app/package code.
-- **Web app:** Next.js 16, React 19, Firebase Web SDK, `next-firebase-auth-edge`.
+- **Web app:** Next.js 16, React 18.2 (the root `pnpm.overrides` pin it, although `apps/web/package.json` declares React 19), Firebase Web SDK, `next-firebase-auth-edge`.
 - **Mobile app:** Expo 57, React Native 0.86, Expo Router, Firebase Web SDK, native Android/iOS companion modules.
-- **Backend:** Firebase Cloud Functions v2/v1 mix, Firestore, Storage, Authentication, FCM, `firebase-admin`, `pdf-lib`.
+- **Backend:** Firebase Cloud Functions (2nd gen), Firestore, Storage, Authentication, FCM, `firebase-admin`, `pdf-lib`.
 - **Shared packages:** `@tennis/shared` for domain logic and `@tennis/firebase-client` for Firebase SDK wrappers/hooks.
-- **Testing:** Jest/ts-jest for shared scoring, ranking, profile, and status metadata tests.
+- **Testing:** Jest/ts-jest for `@tennis/shared`, `node:test` suites against the Firebase emulators for rules and Cloud Functions, Kotlin unit tests for the Android module, and XCTest for the Swift `TennisKit` package.
 
 ---
 
@@ -90,15 +92,17 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 ```text
 apps/
-  mobile/                 Expo React Native app, Android project, Wear OS app/module, Apple Watch files
+  mobile/                 Expo React Native app, Android project, Wear OS app/module, native iOS and watchOS sources
   web/                    Next.js web app, API routes, auth middleware, shared web UI components
 firebase/                 Cloud Functions source, Firebase config, Firestore indexes/rules, Storage rules
 packages/
   firebase-client/        Shared Firebase config, typed collections, callable wrappers, and React hooks
   shared/                 Shared TypeScript types, scoring/ranking engines, profile utilities, and tips
-scripts/                  Repository maintenance scripts
+fixtures/mobile-contract/ Engine parity fixture shared by the TypeScript, Kotlin, and Swift tests
+scripts/                  Repository maintenance, backfill, rules-guard, codegen, and fixture scripts
 design/                   Standalone design previews
-.github/workflows/        CI, EAS Android APK build, and targeted Firebase Functions deploy workflows
+docs/                     Plans, references, and point-in-time audits
+.github/workflows/        CI, native iOS checks, EAS Android builds, debug APK build, and Firebase Functions and rules deploy workflows
 ```
 
 ---
@@ -110,8 +114,12 @@ The `@tennis/shared` package is the canonical location for reusable domain code.
 - Tennis match, user, division, season, division level, invite, message, feedback, CSV export, and ranking types.
 - `MATCH_STATUS_METADATA` and `getMatchStatusMetadata` for consistent status labels, colors, tones, icons, and accessibility labels.
 - Scoring helpers such as `createInitialScore`, `applyPoint`, `formatScoreDisplay`, and `formatGameScore`.
-- Ranking helpers such as `computeRankings`, `updateRankingWithMatchResult`, and `extractMatchTotals`.
+- Ranking helpers such as `computeRankings`, `computeDoublesRankings`, `updateRankingWithMatchResult`, and `extractMatchTotals`.
+- `getMatchMoment` for the live match's current moment (deuce, break point, tiebreak, and so on), and `validateRecordedSets`/`buildRecordedMatchScore` for hand-recorded results.
+- Match side and doubles team helpers such as `sidePlayerIds`, `sideOfPlayer`, `isDoublesMatch`, `canRespondToReport`, and `doublesTeamId`.
+- `generateRoundRobinSchedule` for round-robin fixtures, and roster-import helpers such as `parseRosterPaste`.
 - Tip metadata and trigger-to-tip helpers.
+- The privacy policy copy (`PRIVACY_POLICY_SECTIONS`) shown by both apps.
 - Profile availability helpers such as `addAvailabilitySlot`, `updateAvailabilitySlot`, `removeAvailabilitySlot`, `cycleAvailabilitySlotDay`, `validateAvailabilitySlots`, `buildAvailability`, and `buildUserProfileUpdates`.
 
 When adding logic used by more than one app/package, add it to `packages/shared` and import it from `@tennis/shared` instead of duplicating it in web, mobile, or Firebase code.
@@ -164,7 +172,7 @@ pnpm test
 pnpm build
 ```
 
-CI runs `lint_typecheck` (install → typecheck → lint → build) unconditionally, plus path-filtered jobs: `shared_tests` when `packages/shared/**`/root workspace files change, and `firebase_rules_tests` when `firebase/**` changes (rules smoke test, then `pnpm audit --audit-level=high` with an OSV-scanner fallback deciding the final verdict). See [CLAUDE.md](./CLAUDE.md#ci) for the full pipeline breakdown.
+CI runs `lint_typecheck` (install, typecheck, lint, build) unconditionally, plus path-filtered jobs: `shared_tests` when `packages/shared/**` or root workspace files change; `firebase_rules_tests` when `firebase/**` or `packages/shared/**` changes (rules guard, emulator rules tests, emulator Cloud Functions tests, then `pnpm audit --audit-level=high` with an OSV-scanner fallback deciding the final verdict); and `mobile_bundle` and `mobile_native` when `apps/mobile/**`, `packages/**`, or root manifests change (Metro and Hermes release bundle, Kotlin unit tests, and a native Android build of the phone and watch apps). `.github/workflows/native-mobile.yml` runs the Swift tests and iOS typecheck on macOS. See [CLAUDE.md](./CLAUDE.md#ci) for the full pipeline breakdown.
 
 ---
 
@@ -175,7 +183,10 @@ CI runs `lint_typecheck` (install → typecheck → lint → build) unconditiona
 - [CHANGELOG.md](./CHANGELOG.md) — release history.
 - [SECURITY.md](./SECURITY.md) — how to report a vulnerability privately, supported versions, and scope.
 - [ACCESSIBILITY.md](./ACCESSIBILITY.md) — accessibility goals, supported platforms, known limitations, and how to report a barrier.
-- [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, and targeted deploy notes.
+- [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) — Firebase Functions deploy IAM, GitHub feedback secret, required workflow variables such as `APP_BASE_URL`, and targeted deploy notes.
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — how to report bugs and open pull requests.
+- [apps/mobile/ios/README.md](./apps/mobile/ios/README.md) — the native iOS and watchOS client and how to create its Xcode project.
+- [docs/native-mobile-parity-inventory.md](./docs/native-mobile-parity-inventory.md) — the gate a native client passes before it replaces the Expo app.
 - [SECURITY_REVIEW_2026-05-12.md](./SECURITY_REVIEW_2026-05-12.md) — point-in-time security review and deployment checklist.
 - [ui-ux-review.md](./ui-ux-review.md) — point-in-time UI/UX/accessibility review and remediation plan.
 - [docs/production-release-readiness-2026-05-28.md](./docs/production-release-readiness-2026-05-28.md) — practical release checklist for mobile/watch distribution, Google Play publication readiness, web production rollout, and feedback-driven patch operations.

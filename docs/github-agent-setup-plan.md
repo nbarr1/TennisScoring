@@ -14,8 +14,11 @@ This plan proposes concrete GitHub automation “agents” for this monorepo and
 Existing workflows:
 
 - `.github/workflows/ci.yml`
+- `.github/workflows/native-mobile.yml`
 - `.github/workflows/eas-build.yml`
+- `.github/workflows/debug-apk.yml`
 - `.github/workflows/deploy-firebase-function.yml`
+- `.github/workflows/deploy-firebase-rules.yml`
 
 The plan below extends these with additional workflows and repo settings.
 

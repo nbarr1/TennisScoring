@@ -186,6 +186,9 @@
 - Added `useDoublesRankings` to `@tennis/firebase-client`, including a client-side recompute fallback that mirrors the server pass.
 - Added a `doublesRankings` CSV export type.
 - Added an implementation plan for doubles match tracking and fixed-partnership team rankings, covering the shared side/team helpers, the `doublesRankings` collection, Firestore rules changes, and the web/mobile surfaces involved.
+- Added production release readiness plan documenting concrete release gating, distribution, and post-release patch workflow (dated 2026-05-28).
+- Clarified Phase 0 release-candidate freeze instructions so deployment does not assume a local `main` branch exists.
+- Added `backfillMissingProfiles`, `health`, and `readiness` Cloud Functions.
 
 ### Changed
 - Match reports are now confirmed by the *opposing side* rather than by anyone who did not submit, so a doubles player can no longer confirm their own partner's report. Enforced in Firestore rules and in both apps.
@@ -204,11 +207,6 @@
 - Doubles match callables validate requested seasons and levels and require all four players to have active membership in the selected level before standings-affecting data is written.
 - Web and mobile doubles player pickers now ignore stale asynchronous search responses.
 - `publishRoundRobinSchedule` reads the stored division level to reject doubles, so an older client that omits `matchType` cannot publish 1v1 fixtures into a doubles level.
-- Added production release readiness plan documenting concrete release gating, distribution, and post-release patch workflow (dated 2026-05-28).
-- Clarified Phase 0 release-candidate freeze instructions so deployment does not assume a local `main` branch exists.
-- Added `backfillMissingProfiles`, `health`, and `readiness` Cloud Functions.
-
-### Fixed
 - Fixed the `profiles/{userId}` Firestore rule so a signed-in user can self-write their own `displayName`/`avatarUrl`/`tutorialDone`/`id`/`updatedAt`; this was previously admin-only and silently broke every non-admin profile save on web and mobile.
 - Resolved the CI dependency-audit gate: 48 of 50 known vulnerabilities in transitive dev/build-tool packages fixed via `pnpm.overrides`; the remaining 2 (`image-size`, no upstream fix) are suppressed with justification in `osv-scanner.toml`.
 

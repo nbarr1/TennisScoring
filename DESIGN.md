@@ -186,7 +186,7 @@ The mood is calm and dependable. Screens are mostly quiet, and color and motion 
 
 **Key Characteristics:**
 
-- Two settings: a light clubhouse for everything off court, and a black scoreboard for live play.
+- Two settings: a clubhouse for everything off court, light or dark to follow the device, and a black scoreboard for live play.
 - One brand color (Clubhouse Green) and one accent (Ball Yellow). Any other color carries a meaning.
 - Condensed headings and scoreboard numerals, with a neutral sans for body text.
 - Mostly flat surfaces, a 48px touch floor, and gently rounded corners.
@@ -224,6 +224,10 @@ These status colors each carry one meaning:
 - **Ink** (`ink`): primary text. **Muted** (`text-muted`) is for secondary text, captions, and placeholders. **Subtle** (`text-subtle`) is about 3:1 on white, so it's only for icons, dividers, and large text, never small text.
 - **Hairline** (`border`): chip and divider strokes. **Strong Hairline** (`border-strong`) outlines inputs and other control edges, because the hairline alone is too faint (about 1.4:1) to show where a field is.
 - **Disabled** (`disabled`, `disabled-text`): inactive fills and labels. Inactive controls also drop to about 50% opacity.
+
+### Dark theme
+
+The web and mobile apps follow the device's light or dark setting, with no in-app toggle. The color values in this file's front matter are the light palette. The dark palette uses the same token names and lives beside the light one: `darkPalette` in `apps/web/app/shared/tokens.ts` and `darkColors` in `apps/mobile/theme/tokens.ts`. In it, text shades such as Clubhouse Green lighten so they stay readable on dark surfaces. On web, solid fills (`brandFill`, `courtGreenFill`, and `destructiveFill`) stay deep, with white text. On mobile, `brand` stays deep Clubhouse Green with white text for headers and the brand mark, while `primary` lightens, so primary buttons in the dark theme are light green with dark text. The scoreboard palette is the same in both themes.
 
 ### Scoreboard
 
