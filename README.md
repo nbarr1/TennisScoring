@@ -1,6 +1,6 @@
 # 🎾 TennisScoring
 
-**GE Vernova Tennis League — Version 1.1.0**
+**GE Vernova Tennis League — Version 1.2.0**
 
 > **Native mobile migration (in progress):** the goal is a Kotlin Android client and a Swift iOS client replacing the Expo app. Kotlin domain and repository sources live under `apps/mobile/android/app/src/main/java`, and Swift sources under `apps/mobile/ios`. Both compile alongside the shipping client, which is still Expo/React Native: `MainActivity` is a `ReactActivity` and the Android app hosts Metro and a JavaScript runtime as before. A native UI takes over as the launcher only after it reaches the acceptance gates in [`docs/native-mobile-parity-inventory.md`](docs/native-mobile-parity-inventory.md), and the Expo sources are removed only after that.
 
@@ -14,7 +14,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 ## ✅ Current v1 Condition
 
-- **Version marker:** `1.1.0` in the workspace manifests and Expo app metadata.
+- **Version marker:** `1.2.0` in the workspace manifests and Expo app metadata.
 - **Web app:** live and functional in production.
 - **Mobile app:** functional and installable via a sideloaded Android APK; still being refined ahead of finalizing the Google Play Store listing.
 - **Repository shape:** monorepo with web, mobile, Firebase Functions, Firebase client utilities, and shared domain logic.
