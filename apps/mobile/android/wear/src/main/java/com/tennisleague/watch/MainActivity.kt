@@ -75,6 +75,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
   private val playerBlue by lazy { getColor(R.color.player_blue) }
   private val playerOrange by lazy { getColor(R.color.player_orange) }
   private val pressedTextColor by lazy { getColor(R.color.tile_pressed_text) }
+  private val yellowPressedColor by lazy { getColor(R.color.scoreboard_yellow_pressed) }
+  private val undoTextColor by lazy { getColor(R.color.undo_text) }
 
   /**
    * Above this font scale the first viewport no longer holds the status, the
@@ -341,11 +343,16 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     undoButton = Button(this).apply {
       text = getString(R.string.undo_button)
-      textSize = 14f
+      // The tiles' condensed face, a step larger since it sets narrower.
+      textSize = 15f
       setAllCaps(false)
-      setTextColor(Color.BLACK)
-      setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-      background = rounded(yellowColor, dp(16), Color.TRANSPARENT, 0)
+      setTextColor(undoTextColor)
+      typeface = CONDENSED_BOLD
+      // Darkens while pressed, as the tiles fill, so a hold shows it registered.
+      background = StateListDrawable().apply {
+        addState(intArrayOf(android.R.attr.state_pressed), rounded(yellowPressedColor, dp(16), Color.TRANSPARENT, 0))
+        addState(intArrayOf(), rounded(yellowColor, dp(16), Color.TRANSPARENT, 0))
+      }
       minHeight = dp(48)
       minimumHeight = dp(48)
       // A single tap says how this control works, rather than doing nothing.
@@ -480,8 +487,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     player1Button.text = pointTileLabel(fitTileName(shortName(p1Name)), p1Point)
     player2Button.text = pointTileLabel(fitTileName(shortName(p2Name)), p2Point)
-    player1Button.contentDescription = getString(R.string.a11y_point_to_now_on, p1Name, p1Point)
-    player2Button.contentDescription = getString(R.string.a11y_point_to_now_on, p2Name, p2Point)
+    player1Button.contentDescription = getString(R.string.a11y_point_to_now_on, p1Name, spokenPoint(p1Point))
+    player2Button.contentDescription = getString(R.string.a11y_point_to_now_on, p2Name, spokenPoint(p2Point))
     setsScore.text = getString(R.string.plate_sets, p1Sets, p2Sets)
     gamesScore.text = getString(R.string.plate_games, p1Games, p2Games)
     fitTally()
@@ -493,7 +500,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       R.string.a11y_scoreboard,
       p1Sets, p2Sets, p1Games, p2Games,
       if (isTiebreak) getString(R.string.a11y_tiebreak) else "",
-      p1Name, p1Point, p2Name, p2Point, serverName, court,
+      p1Name, spokenPoint(p1Point), p2Name, spokenPoint(p2Point), serverName, court,
     )
 
     val matchFinished =
@@ -536,7 +543,9 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             else -> getString(R.string.status_live)
           },
         )
-        feedbackTitle.text = root.text("feedbackTitle") ?: getString(R.string.feedback_score_point)
+        // The phone's tip titles can end in "!" ("Tiebreak!"); the watch's own
+        // copy has none, and the status line above already drops it.
+        feedbackTitle.text = moment.ifBlank { getString(R.string.feedback_score_point) }
         feedbackBody.text = root.text("feedbackBody") ?: getString(R.string.feedback_score_point_body)
       }
       else -> renderReadOnlyStatus(status)
@@ -743,9 +752,15 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     root.translationY = Random.nextInt(-range, range + 1).toFloat()
   }
 
+  /**
+   * Only a stem button gets here (the tiles and undo are disabled until a score
+   * arrives), so the press is answered with the same reject buzz as any other
+   * command that didn't leave the watch.
+   */
   private fun showWaitingForMatch() {
     feedbackTitle.text = getString(R.string.feedback_waiting_for_match)
     feedbackBody.text = getString(R.string.feedback_waiting_for_match_body)
+    rejectHaptic()
   }
 
   /**
@@ -962,6 +977,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
   /** A string field, or null when it is missing, JSON null, or blank. */
   private fun JSONObject.text(key: String): String? =
     if (isNull(key)) null else optString(key).trim().ifEmpty { null }
+
+  /** A point as TalkBack should say it: "advantage" rather than the letters "A D". */
+  private fun spokenPoint(point: String): String =
+    if (point == getString(R.string.point_advantage)) getString(R.string.point_advantage_spoken) else point
 
   private fun formatPoint(point: String?): String {
     return when (point) {

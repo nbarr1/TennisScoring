@@ -7,6 +7,8 @@ struct ProfileView: View {
   let user: User
   let names: PlayerNameCache
   @State private var unblockError: String?
+  /// Players whose unblock is in flight, so a second tap can't send it twice.
+  @State private var unblocking: Set<String> = []
 
   var body: some View {
     List {
@@ -39,15 +41,18 @@ struct ProfileView: View {
               Text(names.name(for: blockedId) ?? "Player")
               Spacer()
               Button("Unblock") {
+                unblocking.insert(blockedId)
                 Task {
                   do {
                     try await session.services.messaging.unblock(blockedId, by: user.id)
                   } catch {
                     unblockError = error.localizedDescription
                   }
+                  unblocking.remove(blockedId)
                 }
               }
               .buttonStyle(.borderless)
+              .disabled(unblocking.contains(blockedId))
             }
           }
         } header: {

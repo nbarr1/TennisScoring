@@ -45,6 +45,8 @@
   <string name="player2_spoken">player 2</string>
   <string name="player_fallback">Player</string>
   <string name="point_advantage">AD</string>
+  <!-- TalkBack spells "AD" out letter by letter, so spoken descriptions use the word. -->
+  <string name="point_advantage_spoken">advantage</string>
   <string name="point_unknown">–</string>
   <string name="undo_button">Hold to undo</string>
 
