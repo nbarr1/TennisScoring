@@ -14,6 +14,9 @@
   <color name="scoreboard_yellow">#FFD60A</color>
   <color name="player_blue">#3D8BFF</color>
   <color name="player_orange">#FF9F1C</color>
+  <!-- The undo control: a Scoreboard Yellow fill that darkens when pressed, with black text (15:1 resting, 9:1 pressed). -->
+  <color name="scoreboard_yellow_pressed">#C7A600</color>
+  <color name="undo_text">#000000</color>
   <!-- Text on a pressed (filled) tile. Black is 6.3:1 on Player Blue and 10:1 on Player Orange; white was 3.3:1 and 2:1. -->
   <color name="tile_pressed_text">#000000</color>
 </resources>

@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 import { useViewMode, type ViewModePreference } from './viewMode';
-import { color, radius } from './tokens';
+import { color, radius, target, type } from './tokens';
 
 const OPTIONS: Array<{ label: string; value: ViewModePreference }> = [
   { label: 'Auto', value: 'auto' },
@@ -21,13 +21,13 @@ export function ViewModeToggle(): React.JSX.Element {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <label htmlFor={selectId} style={{ color: color.onBrand, fontSize: 14, fontWeight: 500 }}>Layout</label>
+      <label htmlFor={selectId} style={{ ...type.label, color: color.onBrand }}>Layout</label>
       <select
         id={selectId}
         value={preference}
         onChange={(event) => setPreference(event.target.value as ViewModePreference)}
         style={{
-          minHeight: 44,
+          minHeight: target.min,
           borderRadius: radius.pill,
           padding: '0 12px',
           border: '1px solid rgba(255,255,255,0.45)',
@@ -47,14 +47,13 @@ export function ViewModeToggle(): React.JSX.Element {
           type="button"
           onClick={() => { setPreference('ios'); dismissPrompt(); }}
           style={{
-            minHeight: 44,
+            minHeight: target.min,
             border: `1px solid ${color.ballYellow}`,
             background: color.ballYellow,
             color: color.onAccent,
             borderRadius: radius.pill,
             padding: '0 14px',
-            fontWeight: 700,
-            fontSize: 13,
+            ...type.label,
           }}
         >
           Optimize for iPhone

@@ -1102,6 +1102,7 @@ function SegmentedControl<T extends string>({
               key={option.value}
               type="button"
               aria-pressed={active}
+              className="tl-tint"
               style={{ ...styles.segmentBtn, ...(active ? styles.segmentBtnActive : {}) }}
               onClick={() => onChange(option.value)}
             >
@@ -1897,10 +1898,11 @@ function ProposeMatchDialog({
   );
 }
 
-// Native <details> needs these two rules, which inline styles cannot express:
+// Native <details> needs these rules, which inline styles cannot express:
 // Safari's marker and the chevron turning when the group opens.
 const collapsedGroupCss = `
 details[data-matches-group] > summary::-webkit-details-marker { display: none; }
+.matches-group-chevron { transition: transform var(--duration-fast) var(--ease-out); }
 details[data-matches-group][open] .matches-group-chevron { transform: rotate(180deg); }
 `;
 

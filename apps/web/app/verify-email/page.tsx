@@ -11,7 +11,7 @@ import {
   signOutReleasingPushToken,
   useAuthUser,
 } from '@tennis/firebase-client';
-import { Button, InlineAlert, LoadingBlock, color, describeError, radius, shadow, space, type } from '../shared/ui';
+import { Button, InlineAlert, LoadingBlock, authCardStyle, authPageStyle, color, describeError, radius, space, type } from '../shared/ui';
 import { safeNextPath } from '../../lib/safeNextPath';
 
 // How long the resend button waits after a send, so players don't trip
@@ -195,21 +195,9 @@ function VerifyEmailContent(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  main: {
-    minHeight: '100dvh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: color.canvas,
-    padding: `${space.xl}px ${space.lg}px`,
-  },
+  main: authPageStyle,
   card: {
-    background: color.surface,
-    borderRadius: radius.lg,
-    padding: 'clamp(24px, 6vw, 40px)',
-    maxWidth: 460,
-    width: '100%',
-    boxShadow: shadow.raised,
+    ...authCardStyle,
     display: 'flex',
     flexDirection: 'column',
     gap: space.lg,

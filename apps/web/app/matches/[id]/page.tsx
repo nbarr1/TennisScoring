@@ -563,7 +563,7 @@ export default function MatchPage(): React.JSX.Element {
         <div style={styles.liveScoreboardRegion}>
           <div style={styles.liveTopBar}>
             {match.status === 'scheduled' ? (
-              <button type="button" style={styles.liveBackBtn} onClick={() => setOnCourt(false)}>
+              <button type="button" className="tl-tint" style={styles.liveBackBtn} onClick={() => setOnCourt(false)}>
                 <IconChevronLeft size={20} aria-hidden="true" /> Details
               </button>
             ) : (
@@ -575,7 +575,7 @@ export default function MatchPage(): React.JSX.Element {
               <span>Set {match.liveScore.currentSet + 1} · {setClock}</span>
               <span>Match · {matchClock}</span>
             </div>
-            <button type="button" aria-label="Match options" style={styles.actionsIconBtn} onClick={openManage}>
+            <button type="button" aria-label="Match options" className="tl-tint" style={styles.actionsIconBtn} onClick={openManage}>
               <IconDotsVertical size={24} aria-hidden="true" />
             </button>
           </div>
@@ -789,10 +789,10 @@ export default function MatchPage(): React.JSX.Element {
             {reporterName} reported <strong>{scoreDisplay}</strong>. Confirm it if it matches what you played. If it&apos;s wrong, dispute it and a division leader will settle it.
           </p>
           <div style={styles.stepActions}>
-            <Button icon={<IconCheck size={18} aria-hidden="true" />} pending={confirmReport.pending} pendingLabel="Confirming…" onClick={() => void confirmReport.run()} style={styles.confirmBtn}>
+            <Button icon={<IconCheck size={18} aria-hidden="true" />} pending={confirmReport.pending} pendingLabel="Confirming…" onClick={() => void confirmReport.run()} className="tl-btn--on-dark" style={styles.confirmBtn}>
               Confirm score
             </Button>
-            <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} disabled={confirmReport.pending} onClick={() => setShowDisputeConfirm(true)} style={styles.disputeBtn}>
+            <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} disabled={confirmReport.pending} onClick={() => setShowDisputeConfirm(true)} className="tl-tint" style={styles.disputeBtn}>
               Dispute score
             </Button>
           </div>
@@ -817,7 +817,7 @@ export default function MatchPage(): React.JSX.Element {
     } else {
       nextStep = (
         <StepPanel title="Awaiting confirmation" style={containerStyles.section}>
-          <p style={styles.stepText}>{submission ? 'The score has been reported and is waiting for the opposing side to confirm it.' : 'The match is over and the score hasn’t been submitted yet.'}</p>
+          <p style={styles.stepText}>{submission ? 'The score has been reported and is waiting for the opposing side to confirm it.' : "The match is over and the score hasn't been submitted yet."}</p>
           {canEditScore && !canResolveReport && (
             <div style={styles.stepActions}>
               <Button variant="secondary" icon={<IconPencil size={18} aria-hidden="true" />} onClick={() => setShowEditScore(true)}>
@@ -945,7 +945,7 @@ export default function MatchPage(): React.JSX.Element {
               </p>
               <p style={styles.resolveReported}>Reported: {p1Name} {scoreDisplay} {p2Name}</p>
               <div style={styles.stepActions}>
-                <Button icon={<IconCheck size={18} aria-hidden="true" />} onClick={() => requestResolve(false)} style={styles.confirmBtn}>
+                <Button icon={<IconCheck size={18} aria-hidden="true" />} onClick={() => requestResolve(false)} className="tl-btn--on-dark" style={styles.confirmBtn}>
                   Confirm reported score
                 </Button>
               </div>
@@ -977,7 +977,7 @@ export default function MatchPage(): React.JSX.Element {
               {canEditScore && match.status === 'pending_report' && (
                 <p style={styles.stepNote}>
                   To send a corrected score back to the players for confirmation instead,{' '}
-                  <button type="button" style={styles.inlineLinkBtn} onClick={() => setShowEditScore(true)}>edit the score</button>.
+                  <button type="button" className="tl-link" style={styles.inlineLinkBtn} onClick={() => setShowEditScore(true)}>edit the score</button>.
                 </p>
               )}
             </StepPanel>
@@ -1475,7 +1475,7 @@ const styles: Record<string, CSSProperties> = {
   statusAlert: { marginBottom: space.lg },
   confirmBtn: { background: color.courtGreenFill },
   disputeBtn: { color: color.destructivePressed, borderColor: color.destructive },
-  inlineLinkBtn: { background: 'none', border: 'none', padding: 0, minHeight: 0, color: color.clubhouseGreen, ...type.bodySmall, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' },
+  inlineLinkBtn: { background: 'none', border: 'none', padding: 0, minHeight: 0, color: color.clubhouseGreen, ...type.bodySmall, fontWeight: 600, cursor: 'pointer' },
   sectionTitle: { ...type.title, color: color.clubhouseGreen, marginBottom: space.md },
   setRow: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: space.md, padding: '10px 0', borderBottom: `1px solid ${color.border}` },
   setLabel: { ...type.bodySmall, color: color.textMuted, width: 112 },

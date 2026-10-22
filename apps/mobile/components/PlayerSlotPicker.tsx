@@ -221,7 +221,7 @@ export function PlayerSlotPicker({
       )}
       {showNoResults && (
         <Text style={styles.noResults}>
-          No players in this division match “{query}”.
+          No players in this division match "{query}".
         </Text>
       )}
     </View>

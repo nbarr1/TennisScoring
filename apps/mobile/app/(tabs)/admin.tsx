@@ -40,7 +40,9 @@ import {
   ErrorState,
   InlineAlert,
   LoadingState,
+  CONTENT_MAX_WIDTH,
   MIN_TOUCH_TARGET,
+  SHOWS_PRESSED_FILL,
   announce,
   confirmAction,
   confirmDestructive,
@@ -323,7 +325,7 @@ export default function AdminScreen() {
           if (currentId !== activeId) return;
           console.error("[AdminScreen] failed to load division data:", err);
           setLoadError(
-            "Could not load division data. Check your connection and try again.",
+            "Check your connection, then try again.",
           );
           setLoading(false);
         }
@@ -331,7 +333,7 @@ export default function AdminScreen() {
       (err) => {
         console.error("[AdminScreen] division listener error:", err);
         setLoadError(
-          "Could not load division data. Check your connection and try again.",
+          "Check your connection, then try again.",
         );
         setLoading(false);
       },
@@ -918,10 +920,10 @@ export default function AdminScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`${m.player1Name ?? "Player 1"} versus ${m.player2Name ?? "Player 2"}, ${m.status === "disputed" ? "disputed" : "awaiting the other side"}`}
                 accessibilityHint="Opens the match to settle its result"
-                android_ripple={{ color: colors.primarySoft }}
+                android_ripple={{ color: colors.ripple }}
                 style={({ pressed }) => [
                   styles.listRow,
-                  pressed && styles.listRowPressed,
+                  SHOWS_PRESSED_FILL && pressed && styles.listRowPressed,
                 ]}
                 onPress={() =>
                   router.push({ pathname: "/match/[id]", params: { id: m.id } })
@@ -1238,7 +1240,7 @@ export default function AdminScreen() {
                       accessibilityRole="radio"
                       accessibilityLabel={p.displayName}
                       accessibilityState={{ checked: selected }}
-                      android_ripple={{ color: colors.primarySoft }}
+                      android_ripple={{ color: colors.ripple }}
                       style={[styles.selectRow, selected && styles.selectRowActive]}
                       onPress={() =>
                         setMergeSourceUserId(selected ? null : p.id)
@@ -1274,7 +1276,7 @@ export default function AdminScreen() {
                     accessibilityRole="checkbox"
                     accessibilityLabel={`${match.player1Name || "Player 1"} versus ${match.player2Name || "Player 2"}${detail ? `, ${detail}` : ""}`}
                     accessibilityState={{ checked: selected }}
-                    android_ripple={{ color: colors.primarySoft }}
+                    android_ripple={{ color: colors.ripple }}
                     style={[styles.selectRow, selected && styles.selectRowActive]}
                     onPress={() =>
                       setSelectedMatchIds((prev) =>
@@ -1362,11 +1364,11 @@ export default function AdminScreen() {
                   accessibilityLabel={`${level.name}, ${level.matchType === "doubles" ? "doubles" : "singles"}`}
                   accessibilityHint="Loads this level into the editor below"
                   accessibilityState={{ selected: editingThis }}
-                  android_ripple={{ color: colors.primarySoft }}
+                  android_ripple={{ color: colors.ripple }}
                   style={({ pressed }) => [
                     styles.levelItem,
                     editingThis && styles.selectRowActive,
-                    pressed && styles.listRowPressed,
+                    SHOWS_PRESSED_FILL && pressed && styles.listRowPressed,
                   ]}
                   onPress={() => loadLevelIntoEditor(level)}
                 >
@@ -1628,10 +1630,10 @@ export default function AdminScreen() {
                   disabled: assignLevel.pending,
                 }}
                 disabled={assignLevel.pending || current}
-                android_ripple={{ color: colors.surfaceMuted }}
+                android_ripple={{ color: colors.ripple }}
                 style={({ pressed }) => [
                   styles.levelOption,
-                  pressed && styles.levelOptionPressed,
+                  SHOWS_PRESSED_FILL && pressed && styles.levelOptionPressed,
                 ]}
                 onPress={() => {
                   if (levelPickerFor) void assignLevel.run(levelPickerFor, level);
@@ -1785,7 +1787,7 @@ const useStyles = makeStyles((colors) =>
       padding: spacing.xl,
       gap: spacing.sm,
       width: "100%",
-      maxWidth: 640,
+      maxWidth: CONTENT_MAX_WIDTH.sheet,
       alignSelf: "center",
     },
     levelOption: {

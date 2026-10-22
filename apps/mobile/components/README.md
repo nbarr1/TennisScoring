@@ -20,6 +20,7 @@ dialogs. Use them instead of building controls by hand.
 | `typography` | `display, title (24), heading (20), subheading, body, bodySmall, label, caption`. These scale with the system font size, so use `minHeight`, never a fixed `height`. |
 | `elevations` | `none, low` (resting card), `medium` (sheets) |
 | `MIN_TOUCH_TARGET` | `48` on Android, `44` on iOS. Also `touchTargets.platform`. |
+| `SHOWS_PRESSED_FILL` | `false` on Android, `true` on iOS. A hand-built `Pressable` gives Android an `android_ripple` (`ripple` on surfaces, `rippleOnFill` on a filled control, never a solid color like `surfaceMuted`, which hides the label under a foreground ripple) and gates its pressed fill with `SHOWS_PRESSED_FILL && pressed`, so Android never shows both. A foreground ripple on a rounded control needs `overflow: "hidden"`. The scoreboard uses `SB.ripple` and `SB.rippleOnYellow`. |
 | `touchTargets` | `minimum 44, comfortable 48, platform` |
 | `motion` | `press 150, enter 220` (ms). Skip animation when `useReduceMotion()` is true. |
 
@@ -126,6 +127,12 @@ if (loading) return <LoadingState label="Loading matches" />;
 <LoadingState inline label="Loading players" />
 ```
 
+**`ToggleSwitch`** is the clubhouse `Switch`: the platform control with the palette's track, iOS off-track, and Android thumb colors in both schemes. Takes every `Switch` prop, plus `tone: "primary" | "destructive"` for a switch that turns on a destructive side effect. The live scoreboard keeps its own yellow switches.
+```tsx
+<ToggleSwitch value={clearExisting} onValueChange={setClearExisting} tone="destructive"
+  accessibilityLabel="Replace the previously published schedule" />
+```
+
 **Also here:** `Screen` (canvas background; `scroll` makes it a ScrollView that keeps taps while the keyboard is open), `Card`, `TextField` (a lightweight labelled input; prefer `FormField` in forms), `Chip` (`label`, `selected`; at least the platform minimum height, never wider than its row, and its label wraps rather than running off screen), and `SectionHeader` (`title` is a header, plus `subtitle?` and `action?`).
 
 ## Components (`components/`)
@@ -174,6 +181,8 @@ if (loading) return <LoadingState label="Loading matches" />;
 
 - Every pressable control is at least `MIN_TOUCH_TARGET`, either by its own size or through `hitSlopFor`.
 - Every pressable control has an `accessibilityRole` and a label that says what it does.
+- Every hand-built `Pressable` shows a press: an `android_ripple` from the ripple tokens, and a pressed fill gated by `SHOWS_PRESSED_FILL`.
+- Switches are `ToggleSwitch` (the scoreboard excepted).
 - Async actions use `useAsyncAction` and `Button pending`. Failures show an `InlineAlert` or `ErrorState` that says how to recover.
 - Destructive actions call `confirmDestructive` with a verb label.
 - Secondary text uses `colors.textMuted` rather than `textSubtle`, and status text uses `useStatusTextColors()` or the `*Text` tokens.

@@ -5,9 +5,7 @@ import {
   StyleSheet,
   Pressable,
   TextInput,
-  Switch,
   Modal,
-  Platform,
   ScrollView,
 } from "react-native";
 import {
@@ -54,7 +52,9 @@ import {
   IconButton,
   InlineAlert,
   LoadingState,
+  CONTENT_MAX_WIDTH,
   MIN_TOUCH_TARGET,
+  ToggleSwitch,
   announce,
   confirmAction,
   confirmDestructive,
@@ -125,6 +125,7 @@ function ToggleRow({
       accessibilityState={{ checked: value, disabled: !!disabled }}
       disabled={disabled}
       onPress={() => onValueChange(!value)}
+      android_ripple={disabled ? undefined : { color: colors.ripple }}
       style={[styles.toggleRow, last && styles.toggleRowLast]}
     >
       <View style={styles.toggleText}>
@@ -135,21 +136,12 @@ function ToggleRow({
           <Text style={styles.toggleDescription}>{description}</Text>
         ) : null}
       </View>
-      <Switch
+      <ToggleSwitch
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        trackColor={{ true: colors.primary, false: colors.disabled }}
-        thumbColor={
-          Platform.OS === "android"
-            ? value
-              ? colors.primarySoft
-              : colors.switchThumbOff
-            : undefined
-        }
-        ios_backgroundColor={colors.disabled}
       />
     </Pressable>
   );
@@ -690,10 +682,7 @@ export default function ProfileScreen() {
                     accessibilityRole="radio"
                     accessibilityLabel={division.name}
                     accessibilityState={{ checked: selected }}
-                    android_ripple={{
-                      color: colors.primarySoft,
-                      foreground: true,
-                    }}
+                    android_ripple={{ color: colors.ripple }}
                     style={[
                       styles.divisionOption,
                       selected && styles.divisionOptionActive,
@@ -867,7 +856,7 @@ export default function ProfileScreen() {
             inputStyle={styles.noteInput}
             value={availabilityNote}
             onChangeText={setAvailabilityNote}
-            placeholder="e.g. Flexible on weekends"
+            placeholder="For example, flexible on weekends"
             multiline
           />
         ) : availabilityNote ? (
@@ -986,7 +975,7 @@ export default function ProfileScreen() {
             onPress={handleFeedback}
           />
           <Button
-            label="Privacy Policy"
+            label="Privacy policy"
             icon="doc.text"
             variant="secondary"
             fullWidth
@@ -1108,7 +1097,7 @@ const useStyles = makeStyles((colors) =>
       padding: spacing.lg,
       paddingBottom: spacing.xxxl,
       width: "100%",
-      maxWidth: 720,
+      maxWidth: CONTENT_MAX_WIDTH.form,
       alignSelf: "center",
     },
     identity: { alignItems: "center", marginBottom: spacing.xl },

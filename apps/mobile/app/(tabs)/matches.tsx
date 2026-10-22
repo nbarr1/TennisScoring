@@ -59,7 +59,9 @@ import {
   IconButton,
   InlineAlert,
   LoadingState,
+  CONTENT_MAX_WIDTH,
   MIN_TOUCH_TARGET,
+  SHOWS_PRESSED_FILL,
   announce,
   confirmDestructive,
   elevations,
@@ -892,7 +894,12 @@ export default function MatchesScreen() {
                 historyExpanded ? "Hides match history" : "Shows match history"
               }
               onPress={() => setHistoryOpen(!historyExpanded)}
-              style={[styles.sectionHeader, styles.sectionHeaderButton]}
+              android_ripple={{ color: colors.ripple }}
+              style={({ pressed }) => [
+                styles.sectionHeader,
+                styles.sectionHeaderButton,
+                SHOWS_PRESSED_FILL && pressed && styles.sectionHeaderPressed,
+              ]}
             >
               <Text style={styles.sectionTitle} accessibilityRole="header">
                 {`${section.title} (${section.total})`}
@@ -1866,6 +1873,7 @@ const useStyles = makeStyles((colors) =>
       minHeight: MIN_TOUCH_TARGET,
       justifyContent: "space-between",
     },
+    sectionHeaderPressed: { opacity: 0.6 },
     sectionTitle: { ...typography.label, color: colors.textMuted },
     sectionTitleUrgent: { color: colors.primary },
     sectionTitleLive: { color: colors.liveText },
@@ -1997,7 +2005,7 @@ const useStyles = makeStyles((colors) =>
       padding: spacing.xl,
       gap: spacing.sm,
       width: "100%",
-      maxWidth: 640,
+      maxWidth: CONTENT_MAX_WIDTH.sheet,
       alignSelf: "center",
     },
     newMatchTitle: {
@@ -2027,7 +2035,7 @@ const useStyles = makeStyles((colors) =>
       borderTopRightRadius: radii.lg,
       padding: spacing.xl,
       width: "100%",
-      maxWidth: 640,
+      maxWidth: CONTENT_MAX_WIDTH.sheet,
       alignSelf: "center",
       gap: spacing.lg,
     },

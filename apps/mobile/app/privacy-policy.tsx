@@ -6,7 +6,13 @@ import {
   PRIVACY_POLICY_SECTIONS,
 } from "@tennis/shared";
 import { StatusBar } from "expo-status-bar";
-import { radii, spacing, typography, makeStyles } from "../theme";
+import {
+  CONTENT_MAX_WIDTH,
+  radii,
+  spacing,
+  typography,
+  makeStyles,
+} from "../theme";
 
 export default function PrivacyPolicyScreen() {
   const styles = useStyles();
@@ -15,7 +21,7 @@ export default function PrivacyPolicyScreen() {
       {/* Light content on the green header, also when opened from sign-in. */}
       <StatusBar style="light" />
       <Text style={styles.title} accessibilityRole="header">
-        Tennis League Privacy Policy
+        Tennis League privacy policy
       </Text>
       <Text style={styles.lastUpdated}>
         Last updated: {PRIVACY_POLICY_LAST_UPDATED}
@@ -41,7 +47,7 @@ const useStyles = makeStyles((colors) =>
       padding: spacing.xl,
       paddingBottom: spacing.xxxl,
       width: "100%",
-      maxWidth: 720,
+      maxWidth: CONTENT_MAX_WIDTH.form,
       alignSelf: "center",
     },
     title: {

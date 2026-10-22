@@ -18,9 +18,12 @@ import {
   Button,
   FieldError,
   InlineAlert,
+  authCardStyle,
+  authPageStyle,
   color,
   describeError,
   fieldLabelStyle,
+  inputInvalidStyle,
   inputStyle,
   radius,
   shadow,
@@ -228,7 +231,7 @@ export default function LoginPage(): React.JSX.Element {
     return {
       'aria-invalid': message ? true : undefined,
       'aria-describedby': [hintId, errorId].filter(Boolean).join(' ') || undefined,
-      style: { ...inputStyle, ...(message ? styles.inputInvalid : {}) },
+      style: { ...inputStyle, ...(message ? inputInvalidStyle : {}) },
     };
   }
 
@@ -260,6 +263,7 @@ export default function LoginPage(): React.JSX.Element {
                 aria-pressed={selected}
                 onClick={() => switchMode(option)}
                 disabled={busy && !selected}
+                className={selected ? undefined : 'tl-tint'}
                 style={{ ...styles.switchOption, ...(selected ? styles.switchOptionSelected : {}) }}
               >
                 {option === 'signin' ? 'Sign in' : 'Create account'}
@@ -322,6 +326,7 @@ export default function LoginPage(): React.JSX.Element {
               {!isSignup && (
                 <button
                   type="button"
+                  className="tl-link"
                   style={styles.forgotBtn}
                   onClick={() => void handleForgotPassword()}
                   aria-disabled={busy || undefined}
@@ -353,6 +358,7 @@ export default function LoginPage(): React.JSX.Element {
                 aria-pressed={showPassword}
                 aria-controls="password"
                 aria-label="Show password"
+                className="tl-tint"
                 style={styles.revealBtn}
               >
                 {showPassword ? <IconEyeOff size={20} aria-hidden="true" /> : <IconEye size={20} aria-hidden="true" />}
@@ -388,7 +394,7 @@ export default function LoginPage(): React.JSX.Element {
           </Button>
         </form>
 
-        <Link href="/privacy" style={styles.privacyLink}>
+        <Link href="/privacy" className="tl-link" style={styles.privacyLink}>
           Privacy policy
         </Link>
       </div>
@@ -397,22 +403,8 @@ export default function LoginPage(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  main: {
-    minHeight: '100dvh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: color.canvas,
-    padding: `${space.xl}px ${space.lg}px`,
-  },
-  card: {
-    background: color.surface,
-    borderRadius: radius.lg,
-    padding: 'clamp(24px, 6vw, 40px)',
-    maxWidth: 440,
-    width: '100%',
-    boxShadow: shadow.raised,
-  },
+  main: authPageStyle,
+  card: authCardStyle,
   brand: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: space.xs, marginBottom: space.xl },
   brandName: { ...type.display, color: color.clubhouseGreen, margin: 0 },
   tagline: { ...type.bodySmall, color: color.textMuted, margin: 0, maxWidth: 300 },
@@ -446,7 +438,6 @@ const styles: Record<string, React.CSSProperties> = {
   lead: { ...type.bodySmall, color: color.textMuted, margin: `0 0 ${space.sm}px` },
   form: { display: 'flex', flexDirection: 'column', gap: space.lg, marginTop: space.lg },
   labelRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, marginBottom: space.xs },
-  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
   hint: { ...type.caption, color: color.textMuted, marginTop: space.xs },
   passwordWrap: { position: 'relative' },
   revealBtn: {
@@ -471,8 +462,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     color: color.clubhouseGreen,
-    textDecoration: 'underline',
-    textUnderlineOffset: 3,
   },
   privacyLink: {
     ...type.bodySmall,
@@ -484,7 +473,5 @@ const styles: Record<string, React.CSSProperties> = {
     margin: `${space.lg}px auto 0`,
     padding: `0 ${space.sm}px`,
     color: color.textMuted,
-    textDecoration: 'underline',
-    textUnderlineOffset: 3,
   },
 };

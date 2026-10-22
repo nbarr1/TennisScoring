@@ -12,7 +12,7 @@ import { useAnnounce } from "./Announcer";
  * codes the server's message is kept; transport-level failures get a fixed
  * sentence that names the recovery.
  */
-export function describeError(error: unknown, fallback = "Something went wrong. Please try again."): string {
+export function describeError(error: unknown, fallback = "Something went wrong. Try again."): string {
   if (!error) return fallback;
   const code =
     typeof error === "object" && error !== null && "code" in error

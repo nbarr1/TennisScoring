@@ -5,11 +5,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
   type PressableProps,
   type ScrollViewProps,
+  type SwitchProps,
   type TextInputProps,
   type ViewProps,
 } from "react-native";
@@ -314,6 +316,34 @@ export function TextField({
         </Text>
       )}
     </View>
+  );
+}
+
+/**
+ * The clubhouse switch: the platform control in the palette's colors, in both
+ * schemes. `tone="destructive"` is for a switch that turns on a destructive
+ * side effect (replacing a published schedule). The live scoreboard keeps its
+ * own yellow switches.
+ */
+export function ToggleSwitch({
+  tone = "primary",
+  value,
+  ...props
+}: SwitchProps & { tone?: "primary" | "destructive" }) {
+  const colors = useColors();
+  const on = tone === "destructive" ? colors.destructive : colors.primary;
+  const onThumb =
+    tone === "destructive" ? colors.destructiveSoft : colors.primarySoft;
+  return (
+    <Switch
+      value={value}
+      trackColor={{ true: on, false: colors.disabled }}
+      // iOS draws its own white thumb; Android's default thumb ignores the
+      // palette, so it gets a light thumb on either track.
+      thumbColor={IS_ANDROID ? (value ? onThumb : colors.switchThumbOff) : undefined}
+      ios_backgroundColor={colors.disabled}
+      {...props}
+    />
   );
 }
 

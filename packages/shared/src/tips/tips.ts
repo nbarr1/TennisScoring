@@ -9,12 +9,12 @@ export interface Tip {
 export const TIPS: Record<TipTrigger, Tip> = {
   service_change: {
     trigger: 'service_change',
-    title: 'Service Change',
+    title: 'Service change',
     body: 'Server switches after each game. Remember to switch ends after odd-numbered games in each set.',
   },
   tiebreak_start: {
     trigger: 'tiebreak_start',
-    title: 'Tiebreak!',
+    title: 'Tiebreak',
     body: 'First to 7 points, must win by 2. Server serves 1 point, then players alternate every 2 points. Switch ends every 6 points.',
   },
   deuce: {
@@ -25,32 +25,32 @@ export const TIPS: Record<TipTrigger, Tip> = {
   advantage: {
     trigger: 'advantage',
     title: 'Advantage',
-    body: 'One player has advantage. Win the next point to win the game, or it returns to Deuce.',
+    body: 'One player has advantage. Win the next point to win the game, or it returns to deuce.',
   },
   game_point: {
     trigger: 'game_point',
-    title: 'Game Point',
+    title: 'Game point',
     body: 'One player has game point. Win the next point to win the game.',
   },
   set_point: {
     trigger: 'set_point',
-    title: 'Set Point',
+    title: 'Set point',
     body: 'One player has set point. Win the next game to win the set.',
   },
   match_point: {
     trigger: 'match_point',
-    title: 'Match Point',
-    body: 'Match point! Win the next game to win the match.',
+    title: 'Match point',
+    body: 'Match point. Win the next game to win the match.',
   },
   new_set: {
     trigger: 'new_set',
-    title: 'New Set',
+    title: 'New set',
     body: 'New set begins. Players switch ends. Score resets to 0-0.',
   },
   match_complete: {
     trigger: 'match_complete',
-    title: 'Match Complete',
-    body: 'The match is over. Great game!',
+    title: 'Match complete',
+    body: 'The match is over. Great game.',
   },
 };
 

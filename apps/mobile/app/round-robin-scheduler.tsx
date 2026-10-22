@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   publishRoundRobinSchedule,
@@ -29,6 +29,7 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
+  ToggleSwitch,
   announce,
   confirmAction,
   confirmDestructive,
@@ -48,7 +49,7 @@ const INTERVAL_OPTIONS = [3, 7, 14];
 function parseStartDate(value: string): { startAt: number } | { error: string } {
   if (!value.trim()) return { error: "Choose the date round 1 starts." };
   if (!DATE_RE.test(value)) {
-    return { error: "Use the format YYYY-MM-DD, for example 2026-11-02." };
+    return { error: "Choose the start date again from the date picker." };
   }
   const [year, month, day] = value.split("-").map(Number);
   const date = new Date(year, month - 1, day, 18, 0, 0, 0);
@@ -250,7 +251,7 @@ function SchedulerBody({ onRetry }: { onRetry: () => void }) {
           title: `Publish ${count} ${matchWord}?`,
           message:
             `${base}\n\nAny schedule published earlier for this level stays in place. ` +
-            "Turn on “Replace the previously published schedule” to remove it first.",
+            'Turn on "Replace the previously published schedule" to remove it first.',
           confirmLabel: "Publish schedule",
         });
     if (ok) await publish.run(parsed.startAt);
@@ -411,7 +412,7 @@ function SchedulerBody({ onRetry }: { onRetry: () => void }) {
                       accessibilityRole="checkbox"
                       accessibilityLabel={m.displayNameSnapshot}
                       accessibilityState={{ checked: selected }}
-                      android_ripple={{ color: colors.primarySoft }}
+                      android_ripple={{ color: colors.ripple }}
                       style={[styles.playerRow, selected && styles.playerRowActive]}
                       onPress={() => togglePlayer(m.userId)}
                     >
@@ -496,14 +497,13 @@ function SchedulerBody({ onRetry }: { onRetry: () => void }) {
                   Orders players by this level's standings before pairing.
                 </Text>
               </View>
-              <Switch
+              <ToggleSwitch
                 accessibilityLabel="Seed pairings by current ranking"
                 value={seedByRankings}
                 onValueChange={(v) => {
                   setSeedByRankings(v);
                   invalidatePreview();
                 }}
-                trackColor={{ true: colors.primary, false: colors.disabled }}
               />
             </View>
             <View style={styles.toggleRow}>
@@ -516,11 +516,11 @@ function SchedulerBody({ onRetry }: { onRetry: () => void }) {
                   Matches players set up themselves are never removed.
                 </Text>
               </View>
-              <Switch
+              <ToggleSwitch
+                tone="destructive"
                 accessibilityLabel="Replace the previously published schedule"
                 value={clearExisting}
                 onValueChange={setClearExisting}
-                trackColor={{ true: colors.destructive, false: colors.disabled }}
               />
             </View>
           </Card>

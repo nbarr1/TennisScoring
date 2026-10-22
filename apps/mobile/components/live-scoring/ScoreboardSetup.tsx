@@ -2,7 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import type { Player } from "@tennis/shared";
 import { AppIcon } from "../AppIcon";
-import { InlineAlert } from "../../theme";
+import { InlineAlert, SHOWS_PRESSED_FILL } from "../../theme";
 import { SB, font } from "./scoreboardTheme";
 
 type Props = {
@@ -61,10 +61,11 @@ export function ScoreboardSetup({
           <Pressable
             key={player}
             onPress={() => onPickServer(player)}
+            android_ripple={{ color: SB.ripple, foreground: true }}
             style={({ pressed }) => [
               styles.card,
               { borderColor: selected ? SB.yellow : SB.panel },
-              pressed && { backgroundColor: SB.pressedRow },
+              SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.pressedRow },
             ]}
             accessibilityRole="radio"
             accessibilityState={{ checked: selected, selected }}
@@ -142,9 +143,10 @@ export function ScoreboardSetup({
         <Pressable
           onPress={onLaunchWatch}
           disabled={launchingWatch}
+          android_ripple={{ color: SB.ripple, foreground: true }}
           style={({ pressed }) => [
             styles.watch,
-            pressed && { backgroundColor: SB.control },
+            SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.control },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Open Tennis League on your watch"
@@ -170,9 +172,10 @@ export function ScoreboardSetup({
       <Pressable
         onPress={onStart}
         disabled={starting}
+        android_ripple={{ color: SB.rippleOnYellow, foreground: true }}
         style={({ pressed }) => [
           styles.start,
-          (pressed || starting) && styles.startPressed,
+          ((SHOWS_PRESSED_FILL && pressed) || starting) && styles.startPressed,
         ]}
         accessibilityRole="button"
         accessibilityLabel={`Start match, ${names[server]} serves`}
@@ -252,12 +255,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2,
     borderColor: SB.yellow,
+    overflow: "hidden",
   },
   watchText: { color: SB.yellow, fontSize: 19, letterSpacing: 1 },
   spacer: { flex: 1 },
   start: {
     minHeight: 72,
     borderRadius: 6,
+    overflow: "hidden",
     backgroundColor: SB.yellow,
     alignItems: "center",
     justifyContent: "center",

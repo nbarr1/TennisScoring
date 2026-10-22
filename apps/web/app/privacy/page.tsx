@@ -5,7 +5,7 @@ import {
   PRIVACY_POLICY_LAST_UPDATED,
   PRIVACY_POLICY_SECTIONS,
 } from "@tennis/shared";
-import { color, radius, space, target, type, width } from "../shared/tokens";
+import { color, gutter, radius, space, target, type, width } from "../shared/tokens";
 
 function sectionId(title: string): string {
   return title
@@ -58,7 +58,7 @@ export default function PrivacyPolicyPage(): React.JSX.Element {
             <ol style={styles.tocList}>
               {PRIVACY_POLICY_SECTIONS.map((section) => (
                 <li key={section.title}>
-                  <a href={`#${sectionId(section.title)}`} style={styles.tocLink}>
+                  <a href={`#${sectionId(section.title)}`} className="tl-link" style={styles.tocLink}>
                     {section.title}
                   </a>
                 </li>
@@ -81,7 +81,7 @@ export default function PrivacyPolicyPage(): React.JSX.Element {
           ))}
         </article>
 
-        <Link href="/" style={styles.backLink}>
+        <Link href="/" className="tl-link" style={styles.backLink}>
           <IconArrowLeft size={18} aria-hidden="true" />
           Back to Tennis League
         </Link>
@@ -95,10 +95,10 @@ const styles: Record<string, React.CSSProperties> = {
   header: {
     display: "flex",
     alignItems: "center",
-    padding: `${space.sm}px ${space.lg}px`,
+    padding: `${space.sm}px ${gutter}`,
     background: color.brandFill,
   },
-  headerInner: { width: "100%", maxWidth: width.reading - 2 * space.lg, margin: "0 auto" },
+  headerInner: { width: "100%", maxWidth: `calc(${width.reading}px - 2 * ${gutter})`, margin: "0 auto" },
   brand: {
     display: "inline-flex",
     alignItems: "center",
@@ -113,7 +113,7 @@ const styles: Record<string, React.CSSProperties> = {
   main: {
     maxWidth: width.reading,
     margin: "0 auto",
-    padding: `clamp(24px, 6vw, 48px) ${space.lg}px ${space.xxxl}px`,
+    padding: `clamp(24px, 6vw, 48px) ${gutter} ${space.xxxl}px`,
   },
   title: { ...type.display, color: color.clubhouseGreen, margin: 0 },
   lastUpdated: { ...type.bodySmall, color: color.textMuted, margin: `${space.sm}px 0 ${space.xl}px` },
@@ -141,9 +141,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: `${space.xxs}px 0`,
     color: color.clubhouseGreen,
     fontWeight: 500,
-    textDecoration: "underline",
-    textDecorationColor: color.border,
-    textUnderlineOffset: 3,
+    textDecorationColor: color.borderStrong,
   },
   section: {
     marginTop: space.xxl,
@@ -164,7 +162,5 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: space.xl,
     color: color.clubhouseGreen,
     fontWeight: 600,
-    textDecoration: "underline",
-    textUnderlineOffset: 3,
   },
 };

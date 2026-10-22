@@ -104,6 +104,7 @@ export function AnnouncerProvider({ children }: { children: ReactNode }): React.
               type="button"
               tabIndex={-1}
               onClick={() => dismiss(toast.id)}
+              className="tl-tint"
               style={styles.toastClose}
               aria-label="Dismiss"
             >

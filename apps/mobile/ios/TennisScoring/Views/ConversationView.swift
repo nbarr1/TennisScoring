@@ -115,7 +115,7 @@ struct ConversationView: View {
   private var composer: some View {
     VStack(spacing: 4) {
       if let remaining = model.remainingCharacters {
-        Text(remaining >= 0 ? "\(remaining) characters left" : "\(-remaining) characters over the limit")
+        Text(characterCountText(remaining))
           .font(.caption)
           .foregroundStyle(remaining >= 0 ? Color.secondary : Color.red)
           .frame(maxWidth: .infinity, alignment: .trailing)
@@ -160,6 +160,13 @@ struct ConversationView: View {
     // The field lines up with the messages above it; the bar still spans the screen.
     .readableContentWidth()
     .background(.bar)
+  }
+
+  /// "1 character left", "12 characters left", "3 characters over the limit".
+  private func characterCountText(_ remaining: Int) -> String {
+    let count = abs(remaining)
+    let noun = count == 1 ? "character" : "characters"
+    return remaining >= 0 ? "\(count) \(noun) left" : "\(count) \(noun) over the limit"
   }
 
   private var shareDescription: String {
@@ -218,7 +225,7 @@ private struct MessageBubble: View {
             in: RoundedRectangle(cornerRadius: 16)
           )
           if message.createdAt > 0 {
-            Text(message.createdAt.dateFromMillis, format: .dateTime.hour().minute())
+            Text(Self.timestamp(message.createdAt.dateFromMillis))
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
@@ -227,6 +234,16 @@ private struct MessageBubble: View {
       }
       .accessibilityElement(children: .combine)
     }
+  }
+}
+
+extension MessageBubble {
+  /// The time alone for today's messages. Older ones carry the day too: the
+  /// newest 50 messages can span weeks, and "10:42" alone read as this morning.
+  static func timestamp(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+      ? date.formatted(.dateTime.hour().minute())
+      : date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
   }
 }
 

@@ -8,7 +8,7 @@ import { signOutReleasingPushToken, useAuthUser, useUserProfile } from "@tennis/
 import { isPrivilegedRole } from "@tennis/shared";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { IconBallTennis, IconMenu2, IconX } from "@tabler/icons-react";
-import { color, radius, target } from "./tokens";
+import { color, radius, target, type } from "./tokens";
 
 export type AppNavSection =
   | "dashboard"
@@ -171,8 +171,7 @@ const styles = {
     borderRadius: radius.pill,
     minHeight: target.min,
     padding: "0 16px",
-    fontSize: 14,
-    fontWeight: 700,
+    ...type.label,
     cursor: "pointer",
   },
   toggle: {
@@ -184,7 +183,6 @@ const styles = {
     color: color.onBrand,
     border: "1px solid rgba(255,255,255,0.45)",
     borderRadius: radius.md,
-    fontSize: 15,
-    fontWeight: 600,
+    ...type.label,
   },
 } satisfies Record<string, React.CSSProperties>;

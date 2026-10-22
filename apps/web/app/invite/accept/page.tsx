@@ -16,12 +16,14 @@ import {
   LoadingBlock,
   buttonClassName,
   buttonStyle,
+  authCardStyle,
+  authPageStyle,
   color,
   describeError,
   fieldLabelStyle,
+  inputInvalidStyle,
   inputStyle,
   radius,
-  shadow,
   space,
   target,
   type,
@@ -196,7 +198,7 @@ function AcceptInviteContent(): React.JSX.Element {
 
       // acceptInvite requires a verified address, so the invite is accepted
       // when the player returns here from the verification page.
-      setSuccess('Account created. Next, verify your email address to join the division…');
+      setSuccess('Account created. Next, verify your email address to join the division.');
       setTimeout(() => router.replace(verifyThenReturnHref), 600);
     } catch (e) {
       const code = (e as { code?: string }).code;
@@ -262,7 +264,7 @@ function AcceptInviteContent(): React.JSX.Element {
 
   const fieldStyle = (invalid: boolean): React.CSSProperties => ({
     ...inputStyle,
-    ...(invalid ? styles.inputInvalid : {}),
+    ...(invalid ? inputInvalidStyle : {}),
   });
 
   return (
@@ -366,6 +368,7 @@ function AcceptInviteContent(): React.JSX.Element {
                   aria-pressed={showPassword}
                   aria-controls="invite-password"
                   aria-label="Show password"
+                  className="tl-tint"
                   style={styles.revealBtn}
                 >
                   {showPassword ? <IconEyeOff size={20} aria-hidden="true" /> : <IconEye size={20} aria-hidden="true" />}
@@ -396,7 +399,7 @@ function AcceptInviteContent(): React.JSX.Element {
 
           <p style={styles.small}>
             Already have an account?{' '}
-            <Link style={styles.link} href={signInThenReturnHref}>Sign in to accept this invite</Link>.
+            <Link className="tl-link" style={styles.link} href={signInThenReturnHref}>Sign in to accept this invite</Link>.
           </p>
         </>
       )}
@@ -405,21 +408,9 @@ function AcceptInviteContent(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  main: {
-    minHeight: '100dvh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: color.canvas,
-    padding: `${space.xl}px ${space.lg}px`,
-  },
+  main: authPageStyle,
   card: {
-    width: '100%',
-    maxWidth: 500,
-    background: color.surface,
-    borderRadius: radius.lg,
-    padding: 'clamp(24px, 6vw, 36px)',
-    boxShadow: shadow.raised,
+    ...authCardStyle,
     display: 'flex',
     flexDirection: 'column',
     gap: space.lg,
@@ -438,7 +429,6 @@ const styles: Record<string, React.CSSProperties> = {
   strong: { fontWeight: 600 },
   form: { display: 'flex', flexDirection: 'column', gap: space.lg },
   readOnly: { background: color.surfaceMuted, border: `1px solid ${color.border}`, color: color.ink },
-  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
   hint: { ...type.caption, color: color.textMuted, marginTop: space.xs },
   passwordWrap: { position: 'relative' },
   revealBtn: {
@@ -459,8 +449,6 @@ const styles: Record<string, React.CSSProperties> = {
   link: {
     color: color.clubhouseGreen,
     fontWeight: 600,
-    textDecoration: 'underline',
-    textUnderlineOffset: 3,
     display: 'inline-block',
     padding: `${space.sm}px 0`,
   },

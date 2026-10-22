@@ -381,8 +381,8 @@ export default function LoginScreen() {
         </View>
 
         <Button
-          label="Privacy Policy"
-          accessibilityLabel="View Privacy Policy"
+          label="Privacy policy"
+          accessibilityLabel="View the privacy policy"
           variant="quiet"
           size="compact"
           style={styles.privacyLink}

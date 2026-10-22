@@ -37,6 +37,7 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
+  SHOWS_PRESSED_FILL,
   confirmDestructive,
   describeError,
   elevations,
@@ -210,7 +211,14 @@ const MessageBubble = React.memo(function MessageBubble({
                 accessibilityRole="button"
                 accessibilityLabel={`Call ${message.senderName}`}
                 accessibilityHint="Opens the phone app"
-                style={styles.contactLinkTarget}
+                android_ripple={{
+                  color: isMe ? colors.rippleOnFill : colors.ripple,
+                  borderless: true,
+                }}
+                style={({ pressed }) => [
+                  styles.contactLinkTarget,
+                  SHOWS_PRESSED_FILL && pressed && styles.contactLinkPressed,
+                ]}
               >
                 <IconLabel
                   name="phone"
@@ -230,7 +238,14 @@ const MessageBubble = React.memo(function MessageBubble({
                 accessibilityRole="button"
                 accessibilityLabel={`Email ${message.senderName}`}
                 accessibilityHint="Opens the email app"
-                style={styles.contactLinkTarget}
+                android_ripple={{
+                  color: isMe ? colors.rippleOnFill : colors.ripple,
+                  borderless: true,
+                }}
+                style={({ pressed }) => [
+                  styles.contactLinkTarget,
+                  SHOWS_PRESSED_FILL && pressed && styles.contactLinkPressed,
+                ]}
               >
                 <IconLabel
                   name="envelope"
@@ -249,7 +264,7 @@ const MessageBubble = React.memo(function MessageBubble({
         <Pressable
           style={styles.messageActionsBtn}
           onPress={openActions}
-          android_ripple={{ color: colors.surfaceMuted, borderless: true }}
+          android_ripple={{ color: colors.ripple, borderless: true }}
           accessibilityRole="button"
           accessibilityLabel={`Report or block ${message.senderName}`}
           accessibilityHint="Opens report and block actions for this message"
@@ -636,7 +651,7 @@ export function ChannelView({
           onPress={handleShareContact}
           style={styles.shareContactBtn}
           disabled={sending}
-          android_ripple={{ color: colors.primarySoft, borderless: true }}
+          android_ripple={{ color: colors.ripple, borderless: true }}
           accessibilityRole="button"
           accessibilityLabel="Share contact details"
           accessibilityHint="Sends the email and phone number you chose to share in your Profile"
@@ -666,8 +681,9 @@ export function ChannelView({
           style={({ pressed }) => [
             styles.sendBtn,
             !canSend && !send.pending && styles.sendBtnDisabled,
-            pressed && canSend && styles.sendBtnPressed,
+            SHOWS_PRESSED_FILL && pressed && canSend && styles.sendBtnPressed,
           ]}
+          android_ripple={canSend ? { color: colors.rippleOnFill, foreground: true } : undefined}
           onPress={handleSend}
           disabled={!canSend}
           accessibilityRole="button"
@@ -706,7 +722,7 @@ export function ChannelView({
         <Pressable
           style={styles.actionSheetOption}
           onPress={handleOpenReport}
-          android_ripple={{ color: colors.surfaceMuted }}
+          android_ripple={{ color: colors.ripple }}
           accessibilityRole="button"
           accessibilityLabel="Report message"
           accessibilityHint="Sends this message to a division leader for review"
@@ -718,7 +734,7 @@ export function ChannelView({
         <Pressable
           style={styles.actionSheetOption}
           onPress={handleBlockSender}
-          android_ripple={{ color: colors.surfaceMuted }}
+          android_ripple={{ color: colors.ripple }}
           accessibilityRole="button"
           accessibilityLabel={`Block ${actionMessage?.senderName ?? "sender"}`}
           accessibilityHint="Hides their messages and notifications"
@@ -745,7 +761,7 @@ export function ChannelView({
           A division leader will review it and can remove it.
         </Text>
         <Text style={styles.reportPreview} numberOfLines={4}>
-          {reportMessageTarget?.senderName}: “{reportMessageTarget?.content}”
+          {reportMessageTarget?.senderName}: "{reportMessageTarget?.content}"
         </Text>
         <Text
           style={styles.groupLabel}
@@ -891,6 +907,7 @@ const useStyles = makeStyles((colors) =>
       marginTop: spacing.sm,
     },
     contactLinkTarget: { minHeight: 24, justifyContent: "center" },
+    contactLinkPressed: { opacity: 0.6 },
     contactLink: { ...typography.label, color: colors.primary },
     contactLinkMe: { color: colors.onPrimary },
     sendError: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
@@ -930,6 +947,7 @@ const useStyles = makeStyles((colors) =>
       backgroundColor: colors.primary,
       paddingHorizontal: spacing.lg + 2,
       borderRadius: radii.xl,
+      overflow: "hidden",
       minHeight: MIN_TOUCH_TARGET,
       minWidth: 72,
       alignItems: "center",

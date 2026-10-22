@@ -17,6 +17,7 @@ import {
   color,
   describeError,
   fieldLabelStyle,
+  inputInvalidStyle,
   inputStyle,
   radius,
   space,
@@ -24,6 +25,7 @@ import {
   type,
   width,
   pageMainStyle,
+  sectionPadding,
 } from "../shared/ui";
 import {
   submitFeedback,
@@ -182,7 +184,7 @@ export default function FeedbackPage(): React.JSX.Element {
             {issueUrl && (
               <p style={styles.helper}>
                 It&apos;s tracked as an issue on GitHub:{" "}
-                <a href={issueUrl} target="_blank" rel="noreferrer" style={styles.link}>
+                <a href={issueUrl} target="_blank" rel="noreferrer" className="tl-link" style={styles.link}>
                   view the issue
                   <IconExternalLink size={16} aria-hidden="true" style={{ marginLeft: space.xxs }} />
                   <span className="sr-only"> (opens in a new tab)</span>
@@ -223,7 +225,7 @@ export default function FeedbackPage(): React.JSX.Element {
               <textarea
                 ref={messageRef}
                 id="feedback-message"
-                style={{ ...styles.textarea, ...(messageError ? styles.inputInvalid : {}) }}
+                style={{ ...styles.textarea, ...(messageError ? inputInvalidStyle : {}) }}
                 value={message}
                 onChange={(event) => {
                   setMessage(event.target.value);
@@ -284,7 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
   subtitle: { ...type.body, color: color.textMuted, margin: `0 0 ${space.xl}px`, maxWidth: "60ch" },
   card: {
     ...cardStyle,
-    padding: "clamp(20px, 4vw, 28px)",
+    padding: sectionPadding,
     display: "flex",
     flexDirection: "column",
     gap: space.lg,
@@ -300,7 +302,6 @@ const styles: Record<string, React.CSSProperties> = {
     resize: "vertical",
     fontFamily: "inherit",
   },
-  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
   checkboxRow: {
     display: "flex",
     gap: space.md,
@@ -321,8 +322,6 @@ const styles: Record<string, React.CSSProperties> = {
   link: {
     color: color.clubhouseGreen,
     fontWeight: 600,
-    textDecoration: "underline",
-    textUnderlineOffset: 3,
     display: "inline-flex",
     alignItems: "center",
     minHeight: target.min,

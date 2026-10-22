@@ -16,12 +16,14 @@ import {
   Button,
   FieldError,
   InlineAlert,
+  authCardStyle,
+  authPageStyle,
   color,
   describeError,
   fieldLabelStyle,
+  inputInvalidStyle,
   inputStyle,
   radius,
-  shadow,
   space,
   target,
   type,
@@ -253,7 +255,7 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
               <label htmlFor="division-name" style={fieldLabelStyle}>Division name</label>
               <input
                 id="division-name"
-                style={{ ...inputStyle, ...(fieldError ? styles.inputInvalid : {}) }}
+                style={{ ...inputStyle, ...(fieldError ? inputInvalidStyle : {}) }}
                 value={divisionName}
                 onChange={(e) => {
                   setDivisionName(e.target.value);
@@ -288,7 +290,7 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
               <label htmlFor="invite-code" style={fieldLabelStyle}>Invite code</label>
               <input
                 id="invite-code"
-                style={{ ...inputStyle, ...styles.codeInput, ...(fieldError ? styles.inputInvalid : {}) }}
+                style={{ ...inputStyle, ...styles.codeInput, ...(fieldError ? inputInvalidStyle : {}) }}
                 value={inviteCode}
                 onChange={(e) => {
                   setInviteCode(e.target.value.replace(/\s+/g, '').toUpperCase());
@@ -318,21 +320,8 @@ export default function DivisionOnboardingPage(): React.JSX.Element {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  root: {
-    minHeight: '100dvh',
-    background: color.canvas,
-    display: 'grid',
-    placeItems: 'center',
-    padding: `${space.xl}px ${space.lg}px`,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 480,
-    background: color.surface,
-    borderRadius: radius.lg,
-    padding: 'clamp(24px, 6vw, 36px)',
-    boxShadow: shadow.raised,
-  },
+  root: authPageStyle,
+  card: authCardStyle,
   stack: { display: 'flex', flexDirection: 'column', gap: space.lg },
   footer: {
     display: 'flex',
@@ -383,5 +372,4 @@ const styles: Record<string, React.CSSProperties> = {
     fontVariantNumeric: 'tabular-nums',
   },
   codeInput: { fontSize: 20, letterSpacing: '0.12em', fontVariantNumeric: 'tabular-nums' },
-  inputInvalid: { border: `1px solid ${color.destructive}`, boxShadow: `inset 0 0 0 1px ${color.destructive}` },
 };

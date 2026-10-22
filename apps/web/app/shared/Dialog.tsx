@@ -279,6 +279,7 @@ export function Dialog({
                 onClick={requestClose}
                 aria-label={closeLabel}
                 disabled={!dismissible}
+                className="tl-tint"
                 style={styles.closeButton}
               >
                 <IconX size={22} aria-hidden="true" />

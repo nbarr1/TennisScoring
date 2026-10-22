@@ -174,7 +174,7 @@ export default function MessagesScreen() {
                 styles.channelCard,
                 pressed && Platform.OS === "ios" && styles.channelCardPressed,
               ]}
-              android_ripple={{ color: colors.surfaceMuted, foreground: true }}
+              android_ripple={{ color: colors.ripple, foreground: true }}
               onPress={() => openChannel(item, name)}
               accessibilityRole="button"
               accessibilityLabel={`${name}. ${preview}${lastAt ? `. ${lastAt}` : ""}`}
@@ -304,7 +304,7 @@ export default function MessagesScreen() {
                 void startDM.run(item);
               }}
               disabled={startDM.pending}
-              android_ripple={{ color: colors.surfaceMuted }}
+              android_ripple={{ color: colors.ripple }}
               accessibilityRole="button"
               accessibilityLabel={`Message ${item.displayName}`}
               accessibilityState={{
@@ -329,7 +329,7 @@ export default function MessagesScreen() {
           !dmSearching &&
           !dmSearchError ? (
             <Text style={styles.noResults}>
-              No players match “{dmSearch.trim()}”. Check the spelling, or
+              No players match "{dmSearch.trim()}". Check the spelling, or
               try a first name.
             </Text>
           ) : null}
