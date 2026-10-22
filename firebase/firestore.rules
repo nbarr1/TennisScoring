@@ -328,6 +328,20 @@ service cloud.firestore {
     // Split into one helper per update kind because Firestore rules cap the number
     // of `let` bindings a single function may declare (10); each helper below stays
     // under that cap while canUpdateMatch itself just ORs their results together.
+    // True once a submitted report's 48-hour window has closed unanswered.
+    // confirmationDeadline is written only by Cloud Functions, from the server
+    // clock (submittedAt is the submitter's device clock). After it passes the
+    // opposing side can still confirm, but no participant can dispute, edit,
+    // undo, or resubmit: the scheduled job confirms the report, and any later
+    // change needs a division leader or admin, through an appeal.
+    function isReportWindowClosed(existing) {
+      let submission = existing.get('reportSubmission', null);
+      return submission != null &&
+        submission.get('status', '') == 'pending_confirmation' &&
+        submission.get('confirmationDeadline', null) is number &&
+        request.time.toMillis() >= submission.confirmationDeadline;
+    }
+
     function isCancellationUpdate(existing, incoming, changed) {
       return incoming.status == 'cancelled' &&
         (existing.status == 'proposed' || existing.status == 'scheduled' || existing.status == 'in_progress') &&
@@ -361,6 +375,7 @@ service cloud.firestore {
     function isUndoUpdate(existing, incoming, changed) {
       let snapshot = existing.get('undoSnapshot', null);
       return snapshot != null &&
+        !isReportWindowClosed(existing) &&
         existing.status in ['in_progress', 'pending_report'] &&
         snapshot.status in ['scheduled', 'in_progress'] &&
         incoming.status == snapshot.status &&
@@ -380,6 +395,7 @@ service cloud.firestore {
 
     function isReportSubmitUpdate(existing, incoming, changed) {
       return existing.status == 'pending_report' &&
+        !isReportWindowClosed(existing) &&
         incoming.status == existing.status &&
         changed.hasOnly(['reportSubmission']) &&
         incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status']) &&
@@ -398,14 +414,18 @@ service cloud.firestore {
         isOpposingSideOfSubmitter(existing);
       let preservesOriginalSubmission = hasSubmission &&
         incoming.reportSubmission.submittedBy == existing.reportSubmission.submittedBy &&
-        incoming.reportSubmission.submittedAt == existing.reportSubmission.submittedAt;
+        incoming.reportSubmission.submittedAt == existing.reportSubmission.submittedAt &&
+        incoming.reportSubmission.get('confirmationDeadline', null) == existing.reportSubmission.get('confirmationDeadline', null);
       let isValidConfirm = toCompleted &&
-        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmedBy', 'confirmedAt']) &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmationDeadline', 'confirmedBy', 'confirmedAt']) &&
         incoming.reportSubmission.status == 'confirmed' &&
         incoming.reportSubmission.confirmedBy == request.auth.uid &&
         incoming.reportSubmission.confirmedAt is number;
+      // Confirming late is allowed (it is what the scheduled job would do);
+      // disputing late is not.
       let isValidDispute = toDisputed &&
-        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'disputedBy', 'disputedAt']) &&
+        !isReportWindowClosed(existing) &&
+        incoming.reportSubmission.keys().hasOnly(['submittedBy', 'submittedAt', 'status', 'confirmationDeadline', 'disputedBy', 'disputedAt']) &&
         incoming.reportSubmission.status == 'disputed' &&
         incoming.reportSubmission.disputedBy == request.auth.uid &&
         incoming.reportSubmission.disputedAt is number;
@@ -483,6 +503,7 @@ service cloud.firestore {
     // through the unconditional leader branch of `allow update`.
     function isEditScoreUpdate(existing, incoming, changed) {
       return existing.status == 'pending_report' &&
+        !isReportWindowClosed(existing) &&
         incoming.status == 'pending_report' &&
         !('reportSubmission' in incoming) &&
         !('undoSnapshot' in incoming) &&
@@ -522,7 +543,9 @@ service cloud.firestore {
       // something forged to trust. 'undoSnapshot' and 'reportSubmission'
       // each let one player complete a match without the opponent, and
       // 'reportUrl' suppressed the real report and put an arbitrary link on
-      // the match page.
+      // the match page. 'appeal' is absent too, and no participant update
+      // below may change it: appeals are written only by the
+      // requestMatchAppeal and decideMatchAppeal callables.
       function matchFields() {
         return [
           'divisionId',

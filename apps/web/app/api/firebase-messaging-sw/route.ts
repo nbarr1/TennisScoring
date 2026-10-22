@@ -34,7 +34,7 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   var data = event.notification.data || {};
   var path = '/dashboard';
-  var matchTypes = ['report_submitted', 'report_disputed', 'match_accepted', 'match_proposed'];
+  var matchTypes = ['report_submitted', 'report_disputed', 'report_auto_confirmed', 'appeal_requested', 'appeal_decided', 'match_accepted', 'match_proposed'];
   if (data.matchId && matchTypes.indexOf(data.type) !== -1) {
     path = '/matches/' + data.matchId;
   } else if (data.type === 'message') {

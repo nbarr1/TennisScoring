@@ -53,6 +53,9 @@ export function useNotifications(userId: string | null | undefined) {
       const goToMatch = data.matchId && (
         data.type === 'report_submitted' ||
         data.type === 'report_disputed' ||
+        data.type === 'report_auto_confirmed' ||
+        data.type === 'appeal_requested' ||
+        data.type === 'appeal_decided' ||
         data.type === 'match_accepted' ||
         data.type === 'match_proposed'
       );

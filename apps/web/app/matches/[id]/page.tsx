@@ -42,7 +42,7 @@ import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
   cancelMatch, postponeMatch, deleteMatch, startMatch, scorePoint, undoLastPoint,
   resolveDisputedReport, useUserProfile, acceptMatchProposal, declineMatchProposal,
-  editMatchScore, linkGuestOpponent,
+  editMatchScore, linkGuestOpponent, requestMatchAppeal, decideMatchAppeal,
 } from '@tennis/firebase-client';
 import {
   EMPTY_STATS,
@@ -51,6 +51,13 @@ import {
   formatGameScore,
   isMatchParticipant,
   canRespondToReport,
+  canDecideMatchAppeal,
+  canRequestMatchAppeal,
+  formatRecordedScoreLine,
+  isReportWindowClosed,
+  MAX_APPEAL_NOTE_LENGTH,
+  MAX_APPEAL_REASON_LENGTH,
+  reportConfirmationDeadline,
   sideOfPlayer,
   sideDisplayName,
   isDoublesMatch,
@@ -276,6 +283,18 @@ export default function MatchPage(): React.JSX.Element {
   const p2Name = sideDisplayName(match, 'player2');
   const isHistoric = match.source === 'manual';
   const isLeaderOrAdmin = profile?.role === 'division_leader' || isAdminRole(profile?.role);
+  // The opposing side has 48 hours to answer a report. After that nobody but a
+  // leader or admin can change it; the rules enforce the same cutoff.
+  const confirmationDeadline = reportConfirmationDeadline(submission);
+  const windowClosed = isReportWindowClosed(match, Date.now());
+  const canRequestAppeal = !!uid && canRequestMatchAppeal(match, uid);
+  // decideMatchAppeal checks the role for real; this only decides whether to offer the panel.
+  const canDecideAppeal =
+    !!uid &&
+    canDecideMatchAppeal(match, uid, {
+      isAdmin: isAdminRole(profile?.role),
+      isDivisionLeader: profile?.role === 'division_leader',
+    });
   // The resolveDisputedReport callable decides for real (leader of this
   // division, or admin); this only decides whether to offer the panel.
   const canResolveReport =
@@ -284,7 +303,7 @@ export default function MatchPage(): React.JSX.Element {
   // Players may only correct a result awaiting confirmation; once confirmed,
   // only a leader or admin can change it (the rules enforce the same split).
   const canEditScore =
-    ((isParticipant || isLeaderOrAdmin) && match.status === 'pending_report') ||
+    (((isParticipant && !windowClosed) || isLeaderOrAdmin) && match.status === 'pending_report') ||
     (isLeaderOrAdmin && match.status === 'completed');
   const canLinkGuest = isParticipant && !!match.player2IsGuest;
 
@@ -304,6 +323,8 @@ export default function MatchPage(): React.JSX.Element {
   };
   const reporterSide = submission?.submittedBy ? sideOfPlayer(match, submission.submittedBy) : undefined;
   const reporterName = reporterSide ? sideDisplayName(match, reporterSide) : opponent;
+  const appealRequesterSide = match.appeal ? sideOfPlayer(match, match.appeal.requestedBy) : undefined;
+  const appealRequesterName = appealRequesterSide ? sideDisplayName(match, appealRequesterSide) : 'A player';
 
   function requestResolve(withCorrectedScore: boolean) {
     setResolveError(null);
@@ -785,16 +806,25 @@ export default function MatchPage(): React.JSX.Element {
     } else if (isParticipant && submission && canReviewReport) {
       nextStep = (
         <StepPanel title="Confirm the score" style={containerStyles.section}>
-          <p style={styles.stepText}>
-            {reporterName} reported <strong>{scoreDisplay}</strong>. Confirm it if it matches what you played. If it&apos;s wrong, dispute it and a division leader will settle it.
-          </p>
+          {windowClosed ? (
+            <p style={styles.stepText}>
+              {reporterName} reported <strong>{scoreDisplay}</strong>. The 48 hours to answer have passed, so it&apos;s being confirmed automatically. To challenge it, ask a division leader or admin to review it once it&apos;s confirmed.
+            </p>
+          ) : (
+            <p style={styles.stepText}>
+              {reporterName} reported <strong>{scoreDisplay}</strong>. Confirm it if it matches what you played. If it&apos;s wrong, dispute it and a division leader will settle it.
+              {confirmationDeadline && <> Answer by <strong>{formatWhen(confirmationDeadline)}</strong>, or it&apos;s confirmed automatically.</>}
+            </p>
+          )}
           <div style={styles.stepActions}>
             <Button icon={<IconCheck size={18} aria-hidden="true" />} pending={confirmReport.pending} pendingLabel="Confirming…" onClick={() => void confirmReport.run()} className="tl-btn--on-dark" style={styles.confirmBtn}>
               Confirm score
             </Button>
-            <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} disabled={confirmReport.pending} onClick={() => setShowDisputeConfirm(true)} className="tl-tint" style={styles.disputeBtn}>
-              Dispute score
-            </Button>
+            {!windowClosed && (
+              <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} disabled={confirmReport.pending} onClick={() => setShowDisputeConfirm(true)} className="tl-tint" style={styles.disputeBtn}>
+                Dispute score
+              </Button>
+            )}
           </div>
           {confirmReport.error && <InlineAlert tone="error">{confirmReport.error}</InlineAlert>}
         </StepPanel>
@@ -804,6 +834,9 @@ export default function MatchPage(): React.JSX.Element {
         <StepPanel title={`Waiting for ${opponent} to confirm`} style={containerStyles.section}>
           <p style={styles.stepText}>
             {submission.submittedBy === uid ? 'You submitted this score.' : 'Your partner submitted this score.'} It counts in the standings once {opponent} confirms it.
+            {confirmationDeadline && (windowClosed
+              ? ' The 48 hours to answer have passed, so it\'s being confirmed automatically.'
+              : <> If {opponent} doesn&apos;t answer by <strong>{formatWhen(confirmationDeadline)}</strong>, it&apos;s confirmed automatically.</>)}
           </p>
           {canEditScore && (
             <div style={styles.stepActions}>
@@ -840,7 +873,9 @@ export default function MatchPage(): React.JSX.Element {
         <InlineAlert tone={match.player2IsGuest ? 'info' : 'success'} title={match.player2IsGuest ? 'Score recorded' : 'Score confirmed'} role={null}>
           {match.player2IsGuest
             ? `Played against a guest, so it isn't in the standings.${canLinkGuest ? ' Link their account once they join, and they can confirm it.' : ''}`
-            : 'The standings include this result.'}
+            : submission?.autoConfirmed
+              ? 'Confirmed automatically after 48 hours without an answer. The standings include this result.'
+              : 'The standings include this result.'}
         </InlineAlert>
       </div>
     );
@@ -933,6 +968,32 @@ export default function MatchPage(): React.JSX.Element {
                 </Button>
               </div>
             </StepPanel>
+          )}
+
+          {match.appeal && (
+            <AppealStatus
+              appeal={match.appeal}
+              requesterName={appealRequesterName}
+              viewerRequested={match.appeal.requestedBy === uid}
+              p1Name={p1Name}
+              style={styles.statusAlert}
+            />
+          )}
+
+          {canRequestAppeal && (
+            <AppealRequestPanel matchId={id} p1Name={p1Name} style={containerStyles.section} />
+          )}
+
+          {canDecideAppeal && match.appeal && (
+            <AppealReviewPanel
+              matchId={id}
+              appeal={match.appeal}
+              requesterName={appealRequesterName}
+              p1Name={p1Name}
+              p2Name={p2Name}
+              scoreDisplay={scoreDisplay}
+              style={containerStyles.section}
+            />
           )}
 
           {canResolveReport && (
@@ -1164,6 +1225,230 @@ function StepPanel({ title, children, style }: { title: string; children: ReactN
       <h2 id={headingId} style={styles.stepTitle}>{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** Where a match's appeal stands, for everyone who can see the match. */
+function AppealStatus({ appeal, requesterName, viewerRequested, p1Name, style }: {
+  appeal: NonNullable<Match['appeal']>;
+  requesterName: string;
+  viewerRequested: boolean;
+  p1Name: string;
+  style: CSSProperties;
+}) {
+  const who = viewerRequested ? 'You' : requesterName;
+  const note = appeal.decisionNote ? <> Reviewer&apos;s note: &ldquo;{appeal.decisionNote}&rdquo;</> : null;
+  if (appeal.status === 'pending') {
+    return (
+      <InlineAlert tone="info" title="Review requested" role={null} style={style}>
+        {who} asked a division leader or admin to review this result. It counts as shown until they decide.
+      </InlineAlert>
+    );
+  }
+  if (appeal.status === 'approved') {
+    return (
+      <InlineAlert tone="success" title="Appeal approved" role={null} style={style}>
+        A reviewer corrected the score{appeal.appliedSets ? ` to ${formatRecordedScoreLine(appeal.appliedSets)} (${p1Name}'s games first)` : ''}.{note}
+      </InlineAlert>
+    );
+  }
+  return (
+    <InlineAlert tone="info" title="Appeal not approved" role={null} style={style}>
+      A reviewer looked at {viewerRequested ? 'your' : `${requesterName}'s`} appeal and the result stands. This match can&apos;t be appealed again.{note}
+    </InlineAlert>
+  );
+}
+
+/** A player asks a leader or admin to review a confirmed result. Once per match. */
+function AppealRequestPanel({ matchId, p1Name, style }: { matchId: string; p1Name: string; style: CSSProperties }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [scoreLine, setScoreLine] = useState('');
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const reasonId = useId();
+  const scoreId = useId();
+  const errorId = useId();
+  const submit = useAsyncAction((sets?: RecordedSetInput[]) => requestMatchAppeal(matchId, reason.trim(), sets), {
+    successMessage: 'Review requested. A division leader or admin will decide.',
+    errorMessage: "Couldn't send the request. Try again.",
+  });
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setFieldError(null);
+    if (!reason.trim()) {
+      setFieldError('Say what is wrong with the result.');
+      return;
+    }
+    let sets: RecordedSetInput[] | undefined;
+    if (scoreLine.trim()) {
+      const parsed = parseRecordedScoreLine(scoreLine);
+      if (!parsed) {
+        setFieldError(`Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
+        return;
+      }
+      const invalid = validateRecordedSets(parsed);
+      if (invalid) {
+        setFieldError(invalid);
+        return;
+      }
+      sets = parsed;
+    }
+    void submit.run(sets);
+  }
+
+  return (
+    <StepPanel title="Think this result is wrong?" style={style}>
+      <p style={styles.stepText}>
+        The result is confirmed, so only a division leader or admin can change it. You can ask for a review once for this match.
+      </p>
+      {!open ? (
+        <div style={styles.stepActions}>
+          <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} onClick={() => setOpen(true)}>
+            Request a review
+          </Button>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} style={styles.appealForm} noValidate>
+          <div>
+            <label style={fieldLabelStyle} htmlFor={reasonId}>What&apos;s wrong with the result?</label>
+            <textarea
+              id={reasonId}
+              value={reason}
+              maxLength={MAX_APPEAL_REASON_LENGTH}
+              rows={3}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setFieldError(null);
+              }}
+              style={styles.appealTextarea}
+              aria-invalid={fieldError && !reason.trim() ? true : undefined}
+              aria-describedby={fieldError ? errorId : undefined}
+            />
+          </div>
+          <div>
+            <label style={fieldLabelStyle} htmlFor={scoreId}>
+              The correct score, with {p1Name}&apos;s games first (optional)
+            </label>
+            <input
+              id={scoreId}
+              type="text"
+              autoComplete="off"
+              placeholder="6-4, 3-6, [10-8]"
+              value={scoreLine}
+              onChange={(e) => {
+                setScoreLine(e.target.value);
+                setFieldError(null);
+              }}
+              style={styles.resolveInput}
+              aria-describedby={fieldError ? errorId : undefined}
+            />
+          </div>
+          {fieldError && <p id={errorId} role="alert" style={styles.fieldError}>{fieldError}</p>}
+          {submit.error && <InlineAlert tone="error">{submit.error}</InlineAlert>}
+          <div style={styles.stepActions}>
+            <Button type="submit" pending={submit.pending} pendingLabel="Sending…">
+              Send for review
+            </Button>
+            <Button variant="secondary" disabled={submit.pending} onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </StepPanel>
+  );
+}
+
+/** A leader or admin who did not play in the match approves or rejects its appeal. */
+function AppealReviewPanel({ matchId, appeal, requesterName, p1Name, p2Name, scoreDisplay, style }: {
+  matchId: string;
+  appeal: NonNullable<Match['appeal']>;
+  requesterName: string;
+  p1Name: string;
+  p2Name: string;
+  scoreDisplay: string;
+  style: CSSProperties;
+}) {
+  const [scoreLine, setScoreLine] = useState(() => (appeal.proposedSets ? formatRecordedScoreLine(appeal.proposedSets) : ''));
+  const [note, setNote] = useState('');
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  const scoreId = useId();
+  const noteId = useId();
+  const errorId = useId();
+  const approve = useAsyncAction((sets: RecordedSetInput[]) => decideMatchAppeal(matchId, 'approve', { sets, note }), {
+    successMessage: 'Appeal approved. The corrected score counts in the standings now.',
+    errorMessage: "Couldn't save the decision. Try again.",
+  });
+  const reject = useAsyncAction(() => decideMatchAppeal(matchId, 'reject', { note }), {
+    successMessage: 'Appeal rejected. The result stands.',
+    errorMessage: "Couldn't save the decision. Try again.",
+  });
+  const pending = approve.pending || reject.pending;
+
+  function handleApprove() {
+    setScoreError(null);
+    const sets = parseRecordedScoreLine(scoreLine);
+    if (!sets) {
+      setScoreError(`Enter the correct score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
+      return;
+    }
+    const invalid = validateRecordedSets(sets);
+    if (invalid) {
+      setScoreError(invalid);
+      return;
+    }
+    void approve.run(sets);
+  }
+
+  return (
+    <StepPanel title="Review this appeal" style={style}>
+      <p style={styles.stepText}>
+        {requesterName} asked for a review of this confirmed result. Approving saves the score below as final. Rejecting keeps the result as it is, and the match can&apos;t be appealed again.
+      </p>
+      <p style={styles.resolveReported}>Current result: {p1Name} {scoreDisplay} {p2Name}</p>
+      <blockquote style={styles.appealReason}>{appeal.reason}</blockquote>
+      <div>
+        <label style={fieldLabelStyle} htmlFor={scoreId}>
+          Correct score, with {p1Name}&apos;s games first{appeal.proposedSets ? ' (the player\'s proposal is filled in)' : ''}
+        </label>
+        <input
+          id={scoreId}
+          type="text"
+          autoComplete="off"
+          placeholder="6-4, 3-6, [10-8]"
+          value={scoreLine}
+          onChange={(e) => {
+            setScoreLine(e.target.value);
+            setScoreError(null);
+          }}
+          style={styles.resolveInput}
+          aria-invalid={scoreError ? true : undefined}
+          aria-describedby={scoreError ? errorId : undefined}
+        />
+        {scoreError && <p id={errorId} role="alert" style={styles.fieldError}>{scoreError}</p>}
+      </div>
+      <div>
+        <label style={fieldLabelStyle} htmlFor={noteId}>Note to the players (optional)</label>
+        <textarea
+          id={noteId}
+          value={note}
+          maxLength={MAX_APPEAL_NOTE_LENGTH}
+          rows={2}
+          onChange={(e) => setNote(e.target.value)}
+          style={styles.appealTextarea}
+        />
+      </div>
+      {(approve.error || reject.error) && <InlineAlert tone="error">{approve.error ?? reject.error}</InlineAlert>}
+      <div style={styles.stepActions}>
+        <Button icon={<IconCheck size={18} aria-hidden="true" />} pending={approve.pending} pendingLabel="Saving…" disabled={pending && !approve.pending} onClick={handleApprove} className="tl-btn--on-dark" style={styles.confirmBtn}>
+          Approve and save score
+        </Button>
+        <Button variant="secondary" icon={<IconX size={18} aria-hidden="true" />} pending={reject.pending} pendingLabel="Saving…" disabled={pending && !reject.pending} onClick={() => void reject.run()}>
+          Reject appeal
+        </Button>
+      </div>
+    </StepPanel>
   );
 }
 
@@ -1493,5 +1778,8 @@ const styles: Record<string, CSSProperties> = {
   resolveRow: { display: 'flex', gap: space.sm, flexWrap: 'wrap' },
   resolveInput: { ...inputStyle, flex: '1 1 180px', width: 'auto' },
   fieldError: { ...type.caption, color: color.destructivePressed, margin: `${space.xs}px 0 0` },
+  appealForm: { display: 'flex', flexDirection: 'column', gap: space.md },
+  appealTextarea: { ...inputStyle, width: '100%', minHeight: 72, resize: 'vertical', fontFamily: 'inherit' },
+  appealReason: { ...type.body, color: color.ink, margin: 0, padding: `${space.sm}px ${space.md}px`, borderLeft: `3px solid ${color.border}`, whiteSpace: 'pre-wrap' },
   fieldHint: { ...type.bodySmall, color: color.textMuted, margin: `${space.sm}px 0 0` },
 };

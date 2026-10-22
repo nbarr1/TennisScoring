@@ -164,3 +164,10 @@ export function parseRecordedScoreLine(line: string): RecordedSetInput[] | null 
   const sets = tokens.map(parseRecordedSetToken);
   return sets.every((set): set is RecordedSetInput => set !== null) ? sets : null;
 }
+
+/** The inverse of `parseRecordedScoreLine`: `6-4, 3-6, [10-8]`. */
+export function formatRecordedScoreLine(sets: RecordedSetInput[]): string {
+  return sets
+    .map((set) => (set.matchTiebreak ? `[${set.p1}-${set.p2}]` : `${set.p1}-${set.p2}`))
+    .join(', ');
+}

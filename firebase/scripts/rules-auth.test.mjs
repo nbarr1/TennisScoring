@@ -141,6 +141,7 @@ describe('match create', () => {
     ['reportUrl', 'https://example.com/report.pdf'],
     ['winner', 'player1'],
     ['completedAt', 1],
+    ['appeal', { requestedBy: 'p1', requestedAt: 1, reason: 'x', status: 'approved' }],
   ]) {
     it(`denies a new match that carries ${field}`, async () => {
       await assertFails(addDoc(collection(as('p1'), 'matches'), baseMatch({ [field]: value })));
@@ -298,6 +299,188 @@ describe('report confirmation', () => {
 
   it('denies the submitter confirming their own report', async () => {
     await assertFails(updateDoc(doc(as('p1'), 'matches', 'm'), confirm('p1')));
+  });
+});
+
+describe('report confirmation window', () => {
+  const HOUR = 60 * 60 * 1000;
+  // The emulator compares against request.time, the server clock, so a
+  // deadline an hour either side of now is unambiguously open or closed.
+  const seedReport = (deadlineOffset) =>
+    seed((db) =>
+      setDoc(
+        doc(db, 'matches', 'm'),
+        baseMatch({
+          status: 'pending_report',
+          winner: 'player1',
+          liveScore: finalScore,
+          completedAt: 5,
+          stats: laterStats,
+          undoSnapshot: { liveScore: midScore, status: 'in_progress', stats },
+          reportSubmission: {
+            submittedBy: 'p1',
+            submittedAt: 6,
+            status: 'pending_confirmation',
+            ...(deadlineOffset !== undefined && { confirmationDeadline: Date.now() + deadlineOffset }),
+          },
+        }),
+      ),
+    );
+  const open = () => seedReport(HOUR);
+  const closed = () => seedReport(-HOUR);
+
+  const dispute = {
+    status: 'disputed',
+    'reportSubmission.status': 'disputed',
+    'reportSubmission.disputedBy': 'p2',
+    'reportSubmission.disputedAt': 7,
+  };
+  const confirm = {
+    status: 'completed',
+    'reportSubmission.status': 'confirmed',
+    'reportSubmission.confirmedBy': 'p2',
+    'reportSubmission.confirmedAt': 7,
+  };
+  const edit = {
+    liveScore: score([set(0, 0, 6), set(1, 0, 6)], [0, 2]),
+    winner: 'player2',
+    status: 'pending_report',
+    completedAt: deleteField(),
+    reportSubmission: deleteField(),
+    undoSnapshot: deleteField(),
+  };
+  const resubmit = (uid) => ({
+    reportSubmission: { submittedBy: uid, submittedAt: 8, status: 'pending_confirmation' },
+  });
+  const undo = {
+    liveScore: midScore,
+    status: 'in_progress',
+    stats,
+    winner: deleteField(),
+    completedAt: deleteField(),
+    undoSnapshot: deleteField(),
+    reportSubmission: deleteField(),
+  };
+
+  it('lets the opponent dispute while the window is open', async () => {
+    await open();
+    await assertSucceeds(updateDoc(doc(as('p2'), 'matches', 'm'), dispute));
+  });
+
+  it('denies a dispute once the window has closed', async () => {
+    await closed();
+    await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), dispute));
+  });
+
+  it('still lets the opponent confirm once the window has closed', async () => {
+    await closed();
+    await assertSucceeds(updateDoc(doc(as('p2'), 'matches', 'm'), confirm));
+  });
+
+  it('lets a report without a deadline yet be disputed', async () => {
+    await seedReport(undefined);
+    await assertSucceeds(updateDoc(doc(as('p2'), 'matches', 'm'), dispute));
+  });
+
+  it('denies a confirmation or dispute that removes or moves the deadline', async () => {
+    await open();
+    await assertFails(
+      updateDoc(doc(as('p2'), 'matches', 'm'), { ...confirm, 'reportSubmission.confirmationDeadline': deleteField() }),
+    );
+    await assertFails(
+      updateDoc(doc(as('p2'), 'matches', 'm'), { ...dispute, 'reportSubmission.confirmationDeadline': Date.now() + 99 * HOUR }),
+    );
+  });
+
+  it('denies a participant writing their own deadline', async () => {
+    await seed((db) =>
+      setDoc(doc(db, 'matches', 'm'), baseMatch({ status: 'pending_report', winner: 'player1', liveScore: finalScore })),
+    );
+    await assertFails(
+      updateDoc(doc(as('p1'), 'matches', 'm'), {
+        reportSubmission: {
+          submittedBy: 'p1',
+          submittedAt: 6,
+          status: 'pending_confirmation',
+          confirmationDeadline: 1,
+        },
+      }),
+    );
+  });
+
+  it('lets a participant edit the score only while the window is open', async () => {
+    await open();
+    await assertSucceeds(updateDoc(doc(as('p2'), 'matches', 'm'), edit));
+    await closed();
+    await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), edit));
+    await assertFails(updateDoc(doc(as('p1'), 'matches', 'm'), edit));
+  });
+
+  it('denies resubmitting a report once the window has closed', async () => {
+    await open();
+    await assertSucceeds(updateDoc(doc(as('p2'), 'matches', 'm'), resubmit('p2')));
+    await closed();
+    await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), resubmit('p2')));
+  });
+
+  it('denies an undo once the window has closed', async () => {
+    await open();
+    await assertSucceeds(updateDoc(doc(as('p1'), 'matches', 'm'), undo));
+    await closed();
+    await assertFails(updateDoc(doc(as('p1'), 'matches', 'm'), undo));
+  });
+
+  it('leaves a division leader able to change the result after the window', async () => {
+    await closed();
+    await assertSucceeds(updateDoc(doc(as('leader'), 'matches', 'm'), edit));
+  });
+});
+
+describe('result appeals', () => {
+  const appeal = { requestedBy: 'p2', requestedAt: 1, reason: 'Wrong score', status: 'pending' };
+  const seedCompleted = (extra = {}) =>
+    seed((db) =>
+      setDoc(
+        doc(db, 'matches', 'm'),
+        baseMatch({
+          status: 'completed',
+          winner: 'player1',
+          liveScore: finalScore,
+          completedAt: 5,
+          reportSubmission: { submittedBy: 'p1', submittedAt: 6, status: 'confirmed', autoConfirmed: true, confirmedAt: 7 },
+          ...extra,
+        }),
+      ),
+    );
+
+  it('denies a participant filing an appeal directly', async () => {
+    await seedCompleted();
+    await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), { appeal }));
+  });
+
+  it('denies a participant approving their own appeal', async () => {
+    await seedCompleted({ appeal });
+    await assertFails(updateDoc(doc(as('p2'), 'matches', 'm'), { 'appeal.status': 'approved' }));
+    await assertFails(
+      updateDoc(doc(as('p2'), 'matches', 'm'), {
+        'appeal.status': 'approved',
+        liveScore: score([set(0, 0, 6), set(1, 0, 6)], [0, 2]),
+        winner: 'player2',
+      }),
+    );
+  });
+
+  it('denies another division member deciding an appeal', async () => {
+    await seed((db) =>
+      setDoc(doc(db, 'users', 'p3'), { id: 'p3', displayName: 'p3', role: 'player', divisionId: DIVISION }),
+    );
+    await seedCompleted({ appeal });
+    await assertFails(updateDoc(doc(as('p3'), 'matches', 'm'), { 'appeal.status': 'rejected' }));
+  });
+
+  it('lets the players read the appeal on their match', async () => {
+    await seedCompleted({ appeal });
+    await assertSucceeds(getDoc(doc(as('p1'), 'matches', 'm')));
   });
 });
 

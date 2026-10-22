@@ -61,6 +61,8 @@ import {
   searchDivisionPlayers,
   acceptMatchProposal,
   declineMatchProposal,
+  requestMatchAppeal,
+  decideMatchAppeal,
   type PointAttribution,
 } from "@tennis/firebase-client";
 import {
@@ -69,10 +71,19 @@ import {
   getTipsForTriggers,
   isMatchParticipant,
   canRespondToReport,
+  canDecideMatchAppeal,
+  canRequestMatchAppeal,
+  formatRecordedScoreLine,
   getMatchStatusMetadata,
   isAdminRole,
+  isReportWindowClosed,
+  MAX_APPEAL_NOTE_LENGTH,
+  MAX_APPEAL_REASON_LENGTH,
   opposingSide,
+  parseRecordedScoreLine,
   recordedSetsFromScore,
+  reportConfirmationDeadline,
+  sideDisplayName,
   sideOfPlayer,
   validateRecordedSets,
 } from "@tennis/shared";
@@ -370,6 +381,242 @@ function Panel({
       ) : null}
       {children}
     </Card>
+  );
+}
+
+/**
+ * Where a match's appeal stands, the player's request form, and the
+ * reviewer's decision form. `decideMatchAppeal` checks the reviewer's role for
+ * real; the flags only decide which parts to offer.
+ */
+function MatchAppealSection({
+  match,
+  matchId,
+  userId,
+  isAdmin,
+  isDivisionLeader,
+  fontsLoaded,
+}: {
+  match: Match;
+  matchId: string;
+  userId: string;
+  isAdmin: boolean;
+  isDivisionLeader: boolean;
+  fontsLoaded: boolean;
+}) {
+  const styles = useStyles();
+  const appeal = match.appeal;
+  const p1Name = sideDisplayName(match, "player1") || "Player 1";
+  const requesterSide = appeal ? sideOfPlayer(match, appeal.requestedBy) : undefined;
+  const requesterName =
+    appeal?.requestedBy === userId
+      ? "You"
+      : requesterSide
+        ? sideDisplayName(match, requesterSide)
+        : "A player";
+  const canRequest = canRequestMatchAppeal(match, userId);
+  const canDecide = canDecideMatchAppeal(match, userId, { isAdmin, isDivisionLeader });
+
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [scoreLine, setScoreLine] = useState("");
+  const [note, setNote] = useState("");
+  const [reviewScore, setReviewScore] = useState(() =>
+    appeal?.proposedSets ? formatRecordedScoreLine(appeal.proposedSets) : "",
+  );
+  const [fieldError, setFieldError] = useState<string | null>(null);
+
+  const request = useAsyncAction(
+    async (sets?: RecordedSetInput[]) => {
+      await requestMatchAppeal(matchId, reason.trim(), sets);
+    },
+    {
+      successMessage: "Review requested. A division leader or admin will decide.",
+      errorMessage: (e) => describeError(e, `Couldn't send the request. ${CONNECTION_HINT}`),
+    },
+  );
+  const decide = useAsyncAction(
+    async (decision: "approve" | "reject", sets?: RecordedSetInput[]) => {
+      await decideMatchAppeal(matchId, decision, { sets, note });
+    },
+    {
+      successMessage: "Decision saved.",
+      errorMessage: (e) => describeError(e, `Couldn't save the decision. ${CONNECTION_HINT}`),
+    },
+  );
+
+  function parseScore(line: string): RecordedSetInput[] | null {
+    const sets = parseRecordedScoreLine(line);
+    if (!sets) {
+      setFieldError(`Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
+      return null;
+    }
+    const invalid = validateRecordedSets(sets);
+    if (invalid) {
+      setFieldError(invalid);
+      return null;
+    }
+    return sets;
+  }
+
+  function handleRequest() {
+    setFieldError(null);
+    if (!reason.trim()) {
+      setFieldError("Say what is wrong with the result.");
+      return;
+    }
+    let sets: RecordedSetInput[] | undefined;
+    if (scoreLine.trim()) {
+      const parsed = parseScore(scoreLine);
+      if (!parsed) return;
+      sets = parsed;
+    }
+    void request.run(sets);
+  }
+
+  function handleApprove() {
+    setFieldError(null);
+    const sets = parseScore(reviewScore);
+    if (sets) void decide.run("approve", sets);
+  }
+
+  const noteText = appeal?.decisionNote ? ` Reviewer's note: "${appeal.decisionNote}"` : "";
+
+  return (
+    <>
+      {appeal?.status === "pending" && (
+        <InlineAlert
+          tone="info"
+          title="Review requested"
+          message={`${requesterName} asked a division leader or admin to review this result. It counts as shown until they decide.`}
+        />
+      )}
+      {appeal?.status === "approved" && (
+        <InlineAlert
+          tone="success"
+          title="Appeal approved"
+          message={`A reviewer corrected the score${
+            appeal.appliedSets
+              ? ` to ${formatRecordedScoreLine(appeal.appliedSets)} (${p1Name}'s games first)`
+              : ""
+          }.${noteText}`}
+        />
+      )}
+      {appeal?.status === "rejected" && (
+        <InlineAlert
+          tone="info"
+          title="Appeal not approved"
+          message={`A reviewer looked at the appeal and the result stands. This match can't be appealed again.${noteText}`}
+        />
+      )}
+
+      {canRequest && (
+        <Panel title="Think this result is wrong?" fontsLoaded={fontsLoaded}>
+          <Text style={styles.panelBody}>
+            The result is confirmed, so only a division leader or admin can
+            change it. You can ask for a review once for this match.
+          </Text>
+          {requestOpen ? (
+            <>
+              <FormField
+                label="What's wrong with the result?"
+                value={reason}
+                onChangeText={(text) => {
+                  setReason(text);
+                  setFieldError(null);
+                }}
+                multiline
+                maxLength={MAX_APPEAL_REASON_LENGTH}
+                required
+              />
+              <FormField
+                label={`The correct score, with ${p1Name}'s games first (optional)`}
+                value={scoreLine}
+                onChangeText={(text) => {
+                  setScoreLine(text);
+                  setFieldError(null);
+                }}
+                placeholder="6-4, 3-6, [10-8]"
+                autoCapitalize="none"
+                autoCorrect={false}
+                error={fieldError ?? undefined}
+              />
+              {request.error ? <InlineAlert tone="error" message={request.error} /> : null}
+              <View style={styles.buttonStack}>
+                <Button
+                  label="Send for review"
+                  fullWidth
+                  pending={request.pending}
+                  onPress={handleRequest}
+                />
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  fullWidth
+                  disabled={request.pending}
+                  onPress={() => setRequestOpen(false)}
+                />
+              </View>
+            </>
+          ) : (
+            <Button
+              label="Request a review"
+              icon="exclamationmark.triangle"
+              variant="secondary"
+              fullWidth
+              onPress={() => setRequestOpen(true)}
+            />
+          )}
+        </Panel>
+      )}
+
+      {canDecide && appeal && (
+        <Panel title="Review this appeal" fontsLoaded={fontsLoaded}>
+          <Text style={styles.panelBody}>
+            {requesterName} asked for a review of this confirmed result:
+            &ldquo;{appeal.reason}&rdquo; Approving saves the score below as
+            final. Rejecting keeps the result as it is, and the match
+            can&apos;t be appealed again.
+          </Text>
+          <FormField
+            label={`Correct score, with ${p1Name}'s games first`}
+            value={reviewScore}
+            onChangeText={(text) => {
+              setReviewScore(text);
+              setFieldError(null);
+            }}
+            placeholder="6-4, 3-6, [10-8]"
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={fieldError ?? undefined}
+          />
+          <FormField
+            label="Note to the players (optional)"
+            value={note}
+            onChangeText={setNote}
+            multiline
+            maxLength={MAX_APPEAL_NOTE_LENGTH}
+          />
+          {decide.error ? <InlineAlert tone="error" message={decide.error} /> : null}
+          <View style={styles.buttonStack}>
+            <Button
+              label="Approve and save score"
+              icon="checkmark.circle"
+              fullWidth
+              pending={decide.pending}
+              onPress={handleApprove}
+            />
+            <Button
+              label="Reject appeal"
+              variant="secondary"
+              fullWidth
+              disabled={decide.pending}
+              onPress={() => void decide.run("reject")}
+            />
+          </View>
+        </Panel>
+      )}
+    </>
   );
 }
 
@@ -689,6 +936,10 @@ export default function MatchScreen() {
   );
   const isPendingMyReview =
     opponentSubmitted && submission?.status === "pending_confirmation";
+  // The opposing side has 48 hours to answer a report. After that only a
+  // leader or admin can change it; the rules enforce the same cutoff.
+  const confirmationDeadline = reportConfirmationDeadline(submission);
+  const windowClosed = !!match && isReportWindowClosed(match, Date.now());
 
   const names: Record<Player, string> = {
     player1: match?.player1Name ?? "Player 1",
@@ -1450,7 +1701,8 @@ export default function MatchScreen() {
   // Players may only correct a result awaiting confirmation; once confirmed,
   // only a leader or admin can change it (the rules enforce the same split).
   const canEditScore =
-    (canManage && match.status === "pending_report") ||
+    (match.status === "pending_report" &&
+      (isAdminOrLeader || (isParticipant && !windowClosed))) ||
     ((isAdminOrLeader || isAdminRole(user?.role)) &&
       match.status === "completed");
   // The clocks tick inside ElapsedText; the screen itself never re-renders
@@ -1824,6 +2076,11 @@ export default function MatchScreen() {
                       {iSubmitted
                         ? `${oppCasual} has been notified. Once they confirm, the score is final and the standings update.`
                         : `Your partner submitted the report. Once ${oppCasual} confirms, the score is final and the standings update.`}
+                      {confirmationDeadline
+                        ? windowClosed
+                          ? " The 48 hours to answer have passed, so it's being confirmed automatically."
+                          : ` If ${oppCasual} doesn't answer by ${formatWhen(confirmationDeadline)}, it's confirmed automatically.`
+                        : ""}
                     </Text>
                   </Panel>
                 )}
@@ -1836,8 +2093,13 @@ export default function MatchScreen() {
                 >
                   <PanelScore score={match.liveScore} fontsLoaded={fontsLoaded} />
                   <Text style={styles.panelBody}>
-                    Confirm it if it's right. If it's wrong, dispute it and your
-                    division leader will review it.
+                    {windowClosed
+                      ? "The 48 hours to answer have passed, so it's being confirmed automatically. To challenge it, ask a division leader or admin to review it once it's confirmed."
+                      : `Confirm it if it's right. If it's wrong, dispute it and your division leader will review it.${
+                          confirmationDeadline
+                            ? ` Answer by ${formatWhen(confirmationDeadline)}, or it's confirmed automatically.`
+                            : ""
+                        }`}
                   </Text>
                   {(confirmReport.error ?? disputeReport.error) ? (
                     <InlineAlert
@@ -1854,15 +2116,17 @@ export default function MatchScreen() {
                       disabled={disputeReport.pending}
                       onPress={() => void handleConfirmReport()}
                     />
-                    <Button
-                      label="Dispute score"
-                      icon="exclamationmark.triangle"
-                      variant="secondary"
-                      fullWidth
-                      pending={disputeReport.pending}
-                      disabled={confirmReport.pending}
-                      onPress={() => void handleDisputeReport()}
-                    />
+                    {!windowClosed && (
+                      <Button
+                        label="Dispute score"
+                        icon="exclamationmark.triangle"
+                        variant="secondary"
+                        fullWidth
+                        pending={disputeReport.pending}
+                        disabled={confirmReport.pending}
+                        onPress={() => void handleDisputeReport()}
+                      />
+                    )}
                   </View>
                 </Panel>
               )}
@@ -1938,7 +2202,9 @@ export default function MatchScreen() {
                   >
                     {match.player2IsGuest
                       ? "Score recorded. Not in the standings until your opponent's account is linked and they confirm."
-                      : "Score confirmed · Standings updated"}
+                      : submission?.autoConfirmed
+                        ? "Confirmed automatically after 48 hours · Standings updated"
+                        : "Score confirmed · Standings updated"}
                   </IconLabel>
                   {shareNotice ? (
                     <InlineAlert tone={shareNotice.tone} message={shareNotice.message} />
@@ -1955,6 +2221,19 @@ export default function MatchScreen() {
                     onPress={() => void handleShareReport()}
                   />
                 </Panel>
+              )}
+
+              {/* Appeals: a player asks for a review of a confirmed result,
+                  and a leader or admin who didn't play decides it. */}
+              {id && user && (
+                <MatchAppealSection
+                  match={match}
+                  matchId={id}
+                  userId={user.id}
+                  isAdmin={isAdminRole(user.role)}
+                  isDivisionLeader={user.role === "division_leader"}
+                  fontsLoaded={fontsLoaded}
+                />
               )}
 
               {/* Link opponent — guest matches only */}

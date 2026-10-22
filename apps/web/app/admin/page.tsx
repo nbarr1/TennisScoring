@@ -31,6 +31,7 @@ import {
   publishRoundRobinSchedule,
   useDivisionMessageReports,
   useReportsAwaitingResolution,
+  useAppealsAwaitingDecision,
   resolveMessageReport,
   readableUserDoc,
 } from "@tennis/firebase-client";
@@ -51,6 +52,7 @@ import {
   isFailure,
   mapWithConcurrency,
   parseRosterPaste,
+  isMatchParticipant,
 } from "@tennis/shared";
 import { query, where } from "firebase/firestore";
 import {
@@ -247,6 +249,11 @@ export default function AdminPage(): React.JSX.Element {
   const [removeReportTarget, setRemoveReportTarget] = useState<MessageReport | null>(null);
   const { reports: messageReports } = useDivisionMessageReports(division?.id);
   const { matches: reportsAwaitingResolution } = useReportsAwaitingResolution(division?.id);
+  const { matches: allPendingAppeals } = useAppealsAwaitingDecision(division?.id);
+  // A reviewer who played in the match cannot decide its appeal, so it is not theirs to act on.
+  const appealsAwaitingDecision = allPendingAppeals.filter(
+    (m) => !firebaseUser || !isMatchParticipant(m, firebaseUser.uid),
+  );
   const [lastLinkAction, setLastLinkAction] = useState<{
     sourceUserId?: string;
     targetUserId: string;
@@ -1700,7 +1707,8 @@ export default function AdminPage(): React.JSX.Element {
       selectedMatchIds.length > 0);
   const disputedCount = reportsAwaitingResolution.filter((m) => m.status === "disputed").length;
   const unansweredCount = reportsAwaitingResolution.length - disputedCount;
-  const toolsAttentionCount = messageReports.length + reportsAwaitingResolution.length;
+  const toolsAttentionCount =
+    messageReports.length + reportsAwaitingResolution.length + appealsAwaitingDecision.length;
   const pageLoading = loading || !accessChecked;
   // Counted only once the roster snapshots have landed; before that everyone reads as unassigned.
   const knownUnassignedCount = rosterReady && !rosterLoadError ? unassignedCount : 0;
@@ -1708,7 +1716,10 @@ export default function AdminPage(): React.JSX.Element {
     Boolean(division) &&
     !pageLoading &&
     !viewAsUser &&
-    (messageReports.length > 0 || reportsAwaitingResolution.length > 0 || knownUnassignedCount > 0);
+    (messageReports.length > 0 ||
+      reportsAwaitingResolution.length > 0 ||
+      appealsAwaitingDecision.length > 0 ||
+      knownUnassignedCount > 0);
   const bulkBarVisible = activeTab === "roster" && !viewAsUser && selectedVisibleIds.length > 0;
 
   return (
@@ -1815,6 +1826,17 @@ export default function AdminPage(): React.JSX.Element {
                   </span>
                   <Button size="sm" variant="secondary" onClick={goToResults}>
                     Review results
+                  </Button>
+                </li>
+              ) : null}
+              {appealsAwaitingDecision.length > 0 ? (
+                <li style={styles.attentionItem}>
+                  <span style={styles.attentionText}>
+                    <strong>{plural(appealsAwaitingDecision.length, "result appeal", "result appeals")}</strong>{" "}
+                    {appealsAwaitingDecision.length === 1 ? "is" : "are"} waiting for a decision.
+                  </span>
+                  <Button size="sm" variant="secondary" onClick={goToResults}>
+                    Review appeals
                   </Button>
                 </li>
               ) : null}
@@ -2002,6 +2024,7 @@ export default function AdminPage(): React.JSX.Element {
                 setRemoveReportTarget={setRemoveReportTarget}
                 dismissReport={dismissReport}
                 reportsAwaitingResolution={reportsAwaitingResolution}
+                appealsAwaitingDecision={appealsAwaitingDecision}
                 repairRankings={repairRankings}
                 repairMessage={repairMessage}
                 setRepairMessage={setRepairMessage}

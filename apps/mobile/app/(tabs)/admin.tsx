@@ -23,6 +23,7 @@ import {
   useDivisionRosteredSeasons,
   useDivisionMessageReports,
   useReportsAwaitingResolution,
+  useAppealsAwaitingDecision,
   resolveMessageReport,
   readableUserDoc,
 } from "@tennis/firebase-client";
@@ -68,6 +69,7 @@ import {
   type MessageReport,
   type PlayerRanking,
   type User,
+  isMatchParticipant,
   isPrivilegedRole,
 } from "@tennis/shared";
 
@@ -187,6 +189,11 @@ export default function AdminScreen() {
   } = useDivisionMessageReports(division?.id);
   const { matches: awaitingResolution } = useReportsAwaitingResolution(
     division?.id,
+  );
+  const { matches: pendingAppeals } = useAppealsAwaitingDecision(division?.id);
+  // A reviewer who played in the match cannot decide its appeal.
+  const appealsToDecide = pendingAppeals.filter(
+    (m) => !user || !isMatchParticipant(m, user.id),
   );
   const [levelSkill, setLevelSkill] = useState<DivisionSkillLevel>("beginner");
   const [levelMatchType, setLevelMatchType] =
@@ -833,6 +840,7 @@ export default function AdminScreen() {
     !reportsError &&
     pendingReports === 0 &&
     awaitingResolution.length === 0 &&
+    appealsToDecide.length === 0 &&
     unassignedCount === 0;
 
   return (
@@ -933,6 +941,38 @@ export default function AdminScreen() {
                   {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
                 </Text>
                 <StatusBadge status={m.status} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
+        {appealsToDecide.length > 0 ? (
+          <View style={styles.subsection}>
+            <Text style={styles.subTitle} accessibilityRole="header">
+              Result appeals ({appealsToDecide.length})
+            </Text>
+            <Text style={styles.hint}>
+              Confirmed results a player asked you to review. Open one to
+              approve a corrected score or reject the appeal.
+            </Text>
+            {appealsToDecide.map((m) => (
+              <Pressable
+                key={m.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${m.player1Name ?? "Player 1"} versus ${m.player2Name ?? "Player 2"}, appeal waiting`}
+                accessibilityHint="Opens the match to decide its appeal"
+                android_ripple={{ color: colors.ripple }}
+                style={({ pressed }) => [
+                  styles.listRow,
+                  SHOWS_PRESSED_FILL && pressed && styles.listRowPressed,
+                ]}
+                onPress={() =>
+                  router.push({ pathname: "/match/[id]", params: { id: m.id } })
+                }
+              >
+                <Text style={styles.listRowText} numberOfLines={2}>
+                  {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
+                </Text>
               </Pressable>
             ))}
           </View>

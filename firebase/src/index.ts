@@ -8,6 +8,11 @@ export {
   repairAllDivisionRankings,
 } from './matches/matchFunctions';
 export { createDoublesMatch } from './matches/doublesFunctions';
+export {
+  autoConfirmExpiredReports,
+  requestMatchAppeal,
+  decideMatchAppeal,
+} from './matches/appealFunctions';
 export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
 export { generateMatchReport } from './reports/generateReport';
 export { onNewMessage } from './messaging/onNewMessage';

@@ -20,9 +20,11 @@ export const generateMatchReport = functions.firestore.onDocumentWritten(
     const before = event.data?.before?.data() as Match | undefined;
     const after = event.data?.after?.data() as Match | undefined;
 
-    if (!after) return;
-    if (before?.status === 'completed' || after.status !== 'completed') return;
+    if (!after || after.status !== 'completed') return;
     if (after.reportUrl) return; // Already generated
+    // A result that stays completed is rebuilt only when its report was just
+    // removed, which is how an approved appeal asks for one for the new score.
+    if (before?.status === 'completed' && !before.reportUrl) return;
 
     const matchId = event.params.matchId;
     await createAndStoreReport(matchId, after);

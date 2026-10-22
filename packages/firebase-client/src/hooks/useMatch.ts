@@ -13,6 +13,7 @@ import {
   liveMatchesQuery,
   playerMatchesQuery,
   reportsAwaitingResolutionQuery,
+  appealsAwaitingDecisionQuery,
 } from '../collections';
 import { functions } from '../config';
 import type {
@@ -536,6 +537,39 @@ export async function resolveDisputedReport(
   await callable({ matchId, ...(sets && { sets }) });
 }
 
+/**
+ * A player asks a division leader or admin to review a confirmed result,
+ * optionally with the score they believe is right (from player 1's side).
+ * Allowed once per match; the result is unchanged until a reviewer approves.
+ */
+export async function requestMatchAppeal(
+  matchId: string,
+  reason: string,
+  sets?: RecordedSetInput[],
+): Promise<void> {
+  const callable = httpsCallable(functions, 'requestMatchAppeal');
+  await callable({ matchId, reason, ...(sets && { sets }) });
+}
+
+/**
+ * A division leader or admin who did not play in the match decides its
+ * appeal. Approving saves `sets`, or the player's proposed score when `sets`
+ * is omitted; rejecting leaves the result as it was.
+ */
+export async function decideMatchAppeal(
+  matchId: string,
+  decision: 'approve' | 'reject',
+  options: { sets?: RecordedSetInput[]; note?: string } = {},
+): Promise<void> {
+  const callable = httpsCallable(functions, 'decideMatchAppeal');
+  await callable({
+    matchId,
+    decision,
+    ...(options.sets && { sets: options.sets }),
+    ...(options.note?.trim() && { note: options.note.trim() }),
+  });
+}
+
 export async function editMatchScore(
   matchId: string,
   sets: RecordedSetInput[],
@@ -630,6 +664,43 @@ export function useReportsAwaitingResolution(divisionId: string | null | undefin
       },
       (err) => {
         console.error('Failed to load reports awaiting resolution:', err);
+        setMatches([]);
+        setLoading(false);
+      },
+    );
+    return unsub;
+  }, [divisionId]);
+
+  return { matches, loading };
+}
+
+/**
+ * Subscribes to a division's results with an appeal waiting for a decision
+ * from `decideMatchAppeal()`. Oldest appeal first.
+ */
+export function useAppealsAwaitingDecision(divisionId: string | null | undefined) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!divisionId) {
+      setMatches([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const unsub = onSnapshot(
+      appealsAwaitingDecisionQuery(divisionId),
+      (snap) => {
+        setMatches(
+          snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<Match, 'id'>) }))
+            .sort((a, b) => (a.appeal?.requestedAt ?? 0) - (b.appeal?.requestedAt ?? 0)),
+        );
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Failed to load appeals awaiting a decision:', err);
         setMatches([]);
         setLoading(false);
       },

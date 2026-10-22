@@ -1,6 +1,7 @@
 import {
   buildRecordedMatchScore,
   canBeMatchTiebreak,
+  formatRecordedScoreLine,
   isValidMatchTiebreakScore,
   parseRecordedScoreLine,
   parseRecordedSetToken,
@@ -184,5 +185,13 @@ describe('parseRecordedScoreLine', () => {
     expect(parseRecordedScoreLine('6-4, six-three')).toBeNull();
     expect(parseRecordedScoreLine('6-4, [10-8')).toBeNull();
     expect(parseRecordedScoreLine('6-4-3')).toBeNull();
+  });
+});
+
+describe('formatRecordedScoreLine', () => {
+  it('writes a line parseRecordedScoreLine reads back', () => {
+    const sets = [{ p1: 6, p2: 4 }, { p1: 3, p2: 6 }, { p1: 10, p2: 8, matchTiebreak: true }];
+    expect(formatRecordedScoreLine(sets)).toBe('6-4, 3-6, [10-8]');
+    expect(parseRecordedScoreLine(formatRecordedScoreLine(sets))).toEqual(sets);
   });
 });

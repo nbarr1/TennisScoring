@@ -336,6 +336,8 @@ Matches progress: `proposed` → `scheduled` → `in_progress` → `pending_repo
 5. Opponent calls `confirmMatchReport()` or `disputeMatchReport()`.
 6. Confirmed → `onMatchUpdate` trigger recalculates rankings and generates PDF report.
 7. Disputed → division leader resolves via `resolveDisputedReport()` callable.
+8. Unanswered for 48 hours → confirmed automatically. `onMatchUpdate` stamps `reportSubmission.confirmationDeadline` from the server clock when a report is submitted (`submittedAt` is the submitter's device clock and is never trusted for this), and the scheduled `autoConfirmExpiredReports` (`firebase/src/matches/appealFunctions.ts`, once a day at 00:00 UTC, so up to 24 hours after the deadline) confirms reports past it with `autoConfirmed: true` and no `confirmedBy`. After the deadline the rules (`isReportWindowClosed`) still let the opposing side confirm, but block disputes, participant edits, undo, and resubmission. `isReportWindowClosed()` in `packages/shared/src/match/reportWindow.ts` is the client copy.
+9. Any later change to a confirmed result goes through an appeal: a participant calls `requestMatchAppeal()` (reason, optional corrected sets), which writes `match.appeal` with `status: 'pending'`; a division leader or admin who did **not** play in the match calls `decideMatchAppeal()`. Approving saves the corrected score (the match stays `completed`, and dropping `reportUrl` makes `generateMatchReport` rebuild the PDF); rejecting leaves the result unchanged. One appeal per match, so a rejection is final. Only the callables write `appeal`; leaders can still edit a match directly through the leader rule, as before.
 
 ### Doubles matches and team rankings
 
