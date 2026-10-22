@@ -2,7 +2,7 @@ import React from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { PointAttribution } from "@tennis/firebase-client";
-import { useContentWidth } from "../../theme";
+import { SHOWS_PRESSED_FILL, useContentWidth } from "../../theme";
 import { SB, font } from "./scoreboardTheme";
 
 type Props = {
@@ -85,10 +85,14 @@ export function PointTypeSheet({
                 key={choice.label}
                 onPress={() => onPick(choice.attribution)}
                 disabled={busy}
+                android_ripple={{
+                  color: index === 0 ? SB.rippleOnYellow : SB.ripple,
+                  foreground: true,
+                }}
                 style={({ pressed }) => [
                   styles.choice,
                   index === 0 ? styles.primary : styles.secondary,
-                  pressed && styles.pressed,
+                  SHOWS_PRESSED_FILL && pressed && styles.pressed,
                   busy && styles.busy,
                 ]}
                 accessibilityRole="button"
@@ -110,9 +114,10 @@ export function PointTypeSheet({
           </View>
           <Pressable
             onPress={onCancel}
+            android_ripple={{ color: SB.ripple, foreground: true }}
             style={({ pressed }) => [
               styles.cancel,
-              pressed && { backgroundColor: SB.control },
+              SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.control },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Cancel, no point added"
@@ -155,6 +160,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     minHeight: 72,
     borderRadius: 6,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
@@ -165,6 +171,7 @@ const styles = StyleSheet.create({
   cancel: {
     minHeight: 52,
     borderRadius: 6,
+    overflow: "hidden",
     borderWidth: 2,
     borderColor: SB.controlFill,
     alignItems: "center",

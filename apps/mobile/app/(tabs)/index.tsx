@@ -123,7 +123,7 @@ function RankingRow({
       accessibilityLabel={`${isCurrentUser ? "You, " : ""}${item.displayName}, rank ${index + 1}, ${item.matchesWon} wins and ${item.matchesLost} losses, game differential ${differential}`}
       accessibilityHint={showDetails ? "Hides set record" : "Shows set record"}
       accessibilityState={{ expanded: showDetails }}
-      android_ripple={{ color: colors.primarySoft }}
+      android_ripple={{ color: colors.ripple }}
       onPress={() => setShowDetails((visible) => !visible)}
       style={[styles.row, isCurrentUser && styles.rowCurrentUser]}
     >
@@ -506,7 +506,7 @@ function NeedsYouCard({ items }: { items: string[] }) {
         </Text>
       ))}
       <Button
-        label="Open Matches"
+        label="Go to Matches"
         accessibilityHint="Opens the Matches tab, where you can respond"
         size="compact"
         style={styles.myAction}

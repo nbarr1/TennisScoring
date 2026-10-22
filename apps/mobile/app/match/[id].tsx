@@ -33,6 +33,7 @@ import {
   InlineAlert,
   LoadingState,
   MIN_TOUCH_TARGET,
+  SHOWS_PRESSED_FILL,
   radii,
   spacing,
   typography,
@@ -570,10 +571,11 @@ function ManageRow({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      android_ripple={disabled ? undefined : { color: SB.ripple }}
       style={({ pressed }) => [
         styles.manageOption,
         danger && styles.manageOptionDanger,
-        pressed && { backgroundColor: SB.control },
+        SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.control },
         disabled && { opacity: 0.5 },
       ]}
       accessibilityRole="button"
@@ -1554,8 +1556,9 @@ export default function MatchScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.sbHeaderBtn,
-            pressed && styles.sbHeaderBtnPressed,
+            SHOWS_PRESSED_FILL && pressed && styles.sbHeaderBtnPressed,
           ]}
+          android_ripple={{ color: SB.ripple, borderless: true }}
           onPress={leave}
           accessibilityRole="button"
           accessibilityLabel={LEAVE_LABEL}
@@ -1583,8 +1586,9 @@ export default function MatchScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.sbHeaderBtn,
-              pressed && styles.sbHeaderBtnPressed,
+              SHOWS_PRESSED_FILL && pressed && styles.sbHeaderBtnPressed,
             ]}
+            android_ripple={{ color: SB.ripple, borderless: true }}
             onPress={openManage}
             accessibilityRole="button"
             accessibilityLabel="Match options"
@@ -2011,7 +2015,7 @@ export default function MatchScreen() {
                     </View>
                     {[
                       {
-                        label: "Receiving Points Won",
+                        label: "Receiving points won",
                         p1: statPercent(
                           p1Stats.receivingPointsWon,
                           p1Stats.receivingPointsTotal,
@@ -2022,7 +2026,7 @@ export default function MatchScreen() {
                         ),
                       },
                       {
-                        label: "Break Points Won",
+                        label: "Break points won",
                         p1: `${p1Stats.breakPointsWon}/${p1Stats.breakPointsFaced}`,
                         p2: `${p2Stats.breakPointsWon}/${p2Stats.breakPointsFaced}`,
                       },
@@ -2034,7 +2038,7 @@ export default function MatchScreen() {
                               p2: String(p2Stats.aces),
                             },
                             {
-                              label: "Double Faults",
+                              label: "Double faults",
                               p1: String(p1Stats.doubleFaults),
                               p2: String(p2Stats.doubleFaults),
                             },
@@ -2044,7 +2048,7 @@ export default function MatchScreen() {
                               p2: String(p2Stats.winners),
                             },
                             {
-                              label: "Unforced Errors",
+                              label: "Unforced errors",
                               p1: String(p1Stats.unforcedErrors),
                               p2: String(p2Stats.unforcedErrors),
                             },
@@ -2248,8 +2252,9 @@ export default function MatchScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.manageCloseBtn,
-            pressed && { backgroundColor: SB.control },
+            SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.control },
           ]}
+          android_ripple={managing ? undefined : { color: SB.ripple, foreground: true }}
           onPress={() => setShowManage(false)}
           disabled={managing}
           accessibilityRole="button"
@@ -2328,8 +2333,9 @@ export default function MatchScreen() {
               key={item.id}
               style={({ pressed }) => [
                 styles.linkResultRow,
-                pressed && { backgroundColor: colors.surfaceMuted },
+                SHOWS_PRESSED_FILL && pressed && { backgroundColor: colors.surfaceMuted },
               ]}
+              android_ripple={link.pending ? undefined : { color: colors.ripple }}
               onPress={() => void link.run(item)}
               disabled={link.pending}
               accessibilityRole="button"
@@ -2477,6 +2483,7 @@ const useStyles = makeStyles((colors, scheme) =>
       minHeight: 52,
       marginTop: 8,
       borderRadius: 6,
+      overflow: "hidden",
       borderWidth: 2,
       borderColor: SB.controlFill,
     },

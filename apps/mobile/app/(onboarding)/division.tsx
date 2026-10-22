@@ -194,7 +194,7 @@ export default function DivisionOnboardingScreen() {
             // Control and Voice Access.
             accessibilityLabel="I have an invite code"
             accessibilityHint="Join a division with the code from your division leader"
-            android_ripple={{ color: colors.primarySoft, foreground: true }}
+            android_ripple={{ color: colors.ripple, foreground: true }}
             style={cardStyle}
             onPress={() => choose("join")}
           >
@@ -212,7 +212,7 @@ export default function DivisionOnboardingScreen() {
             accessibilityRole="button"
             accessibilityLabel="Start a new division"
             accessibilityHint="Create a division and become its leader"
-            android_ripple={{ color: colors.primarySoft, foreground: true }}
+            android_ripple={{ color: colors.ripple, foreground: true }}
             style={cardStyle}
             onPress={() => choose("create")}
           >
@@ -250,7 +250,7 @@ export default function DivisionOnboardingScreen() {
                   : "Enter a name for the division.",
               })
             }
-            placeholder="e.g. Lunchtime Tennis League"
+            placeholder="For example, Lunchtime League"
             autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={handleCreate}

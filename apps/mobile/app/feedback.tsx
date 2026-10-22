@@ -20,6 +20,7 @@ import { FormErrorSummary, FormField } from "../components/FormField";
 import { AppIcon, ICON_SIZE } from "../components/AppIcon";
 import {
   Button,
+  CONTENT_MAX_WIDTH,
   Chip,
   InlineAlert,
   describeError,
@@ -201,7 +202,7 @@ export default function FeedbackScreen() {
       ]}
     >
       <StatusBar style="light" />
-      {/* The stack header already says "Send Feedback". */}
+      {/* The stack header already says "Send feedback". */}
       <View style={styles.header}>
         <Text style={styles.subtitle}>
           Tell us what&apos;s working, what&apos;s confusing, or what
@@ -344,7 +345,7 @@ const useStyles = makeStyles((colors) =>
       padding: spacing.xl,
       gap: spacing.lg,
       width: "100%",
-      maxWidth: 720,
+      maxWidth: CONTENT_MAX_WIDTH.form,
       alignSelf: "center",
     },
     header: { gap: spacing.sm },
