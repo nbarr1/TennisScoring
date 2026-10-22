@@ -1,8 +1,9 @@
 import React from "react";
-import { Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { canBeMatchTiebreak } from "@tennis/shared";
 import {
   MIN_TOUCH_TARGET,
+  ToggleSwitch,
   spacing,
   typography,
   useColors,
@@ -61,13 +62,7 @@ export function MatchTiebreakToggle({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Switch
-          value={enabled}
-          onValueChange={setValue}
-          trackColor={{ true: colors.primary, false: colors.disabled }}
-          thumbColor={Platform.OS === "android" ? colors.switchThumbOff : undefined}
-          ios_backgroundColor={colors.disabled}
-        />
+        <ToggleSwitch value={enabled} onValueChange={setValue} />
       </View>
       <Text style={styles.label}>
         Played as a 10-point match tiebreak (enter points)

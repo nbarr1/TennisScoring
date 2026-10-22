@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "../theme/scheme";
+import { spacing } from "../theme/tokens";
 
 type KeyboardSafeViewProps = Omit<KeyboardAvoidingViewProps, "behavior"> & {
   behavior?: KeyboardAvoidingViewProps["behavior"];
@@ -137,7 +138,7 @@ export function KeyboardAwareBottomSheet({
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[
-          { flexGrow: 1, justifyContent: "flex-end", paddingTop: 24 },
+          { flexGrow: 1, justifyContent: "flex-end", paddingTop: spacing.xl },
           contentContainerStyle,
         ]}
         keyboardShouldPersistTaps="handled"

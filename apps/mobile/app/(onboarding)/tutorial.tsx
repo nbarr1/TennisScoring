@@ -19,6 +19,7 @@ import {
   announce,
   hitSlopFor,
   MIN_TOUCH_TARGET,
+  SHOWS_PRESSED_FILL,
   radii,
   spacing,
   typography,
@@ -76,7 +77,7 @@ function DarkButton({
       style={(state) => [
         styles.darkButton,
         filled && styles.darkButtonFilled,
-        state.pressed && styles.darkButtonPressed,
+        SHOWS_PRESSED_FILL && state.pressed && styles.darkButtonPressed,
         typeof style === "function" ? style(state) : style,
       ]}
       {...props}
@@ -288,7 +289,7 @@ export default function TutorialScreen() {
           android_ripple={{ color: "rgba(26,71,42,0.2)", foreground: true }}
           style={({ pressed }) => [
             styles.nextBtn,
-            pressed && styles.darkButtonPressed,
+            SHOWS_PRESSED_FILL && pressed && styles.darkButtonPressed,
           ]}
           onPress={next}
         >

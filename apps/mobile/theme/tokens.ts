@@ -293,6 +293,13 @@ export const elevations = {
  */
 export const MIN_TOUCH_TARGET: number = Platform.OS === "android" ? 48 : 44;
 
+/**
+ * Press feedback follows the platform: Android draws an `android_ripple`, and
+ * iOS darkens the control. Gate a pressed fill with this so Android does not
+ * show both: `SHOWS_PRESSED_FILL && pressed && styles.rowPressed`.
+ */
+export const SHOWS_PRESSED_FILL: boolean = Platform.OS !== "android";
+
 export const touchTargets = {
   /** 44: the cross-platform floor. Prefer `platform` for new controls. */
   minimum: 44,

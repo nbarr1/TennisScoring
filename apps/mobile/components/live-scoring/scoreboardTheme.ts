@@ -37,6 +37,10 @@ export const SB = {
   warn: "#FF9F1C",
   /** Positive text on black (confirmed green, 12:1). */
   ok: "#3DDC84",
+  /** Android ripple on the black surfaces. */
+  ripple: "rgba(255,255,255,0.16)",
+  /** Android ripple on a yellow fill. */
+  rippleOnYellow: "rgba(0,0,0,0.16)",
 } as const;
 
 /** Band colours per match moment; text on each is black, at least 7:1. */

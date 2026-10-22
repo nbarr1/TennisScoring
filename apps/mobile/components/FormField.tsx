@@ -163,7 +163,7 @@ export function FormErrorSummary({ errors }: { errors: string[] }) {
   if (!errors.length) return null;
   return (
     <View accessibilityRole="alert" style={styles.summary}>
-      <Text style={styles.summaryTitle}>Please fix the following:</Text>
+      <Text style={styles.summaryTitle}>Fix these first:</Text>
       {errors.map((error) => (
         <Text key={error} style={styles.summaryText}>
           • {error}
@@ -217,7 +217,7 @@ const useStyles = makeStyles((colors) =>
       borderColor: colors.destructive,
       borderRadius: radii.md,
       borderWidth: 1,
-      gap: 3,
+      gap: spacing.xs,
       padding: spacing.md,
     },
     summaryTitle: {

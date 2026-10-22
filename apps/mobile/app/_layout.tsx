@@ -311,21 +311,22 @@ export default function RootLayout() {
                 headerShown: false,
                 headerStyle: { backgroundColor: colors.brand },
                 headerTintColor: colors.onBrand,
-                headerTitleStyle: { color: colors.onBrand },
+                // The same weight as the tab headers these screens are pushed from.
+                headerTitleStyle: { color: colors.onBrand, fontWeight: '700' },
                 contentStyle: { backgroundColor: colors.canvas },
               }}
             >
               <Stack.Screen name="(auth)" />
               <Stack.Screen name="(onboarding)" />
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Send Feedback' }} />
-              <Stack.Screen name="round-robin-scheduler" options={{ headerShown: true, title: 'Round-Robin Scheduler' }} />
-              <Stack.Screen name="privacy-policy" options={{ headerShown: true, title: 'Privacy Policy' }} />
+              <Stack.Screen name="feedback" options={{ headerShown: true, title: 'Send feedback' }} />
+              <Stack.Screen name="round-robin-scheduler" options={{ headerShown: true, title: 'Round-robin scheduler' }} />
+              <Stack.Screen name="privacy-policy" options={{ headerShown: true, title: 'Privacy policy' }} />
               <Stack.Screen
                 name="conversation/[channelId]"
                 options={{ headerShown: true, title: '', headerBackTitle: 'Messages' }}
               />
-              <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live Match' }} />
+              <Stack.Screen name="match/[id]" options={{ presentation: 'modal', headerShown: true, title: 'Live match' }} />
             </Stack>
             <AuthGate />
           </View>

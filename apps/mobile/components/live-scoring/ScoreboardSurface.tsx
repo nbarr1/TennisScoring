@@ -16,7 +16,7 @@ import {
   type Player,
 } from "@tennis/shared";
 import { AppIcon } from "../AppIcon";
-import { useReduceMotion } from "../../theme";
+import { SHOWS_PRESSED_FILL, useReduceMotion } from "../../theme";
 import { BAND_TONES, SB, font, shortName } from "./scoreboardTheme";
 import { serverFirstCall, spokenPoint } from "./scoreSpeech";
 
@@ -431,11 +431,15 @@ function ScoreboardSurfaceView({
         key={player}
         onPress={() => onPoint(player)}
         disabled={scoring}
+        android_ripple={{ color: SB.ripple, foreground: true }}
         style={({ pressed }) => [
           styles.row,
           {
             minHeight: sizes.rowMin,
-            backgroundColor: pressed || recording ? SB.pressedRow : SB.row,
+            backgroundColor:
+              (SHOWS_PRESSED_FILL && pressed) || recording
+                ? SB.pressedRow
+                : SB.row,
           },
         ]}
         accessibilityRole="button"
@@ -516,6 +520,7 @@ function ScoreboardSurfaceView({
             onLongPress={onUndo}
             delayLongPress={UNDO_HOLD_MS}
             disabled={undoDisabled}
+            android_ripple={undoDisabled ? undefined : { color: SB.ripple, foreground: true }}
             style={[styles.undo, undoDisabled && styles.disabled]}
             accessibilityRole="button"
             accessibilityLabel={canUndo ? "Undo last point" : "Nothing to undo"}
@@ -560,9 +565,10 @@ function ScoreboardSurfaceView({
           </Pressable>
           <Pressable
             onPress={onSwap}
+            android_ripple={{ color: SB.ripple, foreground: true }}
             style={({ pressed }) => [
               styles.swap,
-              pressed && { backgroundColor: SB.controlFill },
+              SHOWS_PRESSED_FILL && pressed && { backgroundColor: SB.controlFill },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Swap ends"
@@ -689,6 +695,7 @@ const styles = StyleSheet.create({
   swap: {
     width: 76,
     borderRadius: 6,
+    overflow: "hidden",
     backgroundColor: SB.control,
     alignItems: "center",
     justifyContent: "center",
