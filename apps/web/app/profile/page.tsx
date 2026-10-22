@@ -14,6 +14,7 @@ import {
   updateUserProfile,
   useDivisionOptions,
   deleteAccountCallable,
+  ensureOwnUserDocument,
   unblockUser,
   profileDoc,
   signOutReleasingPushToken,
@@ -107,12 +108,35 @@ function writableProfileUpdates(updates: Partial<User>, user: User): Partial<Use
   return result as Partial<User>;
 }
 
+/**
+ * Says which of the separate reasons kept the profile from loading, with the
+ * error code, so a player can report it: no signed-in Firebase user in this
+ * browser (the session cookie can outlive it), a refused or failed read of
+ * users/{uid}, or a failed attempt to create a missing one.
+ */
+function profileLoadMessage(firebaseUser: unknown, error: unknown): string {
+  if (!firebaseUser) {
+    return "This browser isn't signed in to your account. Sign out and sign back in.";
+  }
+  if (!error) {
+    return "Check your connection and try again. If this keeps happening, sign out and sign back in.";
+  }
+  const code =
+    typeof error === "object" && error !== null && "code" in error ? String((error as { code: unknown }).code) : "";
+  const detail = describeError(error, "Check your connection and try again.");
+  return code ? `${detail} (Error code: ${code}.)` : detail;
+}
+
 export default function ProfilePage(): React.JSX.Element {
   const router = useRouter();
   const announce = useAnnounce();
   const { firebaseUser, loading: authLoading } = useAuthUser();
   const [reloadKey, setReloadKey] = useState(0);
-  const { user, loading: userLoading } = usePrivateUser(firebaseUser?.uid ?? null, reloadKey);
+  const { user, loading: userLoading, error: userError } = usePrivateUser(firebaseUser?.uid ?? null, reloadKey);
+  // A signed-in account whose users document is missing gets one created; see
+  // ensureOwnUserDocument(). `setupError` is why that failed, if it did.
+  const [setup, setSetup] = useState<"idle" | "checking" | "done">("idle");
+  const [setupError, setSetupError] = useState<unknown>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -427,7 +451,29 @@ export default function ProfilePage(): React.JSX.Element {
     router.replace("/login");
   }
 
-  if (authLoading || userLoading) {
+  useEffect(() => {
+    setSetup("idle");
+    setSetupError(null);
+  }, [reloadKey, firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (authLoading || userLoading || user || userError || !firebaseUser || setup !== "idle") return;
+    let cancelled = false;
+    setSetup("checking");
+    ensureOwnUserDocument(firebaseUser)
+      .catch((err: unknown) => {
+        console.error("Couldn't set up the users document:", err);
+        if (!cancelled) setSetupError(err);
+      })
+      .finally(() => {
+        if (!cancelled) setSetup("done");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, userLoading, user, userError, firebaseUser, setup]);
+
+  if (authLoading || userLoading || (!user && !userError && setup === "checking")) {
     return (
       <div style={styles.page}>
         <AppNav active="profile" />
@@ -447,7 +493,7 @@ export default function ProfilePage(): React.JSX.Element {
           <h1 style={styles.pageTitle}>Profile</h1>
           <ErrorState
             title="Couldn't load your profile."
-            message="Check your connection and try again. If this keeps happening, sign out and sign back in."
+            message={profileLoadMessage(firebaseUser, userError ?? setupError)}
             onRetry={() => setReloadKey((k) => k + 1)}
           />
         </main>
