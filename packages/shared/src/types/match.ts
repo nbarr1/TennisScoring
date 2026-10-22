@@ -1,3 +1,5 @@
+import type { RecordedSetInput } from '../scoring/recordedScore';
+
 export type TennisPoint = '0' | '15' | '30' | '40' | 'Ad';
 export type MatchFormat = 'best-of-3' | 'best-of-5' | 'pro-set';
 // pending_report: game over, waiting for a player to submit the report
@@ -152,6 +154,36 @@ export interface ReportSubmission {
   disputedBy?: string;          // userId of the player who disputed
   disputedAt?: number;
   leaderNotifiedAt?: number;    // set when escalated to division leader
+  /**
+   * When the opposing side's window to confirm or dispute closes, in Unix
+   * milliseconds. Only Cloud Functions write it, from the server clock, when
+   * the report is submitted (`submittedAt` is the submitter's own clock, so it
+   * cannot decide the window). After it passes the report is confirmed
+   * automatically, and any change goes through an appeal.
+   */
+  confirmationDeadline?: number;
+  /** True when the report was confirmed because the window closed unanswered. */
+  autoConfirmed?: boolean;
+}
+
+export type MatchAppealStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * A player's request that a division leader or admin review a confirmed
+ * result. A match carries at most one appeal; only Cloud Functions write it.
+ */
+export interface MatchAppeal {
+  requestedBy: string;          // userId of the participant who appealed
+  requestedAt: number;
+  reason: string;
+  /** The score the player says is right, from player 1's side. Optional. */
+  proposedSets?: RecordedSetInput[];
+  status: MatchAppealStatus;
+  decidedBy?: string;           // userId of the leader or admin who decided
+  decidedAt?: number;
+  decisionNote?: string;
+  /** The score saved when the appeal was approved. */
+  appliedSets?: RecordedSetInput[];
 }
 
 export interface PlayerMatchStats {
@@ -221,6 +253,7 @@ export interface Match {
   currentSetStartedAt?: number;
   matchDurationMs?: number;
   reportSubmission?: ReportSubmission;
+  appeal?: MatchAppeal;
   winner?: Player;
   reportUrl?: string;
   tipsEnabled: boolean;

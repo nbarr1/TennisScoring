@@ -113,6 +113,14 @@ export const reportsAwaitingResolutionQuery = (divisionId: string) =>
     where('status', 'in', ['disputed', 'pending_report']),
   );
 
+/** Matches with an appeal waiting for a leader's or admin's decision. */
+export const appealsAwaitingDecisionQuery = (divisionId: string) =>
+  query(
+    matchesCol(),
+    where('divisionId', '==', divisionId),
+    where('appeal.status', '==', 'pending'),
+  );
+
 export const completedDivisionMatchesQuery = (divisionId: string, ...extra: QueryConstraint[]) =>
   query(matchesCol(), where('divisionId', '==', divisionId), where('status', '==', 'completed'), ...extra);
 

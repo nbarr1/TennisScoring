@@ -36,6 +36,7 @@ import type {
 
 import { buildDoublesMatchFields, requestsDoubles, validateDoublesCompetition } from './doublesSides';
 import { sendPushToUsers } from '../notifications/push';
+import { stampReportDeadline } from './appealFunctions';
 import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
 if (!getApps().length) initializeApp();
@@ -271,6 +272,19 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
       }
     } catch (error) {
       functions.logger.error('onMatchUpdate notification failed', {
+        matchId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // A newly submitted report starts the opposing side's 48-hour window. Its
+    // own write comes back through this trigger with the deadline set, so it
+    // stamps once. A failure is logged: the scheduled job stamps any report it
+    // finds without a deadline.
+    try {
+      await stampReportDeadline(db, matchId, after);
+    } catch (error) {
+      functions.logger.error('onMatchUpdate could not start the report window', {
         matchId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1220,7 +1234,7 @@ function matchLinkForId(matchId: string): string {
   return `${appBaseUrl().replace(/\/$/, '')}/matches/${encodeURIComponent(matchId)}`;
 }
 
-function buildManualCompletedScore(sets: RecordedSetInput[]): {
+export function buildManualCompletedScore(sets: RecordedSetInput[]): {
   score: Match['liveScore'];
   winner: Player;
 } {
@@ -1231,7 +1245,7 @@ function buildManualCompletedScore(sets: RecordedSetInput[]): {
   return buildRecordedMatchScore(sets);
 }
 
-function sanitizeRecordedSets(sets: unknown): RecordedSetInput[] {
+export function sanitizeRecordedSets(sets: unknown): RecordedSetInput[] {
   if (!Array.isArray(sets)) return [];
   return sets.map((set) => ({
     p1: Number(set?.p1),
@@ -1748,7 +1762,7 @@ function isResolvableReport(match: Match): boolean {
   return match.status === 'pending_report' && !!match.reportSubmission;
 }
 
-async function checkIsLeader(
+export async function checkIsLeader(
   uid: string,
   divisionId: string,
 ): Promise<boolean> {

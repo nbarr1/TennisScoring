@@ -42,6 +42,8 @@ export type ToolsPanelProps = {
   dismissReport: (report: MessageReport) => Promise<void>;
   // Results to resolve
   reportsAwaitingResolution: Match[];
+  /** Confirmed results a player appealed, which this reviewer may decide. */
+  appealsAwaitingDecision: Match[];
   // Ranking repair and exports
   repairRankings: AsyncAction<[], string>;
   repairMessage: string;
@@ -100,6 +102,7 @@ export function ToolsPanel({
   setRemoveReportTarget,
   dismissReport,
   reportsAwaitingResolution,
+  appealsAwaitingDecision,
   repairRankings,
   repairMessage,
   setRepairMessage,
@@ -165,10 +168,11 @@ export function ToolsPanel({
             Results to resolve
           </h2>
           <p style={styles.toolDesc}>
-            Disputed scores, and reports the opposing side hasn&rsquo;t answered. Open one to
-            confirm the reported score or set the correct one.
+            Disputed scores, reports the opposing side hasn&rsquo;t answered, and confirmed results a
+            player appealed. Open one to confirm the reported score, set the correct one, or decide
+            the appeal.
           </p>
-          {reportsAwaitingResolution.length === 0 ? (
+          {reportsAwaitingResolution.length === 0 && appealsAwaitingDecision.length === 0 ? (
             <p style={styles.toolDescStrong}>Nothing waiting.</p>
           ) : (
             <ul style={styles.resolveList}>
@@ -178,6 +182,14 @@ export function ToolsPanel({
                     {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
                   </Link>
                   <StatusBadge status={m.status} />
+                </li>
+              ))}
+              {appealsAwaitingDecision.map((m) => (
+                <li key={`appeal-${m.id}`} style={styles.resolveItem}>
+                  <Link href={`/matches/${encodeURIComponent(m.id)}`} className="tl-link" style={styles.resolveLink}>
+                    {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
+                  </Link>
+                  <span style={styles.toolDescStrong}>Appeal</span>
                 </li>
               ))}
             </ul>

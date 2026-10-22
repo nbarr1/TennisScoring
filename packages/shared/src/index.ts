@@ -10,6 +10,7 @@ export * from "./types/export";
 
 // Match side accessors (singles and doubles)
 export * from "./match/matchSides";
+export * from "./match/reportWindow";
 
 // Doubles team identity
 export * from "./doubles/doublesTeam";

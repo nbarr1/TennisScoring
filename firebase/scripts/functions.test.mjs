@@ -523,3 +523,232 @@ describe('division roster callables', () => {
     });
   });
 });
+
+describe('report confirmation timeout', () => {
+  const HOUR = 60 * 60 * 1000;
+  const WINDOW = 48 * HOUR;
+  const pendingWithDeadline = (deadline) =>
+    match('p1', 'p2', {
+      reportSubmission: {
+        submittedBy: 'p1',
+        submittedAt: 2,
+        status: 'pending_confirmation',
+        ...(deadline !== undefined && { confirmationDeadline: deadline }),
+      },
+    });
+  const read = async (id) => (await db.collection('matches').doc(id).get()).data();
+  const unsubmittedMatch = () => {
+    const { reportSubmission, ...rest } = match('p1', 'p2');
+    return rest;
+  };
+  const runJob = () => functions.autoConfirmExpiredReports.run({ scheduleTime: new Date().toISOString() });
+
+  it('starts a 48-hour window from the server clock when a report is submitted', async () => {
+    await seedPlayers(['p1', 'p2']);
+    const unsubmitted = unsubmittedMatch();
+    // A backdated submittedAt must not shorten the window.
+    const submitted = match('p1', 'p2', {
+      reportSubmission: { submittedBy: 'p1', submittedAt: 1, status: 'pending_confirmation' },
+    });
+    await db.collection('matches').doc('m1').set(submitted);
+    const before = Date.now();
+    await functions.onMatchUpdate.run(writeEvent('m1', unsubmitted, submitted));
+    const deadline = (await read('m1')).reportSubmission.confirmationDeadline;
+    assert.ok(deadline >= before + WINDOW, 'the deadline is 48 hours from now');
+    assert.ok(deadline <= Date.now() + WINDOW);
+  });
+
+  it('confirms a report nobody answered within 48 hours, and it counts in the standings', async () => {
+    await seedPlayers(['p1', 'p2']);
+    const expired = pendingWithDeadline(Date.now() - 1);
+    await db.collection('matches').doc('m1').set(expired);
+    await runJob();
+
+    const confirmedMatch = await read('m1');
+    assert.equal(confirmedMatch.status, 'completed');
+    assert.equal(confirmedMatch.reportSubmission.status, 'confirmed');
+    assert.equal(confirmedMatch.reportSubmission.autoConfirmed, true);
+    assert.equal(confirmedMatch.reportSubmission.confirmedBy, undefined, 'nobody is named as confirming it');
+
+    await functions.onMatchUpdate.run(writeEvent('m1', expired, confirmedMatch));
+    const rankings = await singlesRankings();
+    assert.equal(rankings.p1?.matchesWon, 1);
+    assert.equal(rankings.p2?.matchesLost, 1);
+  });
+
+  it('leaves a report alone while its window is open', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await db.collection('matches').doc('m1').set(pendingWithDeadline(Date.now() + HOUR));
+    await runJob();
+    const stillPending = await read('m1');
+    assert.equal(stillPending.status, 'pending_report');
+    assert.equal(stillPending.reportSubmission.status, 'pending_confirmation');
+  });
+
+  it('gives a report without a deadline a full window instead of confirming it', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await db.collection('matches').doc('m1').set(pendingWithDeadline(undefined));
+    const before = Date.now();
+    await runJob();
+    const stamped = await read('m1');
+    assert.equal(stamped.status, 'pending_report');
+    assert.ok(stamped.reportSubmission.confirmationDeadline >= before + WINDOW);
+  });
+
+  it('never confirms a disputed report or one awaiting submission', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await db.collection('matches').doc('disputed').set(
+      match('p1', 'p2', {
+        status: 'disputed',
+        reportSubmission: {
+          submittedBy: 'p1',
+          submittedAt: 2,
+          status: 'disputed',
+          confirmationDeadline: Date.now() - 1,
+          disputedBy: 'p2',
+          disputedAt: 3,
+        },
+      }),
+    );
+    await db.collection('matches').doc('unsubmitted').set(unsubmittedMatch());
+    await runJob();
+    assert.equal((await read('disputed')).status, 'disputed');
+    assert.equal((await read('unsubmitted')).status, 'pending_report');
+  });
+});
+
+describe('result appeals', () => {
+  const auth = (uid) => ({ uid, token: { email: `${uid}@example.com`, email_verified: true } });
+  const call = (fn, uid, data) => functions[fn].run({ auth: auth(uid), data, rawRequest: {} });
+  const read = async () => (await db.collection('matches').doc('m1').get()).data();
+
+  async function seedConfirmed(overrides = {}) {
+    await seedPlayers(['p1', 'p2', 'p3']);
+    await db.collection('users').doc('admin').set({
+      id: 'admin',
+      displayName: 'admin',
+      email: 'admin@example.com',
+      role: 'admin',
+      divisionId: 'elsewhere',
+    });
+    await db.collection('matches').doc('m1').set({ ...confirmed(match('p1', 'p2')), ...overrides });
+  }
+
+  const pendingAppeal = (extra = {}) => ({
+    appeal: { requestedBy: 'p2', requestedAt: 1, reason: 'The second set was 4-6', status: 'pending', ...extra },
+  });
+
+  describe('requesting', () => {
+    it('lets a player appeal a confirmed result once', async () => {
+      await seedConfirmed();
+      await call('requestMatchAppeal', 'p2', { matchId: 'm1', reason: ' Wrong score ', sets: [{ p1: 6, p2: 2 }, { p1: 4, p2: 6 }, { p1: 10, p2: 8, matchTiebreak: true }] });
+      const { appeal, liveScore } = await read();
+      assert.equal(appeal.status, 'pending');
+      assert.equal(appeal.requestedBy, 'p2');
+      assert.equal(appeal.reason, 'Wrong score');
+      assert.equal(appeal.proposedSets.length, 3);
+      assert.deepEqual(liveScore, finalScore, 'the result is unchanged until a reviewer approves');
+
+      await assert.rejects(call('requestMatchAppeal', 'p1', { matchId: 'm1', reason: 'Me too' }), {
+        code: 'already-exists',
+      });
+    });
+
+    it('refuses anyone who did not play in the match', async () => {
+      await seedConfirmed();
+      await assert.rejects(call('requestMatchAppeal', 'p3', { matchId: 'm1', reason: 'x' }), {
+        code: 'permission-denied',
+      });
+    });
+
+    it('refuses a result that is not confirmed yet', async () => {
+      await seedConfirmed({ status: 'pending_report' });
+      await assert.rejects(call('requestMatchAppeal', 'p2', { matchId: 'm1', reason: 'x' }), {
+        code: 'failed-precondition',
+      });
+    });
+
+    it('refuses an appeal without a reason or with an impossible score', async () => {
+      await seedConfirmed();
+      await assert.rejects(call('requestMatchAppeal', 'p2', { matchId: 'm1', reason: '  ' }), {
+        code: 'invalid-argument',
+      });
+      await assert.rejects(call('requestMatchAppeal', 'p2', { matchId: 'm1', reason: 'x', sets: [{ p1: 6, p2: 6 }] }), {
+        code: 'invalid-argument',
+      });
+      assert.equal((await read()).appeal, undefined);
+    });
+  });
+
+  describe('deciding (the admin gate)', () => {
+    it('refuses a player who is neither a leader nor an admin', async () => {
+      await seedConfirmed(pendingAppeal());
+      await assert.rejects(call('decideMatchAppeal', 'p3', { matchId: 'm1', decision: 'approve', sets: [{ p1: 2, p2: 6 }, { p1: 2, p2: 6 }] }), {
+        code: 'permission-denied',
+      });
+      await assert.rejects(call('decideMatchAppeal', 'p2', { matchId: 'm1', decision: 'approve' }), {
+        code: 'permission-denied',
+      });
+      assert.equal((await read()).appeal.status, 'pending');
+    });
+
+    it('refuses a leader who played in the match', async () => {
+      await seedConfirmed({
+        ...confirmed(match('leader', 'p2')),
+        ...pendingAppeal(),
+      });
+      await assert.rejects(call('decideMatchAppeal', 'leader', { matchId: 'm1', decision: 'reject' }), {
+        code: 'permission-denied',
+      });
+      assert.equal((await read()).appeal.status, 'pending');
+    });
+
+    it('lets the division leader approve with the proposed score', async () => {
+      const proposedSets = [{ p1: 2, p2: 6 }, { p1: 3, p2: 6 }];
+      await seedConfirmed({ ...pendingAppeal({ proposedSets }), reportUrl: 'https://example.com/old.pdf' });
+      await call('decideMatchAppeal', 'leader', { matchId: 'm1', decision: 'approve', note: 'Checked with both players' });
+      const decided = await read();
+      assert.equal(decided.status, 'completed');
+      assert.equal(decided.winner, 'player2');
+      assert.equal(decided.liveScore.player2SetsWon, 2);
+      assert.equal(decided.appeal.status, 'approved');
+      assert.equal(decided.appeal.decidedBy, 'leader');
+      assert.equal(decided.appeal.decisionNote, 'Checked with both players');
+      assert.deepEqual(decided.appeal.appliedSets, proposedSets);
+      assert.equal(decided.reportUrl, undefined, 'the old PDF is dropped so a new one is built');
+    });
+
+    it('lets an admin from outside the division approve with their own score', async () => {
+      await seedConfirmed(pendingAppeal({ proposedSets: [{ p1: 2, p2: 6 }, { p1: 3, p2: 6 }] }));
+      await call('decideMatchAppeal', 'admin', { matchId: 'm1', decision: 'approve', sets: [{ p1: 6, p2: 2 }, { p1: 4, p2: 6 }, { p1: 6, p2: 4 }] });
+      const decided = await read();
+      assert.equal(decided.winner, 'player1');
+      assert.equal(decided.liveScore.sets.length, 3);
+      assert.equal(decided.appeal.status, 'approved');
+    });
+
+    it('requires a score to approve when the player proposed none', async () => {
+      await seedConfirmed(pendingAppeal());
+      await assert.rejects(call('decideMatchAppeal', 'leader', { matchId: 'm1', decision: 'approve' }), {
+        code: 'invalid-argument',
+      });
+      assert.equal((await read()).appeal.status, 'pending');
+    });
+
+    it('leaves the result as it was when the appeal is rejected, and closes the appeal', async () => {
+      await seedConfirmed(pendingAppeal({ proposedSets: [{ p1: 2, p2: 6 }, { p1: 3, p2: 6 }] }));
+      await call('decideMatchAppeal', 'leader', { matchId: 'm1', decision: 'reject' });
+      const decided = await read();
+      assert.equal(decided.appeal.status, 'rejected');
+      assert.equal(decided.winner, 'player1');
+      assert.deepEqual(decided.liveScore, finalScore);
+
+      await assert.rejects(call('decideMatchAppeal', 'leader', { matchId: 'm1', decision: 'approve' }), {
+        code: 'failed-precondition',
+      });
+      await assert.rejects(call('requestMatchAppeal', 'p2', { matchId: 'm1', reason: 'Again' }), {
+        code: 'already-exists',
+      });
+    });
+  });
+});

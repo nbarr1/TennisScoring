@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- Match reports time out after 48 hours. When a report is submitted, the opposing side has 48 hours to confirm or dispute it; the match page on web and mobile shows the deadline. A scheduled function, `autoConfirmExpiredReports`, runs every 15 minutes and confirms any report whose window has passed, which updates the standings and builds the PDF as a player's confirmation does; both sides are notified. The deadline is stamped by `onMatchUpdate` from the server clock onto `reportSubmission.confirmationDeadline`, and a pending report found without one (including reports submitted before this release) gets a full 48 hours from when the job first sees it.
+- Players can appeal a confirmed result. From the match page, either player can ask a division leader or admin to review it, with a reason and an optional corrected score (`requestMatchAppeal`). Leaders and admins see waiting appeals in the admin results list and decide them on the match page (`decideMatchAppeal`): approving saves a corrected score and rebuilds the standings and the PDF, rejecting leaves the result as it is. Each match can be appealed once, and a leader or admin who played in the match cannot decide its appeal.
+
+### Security
+- Once a report's 48-hour window has closed, the Firestore rules stop participants from disputing, editing, undoing, or resubmitting it; the opposing side can still confirm it. Participants cannot write `confirmationDeadline` or `appeal`. **Deploy the rules through the Deploy Firebase rules workflow.** They only restrict, and a report carries no deadline until the functions are deployed, so the rules can go out before or after the functions and the client releases.
+
 ## [1.2.0] — 2026-10-22
 
 ### Security
