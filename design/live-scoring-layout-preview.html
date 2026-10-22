@@ -4,25 +4,69 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Tennis Scoring · Mobile Live Scoring Layout Preview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <style>
+      /*
+       * Scoreboard tokens mirror SB and BAND_TONES in
+       * apps/mobile/components/live-scoring/scoreboardTheme.ts. The scoreboard
+       * is dark in both device schemes; only the next-step panels under a
+       * finished match follow the device (the --panel-* tokens).
+       */
       :root {
-        --court: #1a472a;
-        --court-light: #2d6a4f;
-        --court-dark: #1b4332;
-        --accent: #ffdc60;
-        --success: #27ae60;
-        --danger: #ff6b6b;
-        --text: #ffffff;
+        --sb-bg: #000000;
+        --sb-row: #0a0a0a;
+        --sb-winner-row: #141208;
+        --sb-panel: #141414;
+        --sb-control: #1c1c1c;
+        --sb-control-fill: #3a3a3a;
+        --sb-line: #262626;
+        --sb-text: #ffffff;
+        --sb-muted: #b3b3b3;
+        --sb-lost: #a6a6a6;
+        --sb-yellow: #ffd60a;
+        --sb-on-yellow: #000000;
+        --sb-stripe-p1: #3d8bff;
+        --sb-stripe-p2: #ff9f1c;
+        --sb-ball-off: #333333;
+        --sb-won-set: #2a2a2a;
+        --sb-lost-set: #141414;
+        --sb-card: #0f0f0f;
+        --sb-scrim: rgba(0, 0, 0, 0.7);
+        --sb-danger: #ff8a80;
+
+        /* Clubhouse light palette (theme/tokens.ts lightColors). */
+        --panel-surface: #ffffff;
+        --panel-primary: #1a472a;
+        --panel-on-primary: #ffffff;
+        --panel-text: #1a1a1a;
+        --panel-muted: #666b68;
+        --panel-border: transparent;
+
+        /* Page chrome around the phone. */
+        --page-accent: #ffd60a;
         --muted: rgba(255, 255, 255, 0.72);
-        --glass: rgba(255, 255, 255, 0.1);
         --phone-width: 390px;
-        --content-pad: 24px;
-        --button-pad: 28px;
-        --radius: 16px;
+        --sb-font: "Barlow Condensed", "Arial Narrow", ui-sans-serif, system-ui, sans-serif;
+
         color-scheme: dark;
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
           "Segoe UI", sans-serif;
+      }
+
+      /* theme/tokens.ts darkColors, used when the device is in dark mode. */
+      .phone-screen[data-scheme="dark"] {
+        --panel-surface: #1a211d;
+        --panel-primary: #86cf98;
+        --panel-on-primary: #0b2414;
+        --panel-text: #e8ece9;
+        --panel-muted: #a8b0ab;
+        --panel-border: #78827c;
       }
 
       * {
@@ -33,9 +77,9 @@
         margin: 0;
         min-height: 100vh;
         background:
-          radial-gradient(circle at top left, rgba(255, 220, 96, 0.18), transparent 32rem),
-          linear-gradient(135deg, #0d2416 0%, #102f1d 48%, #08140d 100%);
-        color: var(--text);
+          radial-gradient(circle at top left, rgba(255, 214, 10, 0.14), transparent 32rem),
+          linear-gradient(135deg, #0d0d0d 0%, #141414 48%, #050505 100%);
+        color: #fff;
       }
 
       main {
@@ -82,7 +126,7 @@
         border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.08);
-        color: var(--accent);
+        color: var(--page-accent);
         font-weight: 800;
         font-size: 0.78rem;
         letter-spacing: 0.08em;
@@ -100,22 +144,30 @@
         width: min(var(--phone-width), 100%);
         padding: 12px;
         border-radius: 42px;
-        background: #050807;
+        background: #1a1a1a;
         box-shadow:
-          0 28px 70px rgba(0, 0, 0, 0.42),
-          inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+          0 28px 70px rgba(0, 0, 0, 0.6),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.1);
       }
 
       .phone-screen {
+        position: relative;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
-        min-height: 780px;
+        height: 844px;
         border-radius: 32px;
-        background: var(--court);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        background: var(--sb-bg);
+        color: var(--sb-text);
+      }
+
+      .body.scrolls {
+        overflow-y: auto;
       }
 
       .status-bar {
         display: flex;
+        flex: 0 0 auto;
         justify-content: space-between;
         padding: 14px 22px 6px;
         font-size: 0.78rem;
@@ -123,305 +175,812 @@
         color: rgba(255, 255, 255, 0.9);
       }
 
-      .screen-content {
-        padding: var(--content-pad);
-        padding-bottom: 48px;
+      .sb {
+        font-family: var(--sb-font);
       }
 
-      .score-board {
-        text-align: center;
-        padding: 32px 0;
-      }
-
-      .set-row,
-      .player-row,
-      .tips-row,
-      .stat-toggle-row {
+      /* ── Top bar (sbHeader in match/[id].tsx) ── */
+      .sb-header {
         display: flex;
+        flex: 0 0 auto;
         align-items: center;
+        min-height: 52px;
+        padding: 0 4px;
+        background: var(--sb-bg);
       }
 
-      .set-row {
-        justify-content: center;
-        gap: 12px;
-        margin-bottom: 8px;
-      }
-
-      .sets-label {
-        color: rgba(255, 255, 255, 0.7);
-        font-size: 16px;
-      }
-
-      .sets-score {
-        color: #fff;
-        font-size: 24px;
-        font-weight: 800;
-      }
-
-      .score-main {
-        margin-bottom: 8px;
-        color: #fff;
-        font-size: 40px;
-        font-weight: 900;
-        letter-spacing: 2px;
-      }
-
-      .game-score {
-        margin-bottom: 16px;
-        color: #a8d5a2;
-        font-size: 28px;
-        font-weight: 700;
-      }
-
-      .server-label {
-        color: var(--accent);
-        font-size: 14px;
-        font-weight: 800;
-      }
-
-      .service-side {
-        margin-top: 4px;
-        color: rgba(255, 255, 255, 0.6);
-        font-size: 12px;
-      }
-
-      .player-row {
-        justify-content: center;
-        gap: 8px;
-        margin-bottom: 20px;
-        color: rgba(255, 255, 255, 0.86);
-        font-size: 15px;
-        font-weight: 700;
-      }
-
-      .vs {
-        color: rgba(255, 255, 255, 0.4);
-        font-size: 13px;
-      }
-
-      .manage-btn,
-      .live-badge,
-      .undo-btn,
-      .link-btn {
-        display: block;
-        width: fit-content;
-        margin-inline: auto;
-        border: 0;
-        font: inherit;
-      }
-
-      .manage-btn {
-        margin-bottom: 20px;
-        padding: 7px 16px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.78);
-        font-size: 13px;
-        font-weight: 800;
-      }
-
-      .live-badge {
-        margin-bottom: 20px;
-        padding: 6px 14px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.15);
-        color: var(--danger);
-        font-size: 13px;
-        font-weight: 900;
-      }
-
-      .score-buttons {
+      .sb-header-btn {
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-
-      .point-btn {
-        min-height: 108px;
-        padding: var(--button-pad) 12px;
+        place-items: center;
+        width: 48px;
+        height: 48px;
         border: 0;
-        border-radius: var(--radius);
-        color: #fff;
-        font: inherit;
-        font-size: 16px;
-        font-weight: 800;
-        line-height: 1.3;
-        text-align: center;
-        cursor: pointer;
-        transition: transform 150ms ease, filter 150ms ease;
-      }
-
-      .point-btn:hover {
-        transform: translateY(-2px);
-        filter: brightness(1.08);
-      }
-
-      .point-btn:active {
-        transform: translateY(0);
-      }
-
-      .point-btn.p1 {
-        background: var(--court-light);
-      }
-
-      .point-btn.p2 {
-        background: var(--court-dark);
-      }
-
-      .undo-btn {
-        margin-bottom: 4px;
-        padding: 10px 14px;
+        border-radius: 24px;
         background: transparent;
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 14px;
-        font-weight: 800;
+        color: var(--sb-text);
+        font-size: 22px;
         cursor: pointer;
       }
 
-      .tips-row,
-      .server-select,
-      .link-section,
-      .feedback-card {
-        border-radius: 14px;
-        background: var(--glass);
+      .sb-header-btn:active {
+        background: var(--sb-control);
       }
 
-      .tips-row {
-        justify-content: space-between;
-        padding: 12px 16px;
+      .sb-header-btn.placeholder {
+        visibility: hidden;
       }
 
-      .server-select {
-        display: none;
-        margin-bottom: 20px;
-        padding: 20px;
-        text-align: center;
+      .sb-header-title {
+        flex: 1;
+        overflow: hidden;
+        font-weight: 700;
+        font-size: 19px;
+        letter-spacing: 1.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
-      .server-select.active {
-        display: block;
+      .sb-header-clock {
+        margin-right: 4px;
+        color: var(--sb-muted);
+        font-weight: 600;
+        font-size: 19px;
+        letter-spacing: 1px;
+        font-variant-numeric: tabular-nums;
       }
 
-      .server-select h2 {
-        margin-bottom: 14px;
-        font-size: 17px;
+      .body {
+        position: relative;
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
       }
 
-      .stat-toggle-row {
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 14px;
-        padding: 12px;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.08);
+      /* ── Split scoreboard (ScoreboardSurface.tsx) ── */
+      .surface {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .surface.static {
+        flex: 0 0 auto;
+      }
+
+      .row {
+        position: relative;
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        min-height: var(--row-min, 0px);
+        border: 0;
+        border-top: 1px solid var(--sb-line);
+        padding: 0;
+        background: var(--sb-row);
+        color: inherit;
+        font: inherit;
         text-align: left;
       }
 
-      .stat-title {
-        display: block;
-        margin-bottom: 4px;
-        font-size: 14px;
+      button.row {
+        cursor: pointer;
+      }
+
+      button.row:active,
+      .row.recording {
+        background: #1a1a1a;
+      }
+
+      .row.winner {
+        background: var(--sb-winner-row);
+      }
+
+      .stripe {
+        flex: 0 0 10px;
+      }
+
+      .row-body {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        padding: 14px 16px 16px;
+      }
+
+      .name-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .name {
+        flex: 1;
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        font-weight: 700;
+        font-size: var(--name-size);
+        line-height: 1.05;
+      }
+
+      .name.lost {
+        color: var(--sb-lost);
+      }
+
+      .flag {
+        flex: 0 0 auto;
+        padding: 4px 10px;
+        color: var(--sb-on-yellow);
         font-weight: 800;
+        font-size: 18px;
+        letter-spacing: 1px;
       }
 
-      .stat-hint {
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.35;
+      .serve-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 22px;
       }
 
-      .server-buttons {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
+      .ball {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--sb-ball-off);
+      }
+
+      .ball.on {
+        background: var(--sb-yellow);
+      }
+
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--sb-yellow);
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spin 800ms linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .serve-text {
+        color: var(--sb-muted);
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: 1px;
+      }
+
+      .serve-text.on {
+        color: var(--sb-yellow);
+      }
+
+      .bottom-line {
+        display: flex;
+        flex: 1;
+        align-items: flex-end;
+        justify-content: space-between;
         gap: 12px;
       }
 
-      .server-buttons button {
-        border: 0;
-        border-radius: 12px;
-        padding: 16px 8px;
-        background: var(--accent);
-        color: var(--court);
-        font: inherit;
-        font-weight: 900;
+      .games {
+        display: flex;
+        gap: 6px;
       }
 
-      .link-section,
-      .feedback-card {
-        margin-top: 18px;
-        padding: 16px;
+      .game-box {
+        display: grid;
+        place-items: center;
+        width: var(--box-w);
+        height: var(--box-h);
+        border: 2px solid transparent;
+        background: var(--sb-lost-set);
+        color: var(--sb-lost);
+        font-weight: 700;
+        font-size: var(--game-size);
+      }
+
+      .game-box.won {
+        background: var(--sb-won-set);
+        color: var(--sb-text);
+      }
+
+      .game-box.current {
+        border-color: var(--sb-yellow);
+        background: transparent;
+        color: var(--sb-text);
+      }
+
+      .point {
+        font-weight: 700;
+        font-size: var(--point-size);
+        line-height: 0.9;
+        letter-spacing: -2px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .point.ad {
+        color: var(--sb-yellow);
+      }
+
+      .point.lost {
+        color: var(--sb-lost);
+      }
+
+      .flash {
+        position: absolute;
+        inset: 0;
+        background: var(--sb-yellow);
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .flash.go {
+        animation: flash 420ms ease-out;
+      }
+
+      @keyframes flash {
+        from {
+          opacity: 0.22;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+
+      .band {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: var(--band-h);
+        border: 0;
+        padding: 0 16px;
+        font: inherit;
+      }
+
+      button.band {
+        cursor: pointer;
+      }
+
+      .band-text {
+        overflow: hidden;
+        white-space: pre;
+        font-weight: 800;
+        letter-spacing: 1px;
+        text-overflow: ellipsis;
+      }
+
+      .bar {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 12px;
+        min-height: var(--bar-h);
+        padding: 8px 10px 10px;
+      }
+
+      .undo,
+      .swap {
+        position: relative;
+        overflow: hidden;
+        border: 0;
+        border-radius: 6px;
+        background: var(--sb-control);
+        color: var(--sb-text);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .undo {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 0 14px;
+      }
+
+      .undo:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .undo-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        background: var(--sb-control-fill);
+      }
+
+      .undo.holding .undo-fill {
+        width: 100%;
+        transition: width 1000ms linear;
+      }
+
+      .undo > :not(.undo-fill) {
+        position: relative;
+      }
+
+      .undo-copy {
+        min-width: 0;
+        text-align: left;
+      }
+
+      .undo-title {
+        display: block;
+        font-weight: 700;
+        font-size: 21px;
+        letter-spacing: 1px;
+      }
+
+      .undo-hint {
+        display: block;
+        overflow: hidden;
+        color: var(--sb-muted);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        font-weight: 500;
+        font-size: 13px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .swap {
+        display: grid;
+        flex: 0 0 76px;
+        place-content: center;
+        gap: 2px;
         text-align: center;
       }
 
-      .link-section p,
-      .feedback-card p {
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.45;
+      .swap:active {
+        background: var(--sb-control-fill);
       }
 
-      .link-btn {
-        margin-top: 10px;
-        padding: 10px 16px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.15);
-        color: var(--accent);
-        font-size: 14px;
+      .swap-text {
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 1px;
+      }
+
+      .icon {
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      /* ── Pre-match surface (ScoreboardSetup.tsx) ── */
+      .setup {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 12px;
+        padding: 4px 12px 12px;
+      }
+
+      .setup-heading {
+        margin: 0 4px 4px;
+        line-height: 1.1;
         font-weight: 800;
+        font-size: 40px;
+        letter-spacing: 0.5px;
       }
 
-      .feedback-card {
-        display: none;
-        border: 1px solid rgba(255, 220, 96, 0.26);
+      .setup-lead {
+        margin: -8px 4px 0;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        color: var(--sb-muted);
+        font-size: 15px;
+        line-height: 21px;
       }
 
-      .feedback-card.active {
-        display: block;
+      .server-group {
+        display: grid;
+        gap: 12px;
       }
 
-      .feedback-card strong {
-        display: block;
-        margin-bottom: 6px;
-        color: var(--accent);
+      .server-card {
+        display: flex;
+        overflow: hidden;
+        min-height: 120px;
+        border: 3px solid var(--sb-panel);
+        border-radius: 6px;
+        padding: 0;
+        background: var(--sb-card);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
       }
 
+      .server-card.selected {
+        border-color: var(--sb-yellow);
+      }
+
+      .card-body {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 16px 18px;
+      }
+
+      .card-name {
+        font-weight: 700;
+        font-size: 34px;
+        line-height: 1.05;
+      }
+
+      .card-note {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--sb-muted);
+        font-weight: 700;
+        font-size: 19px;
+        letter-spacing: 1px;
+      }
+
+      .server-card.selected .card-note {
+        color: var(--sb-yellow);
+      }
+
+      .card-note .ball {
+        width: 18px;
+        height: 18px;
+      }
+
+      .options {
+        border-radius: 6px;
+        background: var(--sb-card);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .option-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+      }
+
+      .option-row + .option-row {
+        border-top: 1px solid var(--sb-line);
+      }
+
+      .option-title {
+        font-weight: 600;
+        font-size: 16px;
+      }
+
+      .option-value {
+        color: var(--sb-muted);
+        font-size: 16px;
+        text-align: right;
+      }
+
+      .option-hint {
+        margin-top: 2px;
+        color: var(--sb-muted);
+        font-size: 13px;
+      }
+
+      .watch-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 52px;
+        border: 2px solid var(--sb-yellow);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--sb-yellow);
+        font: inherit;
+        font-weight: 700;
+        font-size: 19px;
+        letter-spacing: 1px;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .start-btn {
+        min-height: 72px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--sb-yellow);
+        color: var(--sb-on-yellow);
+        font: inherit;
+        font-weight: 800;
+        font-size: 26px;
+        letter-spacing: 1.5px;
+        cursor: pointer;
+      }
+
+      .start-btn:active {
+        opacity: 0.85;
+      }
+
+      /* ── Switch (React Native Switch with the scoreboard colors) ── */
       .switch {
         position: relative;
         display: inline-flex;
+        flex: 0 0 auto;
         width: 46px;
         height: 26px;
         border-radius: 999px;
-        background: #ccc;
-        flex: 0 0 auto;
+        background: var(--sb-ball-off);
         cursor: pointer;
       }
 
       .switch input {
-        opacity: 0;
         position: absolute;
+        opacity: 0;
       }
 
       .switch span {
         position: absolute;
-        width: 22px;
-        height: 22px;
         top: 2px;
         left: 2px;
+        width: 22px;
+        height: 22px;
         border-radius: 50%;
-        background: #f4f3f4;
+        background: var(--sb-muted);
         transition: 160ms ease;
       }
 
       .switch input:checked + span {
         left: 22px;
-        background: var(--court);
+        background: var(--sb-on-yellow);
       }
 
       .switch:has(input:checked) {
-        background: var(--accent);
+        background: var(--sb-yellow);
       }
 
+      /* ── Next-step panels under a read-only scoreboard ── */
+      .sections {
+        display: grid;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        gap: 16px;
+        padding: 16px 16px 48px;
+      }
+
+      .spectator-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 0 4px;
+        color: var(--sb-muted);
+        font-size: 15px;
+        line-height: 21px;
+      }
+
+      .panel-card {
+        display: grid;
+        gap: 12px;
+        border: 1px solid var(--panel-border);
+        border-radius: 16px;
+        padding: 16px;
+        background: var(--panel-surface);
+        color: var(--panel-text);
+      }
+
+      .panel-title {
+        margin: 0;
+        color: var(--panel-primary);
+        font-family: var(--sb-font);
+        font-weight: 700;
+        font-size: 24px;
+        line-height: 28px;
+      }
+
+      .panel-score {
+        font-family: var(--sb-font);
+        font-weight: 700;
+        font-size: 30px;
+        line-height: 34px;
+        letter-spacing: 0.5px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .panel-body {
+        font-size: 16px;
+        line-height: 1.45;
+      }
+
+      .panel-meta {
+        color: var(--panel-muted);
+        font-size: 14px;
+      }
+
+      .button-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .app-btn {
+        min-height: 48px;
+        border: 2px solid var(--panel-primary);
+        border-radius: 12px;
+        padding: 10px 16px;
+        background: var(--panel-primary);
+        color: var(--panel-on-primary);
+        font: inherit;
+        font-weight: 700;
+        font-size: 16px;
+      }
+
+      .app-btn.secondary {
+        background: var(--panel-surface);
+        color: var(--panel-primary);
+      }
+
+      /* ── Overlays ── */
+      .tip-overlay {
+        position: absolute;
+        top: 8px;
+        right: 12px;
+        left: 12px;
+        z-index: 2;
+        border-radius: 6px;
+        padding: 14px;
+        background: var(--sb-text);
+        color: var(--sb-on-yellow);
+        box-shadow: 0 0 15px rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+      }
+
+      .tip-overlay strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .tip-overlay p {
+        font-size: 14px;
+        line-height: 19px;
+      }
+
+      .scrim {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        background: var(--sb-scrim);
+      }
+
+      .sheet {
+        display: grid;
+        gap: 12px;
+        border-top: 2px solid var(--sb-yellow);
+        padding: 12px 12px 40px;
+        background: var(--sb-panel);
+      }
+
+      .sheet-title {
+        padding: 0 4px;
+        font-weight: 800;
+        font-size: 24px;
+        letter-spacing: 1px;
+      }
+
+      .sheet-subtitle {
+        margin-top: -6px;
+        padding: 0 4px;
+        color: var(--sb-muted);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        font-size: 15px;
+      }
+
+      .choice-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .choice {
+        min-height: 72px;
+        border: 2px solid var(--sb-yellow);
+        border-radius: 6px;
+        padding: 0 8px;
+        background: transparent;
+        color: var(--sb-yellow);
+        font: inherit;
+        font-weight: 800;
+        font-size: 22px;
+        letter-spacing: 1px;
+      }
+
+      .choice.primary {
+        background: var(--sb-yellow);
+        color: var(--sb-on-yellow);
+      }
+
+      .cancel-btn {
+        min-height: 52px;
+        border: 2px solid var(--sb-control-fill);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--sb-text);
+        font: inherit;
+        font-weight: 700;
+        font-size: 20px;
+        letter-spacing: 1px;
+      }
+
+      .manage-sheet {
+        display: grid;
+        gap: 4px;
+        border-top: 2px solid var(--sb-yellow);
+        padding: 24px 16px 32px;
+        background: var(--sb-panel);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .manage-title {
+        margin-bottom: 8px;
+        font-family: var(--sb-font);
+        font-weight: 800;
+        font-size: 22px;
+        letter-spacing: 1px;
+      }
+
+      .manage-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 52px;
+        border-bottom: 1px solid var(--sb-line);
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .manage-row .copy {
+        flex: 1;
+      }
+
+      .manage-row .hint {
+        display: block;
+        color: var(--sb-muted);
+        font-size: 13px;
+        font-weight: 400;
+      }
+
+      .manage-row.danger {
+        color: var(--sb-danger);
+      }
+
+      .manage-close {
+        min-height: 52px;
+        margin-top: 12px;
+        border: 2px solid var(--sb-control-fill);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--sb-text);
+        font: inherit;
+        font-weight: 700;
+        font-size: 17px;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      /* ── Control panels around the phone ── */
       .controls {
         display: grid;
         gap: 16px;
@@ -448,7 +1007,7 @@
         gap: 12px;
       }
 
-      label {
+      .controls label {
         display: grid;
         gap: 6px;
         color: rgba(255, 255, 255, 0.72);
@@ -456,28 +1015,28 @@
         font-weight: 700;
       }
 
-      input,
-      select,
-      textarea {
+      .controls input,
+      .controls select,
+      .controls textarea {
         width: 100%;
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: 12px;
         padding: 10px 11px;
-        background: rgba(0, 0, 0, 0.22);
+        background: rgba(0, 0, 0, 0.32);
         color: #fff;
         font: inherit;
       }
 
-      input[type="color"] {
+      .controls input[type="color"] {
         height: 42px;
         padding: 4px;
       }
 
-      input[type="range"] {
-        accent-color: var(--accent);
+      .controls input[type="range"] {
+        accent-color: var(--page-accent);
       }
 
-      textarea {
+      .controls textarea {
         min-height: 120px;
         resize: vertical;
       }
@@ -492,8 +1051,8 @@
         border: 0;
         border-radius: 14px;
         padding: 12px 14px;
-        background: var(--accent);
-        color: var(--court);
+        background: var(--page-accent);
+        color: #000;
         font: inherit;
         font-weight: 900;
         cursor: pointer;
@@ -510,7 +1069,7 @@
         margin-top: 12px;
         padding: 12px;
         border-radius: 12px;
-        background: rgba(0, 0, 0, 0.28);
+        background: rgba(0, 0, 0, 0.38);
         color: rgba(255, 255, 255, 0.8);
         font-family: "SFMono-Regular", Consolas, monospace;
         font-size: 0.76rem;
@@ -546,8 +1105,8 @@
         }
 
         .phone-screen {
+          height: 100vh;
           border-radius: 0;
-          min-height: 100vh;
         }
       }
     </style>
@@ -560,84 +1119,53 @@
           <h1 id="page-title">Live scoring layout preview</h1>
         </div>
         <p>
-          This standalone prototype mirrors the active match area from
-          <code>apps/mobile/app/match/[id].tsx</code>. Edit names, score text,
-          match state, density, and colors, then copy the generated feedback JSON
-          into an issue, comment, or follow-up prompt so the preferred layout can
-          be implemented in the React Native screen.
+          This standalone prototype mirrors the split scoreboard in
+          <code>apps/mobile/app/match/[id].tsx</code> and
+          <code>apps/mobile/components/live-scoring/</code>: the top bar, the
+          tappable player rows with the status band between them, the
+          hold-to-undo bar, the pre-match setup, the point-type sheet, rule
+          tips, and the next-step panels under a finished match. Edit names,
+          scores, the match moment, and colors, then copy the generated
+          feedback JSON into an issue, comment, or follow-up prompt so the
+          preferred layout can be implemented in the React Native screen.
         </p>
       </section>
 
       <section class="stage" aria-label="Phone preview">
         <div class="phone-frame">
-          <div class="phone-screen" id="phone-screen">
+          <div class="phone-screen sb" id="phone-screen" data-scheme="light">
             <div class="status-bar" aria-hidden="true">
               <span>9:41</span>
               <span>LTE ◔</span>
             </div>
-            <div class="screen-content">
-              <section class="score-board" aria-label="Score board">
-                <div class="set-row">
-                  <span class="sets-label">Sets</span>
-                  <span class="sets-score" data-preview="setsScore">1 – 0</span>
-                </div>
-                <div class="score-main" data-preview="scoreMain">6-4, 3-2</div>
-                <div class="game-score" data-preview="gameScore">40 – 30</div>
-                <div class="server-label" data-preview="serverLabel">● Alex Rivera Serves</div>
-                <div class="service-side" data-preview="serviceSide">deuce court · Set 22:14 · Match 1:04:33</div>
-              </section>
 
-              <section class="player-row" aria-label="Players">
-                <span data-preview="playerOne">Alex Rivera</span>
-                <span class="vs">vs</span>
-                <span data-preview="playerTwo">Jamie Chen</span>
-              </section>
+            <header class="sb-header">
+              <button class="sb-header-btn" type="button" id="leave-btn" aria-label="Close">✕</button>
+              <span class="sb-header-title" id="header-title">SET 2 · BEST OF 3</span>
+              <span class="sb-header-clock" id="header-clock">1:04:33</span>
+              <button class="sb-header-btn" type="button" id="menu-btn" aria-label="Match options">⋯</button>
+            </header>
 
-              <button class="manage-btn" type="button">⋯ Options</button>
-              <span class="live-badge">● LIVE</span>
+            <div class="body" id="body">
+              <div class="tip-overlay" id="tip-overlay" hidden>
+                <strong id="tip-title"></strong>
+                <p id="tip-body"></p>
+              </div>
+              <div id="court"></div>
+              <div class="sections" id="sections" hidden></div>
+            </div>
 
-              <section class="server-select" id="server-select" aria-label="Server selection">
-                <h2>Who is serving first?</h2>
-                <div class="stat-toggle-row">
-                  <div>
-                    <strong class="stat-title">Track advanced stats?</strong>
-                    <span class="stat-hint">Adds aces, double faults, winners, and unforced errors to the report.</span>
-                  </div>
-                  <label class="switch" aria-label="Advanced stats enabled">
-                    <input type="checkbox" checked />
-                    <span></span>
-                  </label>
-                </div>
-                <div class="server-buttons">
-                  <button type="button" data-preview="serverP1">Alex Rivera</button>
-                  <button type="button" data-preview="serverP2">Jamie Chen</button>
-                </div>
-              </section>
+            <div class="scrim" id="point-sheet" hidden>
+              <div class="sheet">
+                <div class="sheet-title" id="point-sheet-title">POINT TO ALEX RIVERA</div>
+                <p class="sheet-subtitle">How was it won?</p>
+                <div class="choice-grid" id="choice-grid"></div>
+                <button class="cancel-btn" type="button" data-close-overlay>CANCEL</button>
+              </div>
+            </div>
 
-              <section id="in-progress-controls" aria-label="Score controls">
-                <div class="score-buttons">
-                  <button class="point-btn p1" type="button" data-preview="p1Button">Alex Rivera<br />Point</button>
-                  <button class="point-btn p2" type="button" data-preview="p2Button">Jamie Chen<br />Point</button>
-                </div>
-                <button class="undo-btn" type="button">↩ Undo Last Point</button>
-                <div class="tips-row">
-                  <strong>Live Tips</strong>
-                  <label class="switch" aria-label="Live tips enabled">
-                    <input id="tips-toggle" type="checkbox" checked />
-                    <span></span>
-                  </label>
-                </div>
-              </section>
-
-              <section class="link-section" id="guest-section">
-                <p>👤 Playing against a guest? Link their account once they join the app.</p>
-                <button class="link-btn" type="button">Link Opponent Account</button>
-              </section>
-
-              <section class="feedback-card" id="post-match-card">
-                <strong>Post-match report area</strong>
-                <p data-preview="postMatchCopy">Use this space to preview final score reporting, confirmation, or dispute copy below the live controls.</p>
-              </section>
+            <div class="scrim" id="manage-sheet" hidden>
+              <div class="manage-sheet" id="manage-content"></div>
             </div>
           </div>
         </div>
@@ -653,17 +1181,23 @@
             <label>Player 2
               <input data-control="playerTwo" value="Jamie Chen" />
             </label>
-            <label>Sets score
-              <input data-control="setsScore" value="1 – 0" />
+            <label>Player 1 games per set
+              <input data-control="gamesOne" value="6, 3" />
             </label>
-            <label>Match score
-              <input data-control="scoreMain" value="6-4, 3-2" />
+            <label>Player 2 games per set
+              <input data-control="gamesTwo" value="4, 2" />
             </label>
-            <label>Game score
-              <input data-control="gameScore" value="40 – 30" />
+            <label>Player 1 point
+              <input data-control="pointOne" value="40" />
             </label>
-            <label>Service detail
-              <input data-control="serviceSide" value="deuce court · Set 22:14 · Match 1:04:33" />
+            <label>Player 2 point
+              <input data-control="pointTwo" value="30" />
+            </label>
+            <label>Match clock
+              <input data-control="clock" value="1:04:33" />
+            </label>
+            <label>Undo hint
+              <input data-control="undoHint" value="Back to 30 – 30" />
             </label>
           </div>
         </section>
@@ -671,29 +1205,100 @@
         <section class="panel">
           <h2>State</h2>
           <div class="field-grid">
-            <label>Serving player
-              <select id="server-control">
-                <option value="playerOne">Player 1</option>
-                <option value="playerTwo">Player 2</option>
-              </select>
-            </label>
             <label>Match status
               <select id="status-control">
-                <option value="in_progress">In progress</option>
+                <option value="in_progress">In progress (scoring)</option>
+                <option value="spectator">In progress (spectator)</option>
                 <option value="scheduled">Scheduled setup</option>
                 <option value="pending_report">Pending report</option>
               </select>
             </label>
-            <label>Guest opponent
-              <select id="guest-control">
-                <option value="show">Show guest link</option>
-                <option value="hide">Hide guest link</option>
+            <label>Format
+              <select id="format-control">
+                <option value="Best of 3">Best of 3</option>
+                <option value="Best of 3 · play-out final set">Best of 3 · play-out final set</option>
+                <option value="Best of 5">Best of 5</option>
               </select>
             </label>
-            <label>Tips enabled
-              <select id="tips-control">
-                <option value="show">On</option>
-                <option value="hide">Off</option>
+            <label>Serving player
+              <select id="server-control">
+                <option value="player1">Player 1</option>
+                <option value="player2">Player 2</option>
+              </select>
+            </label>
+            <label>Service court
+              <select id="court-control">
+                <option value="DEUCE">Deuce court</option>
+                <option value="AD">Ad court</option>
+              </select>
+            </label>
+            <label>Match moment (band)
+              <select id="moment-control">
+                <option value="live">Point call</option>
+                <option value="deuce">Deuce</option>
+                <option value="ad">Advantage</option>
+                <option value="bp">Break point</option>
+                <option value="sp">Set point</option>
+                <option value="mp">Match point</option>
+                <option value="tb">Tiebreak</option>
+                <option value="ok">Change ends</option>
+              </select>
+            </label>
+            <label>Moment belongs to
+              <select id="moment-player-control">
+                <option value="player1">Player 1</option>
+                <option value="player2">Player 2</option>
+              </select>
+            </label>
+            <label>Winner (pending report)
+              <select id="winner-control">
+                <option value="player1">Player 1</option>
+                <option value="player2">Player 2</option>
+              </select>
+            </label>
+            <label>Guest opponent
+              <select id="guest-control">
+                <option value="hide">No</option>
+                <option value="show">Yes</option>
+              </select>
+            </label>
+            <label>Overlay
+              <select id="overlay-control">
+                <option value="none">None</option>
+                <option value="tip">Rule tip</option>
+                <option value="point">Point-type sheet</option>
+                <option value="manage">Match options sheet</option>
+              </select>
+            </label>
+            <label>Ends swapped
+              <select id="swap-control">
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
+            <label>Undo available
+              <select id="undo-control">
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+            <label>Point being recorded
+              <select id="recording-control">
+                <option value="none">None</option>
+                <option value="player1">Player 1</option>
+                <option value="player2">Player 2</option>
+              </select>
+            </label>
+            <label>Advanced stats
+              <select id="stats-control">
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+            <label>Watch app installed
+              <select id="watch-control">
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
               </select>
             </label>
           </div>
@@ -702,20 +1307,29 @@
         <section class="panel">
           <h2>Visual direction</h2>
           <div class="field-grid">
-            <label>Court background
-              <input type="color" id="court-color" value="#1a472a" />
+            <label>Accent (SB.yellow)
+              <input type="color" id="accent-color" value="#ffd60a" />
             </label>
-            <label>Accent
-              <input type="color" id="accent-color" value="#ffdc60" />
+            <label>Device scheme (panels)
+              <select id="scheme-control">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <label>Player 1 stripe
+              <input type="color" id="stripe-one" value="#3d8bff" />
+            </label>
+            <label>Player 2 stripe
+              <input type="color" id="stripe-two" value="#ff9f1c" />
             </label>
             <label>Phone width
               <input type="range" id="phone-width" min="320" max="430" value="390" />
             </label>
-            <label>Density
+            <label>Type scale
               <select id="density-control">
-                <option value="comfortable">Comfortable</option>
+                <option value="auto">Auto (compact under 380px)</option>
+                <option value="regular">Regular</option>
                 <option value="compact">Compact</option>
-                <option value="spacious">Spacious</option>
               </select>
             </label>
           </div>
@@ -724,7 +1338,7 @@
         <section class="panel">
           <h2>Feedback to implement</h2>
           <label>Notes
-            <textarea id="feedback-notes" placeholder="Example: Make score buttons taller, move LIVE above player names, use a brighter yellow for active server…"></textarea>
+            <textarea id="feedback-notes" placeholder="Example: Make the point numerals larger, move the clock under the title, use a brighter band for break point…"></textarea>
           </label>
           <div class="control-actions" style="margin-top: 12px">
             <button class="action-btn" id="copy-feedback" type="button">Copy feedback JSON</button>
@@ -736,58 +1350,547 @@
     </main>
 
     <script>
+      // Band colors per match moment, from BAND_TONES in scoreboardTheme.ts.
+      const BAND_TONES = {
+        live: { bg: '#161616', fg: '#ffffff' },
+        deuce: { bg: '#ffffff', fg: '#000000' },
+        ad: { bg: 'var(--sb-yellow)', fg: '#000000' },
+        sp: { bg: 'var(--sb-yellow)', fg: '#000000' },
+        bp: { bg: '#ff9f1c', fg: '#000000' },
+        mp: { bg: '#ff6b81', fg: '#000000' },
+        tb: { bg: 'var(--sb-yellow)', fg: '#000000' },
+        ok: { bg: '#3ddc84', fg: '#000000' },
+      };
+      const FLAG_FOR_TONE = { bp: 'BREAK POINT', sp: 'SET POINT', mp: 'MATCH POINT' };
+
+      // Rule tip copy from packages/shared/src/tips/tips.ts, keyed by the
+      // moment that fires it. Break point has no tip of its own, so it shows
+      // the game-point tip.
+      const TIPS = {
+        live: ['Service change', 'Server switches after each game. Remember to switch ends after odd-numbered games in each set.'],
+        deuce: ['Deuce', 'Deuce — must win by 2 consecutive points to win the game.'],
+        ad: ['Advantage', 'One player has advantage. Win the next point to win the game, or it returns to deuce.'],
+        bp: ['Game point', 'One player has game point. Win the next point to win the game.'],
+        sp: ['Set point', 'One player has set point. Win the next game to win the set.'],
+        mp: ['Match point', 'Match point. Win the next game to win the match.'],
+        tb: ['Tiebreak', 'First to 7 points, must win by 2. Server serves 1 point, then players alternate every 2 points. Switch ends every 6 points.'],
+        ok: ['Service change', 'Server switches after each game. Remember to switch ends after odd-numbered games in each set.'],
+      };
+
+      // ScoreboardSurface's two type scales; compact is used under 380px wide
+      // or 700px tall, and always for a read-only scoreboard.
+      const SIZES = {
+        regular: { name: 32, point: 172, game: 32, box: 44, boxH: 50, band: 72, bar: 80, rowMin: 0 },
+        compact: { name: 26, point: 118, game: 26, box: 36, boxH: 40, band: 60, bar: 68, rowMin: 190 },
+      };
+
       const defaults = {
         playerOne: 'Alex Rivera',
         playerTwo: 'Jamie Chen',
-        setsScore: '1 – 0',
-        scoreMain: '6-4, 3-2',
-        gameScore: '40 – 30',
-        serviceSide: 'deuce court · Set 22:14 · Match 1:04:33',
-        server: 'playerOne',
+        gamesOne: '6, 3',
+        gamesTwo: '4, 2',
+        pointOne: '40',
+        pointTwo: '30',
+        clock: '1:04:33',
+        undoHint: 'Back to 30 – 30',
         status: 'in_progress',
-        guest: 'show',
-        tips: 'show',
-        courtColor: '#1a472a',
-        accentColor: '#ffdc60',
+        format: 'Best of 3',
+        server: 'player1',
+        court: 'DEUCE',
+        moment: 'live',
+        momentPlayer: 'player1',
+        winner: 'player1',
+        guest: 'hide',
+        overlay: 'none',
+        swap: 'no',
+        undo: 'yes',
+        recording: 'none',
+        stats: 'on',
+        watch: 'no',
+        accentColor: '#ffd60a',
+        scheme: 'light',
+        stripeOne: '#3d8bff',
+        stripeTwo: '#ff9f1c',
         phoneWidth: '390',
-        density: 'comfortable',
+        density: 'auto',
         notes: '',
       };
 
+      const $ = (selector) => document.querySelector(selector);
       const controls = document.querySelectorAll('[data-control]');
-      const preview = (name) => document.querySelectorAll(`[data-preview="${name}"]`);
-      const serverControl = document.querySelector('#server-control');
-      const statusControl = document.querySelector('#status-control');
-      const guestControl = document.querySelector('#guest-control');
-      const tipsControl = document.querySelector('#tips-control');
-      const courtColor = document.querySelector('#court-color');
-      const accentColor = document.querySelector('#accent-color');
-      const phoneWidth = document.querySelector('#phone-width');
-      const densityControl = document.querySelector('#density-control');
-      const feedbackNotes = document.querySelector('#feedback-notes');
-      const feedbackOutput = document.querySelector('#feedback-output');
+      const selects = {
+        status: $('#status-control'),
+        format: $('#format-control'),
+        server: $('#server-control'),
+        court: $('#court-control'),
+        moment: $('#moment-control'),
+        momentPlayer: $('#moment-player-control'),
+        winner: $('#winner-control'),
+        guest: $('#guest-control'),
+        overlay: $('#overlay-control'),
+        swap: $('#swap-control'),
+        undo: $('#undo-control'),
+        recording: $('#recording-control'),
+        stats: $('#stats-control'),
+        watch: $('#watch-control'),
+        scheme: $('#scheme-control'),
+        density: $('#density-control'),
+      };
+      const accentColor = $('#accent-color');
+      const stripeOne = $('#stripe-one');
+      const stripeTwo = $('#stripe-two');
+      const phoneWidth = $('#phone-width');
+      const feedbackNotes = $('#feedback-notes');
+      const feedbackOutput = $('#feedback-output');
+      const screen = $('#phone-screen');
       const root = document.documentElement;
+
+      const other = (player) => (player === 'player1' ? 'player2' : 'player1');
+      const value = (name) => document.querySelector(`[data-control="${name}"]`).value;
+
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      // "Alex Rivera" → "Rivera", as shortName() does for the band.
+      function shortName(name) {
+        return name
+          .split(' / ')
+          .map((part) => part.trim().split(/\s+/).pop() || part)
+          .join(' / ');
+      }
+
+      function parseGames(text) {
+        return text
+          .split(/[,\s]+/)
+          .filter(Boolean)
+          .map((n) => Number.parseInt(n, 10))
+          .filter((n) => Number.isFinite(n));
+      }
+
+      function model() {
+        const status = selects.status.value;
+        const names = { player1: value('playerOne') || 'Player 1', player2: value('playerTwo') || 'Player 2' };
+        const g1 = parseGames(value('gamesOne'));
+        const g2 = parseGames(value('gamesTwo'));
+        const count = Math.max(g1.length, g2.length, 1);
+        const finished = status === 'pending_report';
+        const sets = Array.from({ length: count }, (_, i) => {
+          const a = g1[i] ?? 0;
+          const b = g2[i] ?? 0;
+          const isLast = i === count - 1;
+          let winner;
+          if (!isLast || finished) winner = a > b ? 'player1' : b > a ? 'player2' : undefined;
+          return { a, b, winner, current: isLast && !finished };
+        });
+        const setsWon = {
+          player1: sets.filter((s) => s.winner === 'player1').length,
+          player2: sets.filter((s) => s.winner === 'player2').length,
+        };
+        const points = { player1: value('pointOne') || '0', player2: value('pointTwo') || '0' };
+        return { status, names, sets, setsWon, points, finished };
+      }
+
+      function sizesFor(interactive) {
+        const choice = selects.density.value;
+        const compact =
+          choice === 'compact' || (choice === 'auto' && Number(phoneWidth.value) < 380) || !interactive;
+        return compact ? SIZES.compact : SIZES.regular;
+      }
+
+      function applySizes(node, sizes, interactive) {
+        node.style.setProperty('--name-size', `${sizes.name}px`);
+        node.style.setProperty('--point-size', `${sizes.point}px`);
+        node.style.setProperty('--game-size', `${sizes.game}px`);
+        node.style.setProperty('--box-w', `${sizes.box}px`);
+        node.style.setProperty('--box-h', `${sizes.boxH}px`);
+        node.style.setProperty('--band-h', `${sizes.band}px`);
+        node.style.setProperty('--bar-h', `${sizes.bar}px`);
+        node.style.setProperty('--row-min', `${interactive ? sizes.rowMin : 0}px`);
+      }
+
+      function scoreText(m) {
+        return m.sets.map((s) => `${s.a}-${s.b}`).join(', ');
+      }
+
+      function bandText(m, tone, interactive) {
+        const live = m.status === 'in_progress' || m.status === 'spectator';
+        if (m.finished) return `Final · ${scoreText(m).replace(/, /g, '  ')}`;
+        if (!live) return 'Scheduled · not started';
+        const who = shortName(m.names[selects.momentPlayer.value]);
+        const server = selects.server.value;
+        const serverFirst = `${m.points[server]} – ${m.points[other(server)]}`;
+        switch (tone) {
+          case 'deuce':
+            return 'Deuce';
+          case 'ad':
+            return `Advantage · ${who}`;
+          case 'sp':
+            return `Set point · ${who}`;
+          case 'bp':
+            return `Break point · ${who}`;
+          case 'mp':
+            return `Match point · ${who}`;
+          case 'tb':
+            return `Tiebreak ${m.points[server]}–${m.points[other(server)]}`;
+          case 'ok':
+            return interactive ? 'Change ends · tap to swap' : 'Change ends';
+          default:
+            return serverFirst;
+        }
+      }
+
+      function renderRow(m, player, interactive, tone) {
+        const live = m.status === 'in_progress' || m.status === 'spectator';
+        const winnerSide = selects.winner.value;
+        const winner = m.finished && winnerSide === player;
+        const loser = m.finished && winnerSide !== player;
+        const serving = live && selects.server.value === player;
+        const recording = interactive && selects.recording.value === player;
+        const momentFlag =
+          live && FLAG_FOR_TONE[tone] && selects.momentPlayer.value === player ? FLAG_FOR_TONE[tone] : undefined;
+        const flag = winner ? 'WINNER' : momentFlag;
+        const flagBg = winner ? 'var(--sb-yellow)' : BAND_TONES[tone].bg;
+        const big = m.finished ? String(m.setsWon[player]) : m.points[player].toUpperCase();
+        const serveText = recording
+          ? 'ADDING POINT…'
+          : m.finished
+            ? 'SETS WON'
+            : serving
+              ? `SERVING · ${selects.court.value} COURT`
+              : live
+                ? 'RECEIVING'
+                : '';
+
+        const row = el(interactive ? 'button' : 'div', 'row');
+        if (interactive) {
+          row.type = 'button';
+          row.setAttribute('aria-label', `Point to ${m.names[player]}`);
+          row.addEventListener('click', () => onPoint(player, row));
+        }
+        if (winner) row.classList.add('winner');
+        if (recording) row.classList.add('recording');
+
+        const stripe = el('div', 'stripe');
+        stripe.style.background = player === 'player1' ? 'var(--sb-stripe-p1)' : 'var(--sb-stripe-p2)';
+        row.append(stripe);
+
+        const body = el('div', 'row-body');
+        const nameLine = el('div', 'name-line');
+        const name = el('span', 'name', m.names[player].toUpperCase());
+        if (loser) name.classList.add('lost');
+        nameLine.append(name);
+        if (flag) {
+          const flagNode = el('span', 'flag', flag);
+          flagNode.style.background = flagBg;
+          nameLine.append(flagNode);
+        }
+        body.append(nameLine);
+
+        if (serveText) {
+          const line = el('div', 'serve-line');
+          if (recording) line.append(el('span', 'spinner'));
+          else if (!m.finished) line.append(el('span', `ball${serving ? ' on' : ''}`));
+          line.append(el('span', `serve-text${serving || recording ? ' on' : ''}`, serveText));
+          body.append(line);
+        }
+
+        const bottom = el('div', 'bottom-line');
+        const games = el('div', 'games');
+        m.sets.forEach((set) => {
+          const box = el('span', 'game-box', String(player === 'player1' ? set.a : set.b));
+          if (set.current && live) box.classList.add('current');
+          else if (set.winner === player) box.classList.add('won');
+          games.append(box);
+        });
+        const point = el('span', 'point', big);
+        if (big === 'AD') point.classList.add('ad');
+        else if (loser) point.classList.add('lost');
+        bottom.append(games, point);
+        body.append(bottom);
+        row.append(body, el('div', 'flash'));
+        return row;
+      }
+
+      function renderScoreboard(m, interactive) {
+        const live = m.status === 'in_progress' || m.status === 'spectator';
+        const tone = live ? selects.moment.value : 'live';
+        const sizes = sizesFor(interactive);
+        const surface = el('div', `surface${interactive ? '' : ' static'}`);
+        applySizes(surface, sizes, interactive);
+
+        const order = selects.swap.value === 'yes' ? ['player2', 'player1'] : ['player1', 'player2'];
+        const bandIsSwap = interactive && tone === 'ok';
+        const band = el(bandIsSwap ? 'button' : 'div', 'band');
+        if (bandIsSwap) {
+          band.type = 'button';
+          band.setAttribute('aria-label', 'Change ends. Swap the rows');
+          band.addEventListener('click', toggleSwap);
+        }
+        band.style.background = BAND_TONES[tone].bg;
+        band.style.color = BAND_TONES[tone].fg;
+        if (bandIsSwap) band.append(el('span', 'icon', '⇅'));
+        const text = el('span', 'band-text', bandText(m, tone, interactive).toUpperCase());
+        text.style.fontSize = `${tone === 'live' && live ? 34 : 26}px`;
+        band.append(text);
+
+        surface.append(renderRow(m, order[0], interactive, tone), band, renderRow(m, order[1], interactive, tone));
+
+        if (interactive) {
+          const bar = el('div', 'bar');
+          const canUndo = selects.undo.value === 'yes';
+          const undo = el('button', 'undo');
+          undo.type = 'button';
+          undo.disabled = !canUndo || selects.recording.value !== 'none';
+          undo.append(el('span', 'undo-fill'), el('span', 'icon', '↶'));
+          const copy = el('span', 'undo-copy');
+          copy.append(
+            el('span', 'undo-title', canUndo ? 'HOLD TO UNDO' : 'NOTHING TO UNDO'),
+            el('span', 'undo-hint', canUndo ? value('undoHint') : 'No point to take back yet'),
+          );
+          undo.append(copy);
+          undo.addEventListener('pointerdown', () => undo.classList.add('holding'));
+          ['pointerup', 'pointerleave', 'pointercancel'].forEach((type) =>
+            undo.addEventListener(type, () => undo.classList.remove('holding')),
+          );
+
+          const swap = el('button', 'swap');
+          swap.type = 'button';
+          swap.setAttribute('aria-label', 'Swap ends');
+          swap.append(el('span', 'icon', '⇅'), el('span', 'swap-text', 'SWAP'));
+          swap.addEventListener('click', toggleSwap);
+          bar.append(undo, swap);
+          surface.append(bar);
+        }
+        return surface;
+      }
+
+      function renderSetup(m) {
+        const setup = el('div', 'setup');
+        const heading = el('h2', 'setup-heading', 'WHO SERVES FIRST?');
+        const lead = el(
+          'p',
+          'setup-lead',
+          "Pick the first server, then start. During play, tap a player's row to give them the point.",
+        );
+        const group = el('div', 'server-group');
+        group.setAttribute('role', 'radiogroup');
+        ['player1', 'player2'].forEach((player) => {
+          const selected = selects.server.value === player;
+          const card = el('button', `server-card${selected ? ' selected' : ''}`);
+          card.type = 'button';
+          card.setAttribute('role', 'radio');
+          card.setAttribute('aria-checked', String(selected));
+          const stripe = el('div', 'stripe');
+          stripe.style.background = player === 'player1' ? 'var(--sb-stripe-p1)' : 'var(--sb-stripe-p2)';
+          const body = el('div', 'card-body');
+          const note = el('div', 'card-note');
+          note.append(el('span', `ball${selected ? ' on' : ''}`), el('span', '', selected ? 'SERVES FIRST' : 'TAP TO SERVE FIRST'));
+          body.append(el('span', 'card-name', m.names[player].toUpperCase()), note);
+          card.append(stripe, body);
+          card.addEventListener('click', () => {
+            selects.server.value = player;
+            render();
+          });
+          group.append(card);
+        });
+
+        const options = el('div', 'options');
+        const scheduled = el('div', 'option-row');
+        scheduled.append(el('span', 'option-title', 'Scheduled'), el('span', 'option-value', 'Today, 6:30 PM'));
+        const format = el('div', 'option-row');
+        format.append(el('span', 'option-title', 'Format'), el('span', 'option-value', selects.format.value));
+        const stats = el('div', 'option-row');
+        const statsCopy = el('div');
+        statsCopy.append(el('div', 'option-title', 'Advanced stats'), el('div', 'option-hint', 'Choose ace, winner, or error with each point.'));
+        stats.append(statsCopy, makeSwitch(selects.stats.value === 'on', 'Advanced stats', (on) => {
+          selects.stats.value = on ? 'on' : 'off';
+          render();
+        }));
+        options.append(scheduled, format, stats);
+
+        setup.append(heading, lead, group, options);
+        if (selects.watch.value === 'yes') {
+          const watch = el('button', 'watch-btn');
+          watch.type = 'button';
+          watch.append(el('span', 'icon', '⌚'), el('span', '', 'OPEN ON WATCH'));
+          setup.append(watch);
+        }
+        const start = el('button', 'start-btn', 'START MATCH');
+        start.type = 'button';
+        setup.append(el('div', 'spacer'), start);
+        return setup;
+      }
+
+      function makeSwitch(checked, label, onChange) {
+        const wrap = el('label', 'switch');
+        wrap.setAttribute('aria-label', label);
+        const input = el('input');
+        input.type = 'checkbox';
+        input.checked = checked;
+        input.addEventListener('change', () => onChange(input.checked));
+        wrap.append(input, el('span'));
+        return wrap;
+      }
+
+      function panel(title, children) {
+        const card = el('section', 'panel-card');
+        card.append(el('h3', 'panel-title', title), ...children);
+        return card;
+      }
+
+      function renderSections(m) {
+        const sections = $('#sections');
+        sections.textContent = '';
+        const guest = selects.guest.value === 'show';
+        if (m.status === 'spectator') {
+          const note = el('div', 'spectator-note');
+          note.append(
+            el('span', '', 'ⓘ'),
+            el('span', '', 'Live. The score updates as the players record points. Only the players can score this match.'),
+          );
+          sections.append(note);
+        }
+        if (m.status === 'pending_report') {
+          const winnerName = m.names[selects.winner.value];
+          const stack = el('div', 'button-stack');
+          stack.append(
+            el('button', 'app-btn', guest ? 'Save result' : 'Submit match report'),
+            el('button', 'app-btn secondary', 'Fix the score first'),
+          );
+          const children = [el('div', 'panel-score', scoreText(m))];
+          if (guest) children.push(el('div', 'panel-meta', `Match time ${value('clock')}`));
+          children.push(
+            el(
+              'p',
+              'panel-body',
+              guest
+                ? 'Your opponent is a guest, so no one needs to confirm. Save the result now. It counts in the standings once you link their account and they confirm.'
+                : `Submit the match report so ${m.names[other(selects.winner.value)].split(' ')[0]} can confirm the score. It counts in the standings once they do.`,
+            ),
+            stack,
+          );
+          sections.append(panel(`${winnerName} wins`, children));
+        }
+        if (guest && m.status !== 'spectator') {
+          sections.append(
+            panel('Playing a guest?', [
+              el('p', 'panel-body', 'Once your opponent joins the app, link their account so the result can count in the standings.'),
+              el('button', 'app-btn secondary', "Link opponent's account"),
+            ]),
+          );
+        }
+        sections.hidden = sections.childElementCount === 0;
+      }
+
+      function renderOverlays(m) {
+        const overlay = selects.overlay.value;
+        const scoring = m.status === 'in_progress';
+        const tone = selects.moment.value;
+
+        const tip = $('#tip-overlay');
+        tip.hidden = !(overlay === 'tip' && scoring);
+        $('#tip-title').textContent = TIPS[tone][0];
+        $('#tip-body').textContent = TIPS[tone][1];
+
+        const pointPlayer = selects.momentPlayer.value;
+        const pointSheet = $('#point-sheet');
+        pointSheet.hidden = !(overlay === 'point' && scoring && selects.stats.value === 'on');
+        $('#point-sheet-title').textContent = `POINT TO ${m.names[pointPlayer].toUpperCase()}`;
+        const grid = $('#choice-grid');
+        grid.textContent = '';
+        const isServer = selects.server.value === pointPlayer;
+        ['POINT', 'ACE', 'WINNER', 'OPPONENT ERROR']
+          .filter((label) => isServer || label !== 'ACE')
+          .forEach((label, index) => {
+            const choice = el('button', `choice${index === 0 ? ' primary' : ''}`, label);
+            choice.type = 'button';
+            choice.addEventListener('click', closeOverlay);
+            grid.append(choice);
+          });
+
+        const manage = $('#manage-sheet');
+        manage.hidden = overlay !== 'manage' || m.status === 'spectator';
+        const content = $('#manage-content');
+        content.textContent = '';
+        content.append(el('div', 'manage-title', 'Match options'));
+        const rows = [];
+        if (scoring) {
+          const tipsRow = el('div', 'manage-row');
+          const copy = el('span', 'copy', 'Rule tips');
+          copy.append(el('span', 'hint', 'Explain deuce, tiebreaks, and changeovers'));
+          tipsRow.append(copy, makeSwitch(true, 'Rule tips', () => {}));
+          rows.push(tipsRow);
+        }
+        if (m.status === 'pending_report') rows.push(manageRow('✎', 'Edit score'));
+        const preMatch = m.status === 'scheduled' || scoring;
+        if (selects.watch.value === 'yes' && preMatch) rows.push(manageRow('⌚', 'Open on watch'));
+        if (m.status === 'scheduled') rows.push(manageRow('📅', 'Postpone'));
+        if (preMatch) rows.push(manageRow('⊗', 'Cancel match'));
+        rows.push(manageRow('🗑', 'Delete match', true));
+        const close = el('button', 'manage-close', 'Close');
+        close.type = 'button';
+        close.addEventListener('click', closeOverlay);
+        content.append(...rows, close);
+      }
+
+      function manageRow(icon, label, danger = false) {
+        const row = el('div', `manage-row${danger ? ' danger' : ''}`);
+        row.append(el('span', 'icon', icon), el('span', 'copy', label));
+        return row;
+      }
+
+      function onPoint(player, row) {
+        if (selects.stats.value === 'on') {
+          selects.momentPlayer.value = player;
+          selects.overlay.value = 'point';
+          render();
+          return;
+        }
+        const flash = row.querySelector('.flash');
+        flash.classList.remove('go');
+        void flash.offsetWidth;
+        flash.classList.add('go');
+      }
+
+      function toggleSwap() {
+        selects.swap.value = selects.swap.value === 'yes' ? 'no' : 'yes';
+        render();
+      }
+
+      function closeOverlay() {
+        selects.overlay.value = 'none';
+        render();
+      }
 
       function getState() {
         const values = Object.fromEntries(
           Array.from(controls).map((control) => [control.dataset.control, control.value]),
         );
+        const state = Object.fromEntries(Object.entries(selects).map(([key, select]) => [key, select.value]));
         return {
           ...values,
-          server: serverControl.value,
-          status: statusControl.value,
-          guestOpponentSection: guestControl.value,
-          tips: tipsControl.value,
+          ...state,
           colors: {
-            court: courtColor.value,
             accent: accentColor.value,
+            stripePlayer1: stripeOne.value,
+            stripePlayer2: stripeTwo.value,
           },
           layout: {
             phoneWidth: Number(phoneWidth.value),
-            density: densityControl.value,
+            typeScale: selects.density.value,
           },
           notes: feedbackNotes.value.trim(),
           sourceScreen: 'apps/mobile/app/match/[id].tsx',
+          sourceComponents: [
+            'apps/mobile/components/live-scoring/ScoreboardSurface.tsx',
+            'apps/mobile/components/live-scoring/ScoreboardSetup.tsx',
+            'apps/mobile/components/live-scoring/PointTypeSheet.tsx',
+            'apps/mobile/components/live-scoring/scoreboardTheme.ts',
+          ],
         };
       }
 
@@ -795,60 +1898,37 @@
         feedbackOutput.textContent = JSON.stringify(getState(), null, 2);
       }
 
-      function applyDensity(value) {
-        const settings = {
-          compact: { content: '18px', button: '20px', radius: '13px' },
-          comfortable: { content: '24px', button: '28px', radius: '16px' },
-          spacious: { content: '30px', button: '34px', radius: '20px' },
-        }[value];
-        root.style.setProperty('--content-pad', settings.content);
-        root.style.setProperty('--button-pad', settings.button);
-        root.style.setProperty('--radius', settings.radius);
-      }
-
       function render() {
-        controls.forEach((control) => {
-          preview(control.dataset.control).forEach((target) => {
-            target.textContent = control.value;
-          });
-        });
+        const m = model();
+        const status = m.status;
+        const scoring = status === 'in_progress';
+        const setup = status === 'scheduled';
+        const fillScreen = scoring || setup;
 
-        const playerOne = document.querySelector('[data-control="playerOne"]').value;
-        const playerTwo = document.querySelector('[data-control="playerTwo"]').value;
-        preview('p1Button').forEach((target) => {
-          target.textContent = '';
-          target.append(document.createTextNode(playerOne), document.createElement('br'), document.createTextNode('Point'));
-        });
-        preview('p2Button').forEach((target) => {
-          target.textContent = '';
-          target.append(document.createTextNode(playerTwo), document.createElement('br'), document.createTextNode('Point'));
-        });
-        preview('serverP1').forEach((target) => (target.textContent = playerOne));
-        preview('serverP2').forEach((target) => (target.textContent = playerTwo));
-        const serverName = serverControl.value === 'playerOne' ? playerOne : playerTwo;
-        const isInProgress = statusControl.value === 'in_progress';
-        preview('serverLabel').forEach((target) => {
-          target.textContent = `● ${serverName} Serves`;
-          target.style.display = isInProgress ? 'block' : 'none';
-        });
-        preview('serviceSide').forEach((target) => (target.style.display = isInProgress ? 'block' : 'none'));
-
-        const isScheduled = statusControl.value === 'scheduled';
-        const isPending = statusControl.value === 'pending_report';
-        document.querySelector('#server-select').classList.toggle('active', isScheduled);
-        document.querySelector('#in-progress-controls').style.display = isScheduled || isPending ? 'none' : 'block';
-        document.querySelector('.live-badge').style.display = statusControl.value === 'in_progress' ? 'block' : 'none';
-        document.querySelector('#post-match-card').classList.toggle('active', isPending);
-        preview('postMatchCopy').forEach((target) => {
-          target.textContent = `Previewing final score report for ${document.querySelector('[data-control="scoreMain"]').value}.`;
-        });
-
-        document.querySelector('#guest-section').style.display = guestControl.value === 'show' ? 'block' : 'none';
-        document.querySelector('#tips-toggle').checked = tipsControl.value === 'show';
-        root.style.setProperty('--court', courtColor.value);
-        root.style.setProperty('--accent', accentColor.value);
+        root.style.setProperty('--sb-yellow', accentColor.value);
+        root.style.setProperty('--page-accent', accentColor.value);
+        root.style.setProperty('--sb-stripe-p1', stripeOne.value);
+        root.style.setProperty('--sb-stripe-p2', stripeTwo.value);
         root.style.setProperty('--phone-width', `${phoneWidth.value}px`);
-        applyDensity(densityControl.value);
+        screen.dataset.scheme = selects.scheme.value;
+        $('#body').classList.toggle('scrolls', !fillScreen);
+
+        const currentSet = m.sets.length;
+        $('#header-title').textContent = setup
+          ? 'NEW MATCH'
+          : status === 'pending_report'
+            ? 'FINAL'
+            : `SET ${currentSet} · ${selects.format.value.toUpperCase()}`;
+        $('#header-clock').textContent = value('clock');
+        $('#header-clock').hidden = setup;
+        $('#menu-btn').classList.toggle('placeholder', status === 'spectator');
+
+        const court = $('#court');
+        court.textContent = '';
+        court.style.display = 'contents';
+        court.append(setup ? renderSetup(m) : renderScoreboard(m, scoring));
+        renderSections(m);
+        renderOverlays(m);
         updateOutput();
       }
 
@@ -856,35 +1936,44 @@
         controls.forEach((control) => {
           control.value = defaults[control.dataset.control];
         });
-        serverControl.value = defaults.server;
-        statusControl.value = defaults.status;
-        guestControl.value = defaults.guest;
-        tipsControl.value = defaults.tips;
-        courtColor.value = defaults.courtColor;
+        Object.entries(selects).forEach(([key, select]) => {
+          select.value = defaults[key];
+        });
         accentColor.value = defaults.accentColor;
+        stripeOne.value = defaults.stripeOne;
+        stripeTwo.value = defaults.stripeTwo;
         phoneWidth.value = defaults.phoneWidth;
-        densityControl.value = defaults.density;
         feedbackNotes.value = defaults.notes;
         render();
       }
 
-      document.querySelectorAll('input, select, textarea').forEach((el) => {
-        el.addEventListener('input', render);
-        el.addEventListener('change', render);
+      document.querySelectorAll('.controls input, .controls select, .controls textarea').forEach((node) => {
+        node.addEventListener('input', render);
+        node.addEventListener('change', render);
       });
+      document.querySelectorAll('[data-close-overlay]').forEach((node) => node.addEventListener('click', closeOverlay));
+      $('#menu-btn').addEventListener('click', () => {
+        selects.overlay.value = 'manage';
+        render();
+      });
+      document.querySelectorAll('.scrim').forEach((scrim) =>
+        scrim.addEventListener('click', (event) => {
+          if (event.target === scrim) closeOverlay();
+        }),
+      );
 
-      document.querySelector('#copy-feedback').addEventListener('click', async () => {
+      $('#copy-feedback').addEventListener('click', async () => {
         updateOutput();
         try {
           await navigator.clipboard.writeText(feedbackOutput.textContent);
-          document.querySelector('#copy-feedback').textContent = 'Copied!';
-          setTimeout(() => (document.querySelector('#copy-feedback').textContent = 'Copy feedback JSON'), 1200);
+          $('#copy-feedback').textContent = 'Copied!';
+          setTimeout(() => ($('#copy-feedback').textContent = 'Copy feedback JSON'), 1200);
         } catch {
           feedbackOutput.focus();
         }
       });
 
-      document.querySelector('#reset-preview').addEventListener('click', reset);
+      $('#reset-preview').addEventListener('click', reset);
       render();
     </script>
   </body>
