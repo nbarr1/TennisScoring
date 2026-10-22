@@ -8,8 +8,8 @@ Security fixes go into the default branch (`Main`) and ship in the next release.
 
 | Version | Supported |
 | ------- | --------- |
-| 1.1.x   | Yes       |
-| < 1.1   | No        |
+| 1.2.x   | Yes       |
+| < 1.2   | No        |
 
 ## Reporting a vulnerability
 

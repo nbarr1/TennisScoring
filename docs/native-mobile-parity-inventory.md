@@ -6,13 +6,14 @@ This inventory is the removal gate for the Expo client. The reference implementa
 
 | Reference route | Native destination | Guard/capability |
 |---|---|---|
-| `(auth)/login` | Login | signed-out only; email/password and Google authentication |
+| `(auth)/login` | Login | signed-out only; email/password authentication and password reset |
+| `(auth)/verify-email` | Verify email | signed in with an unverified email address |
 | `(onboarding)/division` | Division | authenticated user without a division |
 | `(onboarding)/tutorial` | Tutorial | authenticated user with incomplete tutorial |
 | `(tabs)/index` | Dashboard | authenticated/onboarded |
 | `(tabs)/matches`, `match/[id]` | Matches, match detail/live score | participants score/report/dispute; leaders resolve |
 | rankings | Rankings | division member; singles/doubles and season/level filters |
-| `(tabs)/messages` | Messages/channels | membership and block/moderation checks |
+| `(tabs)/messages`, `conversation/[channelId]` | Messages/channels, conversation | membership and block/moderation checks |
 | `(tabs)/profile` | Profile/availability | owner edits contact preferences, slots, photo and account |
 | `(tabs)/admin` | Administration | `division_leader`, `admin`, or `app_developer` |
 | feedback | Feedback | authenticated submitter |
@@ -21,7 +22,7 @@ This inventory is the removal gate for the Expo client. The reference implementa
 
 ## Backend contract
 
-Firestore collections used by the reference client are `users`, `publicProfiles`, `divisions`, `divisionLevels`, `seasons`, `matches`, `rankings`, `doublesRankings`, `channels`, `messages`, `feedback`, `invites`, and moderation/block records. Operations include authenticated document reads, realtime match/ranking/channel listeners with cleanup, profile and availability updates, atomic FCM-token array updates, match lifecycle writes, report confirmation/dispute resolution, scheduling, roster/invite administration, feedback creation, Storage avatar/PDF access, and callable Functions. Native conversion is centralized and represents every date as Unix milliseconds.
+Firestore collections used by the reference client are `users`, `profiles`, `divisions` (with its `levels`, `memberships`, `rankings`, and `doublesRankings` subcollections), `matches`, `headToHead`, `channels` (with its `messages` subcollection), and `messageReports`. Seasons are ids such as `spring-2026` stored on levels, memberships, and matches, not a collection. Blocks are the `blockedUserIds` field on the user's own `users` document. Invites and feedback go through callables (`sendInvite`, `acceptInvite`, `submitFeedback`) rather than client writes. Operations include authenticated document reads, realtime match/ranking/channel listeners with cleanup, profile and availability updates, atomic FCM-token array updates, match lifecycle writes, report confirmation/dispute resolution, scheduling, roster/invite administration, feedback creation, Storage avatar/PDF access, and callable Functions. Native conversion is centralized and represents every date as Unix milliseconds.
 
 Roles use exact wire values `player`, `division_leader`, `admin`, and `app_developer`. Match states are `proposed`, `scheduled`, `in_progress`, `pending_report`, `completed`, `disputed`, and `cancelled`. Rankings update only after confirmation and sort by matches won, sets won, games won, game differential, head-to-head, then display name. Singles and fixed-partnership doubles use the same ordering.
 
@@ -41,9 +42,9 @@ The Android application continues to launch the existing React Native/Expo clien
 
 ## iOS migration entry point
 
-The iOS client is split in two. `apps/mobile/ios/TennisKit` is a Swift package with no Apple-framework dependencies: `TennisCore` (models, the score and ranking engines, match sides, doubles ids, tips, and the watch message format) and `TennisAppModel` (view models, service protocols, and an in-memory `DemoBackend`). Its XCTest suites run on Linux and macOS in CI, and `TennisCore` replays `fixtures/mobile-contract/engine-parity.json` point for point against the TypeScript engines. `TennisScoring` holds the SwiftUI screens, Firebase adapters, and phone-side WatchConnectivity; `TennisScoringWatch` holds the watch app.
+The iOS client is split in two. `apps/mobile/ios/TennisKit` is a Swift package with no Apple-framework dependencies: `TennisCore` (models, the score and ranking engines, match sides, doubles ids, tips, and the watch message format) and `TennisAppModel` (view models, service protocols, and an in-memory `DemoBackend`). Its XCTest suites run on macOS in CI (`native-mobile.yml`), and `swift test` also runs them on Linux, and `TennisCore` replays `fixtures/mobile-contract/engine-parity.json` point for point against the TypeScript engines. `TennisScoring` holds the SwiftUI screens, Firebase adapters, and phone-side WatchConnectivity; `TennisScoringWatch` holds the watch app.
 
-Native destinations so far: Login, Division (join by code), Matches and match detail/live score (proposal responses, start, scoring through `scoreMatchPoint`, undo, report submit/confirm/dispute), Rankings (singles and doubles, split by season and level), Messages (division and direct channels, sending, contact sharing, report and block), a read-only Profile with the blocked-player list and sign-out, and match deep links. Still missing against the table above: Google sign-in, Tutorial, Dashboard, read receipts, profile editing and availability, account deletion, Administration, Feedback, Privacy, Round robin, match proposal and recording, leader dispute resolution, and FCM/APNs registration.
+Native destinations so far: Login, Division (join by code), Matches and match detail/live score (proposal responses, start, scoring through `scoreMatchPoint`, undo, report submit/confirm/dispute), Rankings (singles and doubles, split by season and level), Messages (division and direct channels, sending, contact sharing, report and block), a read-only Profile with the blocked-player list and sign-out, and match deep links. Still missing against the table above: email verification, password reset, Tutorial, Dashboard, read receipts, profile editing and availability, account deletion, Administration, Feedback, Privacy, Round robin, match proposal and recording, leader dispute resolution, and FCM/APNs registration.
 
 No Xcode project is committed, so nothing runs the app itself. `pnpm ios:typecheck` typechecks the app and watch sources against the simulator SDKs, except `FirebaseServices.swift`, which compiles only once the Firebase packages are linked. Creating the project, its targets, signing, and XCTest integration is the next step, and it has to happen on macOS; `apps/mobile/ios/README.md` lists the steps.
 

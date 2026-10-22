@@ -1,6 +1,6 @@
 # TennisScoring Setup Guide
 
-This guide reflects the Version 1.0.0 baseline. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
+This guide reflects version 1.2.0. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
 
 ## Native client migration
 
@@ -19,7 +19,8 @@ iOS requires macOS, Xcode 16 or later, the production signing team/profiles, APN
 - Firebase CLI (`npm i -g firebase-tools`) for emulators, rules, and Functions deployment.
 - EAS CLI (`npm i -g eas-cli`) for mobile cloud builds.
 - Android Studio for Android and Wear OS builds.
-- Xcode 15+ and Apple developer tooling for iOS/Apple Watch builds.
+- Xcode 16 or later and Apple developer tooling for iOS/Apple Watch builds.
+- JDK 17, Android SDK 35, and NDK `27.1.12297006` for native Android builds (see [Native client migration](#native-client-migration)).
 - Google Cloud CLI (`gcloud`) when validating Firebase deployer IAM and Secret Manager access.
 
 ---
@@ -74,16 +75,20 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=""
 NEXT_PUBLIC_FIREBASE_APP_ID=""
 NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=""
 NEXT_PUBLIC_FIREBASE_VAPID_KEY=""
+NEXT_PUBLIC_SITE_URL="http://localhost:3000"
 
 NEXTAUTH_SECRET="replace-with-a-long-random-string"
-NEXTAUTH_URL="http://localhost:3000"
 
 FIREBASE_ADMIN_PROJECT_ID=""
 FIREBASE_ADMIN_CLIENT_EMAIL=""
 FIREBASE_ADMIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 ```
 
-`NEXTAUTH_SECRET` signs the `tennis-auth` httpOnly session cookie used by `next-firebase-auth-edge` middleware. Do not reuse the development fallback value in production.
+`NEXTAUTH_SECRET` signs the `tennis-auth` httpOnly session cookie used by `next-firebase-auth-edge` middleware. There is no fallback: without it, the middleware sends every page request to `/login` and answers API requests with an error. Use a long random value, and a different one in production.
+
+`NEXT_PUBLIC_SITE_URL` is the public origin used by `robots.txt`, `sitemap.xml`, and page metadata. `NEXT_PUBLIC_*` values are inlined at build time, so set it in the build environment (for example, Vercel). `NEXT_PUBLIC_FIREBASE_VAPID_KEY` is the Web Push certificate key that web push registration needs.
+
+`/api/readiness` reports the web app as not ready while any of `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXTAUTH_SECRET`, or the three `FIREBASE_ADMIN_*` variables is missing. Two optional variables are also read: `NEXT_PUBLIC_FIREBASE_FUNCTIONS_REGION` (the Functions region for the add-division-member proxy route, default `us-central1`) and `NEXT_PUBLIC_APP_VERSION` (attached to feedback submissions).
 
 ### Mobile app (`apps/mobile/.env`)
 
@@ -102,13 +107,15 @@ EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=""
 ### Firebase Functions params (`firebase/.env.<PROJECT_ID>`)
 
 ```bash
-APP_BASE_URL="https://your-web-domain.example"
+APP_BASE_URL="https://your-web-domain.example" # required in production; must be the web app's https:// origin
 ALLOWED_EMAIL_DOMAIN="" # fails closed: the onUserCreated blocking function REJECTS ALL self-registration while this is blank. Set it to a real domain (e.g. "yourcompany.com") before that function is live, or self-signup is completely disabled.
 GITHUB_OWNER="your-github-org-or-user"
 GITHUB_REPO="your-feedback-repo"
 GITHUB_API_URL="https://api.github.com"
 GITHUB_FEEDBACK_LABELS="feedback"
 ```
+
+`APP_BASE_URL` is the origin that invite links and match emails point at. In production, `sendInvite` and `recordMatchOnBehalf` fail with `failed-precondition` when it is unset or does not start with `https://`; only the emulator and non-production runs fall back to `http://localhost:3000`. The targeted deploy workflow writes it from the `APP_BASE_URL` repository variable and stops before deploying when that variable is missing (see [Targeted Firebase Functions deploy](#targeted-firebase-functions-deploy)).
 
 `onUserCreated` is an `identity.beforeUserCreated` blocking function, which Firebase can only wire up on projects with Google Cloud Identity Platform (GCIP) enabled. On a project without GCIP, `firebase deploy --only functions` deploys the function's *code* successfully but fails to update its blocking-trigger config with `Blocking Functions may only be configured for GCIP projects` — the previously-deployed version (if any) keeps running. Enable GCIP in Cloud Console before relying on a new deploy of this function to take effect, and always set `ALLOWED_EMAIL_DOMAIN` first per the warning above.
 
@@ -181,9 +188,10 @@ pnpm --filter @tennis/firebase-functions build
 pnpm --filter @tennis/firebase-functions build:targeted-deploy
 ```
 
-Deploy Functions manually:
+Deploy Functions manually. The `deploy` script uploads whatever `firebase/lib/index.js` the last build wrote, so run the full `build` first; after `build:targeted-deploy`, it would deploy only the targeted functions:
 
 ```bash
+pnpm --filter @tennis/firebase-functions build
 pnpm --filter @tennis/firebase-functions deploy
 ```
 
@@ -198,7 +206,7 @@ The web app is a standard Next.js app under `apps/web`.
 Recommended deployment steps:
 
 1. Build shared packages first when your platform does not automatically run Turbo dependency builds.
-2. Set all `NEXT_PUBLIC_FIREBASE_*`, `NEXTAUTH_*`, and `FIREBASE_ADMIN_*` variables in the hosting provider.
+2. Set all `NEXT_PUBLIC_FIREBASE_*`, `NEXT_PUBLIC_SITE_URL`, `NEXTAUTH_SECRET`, and `FIREBASE_ADMIN_*` variables in the hosting provider.
 3. Configure Firebase Auth authorized domains for the deployed URL.
 4. Run:
 
@@ -207,17 +215,17 @@ pnpm --filter @tennis/web build
 pnpm --filter @tennis/web start
 ```
 
-The repository includes `apps/web/vercel.json` for Vercel output/build behavior.
+The repository includes `apps/web/vercel.json`, which installs from the workspace root and builds `@tennis/shared` and `@tennis/firebase-client` before `@tennis/web`.
 
 ---
 
 ## 7. Mobile and Wearable Builds
 
-Mobile app metadata currently identifies v1 as:
+Mobile app metadata in `apps/mobile/app.json` currently reads:
 
-- Expo version: `1.0.1`
-- iOS build number: `1`
-- Android version code: `1`
+- Expo version: `1.2.0`
+- iOS build number: `6` (the EAS `production` profile auto-increments it)
+- Android version code: `6` in the file. Release builds from the EAS workflow replace it with `VERSION_CODE_OFFSET + github.run_number` (see [EAS Android workflow](#eas-android-workflow)).
 - Android application ID (Google Play package name): `com.companytennisleague.app`
 
 The Android application ID is set in `apps/mobile/app.json` (`android.package`) and mirrored in the native project at `apps/mobile/android/app/build.gradle` (`namespace`/`applicationId`) and `apps/mobile/android/wear/build.gradle` (`applicationId`, which must stay identical to the phone app's so the Wear OS Data Layer API can pair them). Before building a release intended for the Play Console, register (or confirm) an Android app with this exact package name in the Firebase project console and replace `apps/mobile/google-services.json` / `apps/mobile/android/app/google-services.json` with the file Firebase generates for it — EAS builds overwrite the in-repo copy from the `GOOGLE_SERVICES_JSON` secret at build time (see `apps/mobile/scripts/prepare-eas-credentials.js`), so that secret must point at the matching file too.
@@ -235,9 +243,9 @@ The `apps/mobile/eas.json` profiles run this prebuild command before cloud build
 pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
 ```
 
-Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and leaves the signing config unset in `apps/mobile/android/wear/build.gradle` so EAS-managed release signing applies (register the Wear module's release keystore with `eas credentials --platform android`, run from `apps/mobile`, before the first `wear-production` build). The GitHub Actions `EAS Build (Android APKs)` workflow can trigger any of the mobile APK, Wear OS preview APK, or Wear OS production bundle through the `target` input (`mobile`, `wear`, `wear-production`).
+Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and leaves the signing config unset in `apps/mobile/android/wear/build.gradle` so EAS-managed release signing applies (register the Wear module's release keystore with `eas credentials --platform android`, run from `apps/mobile`, before the first `wear-production` build). The GitHub Actions `EAS Build (Android APKs)` workflow builds the mobile preview APK, the phone release bundle, the Wear OS preview APK, or the Wear OS production bundle through the `target` input (`mobile`, `production`, `wear`, `wear-production`).
 
-Because `:app` and `:wear` share an `applicationId` (see the comment in `apps/mobile/android/wear/build.gradle`), decide before submitting whether the Wear app will live under the same Play Store listing as the phone app or as its own listing — the former requires a `versionCode` distinct from `:app`'s, which isn't wired up yet since no production Wear release has shipped.
+`:app` and `:wear` share an `applicationId` (see the comment in `apps/mobile/android/wear/build.gradle`), so both can live under one Play Store listing. `:wear` takes its `versionCode` as `1000000 +` the phone's, which keeps the two distinct.
 
 ---
 
@@ -257,17 +265,18 @@ pnpm build
 # shared_tests — only if packages/shared/** or root workspace files changed
 pnpm --filter @tennis/shared test
 
-# firebase_rules_tests — only if firebase/** changed
+# firebase_rules_tests — only if firebase/** or packages/shared/** changed
 pnpm check:firebase-rules
-pnpm --filter @tennis/firebase-functions test:rules
-pnpm audit --audit-level=high   # non-blocking; an OSV-scanner step decides the final verdict on failure
+pnpm --filter @tennis/firebase-functions test:rules       # emulator: signed-out smoke test, then the authenticated rules suite
+pnpm --filter @tennis/firebase-functions test:functions   # emulator: Cloud Functions handler tests
+pnpm audit --audit-level=high   # an OSV-scanner step decides the final verdict when the audit fails
 ```
 
-The mobile jobs (`mobile_bundle`, `mobile_native`) run when `apps/mobile/**` or `packages/**` change; `mobile_native` also runs the Kotlin unit tests. `.github/workflows/native-mobile.yml` runs the Swift `TennisKit` tests and iOS typecheck on macOS when `apps/mobile/ios/**` changes. Code scanning runs through GitHub's CodeQL default setup, configured in the repository settings.
+The mobile jobs (`mobile_bundle`, `mobile_native`) run when `apps/mobile/**`, `packages/**`, or root manifests change. `mobile_bundle` runs native-module codegen and bundles the app for release with Metro and Hermes; `mobile_native` builds the watch and phone apps with Gradle and runs the Kotlin unit tests. `.github/workflows/native-mobile.yml` runs the Swift `TennisKit` tests and iOS typecheck on macOS when `apps/mobile/ios/**` changes. Code scanning runs through GitHub's CodeQL default setup, configured in the repository settings.
 
 ### Targeted Firebase Functions deploy
 
-`.github/workflows/deploy-firebase-function.yml` runs on manual dispatch, and on pushes to the default branch (or `main`, kept listed in case the default is renamed) that touch Firebase/shared/function workflow paths. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions.
+`.github/workflows/deploy-firebase-function.yml` runs on manual dispatch, and on pushes to the default branch (or `main`, kept listed in case the default is renamed) that touch `firebase/**`, `packages/shared/**`, or the workflow itself. It builds the targeted Functions bundle, validates GitHub feedback configuration, writes Firebase params, and deploys selected Functions. Every run shares one concurrency group and is never cancelled part-way.
 
 It deploys to the Firebase project configured for the GitHub `staging` environment, and only that one — there is no production job. To promote, point the staging environment's `FIREBASE_PROJECT_ID` at the target project, or add a second job with its own environment once production credentials exist. Note also that the workflow's `GITHUB_TOKEN` feedback check runs before the deploy and fails the whole run if the token is missing or expired, regardless of which functions you are deploying.
 
@@ -276,19 +285,27 @@ Required GitHub Actions secrets:
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_SERVICE_ACCOUNT_JSON`
 
-Optional/recommended GitHub Actions variables:
+Required GitHub Actions variable:
+
+- `APP_BASE_URL`: the web app's `https://` origin. The workflow fails before deploying when it is missing or doesn't start with `https://`.
+
+Optional GitHub Actions variables:
 
 - `GITHUB_OWNER`
 - `GITHUB_REPO`
 - `GITHUB_API_URL`
 - `GITHUB_FEEDBACK_LABELS`
 
-### EAS Android APK workflow
+### EAS Android workflow
 
-`.github/workflows/eas-build.yml` runs only on manual dispatch: choose `mobile` (preview APK), `production` (release AAB, default branch only), `wear`, or `wear-production`. Merges and pull requests do not start a build. It requires:
+`.github/workflows/eas-build.yml` runs only on manual dispatch: choose `mobile` (preview APK), `production` (release AAB, default branch only), `wear`, or `wear-production` (default branch only). Merges and pull requests do not start a build. For `production` and `wear-production`, `scripts/stamp-android-version-code.mjs` sets the release `versionCode` from the workflow's run number before the build. It requires:
 
 - `EXPO_TOKEN`
-- Firebase public config secrets mapped into `EXPO_PUBLIC_FIREBASE_*` environment variables.
+- The `NEXT_PUBLIC_FIREBASE_*` repository secrets, which the workflow maps to `EXPO_PUBLIC_FIREBASE_*` environment variables.
+
+### Debug APK workflow
+
+`.github/workflows/debug-apk.yml` runs only on manual dispatch. It builds an installable, debug-signed `arm64-v8a` release APK with the real Firebase config from the same `NEXT_PUBLIC_FIREBASE_*` secrets, and uploads it as a workflow artifact for 14 days. It fails if the bundle still carries the `ci-placeholder` values that CI builds use. Uninstall any Play-signed or EAS-signed copy before installing it.
 
 ---
 
@@ -302,6 +319,14 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+```
+
+With JDK 21 or later installed (firebase-tools 15 requires it to start the emulators), run the Firebase rules and Cloud Functions tests as CI does:
+
+```bash
+pnpm check:firebase-rules
+pnpm --filter @tennis/firebase-functions test:rules
+pnpm --filter @tennis/firebase-functions test:functions
 ```
 
 If cloud credentials are configured, also validate:
@@ -331,7 +356,7 @@ Division leaders can use the Admin screen in both the web and mobile apps to doc
 
 On the web, `/admin` picks the season once in the page header and scopes the whole page to it. Division levels live on the **Divisions** tab; the roster, player creation, and division assignment live on the **Roster** tab; the round-robin scheduler, reported-message queue, ranking repair, and CSV exports live on the **Tools** tab.
 
-Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's rostered membership documents (`active` and `waitlisted`) `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`; it is exported from `firebase/src/targetedDeployIndex.ts` and listed in `.github/workflows/deploy-firebase-function.yml`, so the targeted deploy workflow ships it. Adding a callable means adding it in **both** places — the workflow's "verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from the list passes CI and then 404s in production.
+Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's rostered membership documents (`active` and `waitlisted`) `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`; it is exported from `firebase/src/targetedDeployIndex.ts` and listed in `.github/workflows/deploy-firebase-function.yml`, so the targeted deploy workflow ships it. Adding a callable means adding it in **three** places: the export in `targetedDeployIndex.ts`, and both the `FILTERS` and `DEPLOY_FUNCTIONS` lists in the workflow. The workflow's "verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from the lists passes CI and then fails in production with `functions/not-found`.
 
 Removing a player who holds no membership in any other season of the division also takes them out of `divisions.playerIds` and clears their `users/{uid}.divisionId`. Without that the roster, which is built from both, would re-render them immediately as an unassigned row.
 

@@ -80,7 +80,7 @@ cd firebase && pnpm test:functions          # Builds lib/index.js, then drives C
 
 ```bash
 firebase deploy --only firestore,storage          # Prefer the "Deploy Firebase rules" workflow (see CI)
-pnpm --filter @tennis/firebase-functions deploy   # Functions only
+pnpm --filter @tennis/firebase-functions deploy   # Functions only; uploads whatever lib/index.js the last build wrote, so run `build` first
 pnpm --filter @tennis/firebase-functions build:targeted-deploy
 ```
 
@@ -223,7 +223,7 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 **`firebase/src/messaging/onNewMessage.ts`** — Firestore trigger on new message creation; updates channel `lastMessage` and sends FCM push notifications to channel participants.
 
-**`firebase/src/auth/onUserCreated.ts`** — `identity.beforeUserCreated` trigger that creates a default user document in Firestore when a new user authenticates.
+**`firebase/src/auth/onUserCreated.ts`** — `identity.beforeUserCreated` trigger that creates a default user document in Firestore when a new user authenticates. It rejects any email outside the `ALLOWED_EMAIL_DOMAIN` param, and rejects every sign-up while that param is blank. Blocking functions need Google Cloud Identity Platform on the project, and the targeted deploy workflow does not ship this one.
 
 **`firebase/src/divisions/divisionFunctions.ts`** — division/player management callables: `createDivision`, `joinDivisionByCode`, `addPlayerToDivisionByEmail`, `addDivisionMemberPlaceholder`, `mergeDivisionPlayerRecords`, `updateDivisionPlayerEmail`, `upsertDivisionLevel`, `upsertDivisionMembership`, `removeDivisionMembership`, `backfillDivisionSeasonLevel`, `backfillMissingProfiles` (repairs `profiles/{uid}` docs missing due to a past gap in the invite/add-by-email write paths), `exportDivisionCsv`.
 
@@ -271,6 +271,7 @@ feedback/              # Feedback submission form
 invite/accept/         # Invite code acceptance
 onboarding/tutorial/   # Onboarding tutorial
 onboarding/division/   # Division creation / join-by-code onboarding
+verify-email/          # Holds a signed-in, unverified account until its email is verified
 privacy/                # Public privacy policy page (excluded from the auth middleware matcher — must render for signed-out visitors)
 api/auth/login/        # Session-cookie login endpoint intercepted by auth middleware (route.ts fallback returns 401)
 api/auth/logout/       # Logout handler (route.ts)
@@ -291,13 +292,14 @@ template.tsx           # Wraps every page in the `page-enter` fade (keyframes in
 Uses Expo Router with file-based group routing:
 
 ```text
-(auth)/          # Auth group (login/signup screens)
+(auth)/          # Auth group (login/signup and verify-email screens)
 (onboarding)/    # Onboarding group
 (tabs)/          # Main tabbed navigation (matches list includes scheduling; profile includes availability editor and a Privacy Policy link; admin includes the round-robin scheduler entry point)
 match/           # Match detail screens
 conversation/[channelId].tsx  # One conversation (messages, composer, report/block), pushed on the root stack from the Messages tab or a message notification; body is components/messages/ChannelView.tsx
 round-robin-scheduler.tsx  # Admin-only: generate/preview/publish a round-robin fixture list for a season + division level
 privacy-policy.tsx  # Static privacy policy screen, content shared with the web page via @tennis/shared
+feedback.tsx     # Feedback form; submits through the submitFeedback callable
 ```
 
 ### Mobile UI building blocks
@@ -441,16 +443,24 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID / EXPO_PUBLIC_FIREBASE_PROJECT_ID
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET / EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID / EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
 NEXT_PUBLIC_FIREBASE_APP_ID / EXPO_PUBLIC_FIREBASE_APP_ID
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID / EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
 
-# Web session cookie / Next.js
-NEXTAUTH_SECRET, NEXTAUTH_URL
+# Web push (Web Push certificate key)
+NEXT_PUBLIC_FIREBASE_VAPID_KEY
+
+# Web session cookie (signs tennis-auth; the middleware has no fallback)
+NEXTAUTH_SECRET
+
+# Web server-side Admin SDK (middleware and the add-division-member route); also read by the backfill scripts
+FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY
 
 # Public site origin for robots.txt / sitemap.xml / page metadata (build-time inlined)
 NEXT_PUBLIC_SITE_URL
 
-# Cloud Functions only
-FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, FIREBASE_ADMIN_PRIVATE_KEY
-GITHUB_OWNER, GITHUB_REPO, GITHUB_FEEDBACK_LABELS
+# Cloud Functions only (firebase/.env.<PROJECT_ID>, written by the deploy workflow)
+APP_BASE_URL                 # required in production: https:// origin for invite and match links
+ALLOWED_EMAIL_DOMAIN         # onUserCreated sign-up domain; blank rejects every sign-up
+GITHUB_OWNER, GITHUB_REPO, GITHUB_API_URL, GITHUB_FEEDBACK_LABELS
 
 # Firebase Functions secret storage only
 GITHUB_TOKEN
@@ -470,7 +480,7 @@ See `SETUP.md`, `.env.example`, and `apps/mobile/.env.example` for the full setu
 - The Android module carries Kotlin unit tests (`apps/mobile/android/app/src/test/`) for the score engine, ranking engine, and Wear protocol. `ci.yml`'s `mobile_native` job runs them (`:app:testReleaseUnitTest`); `pnpm android:test` runs them locally, after `pnpm install`.
 - `firebase/scripts/functions.test.mjs` calls the built bundle's handlers through each function's `run()` with the Admin SDK pointed at the emulators: ranking recalculation (including two confirmations racing), report PDF generation, `recordMatchOnBehalf`, and the roster callables (`upsertDivisionMembership`, `removeDivisionMembership`, `addPlayerToDivisionByEmail`), including the waitlisted-membership, detach-on-removal, and never-move-a-registered-account behavior described under `divisionFunctions.ts`. Because `firebase-admin` is external to the bundle, a test can patch `Query.prototype.get` or `Messaging.prototype.sendEachForMulticast` to hold a read or fail a send.
 - Tests that reproduce a known, unfixed bug (in `rules-auth.test.mjs` and `functions.test.mjs`) are marked with `knownBug(...)`, which sets node:test's `todo`: they run and report, but do not fail CI. When the fix lands, remove the marker so a regression fails again.
-- Test runner: Jest 29 + ts-jest. Build tool: tsup 8.
+- Test runner: Jest 30 + ts-jest 29. Build tool: tsup 8.
 - Add tests when modifying scoring or ranking logic — the score engine is extensively tested.
 
 ### CI
@@ -486,6 +496,8 @@ Defined in `.github/workflows/ci.yml`. Triggers: push to `Main`/`main`, and pull
 The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIREBASE_*` vars, not secrets: `app.config.js` hard-fails when `CI=true` and they are unset, and real secrets would make both jobs unusable on fork and Dependabot pull requests. Do not replace them with repository secrets.
 
 **Code scanning runs through GitHub's default setup**, configured in the repository's settings rather than from a workflow file, and it analyzes JavaScript/TypeScript, Python, and Actions. There is deliberately no `codeql.yml`: an advanced CodeQL workflow cannot upload results while default setup is enabled (`CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled`), so the one this repository used to carry failed every single run. To move to an advanced configuration — for custom queries or a `codeql-config.yml` — turn default setup off in **Settings → Code security** first, then add the workflow; running both is what breaks.
+
+`.github/workflows/debug-apk.yml` — manual (`workflow_dispatch`) build of an installable Android APK for field debugging. `mobile_native` compiles the `ci-placeholder` Firebase values into its bundle, so its APK cannot sign in; this workflow assembles the same `arm64-v8a` release APK with the real config from the `NEXT_PUBLIC_FIREBASE_*` repository secrets, signed with the debug keystore, fails if the bundle still contains `ci-placeholder`, and uploads the APK as an artifact kept for 14 days. A debug-signed APK cannot upgrade a Play-signed or EAS-signed install, so uninstall that first. It is dispatch-only so secrets never reach a pull request.
 
 `.github/workflows/native-mobile.yml` is the macOS-only part of CI: the `TennisKit` Swift tests and `scripts/ios-typecheck.sh`, on pull requests and `Main` pushes touching `apps/mobile/ios/**` or the parity fixture.
 
@@ -505,15 +517,16 @@ There is no separate Firebase rules guard workflow. `pnpm check:firebase-rules` 
 - A production build started outside this workflow (`pnpm --filter @tennis/mobile build:android` uses the default `production` profile) takes `versionCode` straight from `app.json`. Release from the workflow.
 - `"appVersionSource"` stays `"local"`. `"remote"` is not a drop-in fix here: `android/build.gradle` reads `versionCode` from `app.json` into `rootProject.ext.appVersionCode`, so EAS can neither seed a remote counter from the module `build.gradle` (it tried to store the variable name and the build failed) nor write a remote value into the build. iOS keeps `autoIncrement: "buildNumber"`; no workflow builds iOS, so a local build's bump can be committed.
 
-`.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
+`.github/workflows/deploy-firebase-function.yml` — targeted Firebase Functions deploy workflow for selected Functions. It runs on manual dispatch and on pushes to `Main`/`main` that touch `firebase/**`, `packages/shared/**`, or the workflow itself. It builds the targeted bundle, validates GitHub feedback configuration and `GITHUB_TOKEN` access, writes Firebase params, and deploys selected Functions.
 
-Five things to know before relying on it:
+Six things to know before relying on it:
 
 - **Deploys share one concurrency group across all refs and are never cancelled mid-run** (`cancel-in-progress: false`). Every run targets the same project, so a branch dispatch waits for a `Main` deploy instead of interleaving with it, and cancelling a `firebase deploy` part-way can leave some functions on the new commit and others on the old one.
 - **It deploys to the `staging` GitHub environment only.** There is no production job. It previously carried a `deploy_production` job whose only step echoed a message, so a run that "succeeded" had deployed nothing to production.
 - **Firestore and Storage rules are not deployed by it.** They go out through `deploy-firebase-rules.yml`, described next.
 - **A function must be named in three places or it is silently not deployed**: exported from `firebase/src/targetedDeployIndex.ts` (which `build:targeted-deploy` bundles to `lib/index.js`), and listed in *both* the `FILTERS` and `DEPLOY_FUNCTIONS` strings in this workflow. The "Verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from those lists passes CI and then fails at the call site with `functions/not-found`.
 - **The feedback-token check gates every deploy.** The workflow reads `GITHUB_TOKEN` from Secret Manager and requires exactly HTTP 422 from the GitHub issues endpoint. A missing or expired token fails the whole run, including deploys of functions unrelated to feedback.
+- **`APP_BASE_URL` is required.** The params step writes it to `.env.<PROJECT_ID>` from the `APP_BASE_URL` repository variable and fails the run when it is unset or not `https://`. Invite links (`sendInvite`) and match emails (`recordMatchOnBehalf`) are built from it, and in production both throw `failed-precondition` without it; the old localhost fallback either threw after saving the match or sent players localhost links.
 
 `.github/workflows/deploy-firebase-rules.yml` — manual (`workflow_dispatch`) deploy of Firestore rules, Storage rules, or Firestore indexes from one chosen commit, to the same `staging` environment and secrets as the functions workflow. It exists because a hand-run `firebase deploy --only firestore,storage` from `Main` once put the email-verification rules live before the clients that handle them shipped, and the rules had to be rolled back by hand.
 

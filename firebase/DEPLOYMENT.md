@@ -1,10 +1,14 @@
 # Firebase Functions deployment prerequisites
 
-This project deploys Cloud Functions with `firebase-tools` from CI. These notes reflect the Version 1.0.0 baseline and the targeted Functions deploy workflow in `.github/workflows/deploy-firebase-function.yml`.
+This project deploys Cloud Functions with `firebase-tools` from CI. These notes describe the targeted Functions deploy workflow in `.github/workflows/deploy-firebase-function.yml`.
 
-## Version 1.0.0 deployment status
+## Deployment status
 
-The v1 targeted deployment workflow currently builds `firebase/src/targetedDeployIndex.ts` and deploys selected Functions used by the web/mobile baseline, including division placeholder/merge/email tools, season division-level and membership/backfill management, CSV export, match update/scoring/reporting hooks, and feedback submission. Full backend deploys can still be run manually with the Firebase CLI when rules, indexes, or all Functions need to be refreshed.
+The workflow runs on manual dispatch and on pushes to the default branch that touch `firebase/**`, `packages/shared/**`, or the workflow itself. It deploys to the Firebase project configured for the GitHub `staging` environment; there is no production job. All runs share one concurrency group and are never cancelled part-way, so a partial deploy cannot leave functions on two different commits.
+
+It builds `firebase/src/targetedDeployIndex.ts` into `lib/index.js` and deploys the functions named in the workflow's `DEPLOY_FUNCTIONS` list: the division, roster, membership, backfill, and CSV export callables; match scoring, recording, doubles, round-robin, ranking, and report-resolution functions with the `onMatchUpdate` trigger; invites and account deletion; message moderation and the `onNewMessage` trigger; and feedback submission. A function must be exported from `targetedDeployIndex.ts` and named in both the `FILTERS` and `DEPLOY_FUNCTIONS` lists, or it is not deployed.
+
+The targeted bundle leaves out `generateMatchReport`, `onUserCreated`, `health`, and `readiness`. Only a full deploy ships them: run `pnpm --filter @tennis/firebase-functions build`, which bundles `firebase/src/index.ts` into `lib/index.js`, and then `pnpm --filter @tennis/firebase-functions deploy`. The `deploy` script doesn't build, and `build:targeted-deploy` writes the same `lib/index.js`, so a full deploy right after a targeted build ships only the targeted functions. Firestore rules, Storage rules, and Firestore indexes go out through the separate **Deploy Firebase rules** workflow (`.github/workflows/deploy-firebase-rules.yml`).
 
 ## Required IAM for the deployer principal
 
@@ -81,7 +85,7 @@ Before deploying from CI, the workflow runs a preflight check that:
 1. Resolves the Firebase params from GitHub Actions variables, defaulting to the current workflow repository owner/name when `GITHUB_OWNER` or `GITHUB_REPO` are unset.
 2. Confirms the deployer service account can describe and access the latest `GITHUB_TOKEN` Secret Manager version.
 3. Uses the secret value to call the configured GitHub issue creation endpoint with an intentionally invalid payload. A `422` response verifies authentication/authorization reached GitHub validation without creating an issue.
-4. Writes the non-secret params to `.env.$FIREBASE_PROJECT_ID` before `firebase deploy` so Firebase CLI non-interactive mode can resolve `defineString` params without prompting.
+4. Writes `APP_BASE_URL` and the non-secret GitHub params to `.env.$FIREBASE_PROJECT_ID` before `firebase deploy`, so Firebase CLI non-interactive mode can resolve the `defineString` params without prompting and the deployed functions read `APP_BASE_URL` from their environment. This step fails when `APP_BASE_URL` is unset or doesn't start with `https://`.
 
 You can run the same check locally after authenticating with `gcloud`:
 
@@ -122,7 +126,7 @@ test "$status" = "422"
 
 These GitHub Actions variables are written to `.env.$FIREBASE_PROJECT_ID` and passed as Firebase Functions params during deploy:
 
-- `APP_BASE_URL` (required; the web app's `https://` origin. The workflow fails without it rather than deploy match links that point at localhost. It is written to `.env.$FIREBASE_PROJECT_ID` so non-interactive deploys can resolve the `APP_BASE_URL` Functions param)
+- `APP_BASE_URL` (required; the web app's `https://` origin. Invite links from `sendInvite` and match links in `recordMatchOnBehalf` emails are built from it, and in production both fail with `failed-precondition` when it is missing or not `https://`. The workflow fails without it rather than deploy functions that send localhost links)
 - `GITHUB_OWNER` (optional; defaults to the current workflow repository owner)
 - `GITHUB_REPO` (optional; defaults to the current workflow repository name)
 - `GITHUB_API_URL` (optional; defaults to `https://api.github.com`)

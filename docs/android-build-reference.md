@@ -163,14 +163,17 @@ This repo pins these explicitly rather than letting them drift independently:
 
 - Node version: `.nvmrc` (see `CLAUDE.md` — this is the one Node source of truth; it does **not**
   cover JDK/Gradle/AGP, which are separate ecosystems).
-- JDK: `mobile_bundle`/`mobile_native` CI jobs in `.github/workflows/ci.yml` set up JDK 17 (via
-  Temurin) — this must stay aligned with whatever `apps/mobile/android`'s AGP version requires.
+- JDK: the `mobile_native` CI job in `.github/workflows/ci.yml` (and `debug-apk.yml`) sets up JDK 17
+  (via Temurin) — this must stay aligned with whatever `apps/mobile/android`'s AGP version requires.
+  `mobile_bundle` doesn't run Gradle and installs no JDK.
 - NDK: pinned to `27.1.12297006` in CI (`mobile_native` job), matching react-native 0.86.2's
   version catalog — see the `react-native` pin note in `CLAUDE.md`'s dependency-constraints
   section. A react-native/Expo SDK bump can silently require a different NDK version; check
   `expo/bundledNativeModules.json` and RN's own Gradle version catalog when bumping.
-- AGP itself is managed indirectly through the Expo SDK/RN version, not pinned directly in this
-  repo's own Gradle files (Expo's prebuild step generates `apps/mobile/android/build.gradle`).
+- AGP itself is managed indirectly through the React Native version, not pinned directly in this
+  repo's own Gradle files: `apps/mobile/android/build.gradle` (committed to the repository) declares
+  `com.android.tools.build:gradle` without a version, and react-native 0.86.2's version catalog
+  supplies AGP 8.12.
 
 When bumping the Expo SDK or React Native version in this repo, cross-check the new AGP/Gradle/JDK
 requirements against what CI's `mobile_native`/`mobile_bundle` jobs currently install — a mismatch
