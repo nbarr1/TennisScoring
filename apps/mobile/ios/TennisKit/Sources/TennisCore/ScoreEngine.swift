@@ -322,23 +322,23 @@ extension TipTrigger {
   public var tip: Tip {
     switch self {
     case .serviceChange:
-      Tip(trigger: self, title: "Service Change", body: "Server switches after each game. Remember to switch ends after odd-numbered games in each set.")
+      Tip(trigger: self, title: "Service change", body: "Server switches after each game. Remember to switch ends after odd-numbered games in each set.")
     case .tiebreakStart:
-      Tip(trigger: self, title: "Tiebreak!", body: "First to 7 points, must win by 2. Server serves 1 point, then players alternate every 2 points. Switch ends every 6 points.")
+      Tip(trigger: self, title: "Tiebreak", body: "First to 7 points, must win by 2. Server serves 1 point, then players alternate every 2 points. Switch ends every 6 points.")
     case .deuce:
       Tip(trigger: self, title: "Deuce", body: "Deuce — must win by 2 consecutive points to win the game.")
     case .advantage:
-      Tip(trigger: self, title: "Advantage", body: "One player has advantage. Win the next point to win the game, or it returns to Deuce.")
+      Tip(trigger: self, title: "Advantage", body: "One player has advantage. Win the next point to win the game, or it returns to deuce.")
     case .gamePoint:
-      Tip(trigger: self, title: "Game Point", body: "One player has game point. Win the next point to win the game.")
+      Tip(trigger: self, title: "Game point", body: "One player has game point. Win the next point to win the game.")
     case .setPoint:
-      Tip(trigger: self, title: "Set Point", body: "One player has set point. Win the next game to win the set.")
+      Tip(trigger: self, title: "Set point", body: "One player has set point. Win the next game to win the set.")
     case .matchPoint:
-      Tip(trigger: self, title: "Match Point", body: "Match point! Win the next game to win the match.")
+      Tip(trigger: self, title: "Match point", body: "Match point. Win the next game to win the match.")
     case .newSet:
-      Tip(trigger: self, title: "New Set", body: "New set begins. Players switch ends. Score resets to 0-0.")
+      Tip(trigger: self, title: "New set", body: "New set begins. Players switch ends. Score resets to 0-0.")
     case .matchComplete:
-      Tip(trigger: self, title: "Match Complete", body: "The match is over. Great game!")
+      Tip(trigger: self, title: "Match complete", body: "The match is over. Great game.")
     }
   }
 
