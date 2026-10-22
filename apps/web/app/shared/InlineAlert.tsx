@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { IconAlertCircle, IconAlertTriangle, IconCircleCheck, IconInfoCircle, IconX } from "@tabler/icons-react";
-import { color, radius, space, type } from "./tokens";
+import { color, radius, space, target, type } from "./tokens";
 
 export type AlertTone = "error" | "success" | "info" | "warning";
 
@@ -73,12 +73,13 @@ export function InlineAlert({
           type="button"
           onClick={onDismiss}
           aria-label={dismissLabel}
+          className="tl-tint"
           style={{
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 44,
-            height: 44,
+            width: target.min,
+            height: target.min,
             margin: -10,
             marginLeft: 0,
             background: "transparent",

@@ -397,7 +397,7 @@ function NewDmDialog({
       const channel = await getOrCreateDM(currentUserId, user.id);
       onCreated({ ...channel, name: channel.name ?? user.displayName });
     } catch (e) {
-      setError(describeError(e, "Couldn't start the conversation. Please try again."));
+      setError(describeError(e, "Couldn't start the conversation. Try again."));
     } finally {
       setCreatingId(null);
     }
@@ -631,7 +631,7 @@ function ChatPane({
       announce("Conversation deleted.", { toast: true });
       onDeleted();
     } catch (e) {
-      setActionError(describeError(e, "Couldn't delete this conversation. Please try again."));
+      setActionError(describeError(e, "Couldn't delete this conversation. Try again."));
       setDeleting(false);
     }
   }
@@ -856,7 +856,7 @@ function MessageActionsDialog({
       setError("Choose a reason for the report.");
       return;
     }
-    void run(() => onReport(message, reason, note), "Couldn't send the report. Please try again.");
+    void run(() => onReport(message, reason, note), "Couldn't send the report. Try again.");
   }
 
   const name = message?.senderName ?? "this player";
@@ -893,7 +893,7 @@ function MessageActionsDialog({
           variant="danger"
           pending={pending}
           pendingLabel="Blocking…"
-          onClick={() => message && void run(() => onBlock(message), `Couldn't block ${name}. Please try again.`)}
+          onClick={() => message && void run(() => onBlock(message), `Couldn't block ${name}. Try again.`)}
         >
           Block {name}
         </Button>
@@ -958,7 +958,7 @@ function MessageActionsDialog({
                   {REPORT_REASONS.map((r, index) => {
                     const selected = reason === r.value;
                     return (
-                      <label key={r.value} style={{ ...styles.chip, ...(selected ? styles.chipActive : {}) }}>
+                      <label key={r.value} className="tl-tint" style={{ ...styles.chip, ...(selected ? styles.chipActive : {}) }}>
                         <input
                           type="radio"
                           name="report-reason"
@@ -1071,12 +1071,12 @@ function MessageBubble({
         {message.sharedContact && (
           <div style={styles.contactActions}>
             {message.sharedContact.phone && (
-              <a href={`tel:${message.sharedContact.phone}`} style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
+              <a href={`tel:${message.sharedContact.phone}`} className="tl-link" style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
                 <IconPhone size={16} aria-hidden="true" /> Call {message.sharedContact.phone}
               </a>
             )}
             {message.sharedContact.email && (
-              <a href={`mailto:${message.sharedContact.email}`} style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
+              <a href={`mailto:${message.sharedContact.email}`} className="tl-link" style={{ ...styles.contactLink, ...(isMe ? styles.contactLinkMe : {}) }}>
                 <IconMail size={16} aria-hidden="true" /> Email {message.sharedContact.email}
               </a>
             )}
@@ -1091,6 +1091,7 @@ function MessageBubble({
           <button
             type="button"
             aria-label={`Report or block: message from ${message.senderName}`}
+            className="tl-tint"
             style={styles.bubbleActionsBtn}
             onClick={onOpenActions}
           >
@@ -1234,7 +1235,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: color.clubhouseGreen,
     fontWeight: 600,
     fontSize: 14,
-    textDecoration: "underline",
   },
   contactLinkMe: { color: color.onBrand },
   inputRow: {
