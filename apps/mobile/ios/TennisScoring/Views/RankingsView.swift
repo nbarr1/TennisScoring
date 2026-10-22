@@ -69,7 +69,7 @@ private struct StandingsRowView: View {
           // One line truncates most names at accessibility sizes, and a
           // doubles team name at any size; wrap there instead.
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
-        Text("Sets \(row.setsWon)-\(row.setsLost) · Games \(row.gameDifferential >= 0 ? "+" : "")\(row.gameDifferential)")
+        Text("Sets \(row.setsWon)-\(row.setsLost) · Games \(row.gameDifferential > 0 ? "+" : "")\(row.gameDifferential)")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -80,7 +80,15 @@ private struct StandingsRowView: View {
     .listRowBackground(row.isCurrentUser ? Color.league.opacity(0.1) : nil)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      "\(row.rank > 0 ? "Rank \(row.rank), " : "")\(row.name)\(row.isCurrentUser ? " (you)" : ""), \(row.won) won, \(row.lost) lost, sets \(row.setsWon) to \(row.setsLost), game difference \(row.gameDifferential >= 0 ? "plus" : "minus") \(abs(row.gameDifferential))"
+      "\(row.rank > 0 ? "Rank \(row.rank), " : "")\(row.name)\(row.isCurrentUser ? " (you)" : ""), \(row.won) won, \(row.lost) lost, sets \(row.setsWon) to \(row.setsLost), game difference \(spokenDifferential)"
     )
+  }
+
+  /// "plus 3", "minus 2", or "0": an even record has no sign to read.
+  private var spokenDifferential: String {
+    let difference = row.gameDifferential
+    if difference > 0 { return "plus \(difference)" }
+    if difference < 0 { return "minus \(-difference)" }
+    return "0"
   }
 }

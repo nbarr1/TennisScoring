@@ -26,11 +26,15 @@ struct RootView: View {
       case let .failed(message):
         VStack(spacing: 16) {
           ContentUnavailableView("Something went wrong", systemImage: "exclamationmark.triangle", description: Text(message))
+          // Large, as on the match screen: a regular bordered button is about
+          // 34 points tall, under the 44-point minimum.
           Button("Try again") { session.retry() }
             .buttonStyle(.borderedProminent)
             .foregroundStyle(Color.onLeague)
+            .controlSize(.large)
           Button("Sign out") { session.signOut() }
             .buttonStyle(.bordered)
+            .controlSize(.large)
         }
         .padding()
       }
@@ -121,6 +125,7 @@ struct JoinDivisionView: View {
           TextField("Invite code", text: $inviteCode)
             .textInputAutocapitalization(.characters)
             .autocorrectionDisabled()
+            .submitLabel(.join)
             .onSubmit(join)
         } header: {
           Text("Join your division")

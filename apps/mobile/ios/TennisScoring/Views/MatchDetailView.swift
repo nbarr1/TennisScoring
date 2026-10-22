@@ -67,6 +67,13 @@ struct MatchDetailView: View {
       case nil: return nil
       }
     }
+    // A write the server refused buzzes, as the watch's failure haptic does,
+    // so a point that didn't count isn't mistaken for one that did. A load
+    // error with no match on screen is the "Match not found" view, not a
+    // refused tap, so it stays silent.
+    .sensoryFeedback(.error, trigger: model.match == nil ? nil : model.errorMessage) { _, message in
+      message != nil
+    }
     .onChange(of: model.lastFeedback) { _, feedback in
       if let feedback { UIAccessibility.post(notification: .announcement, argument: feedback.announcement) }
     }
