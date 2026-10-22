@@ -955,7 +955,7 @@ export default function AdminScreen() {
               return (
                 <View key={report.id} style={styles.reportItem}>
                   <View style={styles.reportHeader}>
-                    <Text style={styles.playerName}>
+                    <Text style={[styles.playerName, styles.shrink]}>
                       {report.messageSenderName}
                     </Text>
                     <View style={styles.reportReasonBadge}>
@@ -1778,7 +1778,7 @@ const useStyles = makeStyles((colors) =>
       borderTopColor: colors.border,
     },
     playerInfo: { flex: 1, gap: spacing.xxs },
-    levelButton: { alignSelf: "flex-start", marginLeft: -spacing.sm },
+    levelButton: { alignSelf: "flex-start", marginStart: -spacing.sm },
     levelSheet: {
       borderTopLeftRadius: radii.xl,
       borderTopRightRadius: radii.xl,
@@ -1791,6 +1791,7 @@ const useStyles = makeStyles((colors) =>
     levelOption: {
       minHeight: MIN_TOUCH_TARGET + spacing.sm,
       flexDirection: "row",
+      gap: spacing.sm,
       alignItems: "center",
       justifyContent: "space-between",
       paddingHorizontal: spacing.xs,
@@ -1798,7 +1799,9 @@ const useStyles = makeStyles((colors) =>
       borderBottomColor: colors.border,
     },
     levelOptionPressed: { backgroundColor: colors.surfaceMuted },
-    levelOptionText: { ...typography.body, color: colors.text },
+    // Shrinks so a long level name wraps instead of pushing the checkmark off.
+    levelOptionText: { ...typography.body, color: colors.text, flex: 1 },
+    shrink: { flexShrink: 1 },
     playerName: { ...typography.subheading, color: colors.text },
     playerContact: { ...typography.bodySmall, color: colors.textMuted },
     unassignedLine: { flexDirection: "row", alignItems: "center", gap: spacing.xs },

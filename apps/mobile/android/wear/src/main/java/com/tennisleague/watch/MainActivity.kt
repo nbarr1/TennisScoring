@@ -15,6 +15,7 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.RelativeSizeSpan
 import android.util.Log
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.InputDevice
@@ -37,6 +38,7 @@ import com.google.android.gms.wearable.Wearable
 import org.json.JSONObject
 import java.util.UUID
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListener {
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
   private lateinit var root: LinearLayout
   private lateinit var statusTitle: TextView
   private lateinit var scoreboard: LinearLayout
+  private lateinit var tally: LinearLayout
   private lateinit var setsScore: TextView
   private lateinit var gamesScore: TextView
   private lateinit var serverText: TextView
@@ -86,6 +89,16 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
    * a phone that stopped sending drops to the ambient scoreboard instead.
    */
   private val releaseScreen = Runnable { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
+  /**
+   * Fires when a command the Data Layer delivered brings no new snapshot back.
+   * Delivery only means the message reached the phone, not that anything
+   * applied it: a phone whose match screen has closed, or whose write failed,
+   * drops the command without a word, and the tap's tick would otherwise be the
+   * last thing the player learns. The phone sends a snapshot after every point
+   * and undo it applies, so silence past [REPLY_TIMEOUT_MS] means it didn't.
+   */
+  private val replyTimeout = Runnable { reportNoReply() }
 
   /**
    * True only while the watch can score this match: it is in progress, the phone
@@ -168,6 +181,9 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     Wearable.getMessageClient(this).removeListener(this)
     pendingButtonPoints.values.forEach { buttonHandler.removeCallbacks(it) }
     pendingButtonPoints.clear()
+    // No snapshot can arrive until onResume re-registers and asks for one, so a
+    // reply missing while paused says nothing about the phone.
+    buttonHandler.removeCallbacks(replyTimeout)
     releaseScreenNow()
     super.onPause()
   }
@@ -253,10 +269,13 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       if (round) setPadding(dp(20), dp(16), dp(20), dp(36)) else setPadding(dp(10), dp(8), dp(10), dp(12))
     }
 
-    statusTitle = singleLine(label(getString(R.string.status_waiting), 12, yellowColor, true))
+    statusTitle = singleLine(label(getString(R.string.status_waiting), STATUS_TEXT_SP.toInt(), yellowColor, true))
     statusTitle.typeface = CONDENSED_BOLD
     statusTitle.letterSpacing = 0.08f
-    root.addView(statusTitle, fullWidth())
+    // The status line sits where a round display is narrowest, so it is inset to
+    // the circle's width at that height rather than to the content's.
+    val statusInset = if (round) roundEdgeInset(root.paddingTop + dp(3)) else 0
+    root.addView(statusTitle, fullWidth().apply { setMargins(statusInset, dp(3), statusInset, dp(3)) })
 
     // TalkBack reads the scoreboard as one sentence (its contentDescription, set
     // in renderScore) rather than fragments such as "Games 5-4".
@@ -269,7 +288,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       isFocusable = true
       importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
     }
-    val tally = LinearLayout(this).apply {
+    tally = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
     }
@@ -358,14 +377,16 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
   private fun renderWaitingState() {
     scoreable = false
+    buttonHandler.removeCallbacks(replyTimeout)
     // Nothing to score yet, so the tiles and undo read as inactive rather than
     // inviting a tap that can only answer "waiting".
     setScoreButtonsEnabled(false)
     setUndoEnabled(false)
     releaseScreenNow()
-    statusTitle.text = getString(R.string.status_waiting)
+    setStatus(getString(R.string.status_waiting))
     setsScore.text = getString(R.string.plate_no_match)
     gamesScore.text = ""
+    fitTally()
     serverText.text = getString(R.string.plate_waiting_for_phone)
     scoreboard.contentDescription = getString(R.string.a11y_no_match)
     feedbackTitle.text = getString(R.string.feedback_ready)
@@ -378,13 +399,12 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       val envelope = JSONObject(payload)
       if (envelope.optInt("protocolVersion", -1) != PROTOCOL_VERSION) return
       speaksV1 = true
-      val matchId = envelope.optString("matchId")
-      if (matchId.isBlank()) return
+      val matchId = envelope.text("matchId") ?: return
 
       // Snapshot sequences live in the phone's memory and restart at 1 when its
       // process does, so ordering state kept from a previous session would reject
       // every snapshot the new one sends.
-      val sessionId = envelope.optString("sessionId").ifBlank { UNKNOWN_SESSION }
+      val sessionId = envelope.text("sessionId") ?: UNKNOWN_SESSION
       if (sessionId != activeSessionId) {
         Log.d(TAG, "New phone session; resetting Wear sync state")
         activeSessionId = sessionId
@@ -420,7 +440,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     if (speaksV1) return
     try {
       val root = JSONObject(payload)
-      activeMatchId = root.optString("matchId").ifBlank { null }
+      activeMatchId = root.text("matchId")
       renderScore(root, phoneCanScore = null)
     } catch (e: Exception) {
       reportRenderFailure(e)
@@ -428,11 +448,17 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
   }
 
   private fun renderScore(root: JSONObject, phoneCanScore: Boolean?) {
+    // Any snapshot answers the command waiting for one: the score it carries is
+    // what the phone now holds, whether or not the command applied.
+    buttonHandler.removeCallbacks(replyTimeout)
     val score = root.optJSONObject("score") ?: root
-    val p1Name = root.optString("player1Name", getString(R.string.player1_default))
-    val p2Name = root.optString("player2Name", getString(R.string.player2_default))
-    val status = root.optString("status", LIVE_STATUS)
-    val winnerName = root.optString("matchWinnerName", "")
+    // Read through text(), so a field the phone sent as JSON null or blank falls
+    // back instead of showing "null", and a null winner name doesn't read as a
+    // finished match.
+    val p1Name = root.text("player1Name") ?: getString(R.string.player1_default)
+    val p2Name = root.text("player2Name") ?: getString(R.string.player2_default)
+    val status = root.text("status") ?: LIVE_STATUS
+    val winnerName = root.text("matchWinnerName").orEmpty()
 
     val p1Sets = score.optInt("player1SetsWon", 0)
     val p2Sets = score.optInt("player2SetsWon", 0)
@@ -444,20 +470,21 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     val isTiebreak = score.optBoolean("isTiebreak", false)
     val currentGame = score.optJSONObject("currentGame")
     val tiebreak = score.optJSONObject("tiebreakScore")
-    val server = score.optString("server", "player1")
-    val serviceSide = score.optString("serviceSide", "deuce")
+    val server = score.text("server") ?: "player1"
+    val serviceSide = score.text("serviceSide") ?: "deuce"
 
-    val p1Point = if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player1", "0"))
-    val p2Point = if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.optString("player2", "0"))
+    val p1Point = if (isTiebreak) "${tiebreak?.optInt("player1Points", 0) ?: 0}" else formatPoint(currentGame?.text("player1"))
+    val p2Point = if (isTiebreak) "${tiebreak?.optInt("player2Points", 0) ?: 0}" else formatPoint(currentGame?.text("player2"))
     val serverName = if (server == "player1") p1Name else p2Name
     val court = getString(if (serviceSide == "advantage") R.string.court_ad else R.string.court_deuce)
 
-    player1Button.text = pointTileLabel(shortName(p1Name), p1Point)
-    player2Button.text = pointTileLabel(shortName(p2Name), p2Point)
+    player1Button.text = pointTileLabel(fitTileName(shortName(p1Name)), p1Point)
+    player2Button.text = pointTileLabel(fitTileName(shortName(p2Name)), p2Point)
     player1Button.contentDescription = getString(R.string.a11y_point_to_now_on, p1Name, p1Point)
     player2Button.contentDescription = getString(R.string.a11y_point_to_now_on, p2Name, p2Point)
     setsScore.text = getString(R.string.plate_sets, p1Sets, p2Sets)
     gamesScore.text = getString(R.string.plate_games, p1Games, p2Games)
+    fitTally()
     serverText.text = getString(R.string.plate_server, shortName(serverName), court)
     ambientScore.text =
       getString(R.string.ambient_player_line, shortName(p1Name), p1Point) + "\n" +
@@ -472,7 +499,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     val matchFinished =
       status == "pending_report" ||
         status == "completed" ||
-        root.optString("feedbackTitle") == PHONE_MATCH_COMPLETE_TITLE ||
+        root.text("feedbackTitle") == PHONE_MATCH_COMPLETE_TITLE ||
         winnerName.isNotBlank()
     // A match screen that sends canScore inside the score payload is honored on
     // the pre-v1 path too, where there is no envelope to carry the phone's verdict.
@@ -489,7 +516,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     when {
       matchFinished -> {
-        statusTitle.text = getString(R.string.status_final)
+        setStatus(getString(R.string.status_final))
         feedbackTitle.text =
           if (winnerName.isNotBlank()) getString(R.string.feedback_winner, winnerName)
           else getString(R.string.feedback_match_complete)
@@ -498,8 +525,8 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       scoreable -> {
         // The moment the phone names for this point (a tip title such as "Match
         // Point" or "Deuce") goes in the status line, the one place always in view.
-        val moment = root.optString("feedbackTitle", "").trim().trimEnd('!')
-        statusTitle.text =
+        val moment = root.text("feedbackTitle")?.trimEnd('!').orEmpty()
+        setStatus(
           when {
             moment.isNotBlank() -> getString(R.string.status_live_moment, moment.uppercase())
             isTiebreak -> getString(R.string.status_live_tiebreak)
@@ -507,9 +534,10 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
             // moves up here whenever no moment needs the space.
             largeFont -> getString(R.string.status_live_serving, shortName(serverName).uppercase())
             else -> getString(R.string.status_live)
-          }
-        feedbackTitle.text = root.optString("feedbackTitle", getString(R.string.feedback_score_point))
-        feedbackBody.text = root.optString("feedbackBody", getString(R.string.feedback_score_point_body))
+          },
+        )
+        feedbackTitle.text = root.text("feedbackTitle") ?: getString(R.string.feedback_score_point)
+        feedbackBody.text = root.text("feedbackBody") ?: getString(R.string.feedback_score_point_body)
       }
       else -> renderReadOnlyStatus(status)
     }
@@ -527,13 +555,13 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       "disputed" -> Triple(R.string.status_disputed, R.string.feedback_disputed, R.string.feedback_disputed_body)
       "cancelled" -> Triple(R.string.status_cancelled, R.string.feedback_cancelled, R.string.feedback_cancelled_body)
       else -> {
-        statusTitle.text = status.replace('_', ' ').uppercase()
+        setStatus(status.replace('_', ' ').uppercase())
         feedbackTitle.text = getString(R.string.feedback_not_live)
         feedbackBody.text = getString(R.string.feedback_not_live_body)
         return
       }
     }
-    statusTitle.text = getString(label)
+    setStatus(getString(label))
     feedbackTitle.text = getString(title)
     feedbackBody.text = getString(body)
   }
@@ -554,9 +582,14 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
   /**
    * Hands a command to the Data Layer. [onSent] runs once the phone has accepted
-   * the message, so the tap haptic means the point actually left the watch.
+   * the message, so the tap haptic means the point actually left the watch; from
+   * then the watch waits [REPLY_TIMEOUT_MS] for the snapshot that shows it applied.
    */
   private fun sendCommand(command: String, onSent: () -> Unit = {}) {
+    val delivered = {
+      awaitReply()
+      onSent()
+    }
     if (!hasRenderedScore) {
       showWaitingForMatch()
       return
@@ -570,7 +603,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
     if (!speaksV1) {
       // A pre-v1 phone understands a bare action string on the old path only.
-      sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone, onSent, ::reportNotSent)
+      sendToConnectedNodes(LEGACY_POINT_PATH, command.toByteArray(), ::reportMissingPhone, delivered, ::reportNotSent)
       return
     }
 
@@ -589,7 +622,26 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
       .put("sequence", commandSequence)
       .put("action", command)
       .toString().toByteArray()
-    sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone, onSent, ::reportNotSent)
+    sendToConnectedNodes(POINT_PATH, payload, ::reportMissingPhone, delivered, ::reportNotSent)
+  }
+
+  /** (Re)starts the wait for the snapshot that answers the command just delivered. */
+  private fun awaitReply() {
+    buttonHandler.removeCallbacks(replyTimeout)
+    buttonHandler.postDelayed(replyTimeout, REPLY_TIMEOUT_MS)
+  }
+
+  /**
+   * The phone took the message but sent no new score back. It never says why
+   * (its match screen closed, the match was deleted, or the write failed), so
+   * the watch says what it knows and points at the phone, without suggesting a
+   * second tap that could score the point twice if the first one lands late.
+   */
+  private fun reportNoReply() {
+    setStatus(getString(R.string.status_no_reply))
+    feedbackTitle.text = getString(R.string.feedback_no_reply)
+    feedbackBody.text = getString(R.string.feedback_no_reply_body)
+    rejectHaptic()
   }
 
   /** A short tick confirming the tap registered, so the player need not look down between points. */
@@ -702,7 +754,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
    * a scroll below.
    */
   private fun showUndoSent() {
-    statusTitle.text = getString(R.string.status_undo_sent)
+    setStatus(getString(R.string.status_undo_sent))
     feedbackTitle.text = getString(R.string.feedback_undo_sent)
     feedbackBody.text = getString(R.string.feedback_undo_sent_body)
     undoHaptic()
@@ -715,14 +767,14 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
   private fun reportMissingPhone(hasNodes: Boolean) {
     if (hasNodes) return
-    statusTitle.text = getString(R.string.status_no_phone)
+    setStatus(getString(R.string.status_no_phone))
     feedbackTitle.text = getString(R.string.feedback_phone_not_found)
     feedbackBody.text = getString(R.string.feedback_phone_not_found_body)
     rejectHaptic()
   }
 
   private fun reportNotSent() {
-    statusTitle.text = getString(R.string.status_not_sent)
+    setStatus(getString(R.string.status_not_sent))
     feedbackTitle.text = getString(R.string.feedback_not_sent)
     feedbackBody.text = getString(R.string.feedback_not_sent_body)
     rejectHaptic()
@@ -731,7 +783,7 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
   private fun requestScoreSync() {
     sendToConnectedNodes(SYNC_REQUEST_PATH, ByteArray(0), { hasNodes ->
       if (!hasNodes) {
-        statusTitle.text = getString(R.string.status_no_phone)
+        setStatus(getString(R.string.status_no_phone))
         feedbackTitle.text = getString(R.string.feedback_phone_not_found)
         feedbackBody.text = getString(R.string.feedback_sync_no_phone_body, getString(R.string.app_name))
       } else if (!hasRenderedScore) {
@@ -834,20 +886,82 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
 
   /**
    * A name that fits half a watch face and still tells two players apart:
-   * "Chris Lee" → "Chris L", "Ann Smith / Bob Jones" → "Ann/Bob".
+   * "Chris Lee" → "Chris L", "Ann Smith / Bob Jones" → "Ann/Bob". See
+   * [ScoreboardText.shortName].
    */
-  private fun shortName(name: String): String {
-    val people = name.split(" / ").map { it.trim() }.filter { it.isNotEmpty() }
-    if (people.isEmpty()) return getString(R.string.player_fallback)
-    if (people.size > 1) {
-      return people.joinToString("/") { person -> person.split(WHITESPACE).first().take(4) }
-    }
-    val parts = people.first().split(WHITESPACE)
-    val first = parts.first()
-    val initial = if (parts.size > 1) parts.last().firstOrNull() else null
-    val withInitial = if (initial != null) "$first $initial" else first
-    return if (withInitial.length <= SHORT_NAME_MAX) withInitial else first.take(SHORT_NAME_MAX)
+  private fun shortName(name: String): String =
+    ScoreboardText.shortName(name, getString(R.string.player_fallback))
+
+  /**
+   * [name] cut with an ellipsis to the width a tile gives its name line. The
+   * character cap in [shortName] assumes Latin letters at 1.0 font scale; a
+   * CJK name, a bigger font scale, or a smaller watch wrapped the name onto a
+   * second line and pushed the points down out of the first viewport.
+   */
+  private fun fitTileName(name: String): String {
+    val available = tileTextWidthPx()
+    if (available <= 0) return name
+    val fitted = TextUtils.ellipsize(name, player1Button.paint, available.toFloat(), TextUtils.TruncateAt.END)
+    // Narrow enough that not even one character and the ellipsis fit: keep the
+    // first character, so the tile is never blank.
+    return fitted.toString().ifEmpty { ScoreboardText.take(name, 1) }
   }
+
+  /**
+   * The width of a tile's text, from the screen width rather than a layout pass,
+   * so the first snapshot is fitted before anything has been measured: half the
+   * content width, less each tile's margins and padding (see [rowWeight] and
+   * [pointButton]).
+   */
+  private fun tileTextWidthPx(): Int {
+    val content = resources.displayMetrics.widthPixels - root.paddingLeft - root.paddingRight
+    return content / 2 - dp(3) * 2 - dp(4) * 2
+  }
+
+  /**
+   * Sets the status line, shrinking it a little before it ellipsizes. Moments
+   * such as "LIVE · MATCH POINT" run wider than a round screen's top edge, and
+   * the moment is the one thing the player looks up to read.
+   */
+  private fun setStatus(text: String) {
+    statusTitle.text = text
+    val margins = (statusTitle.layoutParams as? LinearLayout.LayoutParams)?.let { it.leftMargin + it.rightMargin } ?: 0
+    val available = resources.displayMetrics.widthPixels - root.paddingLeft - root.paddingRight - margins
+    var size = STATUS_TEXT_SP
+    statusTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+    while (size > STATUS_MIN_TEXT_SP && statusTitle.paint.measureText(text) > available) {
+      size -= 0.5f
+      statusTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+    }
+  }
+
+  /**
+   * Puts games under sets when the two don't fit side by side, as at large font
+   * scales, rather than letting "Games 5-4" break across two lines.
+   */
+  private fun fitTally() {
+    val available = resources.displayMetrics.widthPixels - root.paddingLeft - root.paddingRight -
+      scoreboard.paddingLeft - scoreboard.paddingRight
+    val needed = listOf(setsScore, gamesScore).sumOf { view ->
+      (view.paint.measureText(view.text.toString()) + view.paddingLeft + view.paddingRight).toDouble()
+    }
+    tally.orientation = if (needed > available) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+  }
+
+  /**
+   * How far in from the content edge a line whose top is [topPx] from the top of
+   * a round screen must sit to stay inside the circle at that height.
+   */
+  private fun roundEdgeInset(topPx: Int): Int {
+    val radius = resources.displayMetrics.widthPixels / 2f
+    val fromCenter = (radius - topPx).coerceIn(0f, radius)
+    val halfChord = sqrt(radius * radius - fromCenter * fromCenter)
+    return (radius - halfChord - root.paddingLeft).roundToInt().coerceAtLeast(0)
+  }
+
+  /** A string field, or null when it is missing, JSON null, or blank. */
+  private fun JSONObject.text(key: String): String? =
+    if (isNull(key)) null else optString(key).trim().ifEmpty { null }
 
   private fun formatPoint(point: String?): String {
     return when (point) {
@@ -996,8 +1110,14 @@ class MainActivity : ComponentActivity(), MessageClient.OnMessageReceivedListene
     private const val LARGE_FONT_SCALE = 1.15f
     // 13sp names over 30sp points on the player tiles.
     private const val POINTS_SCALE = 2.3f
-    private const val SHORT_NAME_MAX = 9
-    private val WHITESPACE = Regex("\\s+")
+    // The status line's size, and the smallest it shrinks to before it ellipsizes.
+    private const val STATUS_TEXT_SP = 12f
+    private const val STATUS_MIN_TEXT_SP = 10f
+
+    // How long a delivered command waits for the snapshot that shows it applied.
+    // A point goes through the scoreMatchPoint callable first, so this allows for
+    // a slow connection at the court rather than the usual second or two.
+    private const val REPLY_TIMEOUT_MS = 8 * 1000L
     // Android's condensed sans: the closest system face to the scoreboard's
     // Barlow Condensed, which this module doesn't ship.
     private val CONDENSED_BOLD: Typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD)

@@ -107,8 +107,12 @@ struct MatchDetailView: View {
 
         actions(match)
           .disabled(model.isWorking)
+          // Regular bordered buttons are about 34 points tall, under the 44-point
+          // minimum, and these are pressed courtside between points.
+          .controlSize(.large)
       }
       .padding()
+      .readableContentWidth()
       .animation(.default, value: model.currentTip)
     }
   }

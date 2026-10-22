@@ -32,6 +32,9 @@ body {
   color: var(--ink);
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+  /* A long email, URL, or name with no spaces breaks instead of pushing the
+     page sideways. Components that ellipsize a single line opt out locally. */
+  overflow-wrap: break-word;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -492,6 +495,49 @@ table,
     padding: 8px 8px 0;
     border-top: 1px solid rgba(255, 255, 255, 0.2);
   }
+}
+
+/* Standings table (dashboard). On a phone the table scrolls sideways; the
+   rank and name columns stay pinned so a row's numbers never lose their
+   player. Sticky cells need their own fill, or the scrolled numbers show
+   through them. The rank column is 64px wide (inline), hence the offset. */
+.tl-standings > * > tr > :nth-child(1),
+.tl-standings > * > tr > :nth-child(2) {
+  position: sticky;
+  z-index: 1;
+}
+
+.tl-standings > * > tr > :nth-child(1) {
+  left: 0;
+}
+
+.tl-standings > * > tr > :nth-child(2) {
+  left: 64px;
+  box-shadow: inset -1px 0 0 var(--border);
+}
+
+/* Narrow: a slimmer rank column and a name column capped near a third of the
+   screen (names wrap), so the pinned pair leaves room for the numbers. The
+   inline widths are the wide-screen values, hence !important. */
+@media (max-width: 600px) {
+  .tl-standings > * > tr > :nth-child(1) {
+    width: 44px !important;
+    padding-left: 12px !important;
+  }
+
+  .tl-standings > * > tr > :nth-child(2) {
+    left: 44px;
+    width: 32vw;
+    min-width: 104px;
+  }
+}
+
+.tl-standings > tbody > tr > :nth-child(-n + 2) {
+  background: var(--surface);
+}
+
+.tl-standings > tbody > tr[aria-current] > :nth-child(-n + 2) {
+  background: var(--green-soft);
 }
 
 @media (prefers-reduced-motion: reduce) {

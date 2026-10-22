@@ -56,6 +56,7 @@ private struct StandingsRowView: View {
   let row: StandingsRow
   /// Grows with Dynamic Type, so two-digit ranks don't clip at large sizes.
   @ScaledMetric(relativeTo: .headline) private var rankWidth: CGFloat = 28
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
     HStack(spacing: 12) {
@@ -65,7 +66,9 @@ private struct StandingsRowView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(row.name)
           .font(.body.weight(row.isCurrentUser ? .semibold : .regular))
-          .lineLimit(1)
+          // One line truncates most names at accessibility sizes, and a
+          // doubles team name at any size; wrap there instead.
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
         Text("Sets \(row.setsWon)-\(row.setsLost) · Games \(row.gameDifferential >= 0 ? "+" : "")\(row.gameDifferential)")
           .font(.caption)
           .foregroundStyle(.secondary)

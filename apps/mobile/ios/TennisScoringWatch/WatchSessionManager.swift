@@ -29,6 +29,10 @@ final class WatchSessionManager: NSObject {
   }
 
   private(set) var snapshot: WatchScoreSnapshot?
+  /// When the phone sent `snapshot`, or nil when its message carried no time
+  /// (the React Native module's do not). The screen uses it to say how old a
+  /// score replayed from the application context is.
+  private(set) var snapshotSentAt: Date?
   private(set) var isReachable = false
   /// The command waiting for the phone's answer. The buttons wait with it.
   private(set) var pendingCommand: WatchCommand?
@@ -110,12 +114,15 @@ final class WatchSessionManager: NSObject {
     if let removed = WatchScoreSnapshot.removedMatchId(in: message) {
       guard snapshot == nil || snapshot?.matchId == removed else { return }
       snapshot = nil
+      snapshotSentAt = nil
       failedCommand = nil
       workout.snapshotReceived(live: false)
       return
     }
     guard let snapshot = WatchScoreSnapshot(message: message) else { return }
     self.snapshot = snapshot
+    let sentAt = WatchScoreSnapshot.sentAt(in: message)
+    snapshotSentAt = sentAt
     failedCommand = nil
     // A player opening their own scheduled match is the moment to ask for
     // Health access, before the first point rather than over it.
@@ -124,7 +131,7 @@ final class WatchSessionManager: NSObject {
     // spectator's snapshot, the read-only one the phone sends when it leaves
     // the match screen, and an old one the application context replays at
     // launch must not start a workout.
-    let age = WatchScoreSnapshot.sentAt(in: message).map { Date().timeIntervalSince($0) }
+    let age = sentAt.map { Date().timeIntervalSince($0) }
     let fresh = age.map { $0 < Self.liveSnapshotMaxAge } ?? false
     workout.snapshotReceived(live: snapshot.status == .inProgress && snapshot.canScore && fresh)
   }

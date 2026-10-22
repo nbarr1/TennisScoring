@@ -51,6 +51,8 @@ import {
   useAnnounce,
   useAsyncAction,
   width,
+  pageMainStyle,
+  sectionPadding,
 } from "../shared/ui";
 
 const NOTIFICATION_OPT_IN_KEY = "tennis-notifications-opt-in";
@@ -304,6 +306,11 @@ export default function ProfilePage(): React.JSX.Element {
           blockingEmailError ??
           (!validation.valid ? `Check your preferred play times. ${validation.message}` : null),
       );
+      // Take the player to the field to fix: the save bar is pinned to the
+      // bottom, often a screen away from it.
+      if (nameError) document.getElementById("profile-display-name")?.focus();
+      else if (blockingEmailError) document.getElementById("profile-email")?.focus();
+      else slotDayRefs.current[slotErrors.findIndex(Boolean)]?.focus();
       return;
     }
     setShowErrors(false);
@@ -508,6 +515,7 @@ export default function ProfilePage(): React.JSX.Element {
                 readOnly={!canEditRestricted}
                 style={canEditRestricted ? inputFieldStyle(showErrors && !!emailError) : styles.readOnlyInput}
                 value={email}
+                maxLength={254}
                 aria-invalid={canEditRestricted && showErrors && !!emailError}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -519,6 +527,7 @@ export default function ProfilePage(): React.JSX.Element {
                 autoComplete="tel"
                 style={inputFieldStyle(false)}
                 value={phone}
+                maxLength={40}
                 onChange={(e) => setPhone(e.target.value)}
               />
             </Field>
@@ -888,9 +897,9 @@ function CheckboxRow({
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: width.reading, margin: "0 auto", padding: "40px 24px" },
+  main: pageMainStyle(width.reading),
   pageTitle: { ...type.display, color: color.clubhouseGreen, marginBottom: space.xl },
-  card: { ...cardStyle, padding: space.xl, marginBottom: space.xl },
+  card: { ...cardStyle, padding: sectionPadding, marginBottom: space.xl },
   sectionTitle: { ...type.headline, color: color.clubhouseGreen, marginBottom: space.md },
   fieldset: { border: "none", margin: 0, padding: 0, minWidth: 0 },
   legend: { ...type.headline, color: color.clubhouseGreen, marginBottom: space.md, padding: 0 },
@@ -953,7 +962,7 @@ const styles: Record<string, React.CSSProperties> = {
   dangerCard: {
     background: color.destructiveSoft,
     borderRadius: radius.card,
-    padding: space.xl,
+    padding: sectionPadding,
     marginBottom: space.xl,
   },
   dialogText: { ...type.body, color: color.ink, marginBottom: space.sm },

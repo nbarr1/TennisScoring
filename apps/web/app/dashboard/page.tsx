@@ -50,6 +50,7 @@ import {
   space,
   type,
   width,
+  pageMainStyle,
 } from "../shared/ui";
 
 /** One standings row, normalized so singles and doubles render identically. */
@@ -486,7 +487,7 @@ function StandingsSection({
         </p>
       )}
       <div style={styles.tableWrap} role="region" aria-label={caption} tabIndex={0}>
-        <table style={styles.table}>
+        <table className="tl-standings" style={styles.table}>
           <caption className="sr-only">{caption}</caption>
           <thead>
             <tr>
@@ -567,7 +568,7 @@ function formatDiff(value: number): string {
 
 const styles: Record<string, React.CSSProperties> = {
   page: appNavStyles.page,
-  main: { maxWidth: width.wide, margin: "0 auto", padding: "40px 24px" },
+  main: pageMainStyle(width.wide),
   pageTitle: {
     ...type.display,
     color: color.clubhouseGreen,

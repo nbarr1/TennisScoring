@@ -11,7 +11,7 @@ import {
   signOutReleasingPushToken,
   useAuthUser,
 } from '@tennis/firebase-client';
-import { Button, InlineAlert, color, describeError, radius, shadow, space, type } from '../shared/ui';
+import { Button, InlineAlert, LoadingBlock, color, describeError, radius, shadow, space, type } from '../shared/ui';
 import { safeNextPath } from '../../lib/safeNextPath';
 
 // How long the resend button waits after a send, so players don't trip
@@ -20,7 +20,17 @@ const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function VerifyEmailPage(): React.JSX.Element {
   return (
-    <Suspense fallback={null}>
+    // A landmark and a heading while the search params resolve, instead of a blank page.
+    <Suspense
+      fallback={
+        <main style={styles.main}>
+          <div style={styles.card}>
+            <h1 style={styles.title}>Check your email</h1>
+            <LoadingBlock label="Loading…" rows={3} />
+          </div>
+        </main>
+      }
+    >
       <VerifyEmailContent />
     </Suspense>
   );

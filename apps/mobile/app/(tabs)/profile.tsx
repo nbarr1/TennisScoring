@@ -8,6 +8,7 @@ import {
   Switch,
   Modal,
   Platform,
+  ScrollView,
 } from "react-native";
 import {
   EmailAuthProvider,
@@ -531,6 +532,9 @@ export default function ProfileScreen() {
   }
 
   const shownName = user.displayName || firebaseUser?.displayName || "";
+  // The first character, not the first UTF-16 unit, so a name that starts
+  // with an emoji or another surrogate pair never shows a broken glyph.
+  const initial = (Array.from(shownName.trim())[0] ?? "?").toLocaleUpperCase();
   const activeDivisionName =
     divisionOptions.find((division) => division.id === user.divisionId)
       ?.name ?? (user.divisionId ? "Your division" : "No division selected");
@@ -542,8 +546,9 @@ export default function ProfileScreen() {
     >
       <View style={styles.identity}>
         <View style={styles.avatar} accessible={false}>
-          <Text style={styles.avatarText}>
-            {(shownName || "?")[0].toUpperCase()}
+          {/* Capped so the letter stays inside its fixed-size circle. */}
+          <Text style={styles.avatarText} maxFontSizeMultiplier={1.4}>
+            {initial}
           </Text>
         </View>
         <Text style={styles.name} accessibilityRole="header">
@@ -1025,64 +1030,71 @@ export default function ProfileScreen() {
         onRequestClose={closeDeleteModal}
       >
         <KeyboardSafeView style={styles.modalOverlay}>
-          <View
-            style={styles.modalCard}
-            accessibilityViewIsModal
-            accessibilityLabel="Confirm account deletion"
+          {/* Scrolls, so at large text with the keyboard up both buttons stay
+              reachable. */}
+          <ScrollView
+            contentContainerStyle={styles.modalScroll}
+            keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.modalTitle} accessibilityRole="header">
-              Enter your password to delete your account
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              This is the last step. Your account and personal data are deleted
-              right away and can&apos;t be recovered.
-            </Text>
-            <FormField
-              label="Password"
-              required
-              value={deletePassword}
-              onChangeText={(value) => {
-                setDeletePassword(value);
-                if (deleteAccount.error) deleteAccount.reset();
-              }}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="current-password"
-              textContentType="password"
-              autoFocus
-              returnKeyType="done"
-              onSubmitEditing={() => {
-                if (deletePassword) void deleteAccount.run(deletePassword);
-              }}
-            />
-            {deleteAccount.error && (
-              <InlineAlert
-                tone="error"
-                title="Account not deleted"
-                message={deleteAccount.error}
-                style={styles.modalAlert}
+            <View
+              style={styles.modalCard}
+              accessibilityViewIsModal
+              accessibilityLabel="Confirm account deletion"
+            >
+              <Text style={styles.modalTitle} accessibilityRole="header">
+                Enter your password to delete your account
+              </Text>
+              <Text style={styles.modalSubtitle}>
+                This is the last step. Your account and personal data are deleted
+                right away and can&apos;t be recovered.
+              </Text>
+              <FormField
+                label="Password"
+                required
+                value={deletePassword}
+                onChangeText={(value) => {
+                  setDeletePassword(value);
+                  if (deleteAccount.error) deleteAccount.reset();
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="current-password"
+                textContentType="password"
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (deletePassword) void deleteAccount.run(deletePassword);
+                }}
               />
-            )}
-            <View style={styles.modalActions}>
-              <Button
-                label="Delete my account"
-                variant="danger"
-                pending={deleteAccount.pending}
-                pendingLabel="Deleting…"
-                disabled={!deletePassword}
-                fullWidth
-                onPress={() => void deleteAccount.run(deletePassword)}
-              />
-              <Button
-                label="Keep my account"
-                variant="secondary"
-                disabled={deleteAccount.pending}
-                fullWidth
-                onPress={closeDeleteModal}
-              />
+              {deleteAccount.error && (
+                <InlineAlert
+                  tone="error"
+                  title="Account not deleted"
+                  message={deleteAccount.error}
+                  style={styles.modalAlert}
+                />
+              )}
+              <View style={styles.modalActions}>
+                <Button
+                  label="Delete my account"
+                  variant="danger"
+                  pending={deleteAccount.pending}
+                  pendingLabel="Deleting…"
+                  disabled={!deletePassword}
+                  fullWidth
+                  onPress={() => void deleteAccount.run(deletePassword)}
+                />
+                <Button
+                  label="Keep my account"
+                  variant="secondary"
+                  disabled={deleteAccount.pending}
+                  fullWidth
+                  onPress={closeDeleteModal}
+                />
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardSafeView>
       </Modal>
     </KeyboardAwareScrollView>
@@ -1257,6 +1269,9 @@ const useStyles = makeStyles((colors) =>
     modalOverlay: {
       flex: 1,
       backgroundColor: colors.overlay,
+    },
+    modalScroll: {
+      flexGrow: 1,
       justifyContent: "center",
       padding: spacing.xl,
     },

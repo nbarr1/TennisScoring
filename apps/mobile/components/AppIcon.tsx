@@ -174,7 +174,10 @@ export function IconLabel({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
+        // Start-aligned, like the text around it. Every caller stretches the
+        // row full width, where centering pulled date lines, status lines,
+        // and sheet rows away from the copy they belong to.
+        justifyContent: "flex-start",
         gap: 6,
         maxWidth: "100%",
       }}

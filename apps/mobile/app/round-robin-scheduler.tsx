@@ -75,7 +75,18 @@ function formatRoundDate(timestamp: number): string {
 
 type PublishResult = { matchesCreated: number; roundsCreated: number };
 
+/**
+ * The scheduler, keyed by a retry count: "Try again" after a failed load
+ * remounts it, which resubscribes the level and roster queries.
+ */
 export default function RoundRobinSchedulerScreen() {
+  const [retryKey, setRetryKey] = useState(0);
+  return (
+    <SchedulerBody key={retryKey} onRetry={() => setRetryKey((key) => key + 1)} />
+  );
+}
+
+function SchedulerBody({ onRetry }: { onRetry: () => void }) {
   const colors = useColors();
   const styles = useStyles();
   const contentWidth = useContentWidth();
@@ -91,8 +102,11 @@ export default function RoundRobinSchedulerScreen() {
       : currentSeason.id;
 
   const [seasonId, setSeasonId] = useState(initialSeasonId);
-  const { levels: divisionLevels, loading: levelsLoading } =
-    useDivisionLevels(divisionId);
+  const {
+    levels: divisionLevels,
+    loading: levelsLoading,
+    error: levelsError,
+  } = useDivisionLevels(divisionId);
   const levelsForSeason = divisionLevels.filter((l) => l.seasonId === seasonId);
   const [divisionLevelId, setDivisionLevelId] = useState("");
 
@@ -107,11 +121,14 @@ export default function RoundRobinSchedulerScreen() {
   }, [seasonId, divisionLevels]);
 
   // Schedulers want active players only (the hook's default), not the waitlist.
-  const { memberships, loading: membershipsLoading } = useDivisionMemberships(
-    divisionId,
-    seasonId,
-    divisionLevelId || null,
-  );
+  // A failed roster query returns an empty list, which is not an empty roster
+  // (see CLAUDE.md): it shows as an error, never as "no players assigned".
+  const {
+    memberships,
+    loading: membershipsLoading,
+    error: membershipsError,
+    retry: retryMemberships,
+  } = useDivisionMemberships(divisionId, seasonId, divisionLevelId || null);
   const { rankings } = useRankings(divisionId ?? null, { seasonId, divisionLevelId });
 
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
@@ -218,7 +235,7 @@ export default function RoundRobinSchedulerScreen() {
     const levelName = selectedLevel?.name ?? "this division level";
     const base =
       `Creates ${count} scheduled ${matchWord} in ${levelName}, ${selectedSeason.name}, ` +
-      `starting ${startDate} with a new round every ${intervalDays} days. ` +
+      `starting ${formatRoundDate(parsed.startAt)} with a new round every ${intervalDays} days. ` +
       "Players are notified and can postpone or cancel individual matches.";
     const ok = clearExisting
       ? await confirmDestructive({
@@ -293,6 +310,14 @@ export default function RoundRobinSchedulerScreen() {
         </Text>
         {levelsLoading ? (
           <LoadingState inline showLabel label="Loading division levels" />
+        ) : levelsError ? (
+          <InlineAlert
+            tone="error"
+            title="Couldn't load division levels"
+            message="Check your connection, then try again."
+            actionLabel="Try again"
+            onAction={onRetry}
+          />
         ) : levelsForSeason.length === 0 ? (
           <EmptyState
             style={styles.inlineEmpty}
@@ -340,6 +365,14 @@ export default function RoundRobinSchedulerScreen() {
             </View>
             {membershipsLoading ? (
               <LoadingState inline showLabel label="Loading players" />
+            ) : membershipsError ? (
+              <InlineAlert
+                tone="error"
+                title="Couldn't load this level's players"
+                message="Check your connection, then try again. Nothing can be scheduled until the roster loads."
+                actionLabel="Try again"
+                onAction={retryMemberships}
+              />
             ) : memberships.length === 0 ? (
               <Text style={styles.hint}>
                 No active players are assigned to {selectedLevel?.name ?? "this level"} for{" "}

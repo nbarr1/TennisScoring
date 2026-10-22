@@ -140,6 +140,7 @@ export function PlayerDetailDialog({
                   style={styles.input}
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
+                  maxLength={80}
                   autoComplete="off"
                   required
                 />
@@ -195,6 +196,7 @@ export function PlayerDetailDialog({
                   type="email"
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
+                  maxLength={254}
                   autoComplete="off"
                   readOnly={detailRegistered}
                   aria-describedby="detail-contact-hint"
@@ -207,6 +209,7 @@ export function PlayerDetailDialog({
                   type="tel"
                   value={editPhone}
                   onChange={(e) => setEditPhone(e.target.value)}
+                  maxLength={40}
                   autoComplete="off"
                   readOnly={detailRegistered}
                   aria-describedby="detail-contact-hint"

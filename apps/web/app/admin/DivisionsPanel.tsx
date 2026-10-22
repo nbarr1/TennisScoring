@@ -285,6 +285,7 @@ export function LevelFormDialog({
             style={styles.input}
             value={levelName}
             onChange={(e) => setLevelName(e.target.value)}
+            maxLength={60}
             aria-describedby={levelNameTaken ? "level-name-hint level-name-error" : "level-name-hint"}
             aria-invalid={levelNameTaken || undefined}
             required
@@ -301,6 +302,7 @@ export function LevelFormDialog({
             style={styles.input}
             value={levelDescription}
             onChange={(e) => setLevelDescription(e.target.value)}
+            maxLength={200}
             placeholder="e.g. NTRP 3.0 and below"
           />
         </Field>

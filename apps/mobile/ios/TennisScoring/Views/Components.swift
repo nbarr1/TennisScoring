@@ -305,14 +305,41 @@ struct ListErrorRow: View {
   let retry: @MainActor () -> Void
 
   var body: some View {
-    HStack(spacing: 12) {
-      Label(message, systemImage: "exclamationmark.triangle")
-        .foregroundStyle(.red)
-      Spacer(minLength: 8)
-      Button("Retry") { retry() }
-        .buttonStyle(.bordered)
-        .frame(minHeight: 44)
+    // Side by side when they fit; at large text sizes a long error beside the
+    // button wraps to a word per line, so the button moves under it.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 12) {
+        errorLabel
+        Spacer(minLength: 8)
+        retryButton
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        errorLabel
+        retryButton
+      }
     }
+  }
+
+  private var errorLabel: some View {
+    Label(message, systemImage: "exclamationmark.triangle")
+      .foregroundStyle(.red)
+  }
+
+  private var retryButton: some View {
+    Button("Retry") { retry() }
+      .buttonStyle(.bordered)
+      .frame(minHeight: 44)
+  }
+}
+
+extension View {
+  /// Caps a screen's content column at a readable width and centers it. An
+  /// iPad in portrait otherwise stretches the scoreboard, the action buttons,
+  /// and message bubbles across 800 points; a phone is narrower than the cap
+  /// and is unchanged. 720 is the cap the Expo app's `useContentWidth()` uses
+  /// for forms and lists.
+  func readableContentWidth(_ maxWidth: CGFloat = 720) -> some View {
+    frame(maxWidth: maxWidth).frame(maxWidth: .infinity)
   }
 }
 

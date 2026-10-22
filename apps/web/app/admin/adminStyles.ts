@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { appNavStyles } from "../shared/AppNav";
-import { cardStyle, color, inputStyle, radius, shadow, space, target, type, width } from "../shared/tokens";
+import { cardStyle, color, inputStyle, pageMainStyle, radius, sectionPadding, shadow, space, target, type, width } from "../shared/tokens";
 
 // The unassigned amber pair (unassignedSoft / unassignedText, with a dark variant in
 // tokens.ts) is the tint this app already uses for the leader badge; the unassigned states
@@ -20,7 +20,8 @@ const badgeBase: CSSProperties = {
 
 export const styles = {
   page: appNavStyles.page,
-  main: { maxWidth: width.wide, margin: "0 auto", padding: "40px clamp(16px, 4vw, 24px) 120px" },
+  // 120px at the bottom keeps the last rows clear of the fixed bulk-action bar.
+  main: pageMainStyle(width.wide, 120),
   adminHeader: {
     display: "flex",
     justifyContent: "space-between",
@@ -47,7 +48,7 @@ export const styles = {
   attention: {
     ...cardStyle,
     marginBottom: space.xl,
-    padding: `${space.lg}px ${space.xl}px`,
+    padding: `${space.lg}px ${sectionPadding}`,
   },
   attentionTitle: { ...type.title, color: color.clubhouseGreen, margin: `0 0 ${space.sm}px` },
   attentionList: { listStyle: "none", margin: 0, padding: 0, display: "grid", gap: space.sm },
@@ -76,7 +77,7 @@ export const styles = {
   placeholder: { padding: "24px 0" },
   card: {
     ...cardStyle,
-    padding: space.xl,
+    padding: sectionPadding,
     width: "100%",
     marginBottom: space.xl,
   },
@@ -259,6 +260,9 @@ export const styles = {
   resolveLink: {
     ...type.label,
     color: color.clubhouseGreen,
+    flex: "1 1 160px",
+    minWidth: 0,
+    overflowWrap: "anywhere",
     textUnderlineOffset: 3,
     minHeight: target.min,
     display: "inline-flex",
@@ -299,7 +303,7 @@ export const styles = {
   bulkBar: {
     position: "fixed",
     left: "50%",
-    bottom: space.lg,
+    bottom: `calc(${space.lg}px + env(safe-area-inset-bottom, 0px))`,
     transform: "translateX(-50%)",
     display: "flex",
     alignItems: "center",

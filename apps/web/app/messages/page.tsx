@@ -54,6 +54,7 @@ import {
   useConfirm,
   useDialogClose,
 } from "../shared/ui";
+import { useSlow } from "../shared/network";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
   { value: "harassment", label: "Harassment" },
@@ -63,6 +64,9 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 ];
 
 const MAX_MESSAGE_LENGTH = 2000;
+
+/** How many messages `useMessages` loads: `channelMessagesQuery`'s default in firebase-client. */
+const MESSAGE_PAGE_SIZE = 50;
 
 // A stable empty list, so components keyed on the block list do not re-run
 // their effects on every render for a player who has blocked nobody.
@@ -704,6 +708,10 @@ function ChatPane({
             />
           }
         >
+          {allMessages.length >= MESSAGE_PAGE_SIZE && (
+            // Older messages are not loaded; say so rather than imply this is the whole conversation.
+            <p style={styles.hiddenNote}>Showing the latest {MESSAGE_PAGE_SIZE} messages.</p>
+          )}
           {hiddenCount > 0 && (
             <p style={styles.hiddenNote}>
               {hiddenCount} {hiddenCount === 1 ? "message" : "messages"} from blocked players hidden.
@@ -1009,6 +1017,8 @@ function OutgoingBubble({
   onDiscard: () => void;
 }) {
   const failed = item.status === "failed";
+  // Offline, a send neither lands nor fails: it waits for the connection.
+  const slow = useSlow(!failed, 8000);
   return (
     <div style={{ ...styles.bubbleWrap, alignSelf: "flex-end", alignItems: "flex-end" }}>
       <div style={{ ...styles.bubble, ...styles.bubbleMe, ...(failed ? styles.bubbleFailed : styles.bubbleSending) }}>
@@ -1029,7 +1039,9 @@ function OutgoingBubble({
           </span>
         </div>
       ) : (
-        <span style={styles.metaText}>Sending…</span>
+        <span style={styles.metaText} role={slow ? "status" : undefined}>
+          {slow ? "Still sending. It goes out when your connection is back." : "Sending…"}
+        </span>
       )}
     </div>
   );
@@ -1287,6 +1299,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: color.surfaceMuted,
     overflowWrap: "anywhere",
     whiteSpace: "pre-wrap",
+    // A 2,000-character message would push the report form below the fold.
+    display: "-webkit-box",
+    WebkitLineClamp: 6,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
   },
   actionList: { display: "grid", gap: space.sm },
   fieldset: { border: "none", margin: `0 0 ${space.lg}px`, padding: 0, minWidth: 0 },

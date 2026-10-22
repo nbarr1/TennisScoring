@@ -11,7 +11,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -50,6 +49,7 @@ import {
   makeStyles,
   type ThemeColors,
   useContentWidth,
+  useIsNarrowWindow,
 } from "../../theme";
 
 const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
@@ -60,6 +60,23 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 ];
 
 const CONTACT_SHARE_EXPLAINED_KEY = "messages.contactShareExplained";
+
+/**
+ * Opens a shared phone number or email address. iPads and Wi-Fi tablets have
+ * no phone app, and a device can lack a mail app, so a link that can't open
+ * shows the number or address instead of failing silently.
+ */
+function openContactLink(kind: "phone" | "email", value: string) {
+  const url = kind === "phone" ? `tel:${value}` : `mailto:${value}`;
+  Linking.openURL(url).catch(() => {
+    Alert.alert(
+      kind === "phone" ? "Can't place a call here" : "Can't open an email app",
+      kind === "phone"
+        ? `This device can't make phone calls. The number is ${value}.`
+        : `No email app is set up on this device. The address is ${value}.`,
+    );
+  });
+}
 
 /** "4:05 PM" today, "Tue 4:05 PM" this week, "Oct 12" before that. */
 export function formatMessageTime(timestamp: number | undefined): string {
@@ -187,7 +204,7 @@ const MessageBubble = React.memo(function MessageBubble({
             {message.sharedContact.phone && (
               <Pressable
                 onPress={() =>
-                  Linking.openURL(`tel:${message.sharedContact!.phone}`)
+                  openContactLink("phone", message.sharedContact!.phone!)
                 }
                 hitSlop={hitSlopFor(MIN_TOUCH_TARGET, 24)}
                 accessibilityRole="button"
@@ -207,7 +224,7 @@ const MessageBubble = React.memo(function MessageBubble({
             {message.sharedContact.email && (
               <Pressable
                 onPress={() =>
-                  Linking.openURL(`mailto:${message.sharedContact!.email}`)
+                  openContactLink("email", message.sharedContact!.email!)
                 }
                 hitSlop={hitSlopFor(MIN_TOUCH_TARGET, 24)}
                 accessibilityRole="button"
@@ -266,7 +283,8 @@ export function ChannelView({
   // The whole conversation (list and composer) centers at the form width on
   // a tablet. Undefined on phones.
   const contentWidth = useContentWidth();
-  const { width } = useWindowDimensions();
+  // Wraps the composer onto two lines on a narrow window or at large text.
+  const narrow = useIsNarrowWindow(360);
   const insets = useSafeAreaInsets();
   // The stack header sits above this view, and iOS keyboard avoidance
   // measures from the view's own top, so the header height is the offset.
@@ -610,7 +628,7 @@ export function ChannelView({
       <View
         style={[
           styles.inputRow,
-          width < 360 && styles.inputRowCompact,
+          narrow && styles.inputRowCompact,
           { paddingBottom: Math.max(insets.bottom, spacing.sm) },
         ]}
       >
@@ -840,11 +858,12 @@ const useStyles = makeStyles((colors) =>
     },
     bubbleMe: {
       backgroundColor: colors.primary,
-      borderBottomRightRadius: spacing.xs,
+      // The tail corner follows the reading direction.
+      borderBottomEndRadius: spacing.xs,
     },
     bubbleThem: {
       backgroundColor: colors.surface,
-      borderBottomLeftRadius: spacing.xs,
+      borderBottomStartRadius: spacing.xs,
       ...elevations.low,
     },
     messageActionsBtn: {

@@ -8,6 +8,7 @@ import { ViewModeProvider } from './shared/viewMode';
 import { SessionServices } from './shared/SessionServices';
 import { AnnouncerProvider } from './shared/Announcer';
 import { SkipLink } from './shared/SkipLink';
+import { ConnectionStatus } from './shared/ConnectionStatus';
 import { darkPalette, palette, rootTokenCss } from './shared/tokens';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
@@ -49,6 +50,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
             whole SDK into every page, the public privacy policy included. */}
         <SessionServices />
         <AnnouncerProvider>
+          {/* An offline bar above every page, in the flow so it never covers the nav. */}
+          <ConnectionStatus />
           <ViewModeProvider>{children}</ViewModeProvider>
         </AnnouncerProvider>
       </body>
