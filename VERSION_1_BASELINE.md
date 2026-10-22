@@ -82,6 +82,14 @@ Changes since the `v1.0.5` snapshot:
 
 ---
 
+## Update — 2026-10-22 (`v1.2.0`)
+
+Changes since the `v1.1.0` snapshot are listed in `CHANGELOG.md` under `[1.2.0]`. The main ones are required email verification, a dark theme on web and mobile, portrait tablet layouts, leader result resolution, hand-recorded match tiebreaks, and the accessibility, hardening, and polish passes across web, mobile, and the watches.
+
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.2.0`; `apps/mobile/app.json` moved to `version: 1.2.0`. Android `versionCode` comes from the EAS workflow's run number for release builds.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.

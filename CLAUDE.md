@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Full-stack tennis league scoring application (currently at version 1.1.0, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
+Full-stack tennis league scoring application (currently at version 1.2.0, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
 **Prerequisites:** Node.js 22, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
 
@@ -14,7 +14,7 @@ Full-stack tennis league scoring application (currently at version 1.1.0, built 
 ## Versioning
 
 - Treat `v1.0.0` as the first functional/deployable repository baseline; a Git tag named `v1.0.0` should point at the baseline commit.
-- The root `package.json` and all five workspace packages currently carry version `1.1.0` and are bumped together — never let them drift apart.
+- The root `package.json` and all five workspace packages currently carry version `1.2.0` and are bumped together — never let them drift apart.
 - Update README, SETUP, VERSION_1_BASELINE, CHANGELOG, and package/app version markers whenever a feature changes setup, deployment, data shape, or user-visible capabilities.
 
 ## Commands
