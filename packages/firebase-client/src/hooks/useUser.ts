@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { onIdTokenChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { arrayRemove, arrayUnion, deleteField, getDoc, onSnapshot, updateDoc, writeBatch, type FirestoreError } from 'firebase/firestore';
+import {
+  arrayRemove,
+  arrayUnion,
+  deleteField,
+  getDoc,
+  getDocFromServer,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  type FirestoreError,
+} from 'firebase/firestore';
 import { auth, db } from '../config';
 import { userDoc, profileDoc } from '../collections';
 import type { User, PublicProfile } from '@tennis/shared';
@@ -131,6 +142,43 @@ export function usePublicProfile(uid: string | null, reloadKey = 0): PublicProfi
   }, [uid, reloadKey]);
 
   return { profile, loading, error };
+}
+
+/**
+ * Creates the signed-in account's users/{uid} document when the server
+ * confirms it has none, using the narrow create the security rules allow.
+ *
+ * Sign-up on both apps relies on the `onUserCreated` blocking function to
+ * write that document, and the function runs only on a project with Identity
+ * Platform enabled; the targeted deploy workflow does not ship it. Without
+ * it, an account that has not yet joined a division by code or accepted an
+ * invite has no users document, and the profile page could not load.
+ *
+ * Reads from the server, not the cache, so being offline throws instead of
+ * reading as a missing document.
+ */
+export async function ensureOwnUserDocument(firebaseUser: FirebaseUser): Promise<'exists' | 'created'> {
+  const ref = userDoc(firebaseUser.uid);
+  if ((await getDocFromServer(ref)).exists()) return 'exists';
+  const email = firebaseUser.email ?? '';
+  const displayName = (firebaseUser.displayName?.trim() || email.split('@')[0] || 'Player').slice(0, 100);
+  const now = Date.now();
+  // Field for field what the rules' `allow create` on users/{userId} accepts.
+  await setDoc(ref, {
+    id: firebaseUser.uid,
+    displayName,
+    email,
+    phone: null,
+    avatarUrl: null,
+    contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+    role: 'player',
+    divisionId: null,
+    fcmTokens: [],
+    tipsEnabled: true,
+    createdAt: now,
+    updatedAt: now,
+  } as unknown as User);
+  return 'created';
 }
 
 /** @deprecated Use usePrivateUser or usePublicProfile */

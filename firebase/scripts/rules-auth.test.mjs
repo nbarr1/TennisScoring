@@ -651,6 +651,50 @@ describe('onboarding', () => {
   });
 });
 
+describe('an account with no users document', () => {
+  // ensureOwnUserDocument() on the web profile page. Without the onUserCreated
+  // blocking function, sign-up writes no users document, and this create is
+  // what keeps the profile page from failing for that account.
+  const recoveryUser = (uid, overrides = {}) => ({
+    id: uid,
+    displayName: uid,
+    email: `${uid}@example.com`,
+    phone: null,
+    avatarUrl: null,
+    contactPreferences: { allowEmail: true, allowSMS: false, allowInApp: true },
+    role: 'player',
+    divisionId: null,
+    fcmTokens: [],
+    tipsEnabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  });
+
+  it('can read its own missing document, which is not a permission error', async () => {
+    const snap = await assertSucceeds(getDoc(doc(as('newcomer'), 'users', 'newcomer')));
+    if (snap.exists()) throw new Error('expected no users document');
+    await assertSucceeds(getDoc(doc(asUnverified('newcomer'), 'users', 'newcomer')));
+  });
+
+  it('can create it with the recovery fields, and nothing more', async () => {
+    await assertSucceeds(setDoc(doc(as('newcomer'), 'users', 'newcomer'), recoveryUser('newcomer')));
+    await assertFails(
+      setDoc(doc(as('other'), 'users', 'other'), recoveryUser('other', { role: 'admin' })),
+    );
+    await assertFails(
+      setDoc(doc(as('other'), 'users', 'other'), recoveryUser('other', { divisionId: DIVISION })),
+    );
+    await assertFails(
+      setDoc(doc(as('other'), 'users', 'other'), recoveryUser('other', { email: 'someone@example.com' })),
+    );
+  });
+
+  it('cannot overwrite an existing document through the create path', async () => {
+    await assertFails(setDoc(doc(as('p1'), 'users', 'p1'), recoveryUser('p1')));
+  });
+});
+
 describe('editing a score', () => {
   const edit = {
     liveScore: score([set(0, 0, 6), set(1, 0, 6)], [0, 2]),
