@@ -138,14 +138,15 @@ export async function processExpiredReports(db: Db, now: number): Promise<Expire
 }
 
 /**
- * Confirms reports nobody answered within 48 hours. Runs every 15 minutes, so
- * a report is confirmed between 48 hours and 48 hours 15 minutes after it was
- * submitted. Writing `completed` fires onMatchUpdate, which recalculates the
+ * Confirms reports nobody answered within 48 hours. Runs once a day at 00:00
+ * UTC, so a report is confirmed between 48 and 72 hours after it was
+ * submitted. The rules close the window at exactly 48 hours, so nobody can
+ * dispute or edit in the gap; the opposing side can still confirm. Writing `completed` fires onMatchUpdate, which recalculates the
  * standings, and generateMatchReport, which builds the PDF, exactly as a
  * player's confirmation does.
  */
 export const autoConfirmExpiredReports = onSchedule(
-  { schedule: 'every 15 minutes', timeZone: 'Etc/UTC' },
+  { schedule: 'every day 00:00', timeZone: 'Etc/UTC' },
   async () => {
     const result = await processExpiredReports(getFirestore(), Date.now());
     functions.logger.info('autoConfirmExpiredReports finished', {
