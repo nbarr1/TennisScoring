@@ -70,6 +70,13 @@ export interface Division {
   leaderIds: string[];
   playerIds: string[];
   activeSeasonId?: string;
+  /**
+   * Written by Cloud Functions on every whole-division ranking recalculation:
+   * how many completed matches carry no `seasonId`. Those count in the active
+   * season, so a recalculation is limited to the active season only while this
+   * is 0. Never written by clients.
+   */
+  rankingsUnseasonedMatchCount?: number;
   createdAt: number;
   updatedAt: number;
 }

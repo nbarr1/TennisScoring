@@ -103,7 +103,7 @@ const FIT_ONE_LINE = {
   minimumFontScale: 0.6,
 } as const;
 
-function RankingRow({
+const RankingRow = React.memo(function RankingRow({
   item,
   index,
   isCurrentUser,
@@ -179,7 +179,7 @@ function RankingRow({
       )}
     </Pressable>
   );
-}
+});
 
 /**
  * The standings table for one season and format. Keyed by the parent so
@@ -220,13 +220,21 @@ function StandingsContent({
   const doubles = useDoublesRankings(isDoubles ? divisionId : null, rankingFilters);
   const loading = isDoubles ? doubles.loading : singles.loading;
   const loadError = isDoubles ? doubles.error : singles.error;
-  const rankings: StandingsRow[] = isDoubles
-    ? doubles.rankings.map((r) => ({ ...r, key: r.teamId }))
-    : singles.rankings.map((r) => ({
-        ...r,
-        key: r.userId,
-        playerIds: [r.userId],
-      }));
+  // Memoized so each row keeps its identity across unrelated re-renders (the
+  // tiebreaker toggle, a recalculation), which is what lets RankingRow's memo hold.
+  const singlesRankings = singles.rankings;
+  const doublesRankings = doubles.rankings;
+  const rankings: StandingsRow[] = useMemo(
+    () =>
+      isDoubles
+        ? doublesRankings.map((r) => ({ ...r, key: r.teamId }))
+        : singlesRankings.map((r) => ({
+            ...r,
+            key: r.userId,
+            playerIds: [r.userId],
+          })),
+    [isDoubles, singlesRankings, doublesRankings],
+  );
   const [showTiebreakers, setShowTiebreakers] = useState(false);
 
   // The callable decides for real (leader of this division, or admin).

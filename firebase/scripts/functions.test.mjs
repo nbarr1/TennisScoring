@@ -208,6 +208,108 @@ describe('ranking recalculation', () => {
   );
 });
 
+describe('season-scoped ranking recalculation', () => {
+  const OTHER_SEASON = '2026-H1';
+
+  async function seasonRankings(seasonId) {
+    const snap = await db
+      .collection('divisions')
+      .doc(DIVISION)
+      .collection('rankings')
+      .where('seasonId', '==', seasonId)
+      .get();
+    return Object.fromEntries(snap.docs.map((d) => [d.data().userId, d.data()]));
+  }
+
+  async function setDivisionFields(fields) {
+    await db.collection('divisions').doc(DIVISION).set(fields, { merge: true });
+  }
+
+  it('leaves other seasons alone when a confirmation is scoped to its season', async () => {
+    await seedPlayers(['p1', 'p2', 'p3', 'p4']);
+    await setDivisionFields({ activeSeasonId: SEASON, rankingsUnseasonedMatchCount: 0 });
+    // A row no completed match supports. A whole-division pass would prune it;
+    // a pass scoped to SEASON must not touch it.
+    await db.collection('divisions').doc(DIVISION).collection('rankings').doc('stale-other').set({
+      userId: 'p3',
+      seasonId: OTHER_SEASON,
+      matchesWon: 9,
+    });
+    await db.collection('users').doc('p3').set(
+      { rankingSummary: { divisionId: DIVISION, seasonId: SEASON, rank: 1, matchesPlayed: 4 } },
+      { merge: true },
+    );
+    const old = match('p3', 'p4', { seasonId: OTHER_SEASON });
+    await db.collection('matches').doc('old').set(confirmed(old));
+
+    const m1 = match('p1', 'p2');
+    await db.collection('matches').doc('m1').set(confirmed(m1));
+    await functions.onMatchUpdate.run(writeEvent('m1', m1, confirmed(m1)));
+
+    const current = await seasonRankings(SEASON);
+    assert.equal(current.p1?.matchesWon, 1);
+    assert.equal(current.p2?.matchesLost, 1);
+    const other = await seasonRankings(OTHER_SEASON);
+    assert.equal(other.p3?.matchesWon, 9, 'the other season was not rewritten or pruned');
+  });
+
+  it('keeps the active-season summary when another season is recalculated', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await setDivisionFields({ activeSeasonId: SEASON, rankingsUnseasonedMatchCount: 0 });
+    const summary = { divisionId: DIVISION, seasonId: SEASON, rank: 1, matchesPlayed: 3 };
+    await db.collection('users').doc('p1').set({ rankingSummary: summary }, { merge: true });
+
+    const old = match('p1', 'p2', { seasonId: OTHER_SEASON });
+    await db.collection('matches').doc('old').set(confirmed(old));
+    await functions.onMatchUpdate.run(writeEvent('old', old, confirmed(old)));
+
+    assert.equal((await seasonRankings(OTHER_SEASON)).p1?.matchesWon, 1);
+    const user = (await db.collection('users').doc('p1').get()).data();
+    assert.deepEqual(user.rankingSummary, summary, 'an other-season pass leaves the summary as it was');
+  });
+
+  it('recalculates the whole division while unseasoned matches may exist', async () => {
+    await seedPlayers(['p1', 'p2', 'p3', 'p4']);
+    // No rankingsUnseasonedMatchCount yet: the active season is not scoped.
+    await setDivisionFields({ activeSeasonId: SEASON });
+    const legacy = match('p3', 'p4');
+    delete legacy.seasonId;
+    await db.collection('matches').doc('legacy').set(confirmed(legacy));
+
+    const m1 = match('p1', 'p2');
+    await db.collection('matches').doc('m1').set(confirmed(m1));
+    await functions.onMatchUpdate.run(writeEvent('m1', m1, confirmed(m1)));
+
+    const current = await seasonRankings(SEASON);
+    assert.equal(current.p1?.matchesWon, 1);
+    assert.equal(current.p3?.matchesWon, 1, 'the unseasoned match still counts in the active season');
+    const division = (await db.collection('divisions').doc(DIVISION).get()).data();
+    assert.equal(division.rankingsUnseasonedMatchCount, 1);
+
+    // With an unseasoned match on record, the next confirmation is also a
+    // whole-division pass, so it cannot prune the legacy result's row.
+    const m2 = match('p1', 'p2', { winner: 'player2' });
+    await db.collection('matches').doc('m2').set(confirmed(m2));
+    await functions.onMatchUpdate.run(writeEvent('m2', m2, confirmed(m2)));
+    assert.equal((await seasonRankings(SEASON)).p3?.matchesWon, 1);
+  });
+
+  it('recalculates both seasons when a result moves between them', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await setDivisionFields({ activeSeasonId: SEASON, rankingsUnseasonedMatchCount: 0 });
+    const m1 = confirmed(match('p1', 'p2', { seasonId: OTHER_SEASON }));
+    await db.collection('matches').doc('m1').set(m1);
+    await functions.onMatchUpdate.run(writeEvent('m1', match('p1', 'p2', { seasonId: OTHER_SEASON }), m1));
+    assert.equal((await seasonRankings(OTHER_SEASON)).p1?.matchesWon, 1);
+
+    const moved = { ...m1, seasonId: SEASON };
+    await db.collection('matches').doc('m1').set(moved);
+    await functions.onMatchUpdate.run(writeEvent('m1', m1, moved));
+    assert.equal((await seasonRankings(SEASON)).p1?.matchesWon, 1);
+    assert.equal((await seasonRankings(OTHER_SEASON)).p1, undefined, 'the old season row is pruned');
+  });
+});
+
 describe('match report PDF', () => {
   async function generateFor(matchId, names) {
     await seedPlayers(['p1', 'p2'], {
