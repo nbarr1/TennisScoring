@@ -16,3 +16,7 @@ reason = "braces <=3.0.3 stack exhaustion on deeply nested patterns; no patched 
 [[IgnoredVulns]]
 id = "GHSA-86w9-cpqp-85rv"
 reason = "node-forge <=1.4.0 PKCS#1 v1.5 signature forgery with low-exponent RSA keys; no patched release exists. It is only a dependency of @expo/cli and @expo/code-signing-certificates, which run on developer machines and EAS builders, not in the shipped app or Cloud Functions. Added October 13, 2026; revisit January 13, 2027, or as soon as a fixed node-forge or an @expo/cli without it is published."
+
+[[IgnoredVulns]]
+id = "GHSA-mrhx-c7xc-m3w5"
+reason = "zod <4.6.6 memory exhaustion while validating oversized constrained collections. The zod 4 copy is overridden to ^4.6.6 in the root package.json; this entry covers only zod 3.25.76, which @expo/cli 57 pins (no zod 3 release is patched, and forcing zod 4 on the Expo CLI would break it). The Expo CLI runs on developer machines and EAS builders and validates its own config, not user input, and zod ships in neither app bundle nor the Cloud Functions bundle. Added October 26, 2026; revisit January 26, 2027, or as soon as an @expo/cli on zod 4.6.6 or later is published."
