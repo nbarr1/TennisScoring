@@ -219,6 +219,8 @@ All Firestore reads go through these hooks; all writes go through operations exp
 
 **`firebase/src/matches/doublesSides.ts`** — `buildDoublesMatchFields()` validates two side rosters (two distinct players each, all four in the division) and derives the whole doubles document shape; `validateDoublesCompetition()` validates the season/level and active memberships; `requestsDoubles()` detects a doubles payload. Shared by `createDoublesMatch`, `recordHistoricMatch`, and `recordMatchOnBehalf` so all three write identical documents.
 
+**`firebase/src/matches/matchLevel.ts`** — fills a singles result's missing `divisionLevelId` with the one level every player is rostered in that season (`inferMatchDivisionLevel()` per call, `loadDivisionLevelResolver()` for a whole-division pass). `recordHistoricMatch` and `recordMatchOnBehalf` use it when the client sends no level, and `recalculateRankings` with `normalizeMatches` (the admin Rebuild rankings tool) uses it to repair completed results saved without one. A result with a season but no level is invisible to every level filter and ranks in a bucket no level's standings read, so the web forms also refuse to save one when the season has levels.
+
 **`firebase/src/reports/generateReport.ts`** — Firestore trigger on match completion; generates a PDF report via `pdf-lib` and stores it in Cloud Storage.
 
 **`firebase/src/messaging/onNewMessage.ts`** — Firestore trigger on new message creation; updates channel `lastMessage` and sends FCM push notifications to channel participants.

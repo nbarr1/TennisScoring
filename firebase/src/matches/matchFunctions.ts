@@ -35,6 +35,7 @@ import type {
 } from '@tennis/shared';
 
 import { buildDoublesMatchFields, requestsDoubles, validateDoublesCompetition } from './doublesSides';
+import { inferMatchDivisionLevel, loadDivisionLevelResolver } from './matchLevel';
 import { sendPushToUsers } from '../notifications/push';
 import { stampReportDeadline } from './appealFunctions';
 import { assertVerifiedEmail } from '../auth/verifiedEmail';
@@ -849,12 +850,39 @@ async function recalculateRankingsPass(
   // so the stale-record prune below stays correct for both.
   const h2hAccum = new Map<string, HeadToHead>();
   const writer = db.bulkWriter();
+  // The repair also files level-less singles results under the level both
+  // players share that season, which older clients left blank.
+  const resolveLevel = options.normalizeMatches
+    ? await loadDivisionLevelResolver(db, divisionId)
+    : undefined;
 
   for (const doc of matchesSnap.docs) {
-    const rawMatch = doc.data() as Match;
-    if (options.normalizeMatches && rawMatch.isDivisionMatch === undefined) {
+    let rawMatch = doc.data() as Match;
+    const normalizedDivisionFlag = options.normalizeMatches && rawMatch.isDivisionMatch === undefined;
+    if (normalizedDivisionFlag) {
       writer.update(doc.ref, { isDivisionMatch: true });
       result.matchesNormalized += 1;
+    }
+    const unleveledSeasonId = rawMatch.seasonId?.trim();
+    if (
+      resolveLevel &&
+      unleveledSeasonId &&
+      !rawMatch.divisionLevelId?.trim() &&
+      !isDoublesMatch(rawMatch)
+    ) {
+      const playerIds = rawMatch.player2IsGuest === true
+        ? [rawMatch.player1Id]
+        : [rawMatch.player1Id, rawMatch.player2Id];
+      const level = resolveLevel(unleveledSeasonId, playerIds);
+      if (level) {
+        const update = {
+          divisionLevelId: level.divisionLevelId,
+          ...(!rawMatch.matchType && level.matchType ? { matchType: level.matchType } : {}),
+        };
+        writer.update(doc.ref, update);
+        rawMatch = { ...rawMatch, ...update };
+        if (!normalizedDivisionFlag) result.matchesNormalized += 1;
+      }
     }
 
     if (rawMatch.isDivisionMatch === false) {
@@ -1329,6 +1357,33 @@ async function notifyPlayersMatchRecorded(
 }
 
 /**
+ * The level and match type a singles result is stored with. The level the
+ * client sent wins; without one, the level both players share that season is
+ * used, so a result recorded with the level left blank still lands in its
+ * level's match list and standings.
+ */
+async function competitionLevel(
+  db: FirebaseFirestore.Firestore,
+  input: {
+    divisionId: string;
+    seasonId: string;
+    divisionLevelId: string;
+    matchType?: 'singles' | 'doubles';
+    playerIds: string[];
+  },
+): Promise<Pick<Match, 'divisionLevelId' | 'matchType'>> {
+  const inferred = !input.divisionLevelId && input.seasonId
+    ? await inferMatchDivisionLevel(db, input)
+    : undefined;
+  const divisionLevelId = input.divisionLevelId || inferred?.divisionLevelId;
+  const matchType = input.matchType ?? inferred?.matchType;
+  return {
+    ...(divisionLevelId ? { divisionLevelId } : {}),
+    ...(matchType ? { matchType } : {}),
+  };
+}
+
+/**
  * HTTPS callable: regular players can record their own historic matches.
  * Guest matches are auto-confirmed; registered-opponent matches require the
  * opponent to confirm before standings update.
@@ -1457,14 +1512,20 @@ export const recordHistoricMatch = functions.https.onCall(async (request) => {
   }
 
   const { score, winner } = buildManualCompletedScore(safeSets);
+  const level = await competitionLevel(db, {
+    divisionId: safeDivisionId,
+    seasonId: safeSeasonId,
+    divisionLevelId: safeDivisionLevelId,
+    matchType: safeMatchType,
+    playerIds: isGuest ? [safePlayer1Id] : [safePlayer1Id, safePlayer2Id],
+  });
   const now = Date.now();
   const player1 = player1Snap.data();
   const player2 = player2Snap?.data();
   const matchData: Omit<Match, 'id'> = {
     divisionId: safeDivisionId,
     ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
-    ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
-    ...(safeMatchType ? { matchType: safeMatchType } : {}),
+    ...level,
     player1Id: safePlayer1Id,
     player2Id: isGuest ? 'guest' : safePlayer2Id,
     player1Name: typeof player1Name === 'string' && player1Name.trim()
@@ -1638,6 +1699,13 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
   }
 
   const { score, winner } = buildManualCompletedScore(safeSets);
+  const level = await competitionLevel(db, {
+    divisionId: safeDivisionId,
+    seasonId: safeSeasonId,
+    divisionLevelId: safeDivisionLevelId,
+    matchType: safeMatchType,
+    playerIds: [safePlayer1Id, safePlayer2Id],
+  });
   const now = Date.now();
   const actorName = actor?.displayName ?? actor?.email ?? 'A league administrator';
   const player1 = player1Snap.data();
@@ -1645,8 +1713,7 @@ export const recordMatchOnBehalf = functions.https.onCall(async (request) => {
   const matchData: Omit<Match, 'id'> = {
     divisionId: safeDivisionId,
     ...(safeSeasonId ? { seasonId: safeSeasonId } : {}),
-    ...(safeDivisionLevelId ? { divisionLevelId: safeDivisionLevelId } : {}),
-    ...(safeMatchType ? { matchType: safeMatchType } : {}),
+    ...level,
     player1Id: safePlayer1Id,
     player2Id: safePlayer2Id,
     player1Name: player1?.displayName ?? safePlayer1Id,

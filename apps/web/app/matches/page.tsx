@@ -952,6 +952,12 @@ type Competition = {
   isOwnLevel: boolean;
   /** The user changed the season or the level. */
   touched: boolean;
+  /**
+   * The season has levels and none is chosen. A result saved like that is
+   * listed under no level and counts in no level's standings, so the forms
+   * ask for one, as the mobile app does.
+   */
+  levelMissing: boolean;
 };
 
 /**
@@ -974,6 +980,7 @@ function useCompetition(divisionId: string, levels: DivisionLevel[], subjectId: 
       )?.divisionLevelId
     : undefined;
   const levelId = levelChoice ?? ownLevelId ?? "";
+  const level = seasonLevels.find((l) => l.id === levelId);
   return {
     seasonId,
     setSeasonId: (id) => {
@@ -982,12 +989,21 @@ function useCompetition(divisionId: string, levels: DivisionLevel[], subjectId: 
     },
     levelId,
     setLevelId: (id) => setLevelChoice(id),
-    level: seasonLevels.find((level) => level.id === levelId),
+    level,
     seasonLevels,
     seasonName: seasonOptions.find((s) => s.id === seasonId)?.name ?? seasonId,
     isOwnLevel: levelChoice === null && !!ownLevelId,
     touched: seasonId !== current.id || levelChoice !== null,
+    levelMissing: seasonLevels.length > 0 && !level,
   };
+}
+
+/** Puts the "Choose a division level." error on the form, or returns false. */
+function blockMissingLevel(comp: Competition, idPrefix: string, setError: (message: string) => void): boolean {
+  if (!comp.levelMissing) return false;
+  setError("Choose a division level.");
+  focusField(`${idPrefix}-level`);
+  return true;
 }
 
 function CompetitionFields({
@@ -1013,7 +1029,7 @@ function CompetitionFields({
   } else if (comp.seasonLevels.length === 0) {
     hint = `${comp.seasonName} has no division levels yet, so this match won't belong to one.`;
   } else {
-    hint = "This match won't belong to a division level.";
+    hint = `Choose the division level this match counts in for ${comp.seasonName}.`;
   }
 
   return (
@@ -1048,12 +1064,18 @@ function CompetitionFields({
             onChange={(e) => comp.setLevelId(e.target.value)}
             aria-describedby={hintId}
           >
+            {comp.seasonLevels.length === 0 ? (
+              <option value="">No division level</option>
+            ) : comp.levelMissing ? (
+              <option value="" disabled>
+                Choose a level
+              </option>
+            ) : null}
             {comp.seasonLevels.map((level) => (
               <option key={level.id} value={level.id}>
                 {level.name}
               </option>
             ))}
-            <option value="">No division level</option>
           </select>
         </div>
       </div>
@@ -1169,6 +1191,7 @@ function StartLiveMatchDialog({
       focusField("live-opponent-name");
       return;
     }
+    if (blockMissingLevel(comp, "live", setError)) return;
     setSubmitting(true);
     setError("");
     let matchId: string | null = null;
@@ -1316,6 +1339,7 @@ function RecordResultDialog({
       setError("Add at least one line, such as: Jane Doe, 6-3, 6-4");
       return;
     }
+    if (blockMissingLevel(comp, "record", setError)) return;
     // Check every line before writing any, so a typo on line 4 doesn't leave
     // lines 1-3 recorded and the rest not.
     const items: Array<{ opponentName: string; sets: RecordedSetInput[] }> = [];
@@ -1409,6 +1433,7 @@ function RecordResultDialog({
       setError(invalid);
       return;
     }
+    if (blockMissingLevel(comp, "record", setError)) return;
 
     const competition = {
       divisionId,
@@ -1763,6 +1788,7 @@ function ProposeMatchDialog({
       focusField("proposal-scheduled-at");
       return;
     }
+    if (blockMissingLevel(comp, "propose", setError)) return;
     setSubmitting(true);
     try {
       if (isDoubles) {
