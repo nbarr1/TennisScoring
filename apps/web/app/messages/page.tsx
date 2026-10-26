@@ -18,7 +18,7 @@ import {
   IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { memo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import {
   useAuthUser,
   useChannels,
@@ -64,9 +64,6 @@ const REPORT_REASONS: { value: MessageReportReason; label: string }[] = [
 ];
 
 const MAX_MESSAGE_LENGTH = 2000;
-
-/** How many messages `useMessages` loads: `channelMessagesQuery`'s default in firebase-client. */
-const MESSAGE_PAGE_SIZE = 50;
 
 // A stable empty list, so components keyed on the block list do not re-run
 // their effects on every render for a player who has blocked nobody.
@@ -520,7 +517,15 @@ function ChatPane({
 }) {
   const announce = useAnnounce();
   const { confirm, confirmDialog } = useConfirm();
-  const { messages: allMessages, loading, error, retry } = useMessages(channel.id);
+  const {
+    messages: allMessages,
+    loading,
+    error,
+    retry,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
+  } = useMessages(channel.id);
   const [text, setText] = useState("");
   const [outgoing, setOutgoing] = useState<OutgoingMessage[]>([]);
   const [deleting, setDeleting] = useState(false);
@@ -550,10 +555,27 @@ function ChatPane({
   // Follow new messages only while the reader is at the bottom; someone
   // scrolled up into history keeps their place. Sending always follows.
   const stickToBottom = useRef(true);
+  // Where the list stood when older messages were requested. They arrive
+  // above the reader, so the list is shifted down by their height to keep the
+  // same message in view instead of jumping.
+  const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   useLayoutEffect(() => {
     const el = listRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    const anchor = olderAnchor.current;
+    if (anchor && el.scrollHeight !== anchor.height) {
+      olderAnchor.current = null;
+      el.scrollTop = anchor.top + (el.scrollHeight - anchor.height);
+    } else if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages.length, allMessages.length]);
+
+  function handleLoadOlder() {
+    const el = listRef.current;
+    if (el) olderAnchor.current = { height: el.scrollHeight, top: el.scrollTop };
+    loadOlder();
+  }
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -708,9 +730,13 @@ function ChatPane({
             />
           }
         >
-          {allMessages.length >= MESSAGE_PAGE_SIZE && (
-            // Older messages are not loaded; say so rather than imply this is the whole conversation.
-            <p style={styles.hiddenNote}>Showing the latest {MESSAGE_PAGE_SIZE} messages.</p>
+          {hasOlder && (
+            // Older messages are not loaded yet; offer them rather than imply this is the whole conversation.
+            <div style={styles.olderRow}>
+              <Button size="sm" variant="secondary" pending={loadingOlder} pendingLabel="Loading older messages…" onClick={handleLoadOlder}>
+                Load older messages
+              </Button>
+            </div>
           )}
           {hiddenCount > 0 && (
             <p style={styles.hiddenNote}>
@@ -722,7 +748,7 @@ function ChatPane({
               key={m.id}
               message={m}
               isMe={m.senderId === currentUserId}
-              onOpenActions={() => setActionMessage(m)}
+              onOpenActions={setActionMessage}
             />
           ))}
           {visibleOutgoing.map((o) => (
@@ -1047,14 +1073,18 @@ function OutgoingBubble({
   );
 }
 
-function MessageBubble({
+/**
+ * Memoized, with the stable state setter as its action handler, so typing in
+ * the composer re-renders the composer and not every bubble in the thread.
+ */
+const MessageBubble = memo(function MessageBubble({
   message,
   isMe,
   onOpenActions,
 }: {
   message: Message;
   isMe: boolean;
-  onOpenActions?: () => void;
+  onOpenActions?: (message: Message) => void;
 }) {
   return (
     <div
@@ -1093,7 +1123,7 @@ function MessageBubble({
             aria-label={`Report or block: message from ${message.senderName}`}
             className="tl-tint"
             style={styles.bubbleActionsBtn}
-            onClick={onOpenActions}
+            onClick={() => onOpenActions(message)}
           >
             <IconDots size={20} aria-hidden="true" />
           </button>
@@ -1101,7 +1131,7 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -1193,6 +1223,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: space.md,
   },
   hiddenNote: { ...type.caption, color: color.textMuted, textAlign: "center" },
+  olderRow: { display: "flex", justifyContent: "center" },
   bubbleWrap: { display: "flex", flexDirection: "column", gap: space.xxs, maxWidth: "min(75%, 560px)" },
   bubble: {
     padding: "10px 14px",

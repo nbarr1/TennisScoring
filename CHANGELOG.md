@@ -9,6 +9,13 @@
 ### Fixed
 - The web profile page no longer fails for an account that has no `users/{uid}` document. Sign-up relies on the `onUserCreated` blocking function to write it, and that function runs only on a project with Identity Platform enabled, so an account that had not yet joined a division or accepted an invite had none and saw "Couldn't load your profile." The page now creates the document through the create the Firestore rules already allow (`ensureOwnUserDocument()`). When the profile still can't load, the message says why (this browser isn't signed in, the read failed, or the create was refused) and gives the Firestore error code.
 
+### Added
+- Conversations on web and mobile have a "Load older messages" control. They used to show only the newest 50 messages, with no way to read further back. Each press loads 50 more, and the reader's place in the conversation is kept.
+
+### Performance
+- Confirming a result recalculates only that match's season. The recalculation used to read every completed match in the division, across every season, on each confirmation, so its cost grew with each season. It now reads and rewrites one season's standings and head-to-head records, and leaves the other seasons and the players' current-season summaries alone. A division whose completed matches include any without a season is still recalculated in full until those matches are given one, because they count in the active season and no query can find them. Leaders' and admins' manual recalculation still covers the whole division.
+- The web sign-in and invite pages load about 180 KB less JavaScript (gzipped): they import the new `@tennis/firebase-client/auth` and `/functions` entries, which leave out Firestore, Storage, and Messaging. The web live-scoring clock re-renders only its own text each second instead of the whole match page, typing in a web conversation no longer re-renders every message, and the mobile standings rows keep their identity across unrelated re-renders.
+
 ### Security
 - Once a report's 48-hour window has closed, the Firestore rules stop participants from disputing, editing, undoing, or resubmitting it; the opposing side can still confirm it. Participants cannot write `confirmationDeadline` or `appeal`. **Deploy the rules through the Deploy Firebase rules workflow.** They only restrict, and a report carries no deadline until the functions are deployed, so the rules can go out before or after the functions and the client releases.
 

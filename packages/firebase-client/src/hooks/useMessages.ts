@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   onSnapshot,
   addDoc,
@@ -9,6 +9,7 @@ import {
   type QuerySnapshot,
 } from "firebase/firestore";
 import {
+  MESSAGE_PAGE_SIZE,
   channelDoc,
   channelMessagesQuery,
   channelsCol,
@@ -33,11 +34,30 @@ export function messagesFromSnapshot(snap: QuerySnapshot<Message>): Message[] {
     .reverse();
 }
 
+/**
+ * A conversation's messages, oldest first, live. It starts with the newest
+ * `MESSAGE_PAGE_SIZE` and `loadOlder()` adds a page at a time.
+ *
+ * Loading older messages widens the one live query rather than fetching older
+ * pages separately. A separate page would stop at the message the live window
+ * started at, and once new messages pushed that message out of the window it
+ * would be in neither, leaving a gap; it would also miss a moderator removing
+ * an older message. The cost is that each widening re-reads the loaded
+ * messages once.
+ */
 export function useMessages(channelId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  // The limit belongs to one channel, so opening another starts at one page.
+  const [page, setPage] = useState({ channelId, limit: MESSAGE_PAGE_SIZE });
+  const messageLimit = page.channelId === channelId ? page.limit : MESSAGE_PAGE_SIZE;
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // Set by loadOlder(): the next subscription widens the one on screen, so it
+  // keeps showing the loaded messages instead of the loading state.
+  const widening = useRef(false);
 
   useEffect(() => {
     if (!channelId) {
@@ -45,26 +65,55 @@ export function useMessages(channelId: string | null) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    const isWidening = widening.current;
+    widening.current = false;
+    if (!isWidening) setLoading(true);
     setError(null);
+    let first = true;
     const unsub = onSnapshot(
-      channelMessagesQuery(channelId),
+      channelMessagesQuery(channelId, messageLimit),
+      // Metadata changes too, so the server confirming a cached result is
+      // delivered even when no message changed (see hasOlder below).
+      { includeMetadataChanges: true },
       (snap) => {
-        setMessages(messagesFromSnapshot(snap));
+        // The cache can answer a widened query with fewer messages than are
+        // on screen; wait for the server rather than drop them for a moment.
+        // Offline that wait lasts until the connection returns, and the
+        // loaded messages stay on screen meanwhile.
+        if (isWidening && first && snap.metadata.fromCache && snap.size < messageLimit) return;
+        // A metadata-only change leaves the messages as they are, so the
+        // bubbles keep their identity and do not re-render.
+        if (first || snap.docChanges().length > 0) setMessages(messagesFromSnapshot(snap));
+        first = false;
+        // A full page means there may be more. A cached snapshot of a widened
+        // query can come back short before the server answers, so only the
+        // server's answer may say there is nothing older.
+        const full = snap.size >= messageLimit;
+        if (full || !snap.metadata.fromCache) setHasOlder(full);
+        setLoadingOlder(false);
         setLoading(false);
       },
       (err) => {
         setError(err);
+        setLoadingOlder(false);
         setLoading(false);
       },
     );
     return unsub;
-  }, [channelId, retryCount]);
+  }, [channelId, messageLimit, retryCount]);
 
   return {
     messages,
     loading,
     error,
+    hasOlder,
+    loadingOlder,
+    loadOlder: () => {
+      if (!channelId || loadingOlder || !hasOlder) return;
+      widening.current = true;
+      setLoadingOlder(true);
+      setPage({ channelId, limit: messageLimit + MESSAGE_PAGE_SIZE });
+    },
     retry: () => setRetryCount((count) => count + 1),
   };
 }

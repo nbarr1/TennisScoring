@@ -13,7 +13,9 @@ import {
   sendPasswordResetEmail,
   updateProfile,
 } from 'firebase/auth';
-import { auth } from '@tennis/firebase-client';
+// The auth-only entry: this page signs in and nothing else, so it skips
+// Firestore, Storage, Functions, and Messaging, most of the Firebase SDK.
+import { auth } from '@tennis/firebase-client/auth';
 import {
   Button,
   FieldError,

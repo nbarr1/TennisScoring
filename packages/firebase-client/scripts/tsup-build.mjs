@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const cwd = process.cwd();
-const args = ['src/index.ts', '--format', 'esm,cjs', '--dts'];
+const args = ['src/index.ts', 'src/auth.ts', 'src/functions.ts', '--format', 'esm,cjs', '--dts'];
 const cliCandidates = [
   join(cwd, 'node_modules', 'tsup', 'dist', 'cli-default.js'),
   join(cwd, '..', '..', 'node_modules', 'tsup', 'dist', 'cli-default.js')

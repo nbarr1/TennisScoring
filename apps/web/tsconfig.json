@@ -23,6 +23,12 @@
       "@tennis/firebase-client": [
         "../../packages/firebase-client/src/index.ts"
       ],
+      "@tennis/firebase-client/auth": [
+        "../../packages/firebase-client/src/auth.ts"
+      ],
+      "@tennis/firebase-client/functions": [
+        "../../packages/firebase-client/src/functions.ts"
+      ],
       "@/*": [
         "./src/*"
       ]

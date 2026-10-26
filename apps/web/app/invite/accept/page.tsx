@@ -8,7 +8,10 @@ import { IconBallTennis, IconEye, IconEyeOff } from '@tabler/icons-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
 import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth';
-import { auth, functions, useAuthUser } from '@tennis/firebase-client';
+// The auth and callable entries, not the main one: this public page needs no
+// Firestore, Storage, or Messaging.
+import { auth, useAuthUser } from '@tennis/firebase-client/auth';
+import { functions } from '@tennis/firebase-client/functions';
 import {
   Button,
   FieldError,

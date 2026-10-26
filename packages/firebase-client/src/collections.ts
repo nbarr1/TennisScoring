@@ -143,7 +143,10 @@ export const divisionMembershipsQuery = (divisionId: string, seasonId: string, .
  * Ordering ascending with a limit selects the channel's *oldest* page instead, so
  * once a channel passed the limit, new messages stopped appearing.
  */
-export const channelMessagesQuery = (channelId: string, messageLimit = 50) =>
+/** How many messages a conversation loads at first, and how many more each "load older" adds. */
+export const MESSAGE_PAGE_SIZE = 50;
+
+export const channelMessagesQuery = (channelId: string, messageLimit = MESSAGE_PAGE_SIZE) =>
   query(messagesCol(channelId), orderBy('createdAt', 'desc'), limit(messageLimit));
 
 export const userChannelsQuery = (userId: string) =>
