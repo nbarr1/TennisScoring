@@ -314,6 +314,9 @@ export function ChannelView({
     loading,
     error,
     retry,
+    hasOlder,
+    loadingOlder,
+    loadOlder,
   } = useMessages(channelId);
   const [text, setText] = useState("");
   const listRef = useRef<FlatList<Message>>(null);
@@ -564,9 +567,30 @@ export function ChannelView({
     ),
     [userId, onOpenActions],
   );
-  const scrollToEnd = useCallback(
-    () => listRef.current?.scrollToEnd({ animated: false }),
-    [],
+  // Follow the conversation's end only when its last message changes (or on
+  // first load). Older messages arrive above the reader, and following the end
+  // then would throw them past what they asked to read.
+  const lastMessageId = messages[messages.length - 1]?.id;
+  const followedId = useRef<string | undefined>(undefined);
+  const scrollToEnd = useCallback(() => {
+    if (followedId.current !== undefined && followedId.current === lastMessageId) return;
+    followedId.current = lastMessageId;
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [lastMessageId]);
+  const listHeader = useMemo(
+    () =>
+      hasOlder ? (
+        <Button
+          label="Load older messages"
+          variant="secondary"
+          size="compact"
+          pending={loadingOlder}
+          pendingLabel="Loading…"
+          onPress={loadOlder}
+          style={styles.olderButton}
+        />
+      ) : null,
+    [hasOlder, loadingOlder, loadOlder, styles],
   );
   const isEmpty = messages.length === 0;
   const listContentStyle = useMemo(
@@ -629,6 +653,10 @@ export function ChannelView({
         contentContainerStyle={listContentStyle}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={listEmpty}
+        ListHeaderComponent={listHeader}
+        // Keeps the message the reader was on in place as older ones are
+        // added above it.
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         onContentSizeChange={scrollToEnd}
       />
       {!!sendError && (
@@ -858,6 +886,7 @@ const useStyles = makeStyles((colors) =>
     notice: { margin: spacing.md, marginBottom: 0 },
     messageList: { padding: spacing.lg, paddingBottom: spacing.sm },
     messageListEmpty: { flexGrow: 1, justifyContent: "center" },
+    olderButton: { alignSelf: "center", marginBottom: spacing.md },
     bubbleRow: {
       flexDirection: "row",
       alignItems: "flex-end",

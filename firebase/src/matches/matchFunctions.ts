@@ -52,10 +52,21 @@ type RankingStats = {
 
 type RecalculateRankingsOptions = {
   normalizeMatches?: boolean;
+  /**
+   * Recalculate one season instead of the whole division. The pass then reads
+   * only that season's completed matches and rewrites and prunes only that
+   * season's rows, so a confirmation costs one season's reads rather than the
+   * division's whole history. Ignored, and the whole division recalculated,
+   * when the season might hold completed matches with no `seasonId`: see
+   * `resolveSeasonScope()`.
+   */
+  seasonId?: string;
 };
 
 type RecalculateRankingsResult = {
   divisionId: string;
+  /** The season the pass was limited to, or undefined for the whole division. */
+  seasonId?: string;
   completedMatchesScanned: number;
   countedMatches: number;
   skippedMissingWinner: number;
@@ -237,7 +248,7 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
     // Document deleted — recalculate rankings if a completed match was removed
     if (!after) {
       if (before?.status === 'completed') {
-        await recalculateRankings(before.divisionId);
+        await recalculateRankings(before.divisionId, { seasonId: seasonScopeOf(before) });
       }
       return;
     }
@@ -303,18 +314,22 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
         }
       }
 
-      await recalculateRankings(after.divisionId);
+      await recalculateRankings(after.divisionId, { seasonId: seasonScopeOf(after) });
     } else if (before?.status === 'completed' && after.status !== 'completed') {
-      await recalculateRankings(before.divisionId);
+      await recalculateRankings(before.divisionId, { seasonId: seasonScopeOf(before) });
     } else if (
       before?.status === 'completed' &&
       after.status === 'completed' &&
       rankingsRelevantFieldsChanged(before, after)
     ) {
-      if (before.divisionId !== after.divisionId) {
-        await recalculateRankings(before.divisionId);
+      // A result moved to another division or season leaves rows behind in
+      // the one it came from.
+      const beforeScope = seasonScopeOf(before);
+      const afterScope = seasonScopeOf(after);
+      if (before.divisionId !== after.divisionId || beforeScope !== afterScope) {
+        await recalculateRankings(before.divisionId, { seasonId: beforeScope });
       }
-      await recalculateRankings(after.divisionId);
+      await recalculateRankings(after.divisionId, { seasonId: afterScope });
     }
   },
 );
@@ -322,6 +337,8 @@ export const onMatchUpdate = functions.firestore.onDocumentWritten(
 function rankingsRelevantFieldsChanged(before: Match, after: Match): boolean {
   return (
     before.divisionId !== after.divisionId ||
+    before.seasonId !== after.seasonId ||
+    before.divisionLevelId !== after.divisionLevelId ||
     before.player1Id !== after.player1Id ||
     before.player2Id !== after.player2Id ||
     before.player2IsGuest !== after.player2IsGuest ||
@@ -696,8 +713,9 @@ function accumulateDoublesMatch(
   return true;
 }
 
-// Each pass reads every completed match and rewrites the whole table, pruning
-// rows it did not produce, and nothing serializes passes for one division. When
+// Each pass reads every completed match in its scope (the division, or one
+// season of it) and rewrites that table, pruning rows it did not produce, and
+// nothing serializes passes for one division. When
 // two results are confirmed seconds apart, a pass whose read missed the other
 // match can finish last and overwrite the correct table. So after writing, a
 // pass re-reads the completed matches and runs again if they changed since its
@@ -708,19 +726,22 @@ export async function recalculateRankings(
   divisionId: string,
   options: RecalculateRankingsOptions = {},
 ): Promise<RecalculateRankingsResult> {
-  let pass = await recalculateRankingsPass(divisionId, options);
+  const scopeSeasonId = await resolveSeasonScope(divisionId, options.seasonId);
+  let pass = await recalculateRankingsPass(divisionId, options, scopeSeasonId);
   // Writes an earlier pass made (normalized matches, pruned rows) are not
   // repeated by the next one, so they are summed rather than taken from the
   // final pass alone.
   const mutations = mutationCounts(pass.result);
   for (let attempt = 1; attempt < MAX_RECALCULATION_PASSES; attempt += 1) {
-    const current = completedMatchesFingerprint(await completedDivisionMatches(divisionId).get());
+    const current = completedMatchesFingerprint(
+      await completedDivisionMatches(divisionId, scopeSeasonId).get(),
+    );
     if (current === pass.fingerprint) break;
     functions.logger.info('Completed matches changed during ranking recalculation; recomputing', {
       divisionId,
       attempt,
     });
-    pass = await recalculateRankingsPass(divisionId, options);
+    pass = await recalculateRankingsPass(divisionId, options, scopeSeasonId);
     const next = mutationCounts(pass.result);
     for (const key of MUTATION_COUNT_KEYS) mutations[key] += next[key];
   }
@@ -745,11 +766,47 @@ function mutationCounts(
   };
 }
 
-function completedDivisionMatches(divisionId: string) {
-  return getFirestore()
+function completedDivisionMatches(divisionId: string, seasonId?: string) {
+  const query = getFirestore()
     .collection('matches')
     .where('divisionId', '==', divisionId)
     .where('status', '==', 'completed');
+  return seasonId ? query.where('seasonId', '==', seasonId) : query;
+}
+
+/** The season a match's result is counted in, as the pass buckets it. */
+function activeSeasonIdOf(division: FirebaseFirestore.DocumentData | undefined): string {
+  return typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()
+    ? division.activeSeasonId
+    : currentSeasonForDate().id;
+}
+
+/**
+ * The season a recalculation can safely be limited to, or undefined when it
+ * must cover the whole division.
+ *
+ * A completed match with no `seasonId` is counted in the division's active
+ * season, and no query can find a missing field. So a pass limited to the
+ * active season would leave those matches out of its read and then prune the
+ * rows they produced. A whole-division pass records how many such matches it
+ * saw (`rankingsUnseasonedMatchCount` on the division); the active season is
+ * scoped only once that count is known to be zero. Any other season holds no
+ * unseasoned matches by construction, so it can always be scoped.
+ */
+async function resolveSeasonScope(
+  divisionId: string,
+  seasonId: string | undefined,
+): Promise<string | undefined> {
+  const requested = seasonId?.trim();
+  if (!requested) return undefined;
+  const division = (await getFirestore().collection('divisions').doc(divisionId).get()).data();
+  if (requested !== activeSeasonIdOf(division)) return requested;
+  return division?.rankingsUnseasonedMatchCount === 0 ? requested : undefined;
+}
+
+/** The season to scope a recalculation for this match to, if it has one. */
+function seasonScopeOf(match: Match): string | undefined {
+  return match.seasonId?.trim() || undefined;
 }
 
 function completedMatchesFingerprint(snap: FirebaseFirestore.QuerySnapshot): string {
@@ -762,10 +819,12 @@ function completedMatchesFingerprint(snap: FirebaseFirestore.QuerySnapshot): str
 async function recalculateRankingsPass(
   divisionId: string,
   options: RecalculateRankingsOptions,
+  scopeSeasonId: string | undefined,
 ): Promise<{ result: RecalculateRankingsResult; fingerprint: string }> {
   const db = getFirestore();
   const result: RecalculateRankingsResult = {
     divisionId,
+    ...(scopeSeasonId ? { seasonId: scopeSeasonId } : {}),
     completedMatchesScanned: 0,
     countedMatches: 0,
     skippedMissingWinner: 0,
@@ -783,7 +842,7 @@ async function recalculateRankingsPass(
 
   const [divisionSnap, matchesSnap] = await Promise.all([
     db.collection('divisions').doc(divisionId).get(),
-    completedDivisionMatches(divisionId).get(),
+    completedDivisionMatches(divisionId, scopeSeasonId).get(),
   ]);
   const division = divisionSnap.data();
   const baseDivisionPlayerIds: string[] = Array.isArray(division?.playerIds)
@@ -833,9 +892,9 @@ async function recalculateRankingsPass(
 
   result.completedMatchesScanned = matchesSnap.size;
 
-  const activeSeasonId = typeof division?.activeSeasonId === 'string' && division.activeSeasonId.trim()
-    ? division.activeSeasonId
-    : currentSeasonForDate().id;
+  const activeSeasonId = activeSeasonIdOf(division);
+  // Completed matches with no seasonId, which only a whole-division pass sees.
+  let unseasonedMatches = 0;
 
   // Singles totals accumulate per player within one season and division level,
   // the same buckets as doubles: pooling every season into one row inflated the
@@ -852,6 +911,7 @@ async function recalculateRankingsPass(
 
   for (const doc of matchesSnap.docs) {
     const rawMatch = doc.data() as Match;
+    if (!rawMatch.seasonId?.trim()) unseasonedMatches += 1;
     if (options.normalizeMatches && rawMatch.isDivisionMatch === undefined) {
       writer.update(doc.ref, { isDivisionMatch: true });
       result.matchesNormalized += 1;
@@ -1041,15 +1101,21 @@ async function recalculateRankingsPass(
     }
   }
 
-  const existingRankingsSnap = await db
-    .collection('divisions')
-    .doc(divisionId)
-    .collection('rankings')
-    .get();
+  // A season-scoped pass rewrote only its season's rows, so it prunes only
+  // those; every other season's rows are left as they are.
+  const rankingsCol = db.collection('divisions').doc(divisionId).collection('rankings');
+  const existingRankingsSnap = await (scopeSeasonId
+    ? rankingsCol.where('seasonId', '==', scopeSeasonId)
+    : rankingsCol
+  ).get();
+  // Players whose row this pass removes may hold a summary built from it.
+  const prunedUserIds = new Set<string>();
   for (const doc of existingRankingsSnap.docs) {
     if (!singlesRankingDocIds.has(doc.id)) {
       writer.delete(doc.ref);
       result.rankingsDeleted += 1;
+      const userId = doc.data().userId;
+      if (typeof userId === 'string' && userId.trim()) prunedUserIds.add(userId);
     }
   }
 
@@ -1059,7 +1125,18 @@ async function recalculateRankingsPass(
   // active division to whichever division last confirmed a match, and revived
   // placeholders already merged into real accounts. A player active in another
   // division keeps that division's summary.
-  for (const userId of new Set([...summaryRows.keys(), ...rankedUserIds, ...divisionPlayerIds])) {
+  //
+  // The summary describes the active season only, so a pass scoped to another
+  // season leaves every summary alone.
+  const summaryUserIds = scopeSeasonId && scopeSeasonId !== activeSeasonId
+    ? []
+    : [...new Set([...summaryRows.keys(), ...rankedUserIds, ...divisionPlayerIds, ...prunedUserIds])];
+  await Promise.all(
+    summaryUserIds
+      .filter((id) => !userCache.has(id))
+      .map(async (id) => userCache.set(id, await db.collection('users').doc(id).get())),
+  );
+  for (const userId of summaryUserIds) {
     const userData = userCache.get(userId)?.data();
     if (!userData) continue;
     const activeDivision = userData.divisionId;
@@ -1143,11 +1220,11 @@ async function recalculateRankingsPass(
     }
   }
 
-  const existingDoublesSnap = await db
-    .collection('divisions')
-    .doc(divisionId)
-    .collection('doublesRankings')
-    .get();
+  const doublesCol = db.collection('divisions').doc(divisionId).collection('doublesRankings');
+  const existingDoublesSnap = await (scopeSeasonId
+    ? doublesCol.where('seasonId', '==', scopeSeasonId)
+    : doublesCol
+  ).get();
   for (const doc of existingDoublesSnap.docs) {
     if (!doublesRankingDocIds.has(doc.id)) {
       writer.delete(doc.ref);
@@ -1156,10 +1233,11 @@ async function recalculateRankingsPass(
   }
 
   const h2hIds = new Set([...h2hAccum.keys()]);
-  const existingH2HSnap = await db
-    .collection('headToHead')
-    .where('divisionId', '==', divisionId)
-    .get();
+  const divisionH2Hs = db.collection('headToHead').where('divisionId', '==', divisionId);
+  const existingH2HSnap = await (scopeSeasonId
+    ? divisionH2Hs.where('seasonId', '==', scopeSeasonId)
+    : divisionH2Hs
+  ).get();
   for (const doc of existingH2HSnap.docs) {
     if (!h2hIds.has(doc.id)) {
       writer.delete(doc.ref);
@@ -1171,6 +1249,16 @@ async function recalculateRankingsPass(
     const ref = db.collection('headToHead').doc(h2h.id);
     writer.set(ref, { ...h2h, updatedAt: FieldValue.serverTimestamp() });
     result.headToHeadsWritten += 1;
+  }
+
+  // Only a whole-division pass sees every unseasoned match, so only it can say
+  // whether the active season is safe to scope (resolveSeasonScope).
+  if (!scopeSeasonId && divisionSnap.exists) {
+    writer.set(
+      db.collection('divisions').doc(divisionId),
+      { rankingsUnseasonedMatchCount: unseasonedMatches },
+      { merge: true },
+    );
   }
   await writer.close();
   return { result, fingerprint: completedMatchesFingerprint(matchesSnap) };
