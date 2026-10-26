@@ -405,6 +405,76 @@ describe('record match on behalf', () => {
   );
 });
 
+describe('results recorded without a division level', () => {
+  const sets = [{ p1: 6, p2: 3 }, { p1: 6, p2: 4 }];
+
+  async function seedLevels(levelByPlayer) {
+    const divisionRef = db.collection('divisions').doc(DIVISION);
+    const batch = db.batch();
+    for (const levelId of new Set(Object.values(levelByPlayer))) {
+      batch.set(divisionRef.collection('levels').doc(levelId), {
+        divisionId: DIVISION,
+        seasonId: SEASON,
+        name: levelId,
+        matchType: 'singles',
+      });
+    }
+    for (const [userId, levelId] of Object.entries(levelByPlayer)) {
+      batch.set(divisionRef.collection('memberships').doc(`${SEASON}_${userId}`), {
+        divisionId: DIVISION,
+        seasonId: SEASON,
+        divisionLevelId: levelId,
+        userId,
+        status: 'active',
+      });
+    }
+    await batch.commit();
+  }
+
+  async function recordAsP1() {
+    const result = await functions.recordHistoricMatch.run({
+      auth: { uid: 'p1', token: { email: 'p1@example.com', email_verified: true } },
+      data: { divisionId: DIVISION, seasonId: SEASON, player1Id: 'p1', player2Id: 'p2', sets },
+      rawRequest: {},
+    });
+    return (await db.collection('matches').doc(result.matchId).get()).data();
+  }
+
+  it('files the result under the level both players share', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevels({ p1: 'beginner', p2: 'beginner' });
+    const stored = await recordAsP1();
+    assert.equal(stored.divisionLevelId, 'beginner');
+    assert.equal(stored.matchType, 'singles');
+  });
+
+  it('leaves the level blank when the players are in different levels', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevels({ p1: 'beginner', p2: 'advanced' });
+    const stored = await recordAsP1();
+    assert.equal(stored.divisionLevelId, undefined);
+  });
+
+  it('files an existing level-less result when the rankings are rebuilt', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevels({ p1: 'beginner', p2: 'beginner' });
+    await db.collection('matches').doc('old').set(confirmed(match('p1', 'p2')));
+
+    const response = await functions.recalculateDivisionRankings.run({
+      auth: { uid: 'leader', token: { email: 'leader@example.com', email_verified: true } },
+      data: { divisionId: DIVISION, normalizeMatches: true },
+      rawRequest: {},
+    });
+    assert.equal(response.result.matchesNormalized, 1);
+
+    const stored = (await db.collection('matches').doc('old').get()).data();
+    assert.equal(stored.divisionLevelId, 'beginner');
+    const rankings = await singlesRankings();
+    assert.equal(rankings.p1?.divisionLevelId, 'beginner');
+    assert.equal(rankings.p1?.matchesWon, 1);
+  });
+});
+
 describe('division roster callables', () => {
   const leaderAuth = { uid: 'leader', token: { email: 'leader@example.com', email_verified: true } };
   const call = (fn, data, auth = leaderAuth) => functions[fn].run({ auth, data, rawRequest: {} });
