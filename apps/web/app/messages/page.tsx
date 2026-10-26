@@ -18,7 +18,7 @@ import {
   IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { memo, useState, useRef, useEffect, useLayoutEffect } from "react";
 import {
   useAuthUser,
   useChannels,
@@ -722,7 +722,7 @@ function ChatPane({
               key={m.id}
               message={m}
               isMe={m.senderId === currentUserId}
-              onOpenActions={() => setActionMessage(m)}
+              onOpenActions={setActionMessage}
             />
           ))}
           {visibleOutgoing.map((o) => (
@@ -1047,14 +1047,18 @@ function OutgoingBubble({
   );
 }
 
-function MessageBubble({
+/**
+ * Memoized, with the stable state setter as its action handler, so typing in
+ * the composer re-renders the composer and not every bubble in the thread.
+ */
+const MessageBubble = memo(function MessageBubble({
   message,
   isMe,
   onOpenActions,
 }: {
   message: Message;
   isMe: boolean;
-  onOpenActions?: () => void;
+  onOpenActions?: (message: Message) => void;
 }) {
   return (
     <div
@@ -1093,7 +1097,7 @@ function MessageBubble({
             aria-label={`Report or block: message from ${message.senderName}`}
             className="tl-tint"
             style={styles.bubbleActionsBtn}
-            onClick={onOpenActions}
+            onClick={() => onOpenActions(message)}
           >
             <IconDots size={20} aria-hidden="true" />
           </button>
@@ -1101,7 +1105,7 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 const styles: Record<string, React.CSSProperties> = {
   page: {

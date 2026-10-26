@@ -166,6 +166,7 @@ Turbo enforces build order: `shared` → `firebase-client` → `web` / `mobile`.
 - Reads `EXPO_PUBLIC_FIREBASE_*` (mobile) or `NEXT_PUBLIC_FIREBASE_*` (web) env vars.
 - Handles SSR (isBrowser/isReactNative checks) and uses AsyncStorage for React Native persistence.
 - Exports singletons: `app`, `db`, `auth`, `storage`, `functions`, `getMessagingIfSupported()`.
+- The app and Auth are initialized in `firebaseApp.ts` and the Functions instance in `firebaseFunctions.ts`; `config.ts` re-exports both, so every caller shares one instance. Two lighter entries expose them without Firestore, Storage, or Messaging: `@tennis/firebase-client/auth` (`app`, `auth`, `useAuthUser`) and `@tennis/firebase-client/functions` (`functions`). The web `/login` and `/invite/accept` pages use them, which keeps about 180 KB gzipped off those pages. A new entry needs three edits: the `src/` file, `scripts/tsup-build.mjs`'s entry list, and the `exports` map in `package.json`, plus a path in `apps/web/tsconfig.json`, which Next resolves to source. Nothing an entry imports may reach `config.ts`, or the whole SDK comes back.
 
 **`packages/firebase-client/src/collections.ts`** — typed Firestore collection/document refs and query helpers (`matchesCol`, `matchDoc`, `divisionMatchesQuery`, `completedDivisionMatchesQuery`, `divisionSeasonMatchesQuery` (one season of a division, newest first; uses the `divisionId, seasonId, createdAt desc` index and leaves out matches with no `seasonId`), `liveMatchesQuery`, `playerMatchesQuery`, `messageReportsCol`, `divisionMessageReportsQuery`).
 

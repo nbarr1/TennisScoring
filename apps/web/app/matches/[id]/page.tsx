@@ -113,6 +113,22 @@ function formatMmSs(ms: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 
+/**
+ * `baseMs` plus the time since `since`, as mm:ss. It owns the once-a-second
+ * tick, so only this text re-renders as the clock runs, not the whole match
+ * page with its scoreboard and dialogs.
+ */
+function ElapsedClock({ baseMs, since }: { baseMs: number; since?: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (since === undefined) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [since]);
+  return <>{formatMmSs(baseMs + (since !== undefined ? now - since : 0))}</>;
+}
+
 function formatWhen(ts?: number): string {
   if (!ts) return 'a time still to be agreed';
   return new Date(ts).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -185,7 +201,6 @@ export default function MatchPage(): React.JSX.Element {
   const [liveError, setLiveError] = useState<string | null>(null);
   const { effectiveMode } = useViewMode();
   const isIosView = effectiveMode === 'ios';
-  const [clockTick, setClockTick] = useState(Date.now());
   const [tapLock, setTapLock] = useState(false);
   // A scheduled match opens on its details; the court view only after "Start live scoring".
   const [onCourt, setOnCourt] = useState(false);
@@ -210,12 +225,6 @@ export default function MatchPage(): React.JSX.Element {
     successMessage: `Proposal accepted. Your match with ${opponent} is scheduled.`,
     errorMessage: "Couldn't accept the proposal. Try again.",
   });
-
-  useEffect(() => {
-    if (match?.status !== 'in_progress') return;
-    const t = setInterval(() => setClockTick(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [match?.status]);
 
   // Once a match is live, stay on court: undoing the first point returns it to
   // scheduled, and the scorer should still see the serve choice, not the details.
@@ -444,8 +453,9 @@ export default function MatchPage(): React.JSX.Element {
 
   const [p1Last, p2Last] = liveButtonNames(p1Name, p2Name);
   const visibleSets = match.liveScore.sets.slice(0, Math.max(2, match.liveScore.currentSet + 1));
-  const setClock = formatMmSs((match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0) + (match.status === 'in_progress' && match.currentSetStartedAt ? clockTick - match.currentSetStartedAt : 0));
-  const matchClock = formatMmSs((match.matchDurationMs ?? 0) + (match.status === 'in_progress' && match.startedAt ? clockTick - match.startedAt : 0));
+  // The clocks tick inside ElapsedClock, so the page does not re-render every second.
+  const clockRunning = match.status === 'in_progress';
+  const setBaseMs = match.liveScore.sets[match.liveScore.currentSet]?.durationMs ?? 0;
   // Applied as aria-disabled, never `disabled`: a focused button that becomes
   // disabled is blurred, and a keyboard scorer would have to Tab back to the
   // point buttons after every point.
@@ -593,8 +603,13 @@ export default function MatchPage(): React.JSX.Element {
               </Link>
             )}
             <div style={styles.timerRow}>
-              <span>Set {match.liveScore.currentSet + 1} · {setClock}</span>
-              <span>Match · {matchClock}</span>
+              <span>
+                Set {match.liveScore.currentSet + 1} ·{' '}
+                <ElapsedClock baseMs={setBaseMs} since={clockRunning ? match.currentSetStartedAt : undefined} />
+              </span>
+              <span>
+                Match · <ElapsedClock baseMs={match.matchDurationMs ?? 0} since={clockRunning ? match.startedAt : undefined} />
+              </span>
             </div>
             <button type="button" aria-label="Match options" className="tl-tint" style={styles.actionsIconBtn} onClick={openManage}>
               <IconDotsVertical size={24} aria-hidden="true" />

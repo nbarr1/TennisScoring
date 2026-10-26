@@ -8,6 +8,14 @@
     ".": {
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./auth": {
+      "import": "./dist/auth.mjs",
+      "require": "./dist/auth.js"
+    },
+    "./functions": {
+      "import": "./dist/functions.mjs",
+      "require": "./dist/functions.js"
     }
   },
   "scripts": {

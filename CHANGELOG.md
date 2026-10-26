@@ -9,6 +9,9 @@
 ### Fixed
 - The web profile page no longer fails for an account that has no `users/{uid}` document. Sign-up relies on the `onUserCreated` blocking function to write it, and that function runs only on a project with Identity Platform enabled, so an account that had not yet joined a division or accepted an invite had none and saw "Couldn't load your profile." The page now creates the document through the create the Firestore rules already allow (`ensureOwnUserDocument()`). When the profile still can't load, the message says why (this browser isn't signed in, the read failed, or the create was refused) and gives the Firestore error code.
 
+### Performance
+- The web sign-in and invite pages load about 180 KB less JavaScript (gzipped): they import the new `@tennis/firebase-client/auth` and `/functions` entries, which leave out Firestore, Storage, and Messaging. The web live-scoring clock re-renders only its own text each second instead of the whole match page, typing in a web conversation no longer re-renders every message, and the mobile standings rows keep their identity across unrelated re-renders.
+
 ### Security
 - Once a report's 48-hour window has closed, the Firestore rules stop participants from disputing, editing, undoing, or resubmitting it; the opposing side can still confirm it. Participants cannot write `confirmationDeadline` or `appeal`. **Deploy the rules through the Deploy Firebase rules workflow.** They only restrict, and a report carries no deadline until the functions are deployed, so the rules can go out before or after the functions and the client releases.
 
