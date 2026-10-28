@@ -74,6 +74,21 @@ final class DecodingTests: XCTestCase {
     XCTAssertEqual(match.sideDisplayName(.player2), "c")
   }
 
+  func testReportSubmissionReadsTheConfirmationWindow() throws {
+    let stamped = try decode(Match.self, """
+      {"status": "pending_report", "reportSubmission": {"submittedBy": "a", "status": "pending_confirmation",
+       "confirmationDeadline": 1700172800000}}
+      """)
+    XCTAssertEqual(stamped.reportSubmission?.confirmationDeadline, 1_700_172_800_000)
+    XCTAssertEqual(stamped.reportSubmission?.autoConfirmed, false)
+
+    let auto = try decode(Match.self, """
+      {"status": "completed", "reportSubmission": {"submittedBy": "a", "status": "confirmed", "autoConfirmed": true}}
+      """)
+    XCTAssertNil(auto.reportSubmission?.confirmationDeadline, "a report filed before the window existed has no deadline")
+    XCTAssertEqual(auto.reportSubmission?.autoConfirmed, true)
+  }
+
   func testUndoSnapshotPresenceIsRecorded() throws {
     let withSnapshot = try decode(Match.self, #"{"status": "in_progress", "undoSnapshot": {"status": "scheduled"}}"#)
     let withNull = try decode(Match.self, #"{"status": "in_progress", "undoSnapshot": null}"#)

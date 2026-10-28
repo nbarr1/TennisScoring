@@ -67,6 +67,21 @@ public final class MatchDetailModel {
     return match.canRespondToReport(userId: userId, submittedBy: submission.submittedBy)
   }
 
+  /// When the opposing side's window to answer the report closes, once the
+  /// server has stamped it. Mirrors `reportConfirmationDeadline` in `@tennis/shared`.
+  public var reportConfirmationDeadline: Int64? {
+    guard let submission = match?.reportSubmission, submission.status == .pendingConfirmation else { return nil }
+    return submission.confirmationDeadline
+  }
+
+  /// The window to answer has closed. The opposing side can still confirm, but
+  /// the rules refuse a dispute, so the screen stops offering one. Mirrors
+  /// `isReportWindowClosed` in `@tennis/shared`.
+  public func isReportWindowClosed(now: Int64) -> Bool {
+    guard match?.status == .pendingReport, let deadline = reportConfirmationDeadline else { return false }
+    return now >= deadline
+  }
+
   /// This player's side filed the report and the other side has not answered.
   public var isAwaitingReportConfirmation: Bool {
     guard let match, match.status == .pendingReport,

@@ -189,7 +189,7 @@ export function ToolsPanel({
                   <Link href={`/matches/${encodeURIComponent(m.id)}`} className="tl-link" style={styles.resolveLink}>
                     {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
                   </Link>
-                  <span style={styles.toolDescStrong}>Appeal</span>
+                  <span style={styles.appealTag}>Review requested</span>
                 </li>
               ))}
             </ul>

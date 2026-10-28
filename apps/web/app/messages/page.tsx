@@ -571,9 +571,20 @@ function ChatPane({
     }
   }, [messages.length, allMessages.length]);
 
+  // The Load older button goes away once the start of the conversation is
+  // loaded. Focus moves to the message list then, instead of falling to the
+  // top of the page with the button.
+  const olderRequested = useRef(false);
+  useEffect(() => {
+    if (!olderRequested.current || loadingOlder) return;
+    olderRequested.current = false;
+    if (!hasOlder) listRef.current?.focus({ preventScroll: true });
+  }, [hasOlder, loadingOlder]);
+
   function handleLoadOlder() {
     const el = listRef.current;
     if (el) olderAnchor.current = { height: el.scrollHeight, top: el.scrollTop };
+    olderRequested.current = true;
     loadOlder();
   }
   useLayoutEffect(() => {

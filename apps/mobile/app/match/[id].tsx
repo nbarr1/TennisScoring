@@ -424,7 +424,9 @@ function MatchAppealSection({
   const [reviewScore, setReviewScore] = useState(() =>
     appeal?.proposedSets ? formatRecordedScoreLine(appeal.proposedSets) : "",
   );
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const request = useAsyncAction(
     async (sets?: RecordedSetInput[]) => {
@@ -435,49 +437,80 @@ function MatchAppealSection({
       errorMessage: (e) => describeError(e, `Couldn't send the request. ${CONNECTION_HINT}`),
     },
   );
-  const decide = useAsyncAction(
-    async (decision: "approve" | "reject", sets?: RecordedSetInput[]) => {
-      await decideMatchAppeal(matchId, decision, { sets, note });
+  const approve = useAsyncAction(
+    async (sets: RecordedSetInput[]) => {
+      await decideMatchAppeal(matchId, "approve", { sets, note });
     },
     {
-      successMessage: "Decision saved.",
+      successMessage: "Appeal approved. The corrected score counts in the standings now.",
       errorMessage: (e) => describeError(e, `Couldn't save the decision. ${CONNECTION_HINT}`),
     },
   );
+  const reject = useAsyncAction(
+    async () => {
+      await decideMatchAppeal(matchId, "reject", { note });
+    },
+    {
+      successMessage: "Appeal rejected. The result stands.",
+      errorMessage: (e) => describeError(e, `Couldn't save the decision. ${CONNECTION_HINT}`),
+    },
+  );
+  const deciding = approve.pending || reject.pending;
 
-  function parseScore(line: string): RecordedSetInput[] | null {
+  /** The sets in `line`, or the message that explains why it isn't a valid score. */
+  function parseScore(line: string): RecordedSetInput[] | string {
     const sets = parseRecordedScoreLine(line);
     if (!sets) {
-      setFieldError(`Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
-      return null;
+      return `Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`;
     }
-    const invalid = validateRecordedSets(sets);
-    if (invalid) {
-      setFieldError(invalid);
-      return null;
-    }
-    return sets;
+    return validateRecordedSets(sets) ?? sets;
   }
 
   function handleRequest() {
-    setFieldError(null);
+    setReasonError(null);
+    setScoreError(null);
     if (!reason.trim()) {
-      setFieldError("Say what is wrong with the result.");
+      setReasonError("Say what is wrong with the result.");
+      announce("Say what is wrong with the result.");
       return;
     }
     let sets: RecordedSetInput[] | undefined;
     if (scoreLine.trim()) {
       const parsed = parseScore(scoreLine);
-      if (!parsed) return;
+      if (typeof parsed === "string") {
+        setScoreError(parsed);
+        announce(parsed);
+        return;
+      }
       sets = parsed;
     }
     void request.run(sets);
   }
 
+  function closeRequest() {
+    setReasonError(null);
+    setScoreError(null);
+    setRequestOpen(false);
+  }
+
   function handleApprove() {
-    setFieldError(null);
-    const sets = parseScore(reviewScore);
-    if (sets) void decide.run("approve", sets);
+    setReviewError(null);
+    const parsed = parseScore(reviewScore);
+    if (typeof parsed === "string") {
+      setReviewError(parsed);
+      announce(parsed);
+      return;
+    }
+    void approve.run(parsed);
+  }
+
+  async function handleReject() {
+    const ok = await confirmDestructive({
+      title: "Reject this appeal?",
+      message: `The result stays as it is, and ${requesterName} can't appeal this match again.`,
+      confirmLabel: "Reject appeal",
+    });
+    if (ok) void reject.run();
   }
 
   const noteText = appeal?.decisionNote ? ` Reviewer's note: "${appeal.decisionNote}"` : "";
@@ -506,7 +539,9 @@ function MatchAppealSection({
         <InlineAlert
           tone="info"
           title="Appeal not approved"
-          message={`A reviewer looked at the appeal and the result stands. This match can't be appealed again.${noteText}`}
+          message={`A reviewer looked at ${
+            appeal.requestedBy === userId ? "your" : `${requesterName}'s`
+          } appeal and the result stands. This match can't be appealed again.${noteText}`}
         />
       )}
 
@@ -523,23 +558,24 @@ function MatchAppealSection({
                 value={reason}
                 onChangeText={(text) => {
                   setReason(text);
-                  setFieldError(null);
+                  setReasonError(null);
                 }}
                 multiline
                 maxLength={MAX_APPEAL_REASON_LENGTH}
                 required
+                error={reasonError ?? undefined}
               />
               <FormField
                 label={`The correct score, with ${p1Name}'s games first (optional)`}
                 value={scoreLine}
                 onChangeText={(text) => {
                   setScoreLine(text);
-                  setFieldError(null);
+                  setScoreError(null);
                 }}
                 placeholder="6-4, 3-6, [10-8]"
                 autoCapitalize="none"
                 autoCorrect={false}
-                error={fieldError ?? undefined}
+                error={scoreError ?? undefined}
               />
               {request.error ? <InlineAlert tone="error" message={request.error} /> : null}
               <View style={styles.buttonStack}>
@@ -554,7 +590,7 @@ function MatchAppealSection({
                   variant="secondary"
                   fullWidth
                   disabled={request.pending}
-                  onPress={() => setRequestOpen(false)}
+                  onPress={closeRequest}
                 />
               </View>
             </>
@@ -583,12 +619,12 @@ function MatchAppealSection({
             value={reviewScore}
             onChangeText={(text) => {
               setReviewScore(text);
-              setFieldError(null);
+              setReviewError(null);
             }}
             placeholder="6-4, 3-6, [10-8]"
             autoCapitalize="none"
             autoCorrect={false}
-            error={fieldError ?? undefined}
+            error={reviewError ?? undefined}
           />
           <FormField
             label="Note to the players (optional)"
@@ -597,21 +633,25 @@ function MatchAppealSection({
             multiline
             maxLength={MAX_APPEAL_NOTE_LENGTH}
           />
-          {decide.error ? <InlineAlert tone="error" message={decide.error} /> : null}
+          {approve.error || reject.error ? (
+            <InlineAlert tone="error" message={approve.error ?? reject.error ?? ""} />
+          ) : null}
           <View style={styles.buttonStack}>
             <Button
               label="Approve and save score"
               icon="checkmark.circle"
               fullWidth
-              pending={decide.pending}
+              pending={approve.pending}
+              disabled={deciding && !approve.pending}
               onPress={handleApprove}
             />
             <Button
               label="Reject appeal"
               variant="secondary"
               fullWidth
-              disabled={decide.pending}
-              onPress={() => void decide.run("reject")}
+              pending={reject.pending}
+              disabled={deciding && !reject.pending}
+              onPress={() => void handleReject()}
             />
           </View>
         </Panel>

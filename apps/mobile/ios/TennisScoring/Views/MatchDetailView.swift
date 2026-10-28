@@ -246,11 +246,12 @@ struct MatchDetailView: View {
       }
 
       if model.isAwaitingReportConfirmation {
-        note("Report submitted. Waiting for the other side to confirm it.", systemImage: "hourglass")
+        note(awaitingConfirmationText, systemImage: "hourglass")
       }
 
       if model.canRespondToReport {
-        note("Your opponent reported this score. Confirm it if it's right.", systemImage: "checkmark.seal")
+        let windowClosed = model.isReportWindowClosed(now: Self.nowMillis)
+        note(respondToReportText(windowClosed: windowClosed), systemImage: "checkmark.seal")
         HStack(spacing: 12) {
           Button {
             Task { await model.confirmReport() }
@@ -260,22 +261,25 @@ struct MatchDetailView: View {
               .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
-          Button(role: .destructive) {
-            confirmingDispute = true
-          } label: {
-            Text("Dispute").frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.bordered)
-          .confirmationDialog(
-            "Dispute this result?",
-            isPresented: $confirmingDispute,
-            titleVisibility: .visible
-          ) {
-            Button("Dispute result", role: .destructive) {
-              Task { await model.disputeReport() }
+          // After the 48 hours the rules refuse a dispute, so offer only Confirm.
+          if !windowClosed {
+            Button(role: .destructive) {
+              confirmingDispute = true
+            } label: {
+              Text("Dispute").frame(maxWidth: .infinity)
             }
-          } message: {
-            Text("Your division leader is notified and decides the final score.")
+            .buttonStyle(.bordered)
+            .confirmationDialog(
+              "Dispute this result?",
+              isPresented: $confirmingDispute,
+              titleVisibility: .visible
+            ) {
+              Button("Dispute result", role: .destructive) {
+                Task { await model.disputeReport() }
+              }
+            } message: {
+              Text("Your division leader is notified and decides the final score.")
+            }
           }
         }
       }
@@ -296,6 +300,31 @@ struct MatchDetailView: View {
         ProgressView()
       }
     }
+  }
+
+  private static var nowMillis: Int64 { Int64((Date().timeIntervalSince1970 * 1000).rounded()) }
+
+  private static func formattedDeadline(_ millis: Int64) -> String {
+    millis.dateFromMillis.formatted(date: .abbreviated, time: .shortened)
+  }
+
+  /// The submitter's side sees when the report confirms itself, as on web and in the Expo app.
+  private var awaitingConfirmationText: String {
+    let base = "Report submitted. Waiting for the other side to confirm it."
+    guard let deadline = model.reportConfirmationDeadline else { return base }
+    if model.isReportWindowClosed(now: Self.nowMillis) {
+      return "\(base) The 48 hours to answer have passed, so it's being confirmed automatically."
+    }
+    return "\(base) If they don't answer by \(Self.formattedDeadline(deadline)), it's confirmed automatically."
+  }
+
+  private func respondToReportText(windowClosed: Bool) -> String {
+    if windowClosed {
+      return "Your opponent reported this score. The 48 hours to answer have passed, so it's being confirmed automatically."
+    }
+    let base = "Your opponent reported this score. Confirm it if it's right."
+    guard let deadline = model.reportConfirmationDeadline else { return base }
+    return "\(base) Answer by \(Self.formattedDeadline(deadline)), or it's confirmed automatically."
   }
 
   private func note(_ text: String, systemImage: String) -> some View {
