@@ -83,13 +83,29 @@ public struct ReportSubmission: Codable, Equatable, Sendable {
   public var status: Status
   public var confirmedBy: String?
   public var disputedBy: String?
+  /// When the opposing side's 48 hours to answer end, in Unix milliseconds.
+  /// `onMatchUpdate` stamps it from the server clock, so it is `nil` for a
+  /// moment after submission and on reports filed before the window existed.
+  public var confirmationDeadline: Int64?
+  /// The scheduled job confirmed the report after the deadline passed.
+  public var autoConfirmed: Bool
 
-  public init(submittedBy: String, submittedAt: Int64? = nil, status: Status, confirmedBy: String? = nil, disputedBy: String? = nil) {
+  public init(
+    submittedBy: String,
+    submittedAt: Int64? = nil,
+    status: Status,
+    confirmedBy: String? = nil,
+    disputedBy: String? = nil,
+    confirmationDeadline: Int64? = nil,
+    autoConfirmed: Bool = false
+  ) {
     self.submittedBy = submittedBy
     self.submittedAt = submittedAt
     self.status = status
     self.confirmedBy = confirmedBy
     self.disputedBy = disputedBy
+    self.confirmationDeadline = confirmationDeadline
+    self.autoConfirmed = autoConfirmed
   }
 
   public init(from decoder: Decoder) throws {
@@ -99,6 +115,8 @@ public struct ReportSubmission: Codable, Equatable, Sendable {
     status = c.decode(.status, default: .pendingConfirmation)
     confirmedBy = c.decodeLenient(String.self, .confirmedBy)
     disputedBy = c.decodeLenient(String.self, .disputedBy)
+    confirmationDeadline = c.decodeMillis(.confirmationDeadline)
+    autoConfirmed = c.decode(.autoConfirmed, default: false)
   }
 }
 

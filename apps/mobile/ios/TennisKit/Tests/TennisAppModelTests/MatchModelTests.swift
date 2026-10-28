@@ -156,6 +156,8 @@ final class MatchDetailTests: XCTestCase {
     defer { observation.cancel() }
     XCTAssertTrue(model.canRespondToReport)
     XCTAssertFalse(model.canSubmitReport)
+    XCTAssertNil(model.reportConfirmationDeadline, "the demo report has no server-stamped deadline")
+    XCTAssertFalse(model.isReportWindowClosed(now: .max), "without a deadline the window never closes")
 
     await model.confirmReport()
     await eventually("completed") { model.match?.status == .completed }

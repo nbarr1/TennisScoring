@@ -959,7 +959,7 @@ export default function AdminScreen() {
               <Pressable
                 key={m.id}
                 accessibilityRole="button"
-                accessibilityLabel={`${m.player1Name ?? "Player 1"} versus ${m.player2Name ?? "Player 2"}, appeal waiting`}
+                accessibilityLabel={`${m.player1Name ?? "Player 1"} versus ${m.player2Name ?? "Player 2"}, review requested`}
                 accessibilityHint="Opens the match to decide its appeal"
                 android_ripple={{ color: colors.ripple }}
                 style={({ pressed }) => [
@@ -973,6 +973,7 @@ export default function AdminScreen() {
                 <Text style={styles.listRowText} numberOfLines={2}>
                   {m.player1Name ?? "Player 1"} vs {m.player2Name ?? "Player 2"}
                 </Text>
+                <Text style={styles.appealTag}>Review requested</Text>
               </Pressable>
             ))}
           </View>
@@ -1744,6 +1745,8 @@ const useStyles = makeStyles((colors) =>
     },
     listRowPressed: { backgroundColor: colors.surfaceMuted },
     listRowText: { ...typography.label, color: colors.text, flex: 1 },
+    // Sized like StatusBadge, so an appeal row lines up with the settle rows.
+    appealTag: { ...typography.label, fontWeight: "700", fontSize: 13, color: colors.info },
     chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
     selectRow: {
       minHeight: MIN_TOUCH_TARGET,

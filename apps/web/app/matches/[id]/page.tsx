@@ -29,6 +29,7 @@ import {
   type,
   useAnnounce,
   useAsyncAction,
+  useConfirm,
   useDialogClose,
   gutter,
   sectionPadding,
@@ -1279,35 +1280,60 @@ function AppealRequestPanel({ matchId, p1Name, style }: { matchId: string; p1Nam
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [scoreLine, setScoreLine] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
   const reasonId = useId();
   const scoreId = useId();
-  const errorId = useId();
+  const reasonErrorId = useId();
+  const scoreErrorId = useId();
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const scoreRef = useRef<HTMLInputElement>(null);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  // Set when the form closes, so focus returns to the button that opened it
+  // instead of falling to the top of the page.
+  const restoreFocus = useRef(false);
   const submit = useAsyncAction((sets?: RecordedSetInput[]) => requestMatchAppeal(matchId, reason.trim(), sets), {
     successMessage: 'Review requested. A division leader or admin will decide.',
     errorMessage: "Couldn't send the request. Try again.",
   });
 
+  useEffect(() => {
+    if (open) {
+      reasonRef.current?.focus();
+    } else if (restoreFocus.current) {
+      restoreFocus.current = false;
+      openButtonRef.current?.focus();
+    }
+  }, [open]);
+
+  function closeForm() {
+    setReasonError(null);
+    setScoreError(null);
+    restoreFocus.current = true;
+    setOpen(false);
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    setFieldError(null);
+    setReasonError(null);
+    setScoreError(null);
     if (!reason.trim()) {
-      setFieldError('Say what is wrong with the result.');
+      setReasonError('Say what is wrong with the result.');
+      reasonRef.current?.focus();
       return;
     }
     let sets: RecordedSetInput[] | undefined;
     if (scoreLine.trim()) {
       const parsed = parseRecordedScoreLine(scoreLine);
-      if (!parsed) {
-        setFieldError(`Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`);
-        return;
-      }
-      const invalid = validateRecordedSets(parsed);
+      const invalid = parsed
+        ? validateRecordedSets(parsed)
+        : `Enter the score as sets from ${p1Name}'s side, for example 6-4, 3-6, [10-8].`;
       if (invalid) {
-        setFieldError(invalid);
+        setScoreError(invalid);
+        scoreRef.current?.focus();
         return;
       }
-      sets = parsed;
+      sets = parsed ?? undefined;
     }
     void submit.run(sets);
   }
@@ -1319,7 +1345,7 @@ function AppealRequestPanel({ matchId, p1Name, style }: { matchId: string; p1Nam
       </p>
       {!open ? (
         <div style={styles.stepActions}>
-          <Button variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} onClick={() => setOpen(true)}>
+          <Button ref={openButtonRef} variant="secondary" icon={<IconAlertTriangle size={18} aria-hidden="true" />} onClick={() => setOpen(true)}>
             Request a review
           </Button>
         </div>
@@ -1328,24 +1354,28 @@ function AppealRequestPanel({ matchId, p1Name, style }: { matchId: string; p1Nam
           <div>
             <label style={fieldLabelStyle} htmlFor={reasonId}>What&apos;s wrong with the result?</label>
             <textarea
+              ref={reasonRef}
               id={reasonId}
               value={reason}
               maxLength={MAX_APPEAL_REASON_LENGTH}
               rows={3}
+              required
               onChange={(e) => {
                 setReason(e.target.value);
-                setFieldError(null);
+                setReasonError(null);
               }}
               style={styles.appealTextarea}
-              aria-invalid={fieldError && !reason.trim() ? true : undefined}
-              aria-describedby={fieldError ? errorId : undefined}
+              aria-invalid={reasonError ? true : undefined}
+              aria-describedby={reasonError ? reasonErrorId : undefined}
             />
+            {reasonError && <p id={reasonErrorId} role="alert" style={styles.fieldError}>{reasonError}</p>}
           </div>
           <div>
             <label style={fieldLabelStyle} htmlFor={scoreId}>
               The correct score, with {p1Name}&apos;s games first (optional)
             </label>
             <input
+              ref={scoreRef}
               id={scoreId}
               type="text"
               autoComplete="off"
@@ -1353,19 +1383,20 @@ function AppealRequestPanel({ matchId, p1Name, style }: { matchId: string; p1Nam
               value={scoreLine}
               onChange={(e) => {
                 setScoreLine(e.target.value);
-                setFieldError(null);
+                setScoreError(null);
               }}
               style={styles.resolveInput}
-              aria-describedby={fieldError ? errorId : undefined}
+              aria-invalid={scoreError ? true : undefined}
+              aria-describedby={scoreError ? scoreErrorId : undefined}
             />
+            {scoreError && <p id={scoreErrorId} role="alert" style={styles.fieldError}>{scoreError}</p>}
           </div>
-          {fieldError && <p id={errorId} role="alert" style={styles.fieldError}>{fieldError}</p>}
           {submit.error && <InlineAlert tone="error">{submit.error}</InlineAlert>}
           <div style={styles.stepActions}>
             <Button type="submit" pending={submit.pending} pendingLabel="Sending…">
               Send for review
             </Button>
-            <Button variant="secondary" disabled={submit.pending} onClick={() => setOpen(false)}>
+            <Button variant="secondary" disabled={submit.pending} onClick={closeForm}>
               Cancel
             </Button>
           </div>
@@ -1400,6 +1431,16 @@ function AppealReviewPanel({ matchId, appeal, requesterName, p1Name, p2Name, sco
     errorMessage: "Couldn't save the decision. Try again.",
   });
   const pending = approve.pending || reject.pending;
+  const { confirm, confirmDialog } = useConfirm();
+
+  async function handleReject() {
+    const ok = await confirm({
+      title: 'Reject this appeal?',
+      message: `The result stays as it is, and ${requesterName} can't appeal this match again.`,
+      confirmLabel: 'Reject appeal',
+    });
+    if (ok) void reject.run();
+  }
 
   function handleApprove() {
     setScoreError(null);
@@ -1459,10 +1500,11 @@ function AppealReviewPanel({ matchId, appeal, requesterName, p1Name, p2Name, sco
         <Button icon={<IconCheck size={18} aria-hidden="true" />} pending={approve.pending} pendingLabel="Saving…" disabled={pending && !approve.pending} onClick={handleApprove} className="tl-btn--on-dark" style={styles.confirmBtn}>
           Approve and save score
         </Button>
-        <Button variant="secondary" icon={<IconX size={18} aria-hidden="true" />} pending={reject.pending} pendingLabel="Saving…" disabled={pending && !reject.pending} onClick={() => void reject.run()}>
+        <Button variant="secondary" icon={<IconX size={18} aria-hidden="true" />} pending={reject.pending} pendingLabel="Saving…" disabled={pending && !reject.pending} onClick={() => void handleReject()}>
           Reject appeal
         </Button>
       </div>
+      {confirmDialog}
     </StepPanel>
   );
 }
@@ -1795,6 +1837,6 @@ const styles: Record<string, CSSProperties> = {
   fieldError: { ...type.caption, color: color.destructivePressed, margin: `${space.xs}px 0 0` },
   appealForm: { display: 'flex', flexDirection: 'column', gap: space.md },
   appealTextarea: { ...inputStyle, width: '100%', minHeight: 72, resize: 'vertical', fontFamily: 'inherit' },
-  appealReason: { ...type.body, color: color.ink, margin: 0, padding: `${space.sm}px ${space.md}px`, borderLeft: `3px solid ${color.border}`, whiteSpace: 'pre-wrap' },
+  appealReason: { ...type.body, color: color.ink, margin: 0, padding: `${space.sm}px ${space.md}px`, background: color.surfaceMuted, borderRadius: radius.sm, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   fieldHint: { ...type.bodySmall, color: color.textMuted, margin: `${space.sm}px 0 0` },
 };

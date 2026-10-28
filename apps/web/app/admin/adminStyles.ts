@@ -239,6 +239,9 @@ export const styles = {
   toolTitle: { ...type.title, color: color.clubhouseGreen, margin: 0 },
   toolDesc: { ...type.bodySmall, color: color.textMuted, margin: 0 },
   toolDescStrong: { ...type.label, color: color.ink, margin: 0 },
+  // Same weight and size as StatusBadge, so an appeal reads as a peer of the
+  // statuses beside it. Info blue matches the match page's "Review requested" alert.
+  appealTag: { fontWeight: 700, fontSize: 13, color: color.info, whiteSpace: "nowrap" },
   resolveList: {
     listStyle: "none",
     margin: 0,
