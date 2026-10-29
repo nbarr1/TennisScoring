@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- A public Delete your account page at `/delete-account` explains how to delete an account from the web or the mobile app, what deletion erases and keeps, and what to do when you lead a division or can't sign in. It works signed out, which is what Google Play's account-deletion requirement asks for, and the privacy policy now names it. Enter its URL in the Play Console's Data safety form.
 - Match reports time out after 48 hours. When a report is submitted, the opposing side has 48 hours to confirm or dispute it; the match page on web and mobile shows the deadline. A scheduled function, `autoConfirmExpiredReports`, runs once a day at 00:00 UTC and confirms any report whose window has passed (so between 48 and 72 hours after submission), which updates the standings and builds the PDF as a player's confirmation does; both sides are notified. The deadline is stamped by `onMatchUpdate` from the server clock onto `reportSubmission.confirmationDeadline`, and a pending report found without one (including reports submitted before this release) gets a full 48 hours from when the job first sees it.
 - Players can appeal a confirmed result. From the match page, either player can ask a division leader or admin to review it, with a reason and an optional corrected score (`requestMatchAppeal`). Leaders and admins see waiting appeals in the admin results list and decide them on the match page (`decideMatchAppeal`): approving saves a corrected score and rebuilds the standings and the PDF, rejecting leaves the result as it is. Each match can be appealed once, and a leader or admin who played in the match cannot decide its appeal.
 
@@ -22,6 +23,7 @@
 - The web sign-in and invite pages load about 180 KB less JavaScript (gzipped): they import the new `@tennis/firebase-client/auth` and `/functions` entries, which leave out Firestore, Storage, and Messaging. The web live-scoring clock re-renders only its own text each second instead of the whole match page, typing in a web conversation no longer re-renders every message, and the mobile standings rows keep their identity across unrelated re-renders.
 
 ### Security
+- Cleared three dependency advisories that failed CI's audit gate: `qs` is overridden to 6.16.1 or later and `re2js` (through the Firebase SDK) to 2.8.7 or later. `deepmerge` has no patched release and is used only by the Expo, React Native, and Jest config loaders, so it carries a dated `osv-scanner.toml` exemption.
 - Once a report's 48-hour window has closed, the Firestore rules stop participants from disputing, editing, undoing, or resubmitting it; the opposing side can still confirm it. Participants cannot write `confirmationDeadline` or `appeal`. **Deploy the rules through the Deploy Firebase rules workflow.** They only restrict, and a report carries no deadline until the functions are deployed, so the rules can go out before or after the functions and the client releases.
 
 ## [1.2.0] — 2026-10-22

@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://example.com';
-  const routes = ['/', '/dashboard', '/matches', '/messages', '/profile', '/feedback', '/admin', '/login'];
+  const routes = ['/', '/dashboard', '/matches', '/messages', '/profile', '/feedback', '/admin', '/login', '/privacy', '/delete-account'];
 
   return routes.map((path) => ({
     url: `${baseUrl}${path}`,
