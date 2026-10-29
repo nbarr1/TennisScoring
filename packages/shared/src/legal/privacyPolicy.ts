@@ -1,4 +1,4 @@
-export const PRIVACY_POLICY_LAST_UPDATED = '2026-08-14';
+export const PRIVACY_POLICY_LAST_UPDATED = '2026-10-29';
 
 export const PRIVACY_POLICY_INTRO =
   'Tennis League is used to run a company tennis league across web and mobile: joining a ' +
@@ -60,7 +60,9 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
     title: 'Data retention and deletion',
     body:
       'Your data is retained while your account is active. You can permanently delete your ' +
-      'account and personal data at any time from Profile → Delete Account. This removes your ' +
+      'account and personal data at any time from Profile → Delete account, in the app or on ' +
+      'the web. The public Delete your account page (/delete-account) explains the steps without ' +
+      'signing in. This removes your ' +
       'account record and profile from our systems and your identifying details from your ' +
       'division roster. Match and ranking records that are jointly owned with other players ' +
       '(e.g., a match you played against someone else) may be retained in anonymized form so ' +
