@@ -20,3 +20,7 @@ reason = "node-forge <=1.4.0 PKCS#1 v1.5 signature forgery with low-exponent RSA
 [[IgnoredVulns]]
 id = "GHSA-mrhx-c7xc-m3w5"
 reason = "zod <4.6.6 memory exhaustion while validating oversized constrained collections. The zod 4 copy is overridden to ^4.6.6 in the root package.json; this entry covers only zod 3.25.76, which @expo/cli 57 pins (no zod 3 release is patched, and forcing zod 4 on the Expo CLI would break it). The Expo CLI runs on developer machines and EAS builders and validates its own config, not user input, and zod ships in neither app bundle nor the Cloud Functions bundle. Added October 26, 2026; revisit January 26, 2027, or as soon as an @expo/cli on zod 4.6.6 or later is published."
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+reason = "deepmerge mergeObject() prototype poisoning of returned objects (rated low); no patched release exists. It reaches the lockfile only through @expo/config, @react-native-community/cli-config, and jest-config, which merge the project's own configuration files on developer machines, EAS builders, and CI, never user input, and it ships in neither app bundle nor the Cloud Functions bundle. Added October 29, 2026; revisit January 29, 2027, or as soon as a fixed deepmerge is published."

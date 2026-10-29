@@ -23,6 +23,7 @@
 - The web sign-in and invite pages load about 180 KB less JavaScript (gzipped): they import the new `@tennis/firebase-client/auth` and `/functions` entries, which leave out Firestore, Storage, and Messaging. The web live-scoring clock re-renders only its own text each second instead of the whole match page, typing in a web conversation no longer re-renders every message, and the mobile standings rows keep their identity across unrelated re-renders.
 
 ### Security
+- Cleared three dependency advisories that failed CI's audit gate: `qs` is overridden to 6.16.1 or later and `re2js` (through the Firebase SDK) to 2.8.7 or later. `deepmerge` has no patched release and is used only by the Expo, React Native, and Jest config loaders, so it carries a dated `osv-scanner.toml` exemption.
 - Once a report's 48-hour window has closed, the Firestore rules stop participants from disputing, editing, undoing, or resubmitting it; the opposing side can still confirm it. Participants cannot write `confirmationDeadline` or `appeal`. **Deploy the rules through the Deploy Firebase rules workflow.** They only restrict, and a report carries no deadline until the functions are deployed, so the rules can go out before or after the functions and the client releases.
 
 ## [1.2.0] — 2026-10-22
