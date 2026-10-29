@@ -305,7 +305,7 @@ Optional GitHub Actions variables:
 
 ### Debug APK workflow
 
-`.github/workflows/debug-apk.yml` runs only on manual dispatch. It builds an installable, debug-signed `arm64-v8a` release APK with the real Firebase config from the same `NEXT_PUBLIC_FIREBASE_*` secrets, and uploads it as a workflow artifact for 14 days. It fails if the bundle still carries the `ci-placeholder` values that CI builds use. Uninstall any Play-signed or EAS-signed copy before installing it.
+`.github/workflows/debug-apk.yml` runs only on manual dispatch. It builds an installable, debug-signed `arm64-v8a` release APK with the real Firebase config from the same `NEXT_PUBLIC_FIREBASE_*` secrets, and uploads it as a workflow artifact for 14 days. It fails if the bundle still carries the `ci-placeholder` values that CI builds use. Uninstall any Play-signed or EAS-signed copy before installing it. The same run builds the Wear OS watch APK (`debug-wear-apk-<sha>`), signed with the same debug keystore. Install the phone and watch APKs from one run, because the phone and watch exchange scores only when they share a signing key.
 
 ---
 

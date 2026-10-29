@@ -1,4 +1,4 @@
-name: Debug APK (installable, real Firebase config)
+name: Debug APKs (installable phone and watch, real Firebase config)
 
 # Manual only. ci.yml's mobile_native job builds the same APK but deliberately
 # passes `ci-placeholder` for every EXPO_PUBLIC_FIREBASE_* value, because it must
@@ -11,6 +11,11 @@ name: Debug APK (installable, real Firebase config)
 # actually install on a phone and sign into — for field debugging when a local
 # Android toolchain or EAS build quota is not available. workflow_dispatch only,
 # so secrets are never exposed to an untrusted pull request.
+#
+# It also builds the Wear OS watch APK (:wear), which is otherwise built only by
+# EAS's wear-preview profile. Both APKs are signed with the same debug keystore:
+# the Data Layer delivers messages only between apps that share a package name
+# and signing key, so a debug-signed watch talks only to a debug-signed phone.
 on:
   workflow_dispatch:
 
@@ -70,6 +75,15 @@ jobs:
             -Pandroid.allowDebugReleaseSigning=true \
             --no-daemon \
             --stacktrace
+      # The watch app has no JavaScript and no Firebase config; it talks only to
+      # the phone app over the Data Layer.
+      - name: Assemble watch release
+        working-directory: apps/mobile/android
+        run: |
+          ./gradlew :wear:assembleRelease \
+            -Pandroid.allowDebugReleaseSigning=true \
+            --no-daemon \
+            --stacktrace
       - name: Fail if the bundle carries placeholder config
         # Cheap guard against the exact trap this workflow exists to avoid: if a
         # secret is unset, the env var is empty rather than absent and the build
@@ -89,11 +103,19 @@ jobs:
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Upload watch APK
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-wear-apk-${{ github.sha }}
+          path: apps/mobile/android/wear/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
       - name: Install instructions
         if: success()
         run: |
           {
-            echo "## Installable APK"
+            echo "## Installable APKs"
             echo ""
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Ref: \`$GITHUB_REF_NAME\`"
@@ -108,4 +130,15 @@ jobs:
             echo ""
             echo "The uninstall is required: this APK is debug-keystore signed, so it"
             echo "cannot upgrade over a Play-signed or EAS-signed install."
+            echo ""
+            echo "For the watch, download the debug-wear-apk artifact, connect to the"
+            echo "watch over Wi-Fi debugging (adb connect <watch-ip>:<port>), then:"
+            echo ""
+            echo '```'
+            echo "adb -s <watch-ip>:<port> uninstall com.companytennisleague.app"
+            echo "adb -s <watch-ip>:<port> install -r wear-release.apk"
+            echo '```'
+            echo ""
+            echo "Install both APKs from the same run: the phone and watch exchange"
+            echo "scores only when they carry the same signing key."
           } >> "$GITHUB_STEP_SUMMARY"
