@@ -89,6 +89,7 @@ import { PlayerDetailDialog } from "./PlayerDetailDialog";
 import { AddPlayerDialog, ImportRosterDialog } from "./RosterDialogs";
 import { RosterPanel } from "./RosterPanel";
 import { ToolsPanel } from "./ToolsPanel";
+import { usePlayoffAdmin } from "./usePlayoffAdmin";
 import { styles } from "./adminStyles";
 import css from "./admin.module.css";
 
@@ -204,6 +205,7 @@ export default function AdminPage(): React.JSX.Element {
   const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
   const rosterHeadingRef = useRef<HTMLHeadingElement>(null);
   const schedulerHeadingRef = useRef<HTMLHeadingElement>(null);
+  const playoffsHeadingRef = useRef<HTMLHeadingElement>(null);
   const tabRefs = useRef<Record<AdminTab, HTMLButtonElement | null>>({
     roster: null,
     divisions: null,
@@ -244,6 +246,11 @@ export default function AdminPage(): React.JSX.Element {
     () => new Map(rrMemberships.map((m) => [m.userId, m.displayNameSnapshot] as const)),
     [rrMemberships],
   );
+  const playoffs = usePlayoffAdmin({
+    divisionId: division?.id ?? null,
+    seasonId: adminSeasonId,
+    levels: adminSeasonLevels,
+  });
   const [resolvingReportId, setResolvingReportId] = useState<string | null>(null);
   const [reportErrors, setReportErrors] = useState<Record<string, string>>({});
   const [removeReportTarget, setRemoveReportTarget] = useState<MessageReport | null>(null);
@@ -432,6 +439,7 @@ export default function AdminPage(): React.JSX.Element {
       results: resultsHeadingRef,
       roster: rosterHeadingRef,
       scheduler: schedulerHeadingRef,
+      playoffs: playoffsHeadingRef,
     }[focusRequest].current;
     if (!target) return;
     target.focus();
@@ -2064,6 +2072,8 @@ export default function AdminPage(): React.JSX.Element {
                 setRrMessage={setRrMessage}
                 handleRrGeneratePreview={handleRrGeneratePreview}
                 requestRrPublish={requestRrPublish}
+                playoffs={playoffs}
+                playoffsHeadingRef={playoffsHeadingRef}
               />
             ) : null}
           </>
