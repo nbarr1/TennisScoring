@@ -71,10 +71,13 @@ export function matchCalendarTitle(match: CalendarMatch, viewerId?: string): str
 
 /** A file name for the match's `.ics` download. */
 export function matchCalendarFilename(match: CalendarMatch, viewerId?: string): string {
+  // Split and join rather than trimming dashes with a regex, which backtracks
+  // badly on long runs of separators.
   const slug = matchCalendarTitle(match, viewerId)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .join('-');
   return `${slug || 'tennis-match'}.ics`;
 }
 
