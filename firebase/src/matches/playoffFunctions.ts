@@ -27,7 +27,6 @@ if (!getApps().length) initializeApp();
 type Db = ReturnType<typeof getFirestore>;
 type Transaction = FirebaseFirestore.Transaction;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_INTERVAL_DAYS = 90;
 const MAX_BRACKET_NAME_LENGTH = 80;
 const DOUBLES_NOT_SUPPORTED_MESSAGE = 'Playoffs are not yet available for doubles division levels';
