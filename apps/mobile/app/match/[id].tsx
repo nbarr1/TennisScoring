@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -68,6 +68,7 @@ import {
 } from "@tennis/firebase-client";
 import {
   EMPTY_STATS,
+  applyPoint,
   buildMatchCalendarFile,
   formatScoreDisplay,
   getTipsForTriggers,
@@ -85,6 +86,7 @@ import {
   opposingSide,
   playoffRoundName,
   parseRecordedScoreLine,
+  projectQueuedPoints,
   recordedSetsFromScore,
   reportConfirmationDeadline,
   sideDisplayName,
@@ -92,6 +94,7 @@ import {
   validateRecordedSets,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
+import { isRetryableScoringError, useQueuedPoints } from "../../hooks/useQueuedPoints";
 import { ScoreboardSurface } from "../../components/live-scoring/ScoreboardSurface";
 import { ScoreboardSetup } from "../../components/live-scoring/ScoreboardSetup";
 import { PointTypeSheet } from "../../components/live-scoring/PointTypeSheet";
@@ -327,6 +330,13 @@ function isNoLongerLiveError(err: unknown): boolean {
 }
 
 const CONNECTION_HINT = "Check your connection, then try again.";
+
+/**
+ * How long a tap waits for the server before the point is kept on the phone
+ * instead. Long enough for a slow connection, short enough that the scorer
+ * isn't locked out of the next point.
+ */
+const LIVE_POINT_TIMEOUT_MS = 10_000;
 
 /** Same pause as PlayerSlotPicker, so typing a name sends one search. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -900,7 +910,47 @@ export default function MatchScreen() {
   const { id: rawId } = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
-  const { match, loading, error: loadError } = useMatch(id ?? null);
+  const { match: storedMatch, loading, error: loadError } = useMatch(id ?? null);
+  // Points scored without a connection wait on this phone and are sent in
+  // order once a call gets through. Until then the screen shows the stored
+  // score with them played on top, so `match` below is that projection and
+  // `storedMatch` is the document as the server has it.
+  const handleQueueDropped = useCallback((count: number, err: unknown) => {
+    if (count === 0) return;
+    const points = count === 1 ? "1 point" : `${count} points`;
+    Alert.alert(
+      "Saved points not added",
+      err
+        ? `${points} saved on this phone couldn't be added to the match. ${describeError(err, "The server refused them.")}`
+        : `${points} saved on this phone weren't added, because the match is no longer in progress.`,
+    );
+  }, []);
+  const queued = useQueuedPoints(id, storedMatch ?? null, handleQueueDropped);
+  const projection = useMemo(() => {
+    if (!storedMatch || queued.pending.length === 0) return null;
+    return {
+      ...projectQueuedPoints(storedMatch.liveScore, storedMatch.format, queued.pending),
+      before: projectQueuedPoints(
+        storedMatch.liveScore,
+        storedMatch.format,
+        queued.pending.slice(0, -1),
+      ).score,
+    };
+  }, [storedMatch, queued.pending]);
+  const match = useMemo(() => {
+    if (!storedMatch || !projection) return storedMatch;
+    return {
+      ...storedMatch,
+      liveScore: projection.score,
+      // Undo takes back the newest queued point; this is what it returns to.
+      undoSnapshot: {
+        liveScore: projection.before,
+        status: storedMatch.status,
+        stats: storedMatch.stats,
+      },
+    };
+  }, [storedMatch, projection]);
+  const queuedMatchOver = !!projection?.matchWinner;
   const user = useAppStore((state) => state.user);
   const divisionId = useAppStore((state) => state.divisionId);
   const [currentTip, setCurrentTip] = useState<{
@@ -1224,15 +1274,26 @@ export default function MatchScreen() {
     cancel.error ?? remove.error ?? postpone.error ?? tips.error ?? addToCalendar.error;
 
   const handleUndo = useCallback(async () => {
-    if (!match || !id || scoring) return;
+    if (!match || !storedMatch || !id || scoring) return;
     const target = match.undoSnapshot?.liveScore;
     const spokenNames = {
       player1: match.player1Name ?? "Player 1",
       player2: match.player2Name ?? "Player 2",
     };
+    if (queued.pending.length > 0) {
+      // The newest point hasn't reached the server, so undo just drops it.
+      if (queued.popLast()) {
+        haptic("undo");
+        if (target) announce(`Point undone. ${spokenUndoTarget(target, spokenNames)}`);
+      } else {
+        haptic("error");
+        announce("The last point is being sent. Try undo again in a moment.");
+      }
+      return;
+    }
     setScoring(true);
     try {
-      await undoLastPoint(id, match);
+      await undoLastPoint(id, storedMatch);
       setCourtError(null);
       haptic("undo");
       if (target) {
@@ -1246,7 +1307,7 @@ export default function MatchScreen() {
     } finally {
       setScoring(false);
     }
-  }, [match, id, scoring]);
+  }, [match, storedMatch, id, scoring, queued]);
   const handleUndoRef = useRef(handleUndo);
   handleUndoRef.current = handleUndo;
 
@@ -1258,11 +1319,41 @@ export default function MatchScreen() {
       pointAttribution?: PointAttribution,
       pointId: string = newPointId(),
     ) => {
-      if (!match || !id || scoring) return;
-      setScoring(true);
-      setRecordingFor(player);
+      if (!match || !id || scoring || !queued.ready) return;
       const p1 = match.player1Name ?? "Player 1";
       const p2 = match.player2Name ?? "Player 2";
+      if (queuedMatchOver) {
+        Alert.alert(
+          "Match point saved on this phone",
+          "The match ends when the saved points reach the server. Once you're back online, submit the result as usual.",
+        );
+        return;
+      }
+      // Kept on the phone and played onto the scoreboard straight away; the
+      // queue sends it when a call can get through.
+      const savePointOffline = () => {
+        const next = applyPoint(match.liveScore, player, match.format);
+        queued.enqueue({ pointId, scorer: player, ...(pointAttribution && { pointAttribution }) });
+        setCourtError(null);
+        setLastPoint((prev) => ({ player, seq: (prev?.seq ?? 0) + 1 }));
+        haptic("point");
+        announce(
+          `${describePoint(
+            match.liveScore,
+            next.nextScore,
+            player,
+            { player1: p1, player2: p2 },
+            next.matchWinner,
+          )} Saved on this phone.`,
+        );
+      };
+      // Once one point is waiting, the rest queue behind it so the order holds.
+      if (queued.pending.length > 0) {
+        savePointOffline();
+        return;
+      }
+      setScoring(true);
+      setRecordingFor(player);
       try {
         const result = await scorePoint(
           id,
@@ -1270,6 +1361,7 @@ export default function MatchScreen() {
           player,
           pointAttribution,
           pointId,
+          LIVE_POINT_TIMEOUT_MS,
         );
         // Confirm the point first: the watch sync below is peripheral.
         setCourtError(null);
@@ -1322,6 +1414,10 @@ export default function MatchScreen() {
           );
           return;
         }
+        if (isRetryableScoringError(err)) {
+          savePointOffline();
+          return;
+        }
         // A blocking choice on purpose: tapping the row again would send a new
         // point, while Retry resends the same point id, so if the first request
         // did land and only its reply was lost, the server does not count it
@@ -1343,7 +1439,7 @@ export default function MatchScreen() {
         setRecordingFor(null);
       }
     },
-    [match, id, scoring, isParticipant],
+    [match, id, scoring, isParticipant, queued, queuedMatchOver],
   );
   // The retry above runs after a re-render, so it calls the latest handler
   // rather than the one that failed, which closed over a stale `scoring`.
@@ -1677,15 +1773,16 @@ export default function MatchScreen() {
     const payload = {
       matchId: id,
       status: match.status,
-      // A spectator's watch shows the match read-only.
-      canScore: isParticipant && match.status === "in_progress",
+      // A spectator's watch shows the match read-only, and so does a watch
+      // whose match was won by a point still waiting on this phone.
+      canScore: isParticipant && match.status === "in_progress" && !queuedMatchOver,
       player1Name: match.player1Name ?? "Player 1",
       player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
     };
     lastWearSnapshotRef.current = { score: match.liveScore, payload };
     void sendScoreToWear(match.liveScore, payload);
-  }, [match, id, isParticipant]);
+  }, [match, id, isParticipant, queuedMatchOver]);
 
   useEffect(() => {
     syncWear();
@@ -1944,6 +2041,26 @@ export default function MatchScreen() {
           scrollEnabled={!fillScreen || needsScrollableCourt}
           bounces={!fillScreen || needsScrollableCourt}
         >
+          {showCourtSurface && queued.pending.length > 0 ? (
+            <View style={styles.courtError}>
+              <InlineAlert
+                tone="warning"
+                title={
+                  queued.pending.length === 1
+                    ? "1 point saved on this phone"
+                    : `${queued.pending.length} points saved on this phone`
+                }
+                message={
+                  queuedMatchOver
+                    ? "That includes match point. They're sent as soon as the connection is back, and then you can submit the result."
+                    : "They're sent in order as soon as the connection is back. Keep scoring."
+                }
+                actionLabel={queued.sending ? undefined : "Send now"}
+                onAction={queued.flush}
+              />
+            </View>
+          ) : null}
+
           {showCourtSurface && courtError ? (
             <View style={styles.courtError}>
               <InlineAlert
