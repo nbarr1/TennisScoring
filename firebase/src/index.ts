@@ -14,6 +14,12 @@ export {
   decideMatchAppeal,
 } from './matches/appealFunctions';
 export { publishRoundRobinSchedule } from './matches/scheduleFunctions';
+export { sendMatchReminders } from './matches/reminderFunctions';
+export {
+  publishPlayoffBracket,
+  cancelPlayoffBracket,
+  onPlayoffMatchUpdate,
+} from './matches/playoffFunctions';
 export { generateMatchReport } from './reports/generateReport';
 export { onNewMessage } from './messaging/onNewMessage';
 export { resolveMessageReport } from './messaging/moderationFunctions';

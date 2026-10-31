@@ -20,9 +20,14 @@ export * from "./scoring/scoreEngine";
 export * from "./scoring/rankingEngine";
 export * from "./scoring/matchMoment";
 export * from "./scoring/recordedScore";
+export * from "./scoring/queuedPoints";
 
 // Scheduling
 export * from "./scheduling/roundRobin";
+export * from "./scheduling/playoffBracket";
+
+// Calendar files and match reminders
+export * from "./calendar/matchCalendar";
 
 // Tips
 export * from "./tips/tips";
