@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Linking from "expo-linking";
 import { AppIcon, IconLabel, ICON_SIZE } from "../../components/AppIcon";
 import { FormField } from "../../components/FormField";
@@ -67,6 +68,7 @@ import {
 } from "@tennis/firebase-client";
 import {
   EMPTY_STATS,
+  buildMatchCalendarFile,
   formatScoreDisplay,
   getTipsForTriggers,
   isMatchParticipant,
@@ -77,9 +79,11 @@ import {
   getMatchStatusMetadata,
   isAdminRole,
   isReportWindowClosed,
+  matchCalendarFilename,
   MAX_APPEAL_NOTE_LENGTH,
   MAX_APPEAL_REASON_LENGTH,
   opposingSide,
+  playoffRoundName,
   parseRecordedScoreLine,
   recordedSetsFromScore,
   reportConfirmationDeadline,
@@ -1127,6 +1131,35 @@ export default function MatchScreen() {
     },
   );
 
+  // Hands the match to the calendar app as an .ics file through the share
+  // sheet: iOS offers Calendar, and Android offers whichever calendar app is
+  // installed. The event's UID is stable, so adding it again after a
+  // postponement updates the event in most apps.
+  const addToCalendar = useAsyncAction(
+    async () => {
+      if (!match || !id) return;
+      const ics = buildMatchCalendarFile(match, { matchId: id, viewerId: user?.id });
+      if (!ics) throw new Error("This match has no start time yet.");
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory || !(await Sharing.isAvailableAsync())) {
+        throw new Error("This device can't hand a calendar file to another app.");
+      }
+      const fileUri = `${baseDirectory}${matchCalendarFilename(match, user?.id)}`;
+      await FileSystem.writeAsStringAsync(fileUri, ics, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "text/calendar",
+        dialogTitle: "Add to calendar",
+        UTI: "com.apple.ical.ics",
+      });
+    },
+    {
+      errorMessage: (e) =>
+        (e as { message?: string }).message || "Couldn't create the calendar file. Try again.",
+    },
+  );
+
   const share = useAsyncAction(
     async (url: string) => {
       if (await Sharing.isAvailableAsync()) {
@@ -1187,7 +1220,8 @@ export default function MatchScreen() {
   );
 
   const managing = cancel.pending || remove.pending || postpone.pending;
-  const manageError = cancel.error ?? remove.error ?? postpone.error ?? tips.error;
+  const manageError =
+    cancel.error ?? remove.error ?? postpone.error ?? tips.error ?? addToCalendar.error;
 
   const handleUndo = useCallback(async () => {
     if (!match || !id || scoring) return;
@@ -1353,6 +1387,7 @@ export default function MatchScreen() {
     remove.reset();
     postpone.reset();
     tips.reset();
+    addToCalendar.reset();
     setShowManage(true);
     void refreshWatchAppInstalled();
   }
@@ -1763,12 +1798,15 @@ export default function MatchScreen() {
   const showCourtSurface = isParticipant && match.status === "in_progress";
   const showSetupSurface = isParticipant && match.status === "scheduled";
   const fillScreen = showCourtSurface || showSetupSurface;
+  const playoffRound = match.playoff
+    ? playoffRoundName(match.playoff.round, match.playoff.totalRounds).toUpperCase()
+    : undefined;
   const headerTitle = showSetupSurface
-    ? "NEW MATCH"
+    ? (playoffRound ?? "NEW MATCH")
     : match.status === "in_progress"
       ? `SET ${match.liveScore.currentSet + 1} · ${formatFormatLabel(match).toUpperCase()}`
       : match.status === "pending_report" || match.status === "completed"
-        ? "FINAL"
+        ? (playoffRound ? `${playoffRound} RESULT` : "FINAL")
         : getMatchStatusMetadata(match.status).label.toUpperCase();
   const showHeaderClock =
     match.status === "in_progress" || match.status === "pending_report";
@@ -2517,6 +2555,17 @@ export default function MatchScreen() {
                   label={launchingWatch ? "Opening on watch…" : "Open on watch"}
                   disabled={launchingWatch}
                   onPress={() => void handleLaunchWatch()}
+                />
+              )}
+            {isParticipant &&
+              match.status === "scheduled" &&
+              match.scheduledAt !== undefined && (
+                <ManageRow
+                  icon="calendar"
+                  label={addToCalendar.pending ? "Opening…" : "Add to calendar"}
+                  hint={formatWhen(match.scheduledAt)}
+                  disabled={addToCalendar.pending}
+                  onPress={() => void addToCalendar.run()}
                 />
               )}
             {isParticipant && match.status === "scheduled" && (

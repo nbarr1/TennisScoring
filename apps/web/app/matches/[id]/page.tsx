@@ -7,6 +7,7 @@ import type { CSSProperties, FormEvent, ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { celebrateConfirmedScore } from '../../shared/celebrate';
 import { PlayerSlotPicker } from '../../shared/PlayerSlotPicker';
+import { downloadMatchCalendar } from '../../shared/calendarDownload';
 import {
   Button,
   ConfirmDialog,
@@ -36,8 +37,8 @@ import {
   width,
 } from '../../shared/ui';
 import {
-  IconAlertTriangle, IconArrowBackUp, IconBallTennis, IconCalendarTime, IconCheck, IconChevronLeft, IconClipboardList,
-  IconDotsVertical, IconFileTypePdf, IconPencil, IconTrash, IconUserPlus, IconX,
+  IconAlertTriangle, IconArrowBackUp, IconBallTennis, IconCalendarPlus, IconCalendarTime, IconCheck, IconChevronLeft, IconClipboardList,
+  IconDotsVertical, IconFileTypePdf, IconPencil, IconTrash, IconTrophy, IconUserPlus, IconX,
 } from '@tabler/icons-react';
 import {
   useMatch, useAuthUser, submitMatchReport, confirmMatchReport, disputeMatchReport,
@@ -56,6 +57,7 @@ import {
   canRequestMatchAppeal,
   formatRecordedScoreLine,
   isReportWindowClosed,
+  playoffRoundName,
   MAX_APPEAL_NOTE_LENGTH,
   MAX_APPEAL_REASON_LENGTH,
   reportConfirmationDeadline,
@@ -788,6 +790,19 @@ export default function MatchPage(): React.JSX.Element {
           <Button icon={<IconBallTennis size={18} aria-hidden="true" />} onClick={() => setOnCourt(true)}>
             Start live scoring
           </Button>
+          {match.scheduledAt && id && (
+            <Button
+              variant="secondary"
+              icon={<IconCalendarPlus size={18} aria-hidden="true" />}
+              onClick={() => {
+                if (downloadMatchCalendar(match, id, firebaseUser?.uid)) {
+                  announce('Calendar file downloaded. Open it to add the match to your calendar.');
+                }
+              }}
+            >
+              Add to calendar
+            </Button>
+          )}
         </div>
       </StepPanel>
     ) : (
@@ -920,6 +935,11 @@ export default function MatchPage(): React.JSX.Element {
               <StatusBadge status={match.status} style={styles.statusPill} />
               {isHistoric && <span style={styles.historicBadge}><IconClipboardList size={14} aria-hidden="true" /> Recorded result</span>}
               {isDoublesMatch(match) && <span style={styles.historicBadge}>Doubles</span>}
+              {match.playoff && (
+                <span style={styles.historicBadge}>
+                  <IconTrophy size={14} aria-hidden="true" /> {playoffRoundName(match.playoff.round, match.playoff.totalRounds)}
+                </span>
+              )}
             </div>
             {played ? (
               <>
