@@ -47,9 +47,17 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
               - '.github/workflows/ci.yml'
+            # firebase_rules_tests also holds the dependency audit gate, so a
+            # change to the lockfile, the root overrides, or the OSV ignore list
+            # must run it too. Without these entries a dependency-only PR
+            # skipped the audit entirely and reported green.
             firebase:
               - 'firebase/**'
               - 'packages/shared/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'osv-scanner.toml'
               - '.github/workflows/ci.yml'
             mobile:
               - 'apps/mobile/**'
