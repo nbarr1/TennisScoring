@@ -37,8 +37,8 @@ export function normalizedName(value: string | undefined): string {
 }
 
 export type AdminTab = "roster" | "divisions" | "tools";
-export type ToolPanel = "scheduler" | "reports" | null;
-export type FocusTarget = "reports" | "results" | "roster" | "scheduler" | null;
+export type ToolPanel = "scheduler" | "reports" | "playoffs" | null;
+export type FocusTarget = "reports" | "results" | "roster" | "scheduler" | "playoffs" | null;
 
 /** A roster row: the player, plus the season membership that places them in a level (if any). */
 export type RosterRow = { player: User; membership: DivisionMembership | null };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Linking from "expo-linking";
 import { AppIcon, IconLabel, ICON_SIZE } from "../../components/AppIcon";
 import { FormField } from "../../components/FormField";
@@ -67,6 +68,8 @@ import {
 } from "@tennis/firebase-client";
 import {
   EMPTY_STATS,
+  applyPoint,
+  buildMatchCalendarFile,
   formatScoreDisplay,
   getTipsForTriggers,
   isMatchParticipant,
@@ -77,10 +80,13 @@ import {
   getMatchStatusMetadata,
   isAdminRole,
   isReportWindowClosed,
+  matchCalendarFilename,
   MAX_APPEAL_NOTE_LENGTH,
   MAX_APPEAL_REASON_LENGTH,
   opposingSide,
+  playoffRoundName,
   parseRecordedScoreLine,
+  projectQueuedPoints,
   recordedSetsFromScore,
   reportConfirmationDeadline,
   sideDisplayName,
@@ -88,6 +94,7 @@ import {
   validateRecordedSets,
 } from "@tennis/shared";
 import { useAppStore } from "../../store/appStore";
+import { isRetryableScoringError, useQueuedPoints } from "../../hooks/useQueuedPoints";
 import { ScoreboardSurface } from "../../components/live-scoring/ScoreboardSurface";
 import { ScoreboardSetup } from "../../components/live-scoring/ScoreboardSetup";
 import { PointTypeSheet } from "../../components/live-scoring/PointTypeSheet";
@@ -323,6 +330,13 @@ function isNoLongerLiveError(err: unknown): boolean {
 }
 
 const CONNECTION_HINT = "Check your connection, then try again.";
+
+/**
+ * How long a tap waits for the server before the point is kept on the phone
+ * instead. Long enough for a slow connection, short enough that the scorer
+ * isn't locked out of the next point.
+ */
+const LIVE_POINT_TIMEOUT_MS = 10_000;
 
 /** Same pause as PlayerSlotPicker, so typing a name sends one search. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -896,7 +910,47 @@ export default function MatchScreen() {
   const { id: rawId } = useLocalSearchParams<{ id?: string | string[] }>();
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
-  const { match, loading, error: loadError } = useMatch(id ?? null);
+  const { match: storedMatch, loading, error: loadError } = useMatch(id ?? null);
+  // Points scored without a connection wait on this phone and are sent in
+  // order once a call gets through. Until then the screen shows the stored
+  // score with them played on top, so `match` below is that projection and
+  // `storedMatch` is the document as the server has it.
+  const handleQueueDropped = useCallback((count: number, err: unknown) => {
+    if (count === 0) return;
+    const points = count === 1 ? "1 point" : `${count} points`;
+    Alert.alert(
+      "Saved points not added",
+      err
+        ? `${points} saved on this phone couldn't be added to the match. ${describeError(err, "The server refused them.")}`
+        : `${points} saved on this phone weren't added, because the match is no longer in progress.`,
+    );
+  }, []);
+  const queued = useQueuedPoints(id, storedMatch ?? null, handleQueueDropped);
+  const projection = useMemo(() => {
+    if (!storedMatch || queued.pending.length === 0) return null;
+    return {
+      ...projectQueuedPoints(storedMatch.liveScore, storedMatch.format, queued.pending),
+      before: projectQueuedPoints(
+        storedMatch.liveScore,
+        storedMatch.format,
+        queued.pending.slice(0, -1),
+      ).score,
+    };
+  }, [storedMatch, queued.pending]);
+  const match = useMemo(() => {
+    if (!storedMatch || !projection) return storedMatch;
+    return {
+      ...storedMatch,
+      liveScore: projection.score,
+      // Undo takes back the newest queued point; this is what it returns to.
+      undoSnapshot: {
+        liveScore: projection.before,
+        status: storedMatch.status,
+        stats: storedMatch.stats,
+      },
+    };
+  }, [storedMatch, projection]);
+  const queuedMatchOver = !!projection?.matchWinner;
   const user = useAppStore((state) => state.user);
   const divisionId = useAppStore((state) => state.divisionId);
   const [currentTip, setCurrentTip] = useState<{
@@ -1127,6 +1181,35 @@ export default function MatchScreen() {
     },
   );
 
+  // Hands the match to the calendar app as an .ics file through the share
+  // sheet: iOS offers Calendar, and Android offers whichever calendar app is
+  // installed. The event's UID is stable, so adding it again after a
+  // postponement updates the event in most apps.
+  const addToCalendar = useAsyncAction(
+    async () => {
+      if (!match || !id) return;
+      const ics = buildMatchCalendarFile(match, { matchId: id, viewerId: user?.id });
+      if (!ics) throw new Error("This match has no start time yet.");
+      const baseDirectory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!baseDirectory || !(await Sharing.isAvailableAsync())) {
+        throw new Error("This device can't hand a calendar file to another app.");
+      }
+      const fileUri = `${baseDirectory}${matchCalendarFilename(match, user?.id)}`;
+      await FileSystem.writeAsStringAsync(fileUri, ics, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "text/calendar",
+        dialogTitle: "Add to calendar",
+        UTI: "com.apple.ical.ics",
+      });
+    },
+    {
+      errorMessage: (e) =>
+        (e as { message?: string }).message || "Couldn't create the calendar file. Try again.",
+    },
+  );
+
   const share = useAsyncAction(
     async (url: string) => {
       if (await Sharing.isAvailableAsync()) {
@@ -1187,18 +1270,30 @@ export default function MatchScreen() {
   );
 
   const managing = cancel.pending || remove.pending || postpone.pending;
-  const manageError = cancel.error ?? remove.error ?? postpone.error ?? tips.error;
+  const manageError =
+    cancel.error ?? remove.error ?? postpone.error ?? tips.error ?? addToCalendar.error;
 
   const handleUndo = useCallback(async () => {
-    if (!match || !id || scoring) return;
+    if (!match || !storedMatch || !id || scoring) return;
     const target = match.undoSnapshot?.liveScore;
     const spokenNames = {
       player1: match.player1Name ?? "Player 1",
       player2: match.player2Name ?? "Player 2",
     };
+    if (queued.pending.length > 0) {
+      // The newest point hasn't reached the server, so undo just drops it.
+      if (queued.popLast()) {
+        haptic("undo");
+        if (target) announce(`Point undone. ${spokenUndoTarget(target, spokenNames)}`);
+      } else {
+        haptic("error");
+        announce("The last point is being sent. Try undo again in a moment.");
+      }
+      return;
+    }
     setScoring(true);
     try {
-      await undoLastPoint(id, match);
+      await undoLastPoint(id, storedMatch);
       setCourtError(null);
       haptic("undo");
       if (target) {
@@ -1212,7 +1307,7 @@ export default function MatchScreen() {
     } finally {
       setScoring(false);
     }
-  }, [match, id, scoring]);
+  }, [match, storedMatch, id, scoring, queued]);
   const handleUndoRef = useRef(handleUndo);
   handleUndoRef.current = handleUndo;
 
@@ -1224,11 +1319,41 @@ export default function MatchScreen() {
       pointAttribution?: PointAttribution,
       pointId: string = newPointId(),
     ) => {
-      if (!match || !id || scoring) return;
-      setScoring(true);
-      setRecordingFor(player);
+      if (!match || !id || scoring || !queued.ready) return;
       const p1 = match.player1Name ?? "Player 1";
       const p2 = match.player2Name ?? "Player 2";
+      if (queuedMatchOver) {
+        Alert.alert(
+          "Match point saved on this phone",
+          "The match ends when the saved points reach the server. Once you're back online, submit the result as usual.",
+        );
+        return;
+      }
+      // Kept on the phone and played onto the scoreboard straight away; the
+      // queue sends it when a call can get through.
+      const savePointOffline = () => {
+        const next = applyPoint(match.liveScore, player, match.format);
+        queued.enqueue({ pointId, scorer: player, ...(pointAttribution && { pointAttribution }) });
+        setCourtError(null);
+        setLastPoint((prev) => ({ player, seq: (prev?.seq ?? 0) + 1 }));
+        haptic("point");
+        announce(
+          `${describePoint(
+            match.liveScore,
+            next.nextScore,
+            player,
+            { player1: p1, player2: p2 },
+            next.matchWinner,
+          )} Saved on this phone.`,
+        );
+      };
+      // Once one point is waiting, the rest queue behind it so the order holds.
+      if (queued.pending.length > 0) {
+        savePointOffline();
+        return;
+      }
+      setScoring(true);
+      setRecordingFor(player);
       try {
         const result = await scorePoint(
           id,
@@ -1236,6 +1361,7 @@ export default function MatchScreen() {
           player,
           pointAttribution,
           pointId,
+          LIVE_POINT_TIMEOUT_MS,
         );
         // Confirm the point first: the watch sync below is peripheral.
         setCourtError(null);
@@ -1288,6 +1414,10 @@ export default function MatchScreen() {
           );
           return;
         }
+        if (isRetryableScoringError(err)) {
+          savePointOffline();
+          return;
+        }
         // A blocking choice on purpose: tapping the row again would send a new
         // point, while Retry resends the same point id, so if the first request
         // did land and only its reply was lost, the server does not count it
@@ -1309,7 +1439,7 @@ export default function MatchScreen() {
         setRecordingFor(null);
       }
     },
-    [match, id, scoring, isParticipant],
+    [match, id, scoring, isParticipant, queued, queuedMatchOver],
   );
   // The retry above runs after a re-render, so it calls the latest handler
   // rather than the one that failed, which closed over a stale `scoring`.
@@ -1353,6 +1483,7 @@ export default function MatchScreen() {
     remove.reset();
     postpone.reset();
     tips.reset();
+    addToCalendar.reset();
     setShowManage(true);
     void refreshWatchAppInstalled();
   }
@@ -1642,15 +1773,16 @@ export default function MatchScreen() {
     const payload = {
       matchId: id,
       status: match.status,
-      // A spectator's watch shows the match read-only.
-      canScore: isParticipant && match.status === "in_progress",
+      // A spectator's watch shows the match read-only, and so does a watch
+      // whose match was won by a point still waiting on this phone.
+      canScore: isParticipant && match.status === "in_progress" && !queuedMatchOver,
       player1Name: match.player1Name ?? "Player 1",
       player2Name: match.player2Name ?? "Player 2",
       ...buildWearFeedback(match),
     };
     lastWearSnapshotRef.current = { score: match.liveScore, payload };
     void sendScoreToWear(match.liveScore, payload);
-  }, [match, id, isParticipant]);
+  }, [match, id, isParticipant, queuedMatchOver]);
 
   useEffect(() => {
     syncWear();
@@ -1763,12 +1895,15 @@ export default function MatchScreen() {
   const showCourtSurface = isParticipant && match.status === "in_progress";
   const showSetupSurface = isParticipant && match.status === "scheduled";
   const fillScreen = showCourtSurface || showSetupSurface;
+  const playoffRound = match.playoff
+    ? playoffRoundName(match.playoff.round, match.playoff.totalRounds).toUpperCase()
+    : undefined;
   const headerTitle = showSetupSurface
-    ? "NEW MATCH"
+    ? (playoffRound ?? "NEW MATCH")
     : match.status === "in_progress"
       ? `SET ${match.liveScore.currentSet + 1} · ${formatFormatLabel(match).toUpperCase()}`
       : match.status === "pending_report" || match.status === "completed"
-        ? "FINAL"
+        ? (playoffRound ? `${playoffRound} RESULT` : "FINAL")
         : getMatchStatusMetadata(match.status).label.toUpperCase();
   const showHeaderClock =
     match.status === "in_progress" || match.status === "pending_report";
@@ -1906,6 +2041,26 @@ export default function MatchScreen() {
           scrollEnabled={!fillScreen || needsScrollableCourt}
           bounces={!fillScreen || needsScrollableCourt}
         >
+          {showCourtSurface && queued.pending.length > 0 ? (
+            <View style={styles.courtError}>
+              <InlineAlert
+                tone="warning"
+                title={
+                  queued.pending.length === 1
+                    ? "1 point saved on this phone"
+                    : `${queued.pending.length} points saved on this phone`
+                }
+                message={
+                  queuedMatchOver
+                    ? "That includes match point. They're sent as soon as the connection is back, and then you can submit the result."
+                    : "They're sent in order as soon as the connection is back. Keep scoring."
+                }
+                actionLabel={queued.sending ? undefined : "Send now"}
+                onAction={queued.flush}
+              />
+            </View>
+          ) : null}
+
           {showCourtSurface && courtError ? (
             <View style={styles.courtError}>
               <InlineAlert
@@ -2517,6 +2672,17 @@ export default function MatchScreen() {
                   label={launchingWatch ? "Opening on watch…" : "Open on watch"}
                   disabled={launchingWatch}
                   onPress={() => void handleLaunchWatch()}
+                />
+              )}
+            {isParticipant &&
+              match.status === "scheduled" &&
+              match.scheduledAt !== undefined && (
+                <ManageRow
+                  icon="calendar"
+                  label={addToCalendar.pending ? "Opening…" : "Add to calendar"}
+                  hint={formatWhen(match.scheduledAt)}
+                  disabled={addToCalendar.pending}
+                  onPress={() => void addToCalendar.run()}
                 />
               )}
             {isParticipant && match.status === "scheduled" && (

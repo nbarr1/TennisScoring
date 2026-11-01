@@ -924,3 +924,189 @@ describe('result appeals', () => {
     });
   });
 });
+
+describe('match reminders', () => {
+  const HOUR = 60 * 60 * 1000;
+  const read = async (id) => (await db.collection('matches').doc(id).get()).data();
+  const runJob = () => functions.sendMatchReminders.run({ scheduleTime: new Date().toISOString() });
+  const scheduled = (scheduledAt, overrides = {}) => {
+    const { reportSubmission, winner, completedAt, ...rest } = match('p1', 'p2', {
+      status: 'scheduled',
+      scheduledAt,
+      player1Name: 'Ann',
+      player2Name: 'Bob',
+      ...overrides,
+    });
+    return rest;
+  };
+
+  function captureSends() {
+    const original = Messaging.prototype.sendEachForMulticast;
+    const sent = [];
+    Messaging.prototype.sendEachForMulticast = async (message) => {
+      sent.push(message);
+      return { responses: message.tokens.map(() => ({ success: true })), successCount: message.tokens.length, failureCount: 0 };
+    };
+    return { sent, restore: () => (Messaging.prototype.sendEachForMulticast = original) };
+  }
+
+  it('reminds both players once, a day ahead, naming the opponent', async () => {
+    await seedPlayers(['p1', 'p2'], { p1: { fcmTokens: ['t1'] }, p2: { fcmTokens: ['t2'] } });
+    const start = Date.now() + 3 * HOUR;
+    await db.collection('matches').doc('soon').set(scheduled(start));
+    await db.collection('matches').doc('later').set(scheduled(Date.now() + 30 * HOUR));
+    const sends = captureSends();
+    try {
+      await runJob();
+      await runJob();
+    } finally {
+      sends.restore();
+    }
+    assert.equal((await read('soon')).reminderSentFor, start);
+    assert.equal((await read('later')).reminderSentFor, undefined, 'a match more than a day out waits');
+    assert.equal(sends.sent.length, 2, 'one send per player, and the second run sends nothing');
+    const byToken = Object.fromEntries(sends.sent.map((m) => [m.tokens[0], m]));
+    assert.match(byToken.t1.notification.body, /against Bob starts in about 3 hours/);
+    assert.match(byToken.t2.notification.body, /against Ann/);
+    assert.deepEqual(byToken.t1.data, { type: 'match_reminder', matchId: 'soon' });
+  });
+
+  it('reminds again after a postponement, and never for a match that is not scheduled', async () => {
+    await seedPlayers(['p1', 'p2']);
+    const start = Date.now() + 2 * HOUR;
+    await db.collection('matches').doc('moved').set(scheduled(start, { reminderSentFor: start - HOUR }));
+    await db.collection('matches').doc('cancelled').set(scheduled(start, { status: 'cancelled' }));
+    await runJob();
+    assert.equal((await read('moved')).reminderSentFor, start);
+    assert.equal((await read('cancelled')).reminderSentFor, undefined);
+  });
+});
+
+describe('playoff brackets', () => {
+  const LEVEL = 'gold';
+  const auth = (uid) => ({ uid, token: { email: `${uid}@example.com`, email_verified: true } });
+  const call = (fn, uid, data) => functions[fn].run({ auth: auth(uid), data, rawRequest: {} });
+  const bracketDoc = (id) => db.collection('divisions').doc(DIVISION).collection('playoffBrackets').doc(id);
+  const readBracket = async (id) => (await bracketDoc(id).get()).data();
+  const readMatch = async (id) => (await db.collection('matches').doc(id).get()).data();
+
+  async function seedLevel(matchType = 'singles') {
+    await db.collection('divisions').doc(DIVISION).collection('levels').doc(LEVEL).set({ name: 'Gold', matchType });
+  }
+
+  /** Confirms a playoff match for one side and runs the advancement trigger. */
+  async function win(matchId, side) {
+    const before = await readMatch(matchId);
+    const after = { ...before, status: 'completed', winner: side, liveScore: finalScore };
+    await db.collection('matches').doc(matchId).set(after);
+    await functions.onPlayoffMatchUpdate.run(writeEvent(matchId, before, after));
+  }
+
+  const publish = (playerIds, extra = {}) =>
+    call('publishPlayoffBracket', 'leader', {
+      divisionId: DIVISION,
+      seasonId: SEASON,
+      divisionLevelId: LEVEL,
+      name: 'Fall playoffs',
+      playerIds,
+      ...extra,
+    });
+
+  it('seeds a bracket, keeps it out of the standings, and plays it through to a champion', async () => {
+    await seedPlayers(['p1', 'p2', 'p3', 'p4']);
+    await seedLevel();
+    const startAt = Date.now() + 24 * 60 * 60 * 1000;
+    const result = await publish(['p1', 'p2', 'p3', 'p4'], { startAt, intervalDays: 7 });
+    assert.equal(result.matchesCreated, 2);
+    assert.equal(result.totalRounds, 2);
+
+    let bracket = await readBracket(result.bracketId);
+    assert.equal(bracket.status, 'in_progress');
+    const semi1 = bracket.slots.r1s0;
+    const semi2 = bracket.slots.r1s1;
+    assert.deepEqual([semi1.player1Id, semi1.player2Id], ['p1', 'p4']);
+    assert.deepEqual([semi2.player1Id, semi2.player2Id], ['p2', 'p3']);
+
+    const firstSemi = await readMatch(semi1.matchId);
+    assert.equal(firstSemi.status, 'scheduled');
+    assert.equal(firstSemi.source, 'playoff');
+    assert.equal(firstSemi.isDivisionMatch, false, 'playoff results do not change the standings');
+    assert.equal(firstSemi.scheduledAt, startAt);
+    assert.deepEqual(firstSemi.playoff, { bracketId: result.bracketId, round: 1, slot: 0, totalRounds: 2 });
+
+    await win(semi1.matchId, 'player2');
+    bracket = await readBracket(result.bracketId);
+    assert.equal(bracket.slots.r1s0.winnerId, 'p4');
+    assert.equal(bracket.slots.r2s0.player1Id, 'p4');
+    assert.equal(bracket.slots.r2s0.matchId, undefined, 'the final waits for the other semifinal');
+
+    await win(semi2.matchId, 'player1');
+    bracket = await readBracket(result.bracketId);
+    const finalId = bracket.slots.r2s0.matchId;
+    assert.ok(finalId, 'the final is created once both finalists are known');
+    const final = await readMatch(finalId);
+    assert.deepEqual(final.playerIds, ['p4', 'p2']);
+    assert.equal(final.scheduledAt, startAt + 7 * 24 * 60 * 60 * 1000);
+
+    await win(finalId, 'player2');
+    bracket = await readBracket(result.bracketId);
+    assert.equal(bracket.status, 'completed');
+    assert.equal(bracket.championId, 'p2');
+  });
+
+  it('gives the top seeds byes', async () => {
+    await seedPlayers(['p1', 'p2', 'p3']);
+    await seedLevel();
+    const result = await publish(['p1', 'p2', 'p3']);
+    assert.equal(result.matchesCreated, 1);
+    const bracket = await readBracket(result.bracketId);
+    assert.equal(bracket.slots.r1s0.bye, true);
+    assert.equal(bracket.slots.r2s0.player1Id, 'p1');
+  });
+
+  it('ignores a repeated trigger and a match that is not the slot\'s', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevel();
+    const result = await publish(['p1', 'p2']);
+    const bracket = await readBracket(result.bracketId);
+    const finalId = bracket.slots.r1s0.matchId;
+
+    const forged = { ...(await readMatch(finalId)), status: 'completed', winner: 'player2' };
+    await functions.onPlayoffMatchUpdate.run(writeEvent('other', { ...forged, status: 'scheduled' }, forged));
+    assert.equal((await readBracket(result.bracketId)).status, 'in_progress');
+
+    await win(finalId, 'player1');
+    const before = await readMatch(finalId);
+    await functions.onPlayoffMatchUpdate.run(
+      writeEvent(finalId, { ...before, status: 'pending_report' }, { ...before, winner: 'player2' }),
+    );
+    assert.equal((await readBracket(result.bracketId)).championId, 'p1');
+  });
+
+  it('refuses players and callers from outside the division, and doubles levels', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevel();
+    await db.collection('users').doc('outsider').set({ id: 'outsider', role: 'player', divisionId: 'other' });
+    await assert.rejects(publish(['p1', 'outsider']), { code: 'failed-precondition' });
+    await assert.rejects(
+      call('publishPlayoffBracket', 'p1', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: LEVEL, playerIds: ['p1', 'p2'] }),
+      { code: 'permission-denied' },
+    );
+    await assert.rejects(publish(['p1']), { code: 'invalid-argument' });
+    await seedLevel('doubles');
+    await assert.rejects(publish(['p1', 'p2']), { code: 'failed-precondition' });
+  });
+
+  it('cancels the matches not yet played when a leader cancels the playoff', async () => {
+    await seedPlayers(['p1', 'p2', 'p3', 'p4']);
+    await seedLevel();
+    const result = await publish(['p1', 'p2', 'p3', 'p4']);
+    const bracket = await readBracket(result.bracketId);
+    await win(bracket.slots.r1s0.matchId, 'player1');
+    const cancelled = await call('cancelPlayoffBracket', 'leader', { divisionId: DIVISION, bracketId: result.bracketId });
+    assert.equal(cancelled.matchesCancelled, 1);
+    assert.equal((await readMatch(bracket.slots.r1s1.matchId)).status, 'cancelled');
+    assert.equal((await readMatch(bracket.slots.r1s0.matchId)).status, 'completed');
+    assert.equal((await readBracket(result.bracketId)).status, 'cancelled');
+  });
+});

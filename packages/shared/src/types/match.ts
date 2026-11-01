@@ -132,6 +132,14 @@ export interface LiveScore {
   player2SetsWon: number;
 }
 
+/** A playoff match's place in its bracket. Rounds count from 1, slots from 0. */
+export interface MatchPlayoff {
+  bracketId: string;
+  round: number;
+  slot: number;
+  totalRounds: number;
+}
+
 export interface ScoreAction {
   id: string;
   type: 'point' | 'undo';
@@ -264,7 +272,18 @@ export interface Match {
    * a request whose reply was lost cannot count its point twice.
    */
   lastPointId?: string;
-  source?: 'live' | 'manual' | 'schedule';
+  source?: 'live' | 'manual' | 'schedule' | 'playoff';
+  /**
+   * Where a playoff match sits in its bracket. Only `publishPlayoffBracket` and
+   * the bracket advancement trigger write it, and playoff matches carry
+   * `isDivisionMatch: false`, so they never count in the regular standings.
+   */
+  playoff?: MatchPlayoff;
+  /**
+   * The `scheduledAt` the last reminder was sent for. `sendMatchReminders`
+   * writes it, so a postponed match (a new `scheduledAt`) is reminded again.
+   */
+  reminderSentFor?: number;
   isDivisionMatch?: boolean;  // Whether this match counts toward division rankings
   createdBy: string;
   scheduledAt?: number;

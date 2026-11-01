@@ -428,6 +428,13 @@ export async function scorePoint(
    * is safe: the server ignores a repeat of the last point it applied.
    */
   pointId?: string,
+  /**
+   * How long to wait for the server, in milliseconds. The SDK's default is 70
+   * seconds; a scorer on court with a weak signal is better served by failing
+   * sooner and keeping the point on the device (a retry with the same
+   * `pointId` cannot count it twice).
+   */
+  timeoutMs?: number,
 ): Promise<{
   nextScore: LiveScore;
   matchWinner?: 'player1' | 'player2';
@@ -436,7 +443,7 @@ export async function scorePoint(
   const callable = httpsCallable<
     { matchId: string; scorer: 'player1' | 'player2'; pointAttribution?: PointAttribution; pointId?: string },
     { nextScore: LiveScore; matchWinner?: 'player1' | 'player2'; tips: TipTrigger[] }
-  >(functions, 'scoreMatchPoint');
+  >(functions, 'scoreMatchPoint', timeoutMs ? { timeout: timeoutMs } : undefined);
   const result = await callable({
     matchId,
     scorer,

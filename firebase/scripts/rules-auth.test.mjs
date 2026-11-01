@@ -770,10 +770,19 @@ describe('leader authority', () => {
     await assertFails(updateDoc(leader, { seasonId: 's2' }));
     await assertFails(updateDoc(leader, { divisionLevelId: 'lvl' }));
     await assertFails(updateDoc(leader, { side1: { playerIds: ['p1', 'p2'] } }));
+    // The bracket trigger advances whoever wins a match carrying `playoff`.
+    await assertFails(updateDoc(leader, { playoff: { bracketId: 'b', round: 1, slot: 0, totalRounds: 1 } }));
     await assertFails(
       updateDoc(leader, { ...completed, player2Id: 'leader', playerIds: ['p1', 'leader'] }),
     );
     await assertSucceeds(updateDoc(leader, completed));
+  });
+
+  it('lets division members read playoff brackets, and nobody write them', async () => {
+    await seed((db) => setDoc(doc(db, 'divisions', DIVISION, 'playoffBrackets', 'b1'), { name: 'Playoffs' }));
+    await assertSucceeds(getDoc(doc(as('p1'), 'divisions', DIVISION, 'playoffBrackets', 'b1')));
+    await assertFails(getDoc(doc(as('outsider'), 'divisions', DIVISION, 'playoffBrackets', 'b1')));
+    await assertFails(setDoc(doc(as('leader'), 'divisions', DIVISION, 'playoffBrackets', 'b2'), { name: 'x' }));
   });
 
   it('lets a leader rename their division but not change its leaders or roster', async () => {

@@ -57,7 +57,10 @@ export function useNotifications(userId: string | null | undefined) {
         data.type === 'appeal_requested' ||
         data.type === 'appeal_decided' ||
         data.type === 'match_accepted' ||
-        data.type === 'match_proposed'
+        data.type === 'match_proposed' ||
+        data.type === 'match_reminder' ||
+        data.type === 'playoff_match_ready' ||
+        data.type === 'playoff_completed'
       );
       if (goToMatch) {
         router.push(`/match/${data.matchId}` as never);

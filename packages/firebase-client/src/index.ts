@@ -12,6 +12,7 @@ export * from "./feedback";
 export * from "./account";
 export * from "./moderation";
 export * from "./schedule";
+export * from "./playoffs";
 export * from "./hooks/useMatch";
 export * from "./hooks/useRankings";
 export * from "./hooks/useDoublesRankings";

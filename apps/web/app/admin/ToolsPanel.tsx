@@ -17,6 +17,8 @@ import { CheckboxRow, Field, plural } from "./AdminParts";
 import { DAY_MS, REPORT_REASON_LABELS, type AdminSeason, type ToolPanel } from "./adminModel";
 import { styles } from "./adminStyles";
 import css from "./admin.module.css";
+import { PlayoffsPanel } from "./PlayoffsPanel";
+import type { PlayoffAdmin } from "./usePlayoffAdmin";
 
 type ExportType = "matches" | "rankings";
 
@@ -85,6 +87,9 @@ export type ToolsPanelProps = {
   setRrMessage: (message: string) => void;
   handleRrGeneratePreview: () => void;
   requestRrPublish: () => void;
+  // Playoffs
+  playoffs: PlayoffAdmin;
+  playoffsHeadingRef: RefObject<HTMLHeadingElement | null>;
 };
 
 export function ToolsPanel({
@@ -142,6 +147,8 @@ export function ToolsPanel({
   setRrMessage,
   handleRrGeneratePreview,
   requestRrPublish,
+  playoffs,
+  playoffsHeadingRef,
 }: ToolsPanelProps): React.JSX.Element {
   return (
     <div role="tabpanel" id="admin-panel-tools" aria-labelledby="admin-tab-tools">
@@ -208,6 +215,23 @@ export function ToolsPanel({
             aria-controls="admin-scheduler-panel"
           >
             {openToolPanel === "scheduler" ? "Close scheduler" : "Open scheduler"}
+          </Button>
+        </section>
+
+        <section style={styles.toolCard} aria-labelledby="tool-playoffs-title">
+          <h2 id="tool-playoffs-title" style={styles.toolTitle}>Playoffs</h2>
+          <p style={styles.toolDesc}>
+            {playoffs.brackets.some((bracket) => bracket.status === "in_progress")
+              ? `${plural(playoffs.brackets.filter((bracket) => bracket.status === "in_progress").length, "playoff", "playoffs")} under way for ${adminSeason.name}.`
+              : "Seed an end-of-season knockout from a level's standings."}
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() => toggleToolPanel("playoffs")}
+            aria-expanded={openToolPanel === "playoffs"}
+            aria-controls="admin-playoffs-panel"
+          >
+            {openToolPanel === "playoffs" ? "Close playoffs" : "Open playoffs"}
           </Button>
         </section>
 
@@ -353,6 +377,10 @@ export function ToolsPanel({
             </ul>
           )}
         </section>
+      ) : null}
+
+      {openToolPanel === "playoffs" ? (
+        <PlayoffsPanel playoffs={playoffs} seasonName={adminSeason.name} headingRef={playoffsHeadingRef} />
       ) : null}
 
       {openToolPanel === "scheduler" ? (
