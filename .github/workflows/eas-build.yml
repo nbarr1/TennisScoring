@@ -22,6 +22,14 @@ on:
           - production
           - wear
           - wear-production
+      submit:
+        description: >-
+          Release targets only: upload the finished AAB to Google Play as a draft
+          internal-testing release (production -> internal, wear-production ->
+          wear:internal). Needs the Google service account key stored in EAS.
+        required: false
+        default: false
+        type: boolean
 
 # Never cancel a build that has started. GitHub keeps at most one pending run
 # per group, so a further dispatch of the same target while one is pending
@@ -94,21 +102,38 @@ jobs:
         # Run with --stacktrace option to get the stack trace.
         # Run with --info or --debug option to get more log output.
         # Run with --scan to get full insights.
+      # --auto-submit uses the submit profile named after the build profile in
+      # eas.json. Preview profiles have none and are never submitted. The
+      # Google service account key lives in EAS (eas credentials), not here; a
+      # build that succeeds with a failed submission still appears in the Expo
+      # dashboard and can be submitted again with `eas submit`.
       - working-directory: apps/mobile
-        run: eas build --platform android --profile "${{ steps.profile.outputs.name }}" --non-interactive
         env:
+          PROFILE: ${{ steps.profile.outputs.name }}
+          SUBMIT: ${{ inputs.submit }}
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
           EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+        run: |
+          args=(--platform android --profile "$PROFILE" --non-interactive)
+          if [ "$SUBMIT" = "true" ]; then
+            if [ "$PROFILE" != "production" ] && [ "$PROFILE" != "wear-production" ]; then
+              echo "::error::submit is only for the production and wear-production targets, not $PROFILE."
+              exit 1
+            fi
+            args+=(--auto-submit)
+          fi
+          eas build "${args[@]}"
       - name: Build summary
         run: |
           {
             echo "## EAS Build Metadata"
             echo "- Commit: $GITHUB_SHA"
             echo "- Profile: ${{ steps.profile.outputs.name }}"
+            echo "- Submitted to Google Play: ${{ inputs.submit && 'requested (draft)' || 'no' }}"
             echo "- Android versionCode: $(node -p "require('./apps/mobile/app.json').expo.android.versionCode")"
             echo "- Event: $GITHUB_EVENT_NAME"
             echo ""

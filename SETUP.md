@@ -309,6 +309,19 @@ Optional GitHub Actions variables:
 - `EXPO_TOKEN`
 - The `NEXT_PUBLIC_FIREBASE_*` repository secrets, which the workflow maps to `EXPO_PUBLIC_FIREBASE_*` environment variables.
 
+### Google Play submission from EAS
+
+Tick `submit` when you dispatch `production` or `wear-production` to have EAS upload the finished AAB to Google Play (`eas build --auto-submit`). The submit profiles in `apps/mobile/eas.json` send the phone bundle to the `internal` track and the watch bundle to the Wear OS internal track (`wear:internal`), both as **draft** releases, so nothing reaches testers until you roll the release out in Play Console. Dispatching `submit` with a preview target fails before any build starts.
+
+One-time setup:
+
+1. Upload the first AAB for `com.companytennisleague.app` by hand in Play Console. The Play Developer API can't create an app's first release.
+2. Add Wear OS under the app's form factors in Play Console, so the `wear:internal` track exists.
+3. Create a Google Cloud service account, invite it in Play Console (**Users and permissions**) with permission to release to testing tracks, and download its JSON key.
+4. From `apps/mobile`, run `eas credentials --platform android`, choose the production profile, and upload the key under **Google Service Account → Upload a Google Service Account Key** for submissions. EAS stores the key; it isn't kept in this repository or in GitHub secrets.
+
+`releaseStatus: "draft"` is deliberate: Play rejects any other status while the app itself is still a draft. Once the app is out of draft you can change it to `completed` to release to internal testers on upload. A failed submission doesn't fail the build; resubmit the build from the Expo dashboard or with `eas submit --platform android --profile <profile> --id <build id>`.
+
 ### Debug APK workflow
 
 `.github/workflows/debug-apk.yml` runs only on manual dispatch. It builds an installable, debug-signed `arm64-v8a` release APK with the real Firebase config from the same `NEXT_PUBLIC_FIREBASE_*` secrets, and uploads it as a workflow artifact for 14 days. It fails if the bundle still carries the `ci-placeholder` values that CI builds use. Uninstall any Play-signed or EAS-signed copy before installing it. The same run builds the Wear OS watch APK (`debug-wear-apk-<sha>`), signed with the same debug keystore. Install the phone and watch APKs from one run, because the phone and watch exchange scores only when they share a signing key.
