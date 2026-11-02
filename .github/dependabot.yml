@@ -35,6 +35,20 @@ updates:
       # being blocked by it, so keep majors out of the auto-bump entirely.
       - dependency-name: '@babel/core'
         update-types: ['version-update:semver-major']
+      # Expo SDK upgrades are manual. expo and its expo-* / @expo/* modules carry the SDK
+      # number as their major version, so a major bump is an SDK upgrade. Dependabot cannot
+      # do one: react-native must move with it to the version in expo/bundledNativeModules.json,
+      # and the react-native ignore above keeps it where it is. PR #398 (SDK 57 to 58) moved
+      # every expo package but left react-native on 0.86.2 (SDK 58 wants 0.88.1, with
+      # reanimated 4.7.1), so @expo/metro-runtime imported react-native/setup-env, which
+      # 0.86.2 doesn't have, and both mobile CI jobs failed.
+      # Upgrade the SDK by hand with `npx expo install expo@^<sdk> --fix`.
+      - dependency-name: 'expo'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'expo-*'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@expo/*'
+        update-types: ['version-update:semver-major']
     groups:
       # The Expo SDK constrains this whole set: react-native is pinned to an
       # exact version by expo, reanimated is bounded by the react-native-worklets
