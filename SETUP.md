@@ -1,6 +1,6 @@
 # TennisScoring Setup Guide
 
-This guide reflects version 1.2.0. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
+This guide reflects version 1.3.0. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
 
 ## Native client migration
 
@@ -195,6 +195,10 @@ pnpm --filter @tennis/firebase-functions build
 pnpm --filter @tennis/firebase-functions deploy
 ```
 
+Two functions run on a schedule: `sendMatchReminders` every hour and `autoConfirmExpiredReports` every day at 00:00 UTC. Scheduled functions need the Cloud Scheduler API enabled on the project; `firebase deploy` offers to enable it the first time.
+
+The targeted deploy leaves out `generateMatchReport` (match report PDFs), `onUserCreated`, `health`, and `readiness`. Only a full deploy ships them.
+
 See [firebase/DEPLOYMENT.md](./firebase/DEPLOYMENT.md) for IAM, Secret Manager, and targeted GitHub Actions deploy details.
 
 ---
@@ -223,7 +227,7 @@ The repository includes `apps/web/vercel.json`, which installs from the workspac
 
 Mobile app metadata in `apps/mobile/app.json` currently reads:
 
-- Expo version: `1.2.0`
+- Expo version: `1.3.0`
 - iOS build number: `6` (the EAS `production` profile auto-increments it)
 - Android version code: `6` in the file. Release builds from the EAS workflow replace it with `VERSION_CODE_OFFSET + github.run_number` (see [EAS Android workflow](#eas-android-workflow)).
 - Android application ID (Google Play package name): `com.companytennisleague.app`
@@ -244,6 +248,8 @@ pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client buil
 ```
 
 Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and leaves the signing config unset in `apps/mobile/android/wear/build.gradle` so EAS-managed release signing applies (register the Wear module's release keystore with `eas credentials --platform android`, run from `apps/mobile`, before the first `wear-production` build). The GitHub Actions `EAS Build (Android APKs)` workflow builds the mobile preview APK, the phone release bundle, the Wear OS preview APK, or the Wear OS production bundle through the `target` input (`mobile`, `production`, `wear`, `wear-production`).
+
+`:wear` sets `compileSdk` and `targetSdk` 35 in `apps/mobile/android/wear/build.gradle`. `:app` takes its SDK levels from the React Native Gradle plugin's defaults rather than from a value in this repository. Check the Play Console's target API warning on the first upload of each.
 
 `:app` and `:wear` share an `applicationId` (see the comment in `apps/mobile/android/wear/build.gradle`), so both can live under one Play Store listing. `:wear` takes its `versionCode` as `1000000 +` the phone's, which keeps the two distinct.
 
@@ -309,6 +315,12 @@ Optional GitHub Actions variables:
 
 ---
 
+### Uptime check workflow
+
+`.github/workflows/uptime.yml` requests the web app's `/api/health` and `/api/readiness` every hour and fails when either does not answer 200, which emails the person who last changed its schedule. It reads the origin from the `UPTIME_BASE_URL` repository variable, or from `APP_BASE_URL` when that is unset. [docs/operations.md](./docs/operations.md) covers it with Firestore backups, deploy approvals, error alerts, and rollback.
+
+---
+
 ## 9. Version 1 Baseline Commands
 
 After setup, use these commands to confirm a working baseline before feature work:
@@ -354,7 +366,7 @@ Doubles ranking and head-to-head document IDs are opaque implementation details.
 
 Division leaders can use the Admin screen in both the web and mobile apps to document season-specific division levels. Seasons use canonical IDs such as `spring-2026` and `fall-2026`, and levels record the season, skill level, singles/doubles match type, optional description, ranking flag, and active flag under `divisions/{divisionId}/levels`.
 
-On the web, `/admin` picks the season once in the page header and scopes the whole page to it. Division levels live on the **Divisions** tab; the roster, player creation, and division assignment live on the **Roster** tab; the round-robin scheduler, reported-message queue, ranking repair, and CSV exports live on the **Tools** tab.
+On the web, `/admin` picks the season once in the page header and scopes the whole page to it. Division levels live on the **Divisions** tab; the roster, player creation, and division assignment live on the **Roster** tab; the round-robin scheduler, playoffs, reported-message queue, ranking repair, and CSV exports live on the **Tools** tab.
 
 Assigning a player to a division level calls `upsertDivisionMembership`, which requires a level. Moving a player back to "Unassigned", or removing them from a season on the roster, calls `removeDivisionMembership`, which marks the season's rostered membership documents (`active` and `waitlisted`) `status: 'removed'` rather than deleting them. Deploy `removeDivisionMembership` alongside a release that ships this admin page, or both actions fail with `functions/not-found`; it is exported from `firebase/src/targetedDeployIndex.ts` and listed in `.github/workflows/deploy-firebase-function.yml`, so the targeted deploy workflow ships it. Adding a callable means adding it in **three** places: the export in `targetedDeployIndex.ts`, and both the `FILTERS` and `DEPLOY_FUNCTIONS` lists in the workflow. The workflow's "verify deploy filters exist in targeted bundle" step only checks the names it is given, so a function missing from the lists passes CI and then fails in production with `functions/not-found`.
 

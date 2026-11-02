@@ -1,0 +1,74 @@
+name: Uptime check
+
+# Polls the live web app's health and readiness endpoints once an hour and fails when either
+# does not answer 200. A failed scheduled run emails whoever last changed this schedule (and
+# anyone watching the repository's Actions), which is the alert: there is no paging service.
+#
+# - /api/health answers 200 whenever the Next.js server is up.
+# - /api/readiness answers 503 when any of the Firebase or session-cookie variables the web
+#   app needs is missing from the deployment, so a deploy that lost its environment shows up
+#   here instead of as signed-in users bounced to /login.
+#
+# Neither endpoint touches Firestore or Cloud Functions, so this does not catch a Firebase
+# outage; see docs/operations.md for what it covers and what it does not.
+#
+# GitHub disables scheduled workflows in a public repository after 60 days with no commits.
+# Re-enable it from the Actions tab if that happens. Scheduled runs can also start several
+# minutes late under load, so treat this as an hourly check, not a precise one.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the health and readiness endpoints
+        env:
+          # UPTIME_BASE_URL wins when set, for a site whose public origin differs from the one
+          # invite links use. Otherwise this reuses APP_BASE_URL, the origin the Functions
+          # deploy already requires.
+          BASE_URL: ${{ vars.UPTIME_BASE_URL || vars.APP_BASE_URL }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          if [[ -z "$base" ]]; then
+            echo "::error::Set the UPTIME_BASE_URL or APP_BASE_URL repository variable to the web app's https:// origin."
+            exit 1
+          fi
+          if [[ "$base" != https://* ]]; then
+            echo "::error::The base URL must start with https://."
+            exit 1
+          fi
+
+          failed=0
+          for path in /api/health /api/readiness; do
+            # Three attempts, 20 seconds apart, so one slow cold start is not an alert.
+            status=000
+            for attempt in 1 2 3; do
+              rm -f /tmp/body.json
+              status="$(curl -sS -o /tmp/body.json -w '%{http_code}' --max-time 20 "$base$path" || true)"
+              if [[ "$status" == 200 ]]; then break; fi
+              if [[ "$attempt" -lt 3 ]]; then sleep 20; fi
+            done
+            body="$(head -c 300 /tmp/body.json 2>/dev/null | tr -s '\r\n' ' ' || true)"
+            if [[ "$status" == 200 ]]; then
+              echo "$path: 200 $body"
+              echo "- \`$path\`: 200" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::$path answered $status after three attempts. Body: $body"
+              echo "- \`$path\`: **$status**" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          done
+          exit "$failed"

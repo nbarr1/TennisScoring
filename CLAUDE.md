@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Full-stack tennis league scoring application (currently at version 1.2.0, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
+Full-stack tennis league scoring application (currently at version 1.3.0, built on the `v1.0.0` baseline) with real-time scoring, ranking calculations, match report workflows, division/player management, feedback submission, and native wearable support (Apple Watch + Wear OS). pnpm + Turbo monorepo with a Next.js web app, Expo mobile app, Firebase client package, shared domain package, and Firebase backend.
 
 **Prerequisites:** Node.js 22, pnpm 9.15.5+, Firebase CLI, and EAS CLI.
 
@@ -14,7 +14,7 @@ Full-stack tennis league scoring application (currently at version 1.2.0, built 
 ## Versioning
 
 - Treat `v1.0.0` as the first functional/deployable repository baseline; a Git tag named `v1.0.0` should point at the baseline commit.
-- The root `package.json` and all five workspace packages currently carry version `1.2.0` and are bumped together — never let them drift apart.
+- The root `package.json` and all five workspace packages currently carry version `1.3.0` and are bumped together — never let them drift apart.
 - Update README, SETUP, VERSION_1_BASELINE, CHANGELOG, and package/app version markers whenever a feature changes setup, deployment, data shape, or user-visible capabilities.
 
 ## Commands
@@ -518,6 +518,8 @@ The mobile jobs use deliberate `ci-placeholder` values for the `EXPO_PUBLIC_FIRE
 **Code scanning runs through GitHub's default setup**, configured in the repository's settings rather than from a workflow file, and it analyzes JavaScript/TypeScript, Python, and Actions. There is deliberately no `codeql.yml`: an advanced CodeQL workflow cannot upload results while default setup is enabled (`CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled`), so the one this repository used to carry failed every single run. To move to an advanced configuration — for custom queries or a `codeql-config.yml` — turn default setup off in **Settings → Code security** first, then add the workflow; running both is what breaks.
 
 `.github/workflows/debug-apk.yml` — manual (`workflow_dispatch`) build of an installable Android APK for field debugging. `mobile_native` compiles the `ci-placeholder` Firebase values into its bundle, so its APK cannot sign in; this workflow assembles the same `arm64-v8a` release APK with the real config from the `NEXT_PUBLIC_FIREBASE_*` repository secrets, signed with the debug keystore, fails if the bundle still contains `ci-placeholder`, and uploads the APK as an artifact kept for 14 days. It also builds the `:wear` watch APK with the same debug keystore and uploads it as a second artifact, the one way to get an installable watch build when the Expo account's monthly EAS quota is spent; the phone and watch exchange scores only when both come from the same run, since the Data Layer requires a shared signing key. A debug-signed APK cannot upgrade a Play-signed or EAS-signed install, so uninstall that first. It is dispatch-only so secrets never reach a pull request.
+
+`.github/workflows/uptime.yml` requests the live web app's `/api/health` and `/api/readiness` every hour (origin from the `UPTIME_BASE_URL` repository variable, else `APP_BASE_URL`) and fails when either doesn't answer 200; a failed scheduled run emails whoever last changed its `cron` line, which is the only alert. It reads no Firestore and calls no function. `docs/operations.md` is the runbook for it, Firestore backups, the `staging` environment's approvals, error alerts, and rollback.
 
 `.github/workflows/native-mobile.yml` is the macOS-only part of CI: the `TennisKit` Swift tests and `scripts/ios-typecheck.sh`, on pull requests and `Main` pushes touching `apps/mobile/ios/**` or the parity fixture.
 
