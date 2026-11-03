@@ -99,6 +99,14 @@ Changes since `v1.2.0` are listed in `CHANGELOG.md` under `[1.3.0]`. The main on
 
 ---
 
+## Update — 2026-11-03 (`v1.3.1`)
+
+Changes since `v1.3.0` are listed in `CHANGELOG.md` under `[1.3.1]`. The main ones are the Android launcher icon, a signed Wear OS release bundle, Google Play submission from the EAS workflow, and a full-scope option for the Functions deploy workflow. Nothing in the web app, the Firestore rules, or the shared scoring and ranking logic changed.
+
+- **Version markers**: root, `apps/web`, `apps/mobile`, `packages/shared`, `packages/firebase-client`, and `firebase` package manifests moved to `1.3.1`; `apps/mobile/app.json` moved to `version: 1.3.1`. Android `versionCode` comes from the EAS workflow's run number for release builds.
+
+---
+
 ## Summary
 
 Version 1.0.0 is the first documented, functional, deployable baseline for TennisScoring. The repository contains working web, mobile, Firebase backend, shared-domain, Firebase-client, and wearable companion code. This baseline is intended to be the rollback/reference point for future features.

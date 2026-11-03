@@ -2,12 +2,18 @@
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-11-03
+
 ### Added
 - The Android app has a real launcher icon: a tennis ball on Clubhouse Green, the same mark as the web favicon. The icon files were a single flat green square, so the launcher showed a blank tile. The adaptive icon's foreground is now transparent and sits inside the safe zone, and a monochrome layer gives Android 13+ themed icons a ball silhouette instead of a generated shape. `app.json`'s notification icon points at the white silhouette, as Android requires.
 - The EAS Build workflow can upload release bundles to Google Play. Tick `submit` when dispatching `production` or `wear-production`, and EAS sends the phone AAB to the internal testing track and the watch AAB to the Wear OS internal testing track, both as draft releases. It needs a Google service account key stored in EAS; see SETUP.md.
 
 ### Fixed
 - The `wear-production` EAS build signs the Wear OS bundle. EAS adds its release signing to the phone module only, so the watch AAB came out unsigned and Google Play refused the upload. The watch module now signs with the same EAS keystore as the phone app.
+
+### Changed
+- The **Deploy Firebase Functions (targeted)** workflow has a `scope` input. `full` builds `firebase/src/fullDeployIndex.ts` (`build:full-deploy`) and deploys every function, including `generateMatchReport`, `health`, and `readiness`, which the targeted deploy leaves out. `onUserCreated` is left out of that bundle unless `include_on_user_created` is ticked, which refuses to run without an `ALLOWED_EMAIL_DOMAIN` repository variable, because `firebase deploy` stops on the function's unset param even when it isn't selected, and a blank domain rejects every sign-up.
+- Bumped the root and all five workspace packages, and `apps/mobile/app.json`, to `1.3.1`.
 
 ## [1.3.0] — 2026-11-02
 
