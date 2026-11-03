@@ -1,6 +1,6 @@
 # TennisScoring Setup Guide
 
-This guide reflects version 1.3.0. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
+This guide reflects version 1.3.1. The app uses Firebase email/password authentication, Firestore, Storage, Cloud Functions, Firebase Cloud Messaging, Next.js, Expo/EAS, and pnpm/Turborepo.
 
 ## Native client migration
 
@@ -227,7 +227,7 @@ The repository includes `apps/web/vercel.json`, which installs from the workspac
 
 Mobile app metadata in `apps/mobile/app.json` currently reads:
 
-- Expo version: `1.3.0`
+- Expo version: `1.3.1`
 - iOS build number: `6` (the EAS `production` profile auto-increments it)
 - Android version code: `6` in the file. Release builds from the EAS workflow replace it with `VERSION_CODE_OFFSET + github.run_number` (see [EAS Android workflow](#eas-android-workflow)).
 - Android application ID (Google Play package name): `com.companytennisleague.app`
