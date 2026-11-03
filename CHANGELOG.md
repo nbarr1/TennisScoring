@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [1.3.0] — 2026-11-02
+## [1.3.0] — 2026-11-03
 
 ### Added
 - Match reminders. About a day before a scheduled match, each player gets a push notification naming their opponent and how long until it starts. A scheduled function, `sendMatchReminders`, runs every hour, so the reminder arrives 23 to 24 hours ahead (or on the next run for a match scheduled less than a day out). Each match is reminded once per start time, so postponing it sends a new reminder. Tapping the notification opens the match.
@@ -16,6 +16,7 @@
 - An hourly uptime check (`.github/workflows/uptime.yml`) requests the web app's `/api/health` and `/api/readiness` and fails, which emails the maintainer, when either doesn't answer 200. `docs/operations.md` is a runbook for it, Firestore point-in-time recovery and scheduled backups, approvals on the `staging` deploy environment, Cloud Functions error alerts, the ranking rebuild after a release, and rollback.
 
 ### Fixed
+- EAS builds install with pnpm again. A stray root `package-lock.json`, committed on October 19, made EAS choose npm (it checks for npm's lockfile before pnpm's), so `npm ci` installed only the root devDependencies and every build since stopped at "Read app config" with "The `expo` package was not found". The file is removed and ignored, and CI's `lint_typecheck` job fails when any npm, Yarn, or Bun lockfile is committed.
 - The web profile page no longer fails for an account that has no `users/{uid}` document. Sign-up relies on the `onUserCreated` blocking function to write it, and that function runs only on a project with Identity Platform enabled, so an account that had not yet joined a division or accepted an invite had none and saw "Couldn't load your profile." The page now creates the document through the create the Firestore rules already allow (`ensureOwnUserDocument()`). When the profile still can't load, the message says why (this browser isn't signed in, the read failed, or the create was refused) and gives the Firestore error code.
 - A result recorded with no division level no longer disappears from its level's match list and standings. The web forms defaulted the level to "No division level" whenever the recorder (or, for a leader, the first player) had no membership in the selected season, so the match was stored with a season but no `divisionLevelId`: the matches page's level filter left it out, and the ranking recalculation counted it in a level-less bucket that no level's standings read. The web forms now require a level when the season has any, as the mobile app already did. `recordHistoricMatch` and `recordMatchOnBehalf` fill a missing level with the one level both players are rostered in that season. **To repair results already saved without a level, use Rebuild rankings on the admin Tools tab**: it files each completed singles result under the level both players share that season and rebuilds the standings.
 
