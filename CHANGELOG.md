@@ -5,6 +5,9 @@
 ### Changed
 - The Functions deploy workflow has a **scope** input. `targeted`, the default and what a push runs, deploys the same list as before. `full` builds `firebase/src/index.ts` and deploys every function it exports, which adds `generateMatchReport` (match report PDFs), `health`, and `readiness`. `onUserCreated` is deployed only when **include_on_user_created** is ticked and the `ALLOWED_EMAIL_DOMAIN` repository variable is set, which the workflow now also writes to the Functions params. The two copies of the targeted list (`FILTERS` and `DEPLOY_FUNCTIONS`) are one list, `TARGETED`.
 
+### Fixed
+- A full Functions deploy without `onUserCreated` failed with "In non-interactive mode but have no value for the following environment variables: ALLOWED_EMAIL_DOMAIN", because `firebase deploy` resolves the params of every function in the bundle, including ones left out of `--only`. That deploy now builds `firebase/src/fullDeployIndex.ts`, which leaves `onUserCreated` out of the bundle, and `index.ts` adds it back.
+
 ## [1.3.0] — 2026-11-03
 
 ### Added
