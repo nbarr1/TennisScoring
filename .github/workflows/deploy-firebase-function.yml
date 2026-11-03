@@ -6,9 +6,10 @@ name: Deploy Firebase Functions (targeted)
 # production credentials exist.
 #
 # A push deploys the targeted bundle (firebase/src/targetedDeployIndex.ts and the function list
-# below). A dispatch with scope `full` builds firebase/src/index.ts instead and deploys every
-# function it exports, which adds generateMatchReport, health, and readiness. onUserCreated is
-# left out of a full deploy unless include_on_user_created is ticked: it is an Identity Platform
+# below). A dispatch with scope `full` builds firebase/src/fullDeployIndex.ts instead and deploys
+# every function it exports, which adds generateMatchReport, health, and readiness. onUserCreated
+# is left out of a full deploy unless include_on_user_created is ticked, which builds
+# firebase/src/index.ts (fullDeployIndex.ts plus onUserCreated): it is an Identity Platform
 # blocking function, so on a project without Identity Platform its deploy fails ("Blocking
 # Functions may only be configured for GCIP projects"), and with Identity Platform on, a blank
 # ALLOWED_EMAIL_DOMAIN makes it reject every sign-up.
@@ -81,9 +82,14 @@ jobs:
       - name: Build functions bundle
         run: |
           set -euo pipefail
-          # Both scripts write lib/index.js, so the bundle deployed is whichever ran last.
-          if [ "$SCOPE" = "full" ]; then
+          # Every script writes lib/index.js, so the bundle deployed is whichever ran last.
+          # firebase deploy resolves the params of every function in the bundle, not only the
+          # ones named in --only, so a full deploy without onUserCreated builds an entry that
+          # leaves it out. Otherwise the run stops on its unset ALLOWED_EMAIL_DOMAIN param.
+          if [ "$SCOPE" = "full" ] && [ "$INCLUDE_ON_USER_CREATED" = "true" ]; then
             pnpm --filter @tennis/firebase-functions build
+          elif [ "$SCOPE" = "full" ]; then
+            pnpm --filter @tennis/firebase-functions build:full-deploy
           else
             pnpm --filter @tennis/firebase-functions build:targeted-deploy
           fi
@@ -91,6 +97,7 @@ jobs:
         env:
           # A push has no inputs, so it deploys the targeted bundle.
           SCOPE: ${{ inputs.scope || 'targeted' }}
+          INCLUDE_ON_USER_CREATED: ${{ inputs.include_on_user_created || false }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
