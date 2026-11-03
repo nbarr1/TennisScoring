@@ -90,7 +90,7 @@ Changes since the `v1.1.0` snapshot are listed in `CHANGELOG.md` under `[1.2.0]`
 
 ---
 
-## Update — 2026-11-02 (`v1.3.0`)
+## Update — 2026-11-03 (`v1.3.0`)
 
 Changes since `v1.2.0` are listed in `CHANGELOG.md` under `[1.3.0]`. The main ones are match reminders and calendar files, offline scoring on mobile, single-elimination playoffs, the 48-hour report window with automatic confirmation, result appeals, "Load older messages", single-season ranking recalculation, and the public `/delete-account` page.
 

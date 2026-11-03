@@ -1,6 +1,13 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+# pnpm-lock.yaml is the only lockfile. EAS installs with npm when it finds a
+# package-lock.json at the workspace root, which breaks every mobile build.
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+bun.lock
+bun.lockb
 
 # Build outputs
 dist/
