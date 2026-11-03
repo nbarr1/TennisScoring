@@ -24,6 +24,18 @@ android {
     }
 
 
+    // EAS signs release builds by writing eas-build-inject-android-credentials.gradle
+    // into android/app and applying it from app/build.gradle only, so it never
+    // reaches this module: a wear-production bundle came out unsigned and Play
+    // refused it. Read the same credentials.json that script reads (EAS writes it
+    // to EAS_BUILD_WORKINGDIR for every build that has remote credentials). Both
+    // modules share an applicationId, so this is the phone's keystore, which is
+    // what Play requires of two artifacts in one listing.
+    def easWorkingDir = System.getenv('EAS_BUILD_WORKINGDIR')
+    def easCredentialsFile = easWorkingDir ? new File(easWorkingDir, 'credentials.json') : null
+    def easKeystore = (easCredentialsFile != null && easCredentialsFile.isFile()) ?
+        new groovy.json.JsonSlurper().parse(easCredentialsFile)?.android?.keystore : null
+
     signingConfigs {
         debug {
             storeFile file('../app/debug.keystore')
@@ -31,19 +43,31 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (easKeystore != null) {
+            release {
+                def keystoreFile = new File(easKeystore.keystorePath as String)
+                storeFile keystoreFile.isAbsolute() ? keystoreFile : new File(easWorkingDir, easKeystore.keystorePath as String)
+                storePassword easKeystore.keystorePassword
+                keyAlias easKeystore.keyAlias
+                // PKCS12 keystores have no separate key password; EAS's own script
+                // falls back to the keystore password the same way.
+                keyPassword easKeystore.containsKey('keyPassword') ? easKeystore.keyPassword : easKeystore.keystorePassword
+            }
+        }
     }
 
     buildTypes {
         release {
             // Mirrors :app/build.gradle: debug-sign only for internal-distribution
-            // profiles (wear-preview). A real Play submission (wear-production)
-            // leaves signingConfig unset so EAS-managed release signing
-            // (`eas credentials`) is applied instead — Play rejects debug-signed
-            // release builds.
+            // profiles (wear-preview). Otherwise sign with the EAS keystore when the
+            // build has one (wear-production). A local release build has neither and
+            // stays unsigned — Play rejects debug-signed and unsigned bundles alike.
             def allowDebugReleaseSigning = ((findProperty('android.allowDebugReleaseSigning') ?: 'false').toBoolean()) ||
                 ((System.getenv('EAS_BUILD_PROFILE') ?: '').toLowerCase() in ['preview', 'wear-preview'])
             if (allowDebugReleaseSigning) {
                 signingConfig signingConfigs.debug
+            } else if (easKeystore != null) {
+                signingConfig signingConfigs.release
             }
         }
     }

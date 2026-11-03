@@ -72,5 +72,21 @@
       "pnpm": "9.15.5",
       "environment": "production"
     }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "applicationId": "com.companytennisleague.app",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    },
+    "wear-production": {
+      "android": {
+        "applicationId": "com.companytennisleague.app",
+        "track": "wear:internal",
+        "releaseStatus": "draft"
+      }
+    }
   }
 }

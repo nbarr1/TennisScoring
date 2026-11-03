@@ -247,7 +247,7 @@ The `apps/mobile/eas.json` profiles run this prebuild command before cloud build
 pnpm --filter @tennis/shared build && pnpm --filter @tennis/firebase-client build
 ```
 
-Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and leaves the signing config unset in `apps/mobile/android/wear/build.gradle` so EAS-managed release signing applies (register the Wear module's release keystore with `eas credentials --platform android`, run from `apps/mobile`, before the first `wear-production` build). The GitHub Actions `EAS Build (Android APKs)` workflow builds the mobile preview APK, the phone release bundle, the Wear OS preview APK, or the Wear OS production bundle through the `target` input (`mobile`, `production`, `wear`, `wear-production`).
+Wear OS preview APK builds use the `wear-preview` EAS profile, which is debug-signed for internal distribution only — Play does not accept debug-signed release artifacts. A real Play submission uses the `wear-production` EAS profile instead, which builds an app bundle (`:wear:bundleRelease`) and signs it with the app's EAS-managed release keystore. EAS writes its signing config into `android/app` only, so `apps/mobile/android/wear/build.gradle` reads the same `credentials.json` EAS places in the build's working directory. Both modules share an application ID, so the watch bundle gets the phone's keystore, which Play requires for two bundles in one listing. No separate keystore is needed, but the phone's must already exist in EAS (`eas credentials --platform android`, run from `apps/mobile`). The GitHub Actions `EAS Build (Android APKs)` workflow builds the mobile preview APK, the phone release bundle, the Wear OS preview APK, or the Wear OS production bundle through the `target` input (`mobile`, `production`, `wear`, `wear-production`).
 
 `:wear` sets `compileSdk` and `targetSdk` 35 in `apps/mobile/android/wear/build.gradle`. `:app` takes its SDK levels from the React Native Gradle plugin's defaults rather than from a value in this repository. Check the Play Console's target API warning on the first upload of each.
 
@@ -308,6 +308,19 @@ Optional GitHub Actions variables:
 
 - `EXPO_TOKEN`
 - The `NEXT_PUBLIC_FIREBASE_*` repository secrets, which the workflow maps to `EXPO_PUBLIC_FIREBASE_*` environment variables.
+
+### Google Play submission from EAS
+
+Tick `submit` when you dispatch `production` or `wear-production` to have EAS upload the finished AAB to Google Play (`eas build --auto-submit`). The submit profiles in `apps/mobile/eas.json` send the phone bundle to the `internal` track and the watch bundle to the Wear OS internal track (`wear:internal`), both as **draft** releases, so nothing reaches testers until you roll the release out in Play Console. Dispatching `submit` with a preview target fails before any build starts.
+
+One-time setup:
+
+1. Upload the first AAB for `com.companytennisleague.app` by hand in Play Console. The Play Developer API can't create an app's first release.
+2. Add Wear OS under the app's form factors in Play Console, so the `wear:internal` track exists.
+3. Create a Google Cloud service account, invite it in Play Console (**Users and permissions**) with permission to release to testing tracks, and download its JSON key.
+4. From `apps/mobile`, run `eas credentials --platform android`, choose the production profile, and upload the key under **Google Service Account → Upload a Google Service Account Key** for submissions. EAS stores the key; it isn't kept in this repository or in GitHub secrets.
+
+`releaseStatus: "draft"` is deliberate: Play rejects any other status while the app itself is still a draft. Once the app is out of draft you can change it to `completed` to release to internal testers on upload. A failed submission doesn't fail the build; resubmit the build from the Expo dashboard or with `eas submit --platform android --profile <profile> --id <build id>`.
 
 ### Debug APK workflow
 
