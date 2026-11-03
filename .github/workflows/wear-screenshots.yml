@@ -1,0 +1,64 @@
+name: Wear OS screenshots
+
+# Renders the watch app's real screens (apps/mobile/android/wear) to PNGs for
+# the Play listing, with Robolectric's native graphics. See
+# apps/mobile/android/wear-screenshots/build.gradle for how. The images are
+# uploaded as an artifact kept for 14 days.
+#
+# It runs on a pull request that changes the watch UI, so a reviewer can see the
+# new screens, and by hand. It needs no secrets: the screens are fed sample
+# snapshots, not data from Firebase.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [Main, main]
+    paths:
+      - 'apps/mobile/android/wear/src/main/**'
+      - 'apps/mobile/android/wear-screenshots/**'
+      - '.github/workflows/wear-screenshots.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wear-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Render screens
+        run: gradle -p apps/mobile/android/wear-screenshots testDebugUnitTest --no-daemon --stacktrace
+      - name: List images
+        run: ls -la apps/mobile/android/wear-screenshots/build/shots
+      # TEMPORARY: lets the images be copied out of the job log. Remove before merge.
+      - name: Print images as base64
+        run: |
+          cd apps/mobile/android/wear-screenshots/build/shots
+          for f in *.png; do echo "BEGIN-PNG $f"; base64 -w 0 "$f"; echo; echo "END-PNG $f"; done
+      - name: Upload images
+        uses: actions/upload-artifact@v7
+        with:
+          name: wear-os-screenshots
+          path: apps/mobile/android/wear-screenshots/build/shots/
+          retention-days: 14
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wear-screenshots-reports
+          path: apps/mobile/android/wear-screenshots/build/reports/tests/
+          retention-days: 7
