@@ -80,7 +80,10 @@ class StoreScreenshots {
   }
 
   private fun shoot(name: String, prepare: (MainActivity) -> Unit) {
-    val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+    // Created, started, and attached, but not resumed: onResume asks the Data
+    // Layer for connected nodes, and with no Play services under Robolectric that
+    // request fails asynchronously and overwrites the status with NO PHONE.
+    val controller = Robolectric.buildActivity(MainActivity::class.java).create().start().postCreate(null).visible()
     val activity = controller.get()
     ShadowLooper.idleMainLooper()
     prepare(activity)
@@ -91,12 +94,13 @@ class StoreScreenshots {
     val h = metrics.heightPixels
     decor.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
     decor.layout(0, 0, w, h)
-    ShadowLooper.idleMainLooper()
+    // Let the scroll indicator that appears on attach fade, as it does on a watch.
+    ShadowLooper.idleMainLooper(3, java.util.concurrent.TimeUnit.SECONDS)
     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     decor.draw(Canvas(bitmap))
     FileOutputStream(File(out, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     println("Saved $name ${w}x$h")
-    controller.pause().stop().destroy()
+    controller.stop().destroy()
   }
 
   private fun MainActivity.render(payload: String) {
