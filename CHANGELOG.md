@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- The Android app has a real launcher icon: a tennis ball on Clubhouse Green, the same mark as the web favicon. The icon files were a single flat green square, so the launcher showed a blank tile. The adaptive icon's foreground is now transparent and sits inside the safe zone, and a monochrome layer gives Android 13+ themed icons a ball silhouette instead of a generated shape. `app.json`'s notification icon points at the white silhouette, as Android requires.
 - The EAS Build workflow can upload release bundles to Google Play. Tick `submit` when dispatching `production` or `wear-production`, and EAS sends the phone AAB to the internal testing track and the watch AAB to the Wear OS internal testing track, both as draft releases. It needs a Google service account key stored in EAS; see SETUP.md.
 
 ### Fixed
