@@ -5,6 +5,9 @@
 ### Added
 - The EAS Build workflow can upload release bundles to Google Play. Tick `submit` when dispatching `production` or `wear-production`, and EAS sends the phone AAB to the internal testing track and the watch AAB to the Wear OS internal testing track, both as draft releases. It needs a Google service account key stored in EAS; see SETUP.md.
 
+### Fixed
+- The `wear-production` EAS build signs the Wear OS bundle. EAS adds its release signing to the phone module only, so the watch AAB came out unsigned and Google Play refused the upload. The watch module now signs with the same EAS keystore as the phone app.
+
 ## [1.3.0] — 2026-11-02
 
 ### Added
