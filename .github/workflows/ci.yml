@@ -79,6 +79,18 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
+      # EAS picks the package manager from the lockfiles at the workspace root and
+      # checks npm before pnpm. A stray package-lock.json (one landed on October 19)
+      # made every EAS build run `npm ci` against it, which installed only the root
+      # devDependencies, so the build stopped at "Read app config" with "The `expo`
+      # package was not found". pnpm-lock.yaml must be the only lockfile.
+      - name: Reject lockfiles from other package managers
+        run: |
+          stray="$(git ls-files | grep -E '(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|bun\.lockb?)$' || true)"
+          if [ -n "$stray" ]; then
+            echo "::error::This pnpm workspace must not commit another package manager's lockfile. EAS would install with that manager instead of pnpm. Remove: $stray"
+            exit 1
+          fi
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Type check
