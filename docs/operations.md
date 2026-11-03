@@ -69,7 +69,7 @@ gcloud firestore databases restore \
 
 These flags match the `gcloud` releases current in 2026. Run each command with `--help` first if your `gcloud` is older. Backups and PITR both add storage charges, which the Firestore pricing page lists.
 
-Neither feature covers Cloud Storage, which holds the generated match report PDFs. Losing them isn't fatal, because `generateMatchReport` rebuilds a match's PDF when its `reportUrl` is cleared. That function is left out of the targeted Functions deploy (see [firebase/DEPLOYMENT.md](../firebase/DEPLOYMENT.md)), so it ships only with a full deploy.
+Neither feature covers Cloud Storage, which holds the generated match report PDFs. Losing them isn't fatal, because `generateMatchReport` rebuilds a match's PDF when its `reportUrl` is cleared. That function is left out of the targeted Functions deploy, so it ships only with a full deploy: dispatch **Deploy Firebase Functions (targeted)** with **scope** set to `full` (see [firebase/DEPLOYMENT.md](../firebase/DEPLOYMENT.md)).
 
 ## Deploy approvals
 

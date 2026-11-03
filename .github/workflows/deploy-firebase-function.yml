@@ -1,12 +1,32 @@
 name: Deploy Firebase Functions (targeted)
 
-# Deploys the targeted Functions bundle to the Firebase project configured for the GitHub
-# `staging` environment. There is no production job: promote by pointing the staging
-# environment's FIREBASE_PROJECT_ID at the target project, or add a second job with its own
-# environment once production credentials exist.
+# Deploys Cloud Functions to the Firebase project configured for the GitHub `staging`
+# environment. There is no production job: promote by pointing the staging environment's
+# FIREBASE_PROJECT_ID at the target project, or add a second job with its own environment once
+# production credentials exist.
+#
+# A push deploys the targeted bundle (firebase/src/targetedDeployIndex.ts and the function list
+# below). A dispatch with scope `full` builds firebase/src/index.ts instead and deploys every
+# function it exports, which adds generateMatchReport, health, and readiness. onUserCreated is
+# left out of a full deploy unless include_on_user_created is ticked: it is an Identity Platform
+# blocking function, so on a project without Identity Platform its deploy fails ("Blocking
+# Functions may only be configured for GCIP projects"), and with Identity Platform on, a blank
+# ALLOWED_EMAIL_DOMAIN makes it reject every sign-up.
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "targeted: the functions listed in this workflow. full: every function exported by firebase/src/index.ts."
+        type: choice
+        options:
+          - targeted
+          - full
+        default: targeted
+      include_on_user_created:
+        description: "Full scope only: also deploy the onUserCreated blocking function. Needs Identity Platform on the project and the ALLOWED_EMAIL_DOMAIN repository variable."
+        type: boolean
+        default: false
   push:
     # The repository's default branch, plus `main` so this keeps working if the default is
     # ever renamed. Naming only `main` meant the push trigger could never fire, because no
@@ -58,9 +78,19 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
 
-      - name: Build targeted functions bundle
-        run: pnpm --filter @tennis/firebase-functions build:targeted-deploy
+      - name: Build functions bundle
+        run: |
+          set -euo pipefail
+          # Both scripts write lib/index.js, so the bundle deployed is whichever ran last.
+          if [ "$SCOPE" = "full" ]; then
+            pnpm --filter @tennis/firebase-functions build
+          else
+            pnpm --filter @tennis/firebase-functions build:targeted-deploy
+          fi
         working-directory: .
+        env:
+          # A push has no inputs, so it deploys the targeted bundle.
+          SCOPE: ${{ inputs.scope || 'targeted' }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -151,6 +181,13 @@ jobs:
             `GITHUB_FEEDBACK_LABELS=${escapeDotenvValue(process.env.GITHUB_FEEDBACK_LABELS)}`,
           ];
 
+          // Read only by onUserCreated, which fails closed (rejects every sign-up) while it
+          // is blank, so it is written only when the repository variable is set.
+          const allowedEmailDomain = (process.env.ALLOWED_EMAIL_DOMAIN || '').trim();
+          if (allowedEmailDomain) {
+            lines.push(`ALLOWED_EMAIL_DOMAIN=${escapeDotenvValue(allowedEmailDomain)}`);
+          }
+
           fs.writeFileSync(`.env.${process.env.FIREBASE_PROJECT_ID}`, `${lines.join('\n')}\n`);
           NODE
         env:
@@ -160,36 +197,68 @@ jobs:
           GITHUB_API_URL: ${{ vars.GITHUB_API_URL || 'https://api.github.com' }}
           GITHUB_FEEDBACK_LABELS: ${{ vars.GITHUB_FEEDBACK_LABELS || 'feedback' }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN }}
 
       - name: Remove workspace-only dependency before deploy packaging
         run: |
           node -e "const fs=require('fs');const p='firebase/package.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));if(d.devDependencies){delete d.devDependencies['@tennis/shared'];}fs.writeFileSync(p,JSON.stringify(d,null,2)+'\\n');"
         working-directory: .
 
-      - name: Verify deploy filters exist in targeted bundle
+      - name: Choose and verify the functions to deploy
         run: |
           set -euo pipefail
 
-          FILTERS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback,addPlayerToDivisionByEmail,resolveDisputedReport,autoConfirmExpiredReports,requestMatchAppeal,decideMatchAppeal,recalculateDivisionRankings,repairAllDivisionRankings,onNewMessage,resolveMessageReport,sendMatchReminders,publishPlayoffBracket,cancelPlayoffBracket,onPlayoffMatchUpdate'
+          # The targeted list. A function must be exported from src/targetedDeployIndex.ts and
+          # named here, or a push deploy does not ship it.
+          TARGETED='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback,addPlayerToDivisionByEmail,resolveDisputedReport,autoConfirmExpiredReports,requestMatchAppeal,decideMatchAppeal,recalculateDivisionRankings,repairAllDivisionRankings,onNewMessage,resolveMessageReport,sendMatchReminders,publishPlayoffBracket,cancelPlayoffBracket,onPlayoffMatchUpdate'
 
-          FILTERS="$FILTERS" node <<'NODE'
+          SCOPE="$SCOPE" TARGETED="$TARGETED" INCLUDE_ON_USER_CREATED="$INCLUDE_ON_USER_CREATED" \
+          ALLOWED_EMAIL_DOMAIN="$ALLOWED_EMAIL_DOMAIN" node <<'NODE'
+          const fs = require('fs');
           const path = require('path');
-          const filters = (process.env.FILTERS || '').split(',').map((v) => v.trim()).filter(Boolean);
           const mod = require(path.resolve(process.cwd(), 'lib/index.js'));
-          const missing = filters.filter((name) => typeof mod[name] !== 'function');
-          if (missing.length) {
-            console.error(`Missing targeted exports for deploy filters: ${missing.join(', ')}`);
+          const exported = Object.keys(mod).filter((name) => typeof mod[name] === 'function');
+
+          let names;
+          if (process.env.SCOPE === 'full') {
+            const includeOnUserCreated = process.env.INCLUDE_ON_USER_CREATED === 'true';
+            if (includeOnUserCreated && !(process.env.ALLOWED_EMAIL_DOMAIN || '').trim()) {
+              console.error('::error::Set the ALLOWED_EMAIL_DOMAIN repository variable before deploying onUserCreated. While it is blank the function rejects every sign-up.');
+              process.exit(1);
+            }
+            names = exported.filter((name) => includeOnUserCreated || name !== 'onUserCreated');
+            const skipped = exported.filter((name) => !names.includes(name));
+            if (skipped.length) console.log(`Not deploying: ${skipped.join(', ')}`);
+          } else {
+            names = process.env.TARGETED.split(',').map((v) => v.trim()).filter(Boolean);
+            const missing = names.filter((name) => !exported.includes(name));
+            if (missing.length) {
+              console.error(`Missing targeted exports for deploy filters: ${missing.join(', ')}`);
+              process.exit(1);
+            }
+          }
+
+          if (!names.length) {
+            console.error('No functions to deploy.');
             process.exit(1);
           }
-          console.log(`Verified ${filters.length} deploy filters are exported by lib/index.js`);
+          console.log(`Deploying ${names.length} functions: ${names.join(', ')}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `DEPLOY_FUNCTIONS=${names.join(',')}\n`);
+          fs.appendFileSync(
+            process.env.GITHUB_STEP_SUMMARY,
+            `Scope: \`${process.env.SCOPE}\`, ${names.length} functions\n\n${names.map((n) => `- \`${n}\``).join('\n')}\n`,
+          );
           NODE
+        env:
+          SCOPE: ${{ inputs.scope || 'targeted' }}
+          INCLUDE_ON_USER_CREATED: ${{ inputs.include_on_user_created || false }}
+          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN }}
 
-      - name: Deploy updated functions (staging)
+      - name: Deploy functions (staging)
         run: |
           set -euo pipefail
 
-          DEPLOY_FUNCTIONS='addDivisionMemberPlaceholder,mergeDivisionPlayerRecords,updateDivisionPlayerEmail,upsertDivisionLevel,upsertDivisionMembership,removeDivisionMembership,backfillDivisionSeasonLevel,backfillMissingProfiles,exportDivisionCsv,createDivision,joinDivisionByCode,onMatchUpdate,scoreMatchPoint,recordHistoricMatch,recordMatchOnBehalf,createDoublesMatch,sendInvite,getInvitePreview,acceptInvite,deleteAccount,publishRoundRobinSchedule,submitFeedback,addPlayerToDivisionByEmail,resolveDisputedReport,autoConfirmExpiredReports,requestMatchAppeal,decideMatchAppeal,recalculateDivisionRankings,repairAllDivisionRankings,onNewMessage,resolveMessageReport,sendMatchReminders,publishPlayoffBracket,cancelPlayoffBracket,onPlayoffMatchUpdate'
-
+          : "${DEPLOY_FUNCTIONS:?DEPLOY_FUNCTIONS was not set by the previous step}"
           npx firebase-tools deploy \
             --only "functions:${DEPLOY_FUNCTIONS//,/\,functions:}" \
             --project "$FIREBASE_PROJECT_ID"
