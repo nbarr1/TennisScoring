@@ -2,15 +2,17 @@
 
 import { memo, useMemo, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { DivisionLevel } from "@tennis/shared";
+import { divisionLevelMatchType, type DivisionLevel, type DivisionMatchType } from "@tennis/shared";
 import { IconCheck, IconRefresh, IconUpload, IconUserMinus, IconUserPlus } from "@tabler/icons-react";
 import type { FirestoreError } from "firebase/firestore";
 import { AnimatedDiv, Button, EmptyState, ErrorState, InlineAlert, LoadingBlock } from "../shared/ui";
 import type { AsyncAction } from "../shared/ui";
 import { plural } from "./AdminParts";
 import {
+  MATCH_TYPE_LABELS,
   OTHER_SEASONS_FILTER,
   initialsOf,
+  slotKey,
   playerStatusLabel,
   type AdminSeason,
   type AdminTab,
@@ -51,12 +53,16 @@ export type RosterPanelProps = {
   isFiltered: boolean;
   unassignedCount: number;
   countByLevelId: Map<string, number>;
-  effectiveLevelId: (row: RosterRow) => string;
+  /** The match types the season has levels for: one level select per row for each. */
+  seasonMatchTypes: DivisionMatchType[];
+  effectiveSlotLevelId: (row: RosterRow, matchType: DivisionMatchType) => string;
+  effectiveLevelIds: (row: RosterRow) => string[];
+  /** Keyed by `slotKey(userId, matchType)`. */
   draftLevels: Record<string, string>;
   savingRowIds: string[];
   savedFlashIds: string[];
-  removeTarget: { row: RosterRow; viaSelect: boolean } | null;
-  setRemoveTarget: (target: { row: RosterRow; viaSelect: boolean } | null) => void;
+  removeTarget: { row: RosterRow; viaSelect: boolean; levelId?: string } | null;
+  setRemoveTarget: (target: { row: RosterRow; viaSelect: boolean; levelId?: string } | null) => void;
   rosterSearch: string;
   setRosterSearch: (value: string) => void;
   rosterFilter: string;
@@ -71,7 +77,7 @@ export type RosterPanelProps = {
   setAddPlayerOpen: (open: boolean) => void;
   setImportOpen: (open: boolean) => void;
   selectTab: (tab: AdminTab) => void;
-  onRowLevelChange: (row: RosterRow, nextLevelId: string) => void;
+  onRowLevelChange: (row: RosterRow, matchType: DivisionMatchType, nextLevelId: string) => void;
   openPlayerDetail: (row: RosterRow) => void;
 };
 
@@ -94,7 +100,9 @@ export function RosterPanel({
   isFiltered,
   unassignedCount,
   countByLevelId,
-  effectiveLevelId,
+  seasonMatchTypes,
+  effectiveSlotLevelId,
+  effectiveLevelIds,
   draftLevels,
   savingRowIds,
   savedFlashIds,
@@ -128,11 +136,19 @@ export function RosterPanel({
           checked ? [...current, userId] : current.filter((id) => id !== userId),
         ),
       openDetail: (row) => latest.current.openPlayerDetail(row),
-      changeLevel: (row, nextLevelId) => latest.current.onRowLevelChange(row, nextLevelId),
+      changeLevel: (row, matchType, nextLevelId) =>
+        latest.current.onRowLevelChange(row, matchType, nextLevelId),
       remove: (row) => setRemoveTarget({ row, viaSelect: false }),
     }),
     [setRemoveTarget, setSelectedPlayerIds],
   );
+  // Each select lists only its own match type's levels, so it can never move a player out
+  // of the other one.
+  const levelsByType = useMemo(() => {
+    const byType: Record<DivisionMatchType, DivisionLevel[]> = { singles: [], doubles: [] };
+    adminSeasonLevels.forEach((level) => byType[divisionLevelMatchType(level)].push(level));
+    return byType;
+  }, [adminSeasonLevels]);
 
   return (
     <div
@@ -309,25 +325,29 @@ export function RosterPanel({
               <AnimatedDiv role="rowgroup" animate={visibleRows.length <= ROSTER_ANIMATION_ROW_LIMIT}>
                 {visibleRows.map((row) => {
                   const p = row.player;
-                  const draftLevelId = draftLevels[p.id];
+                  const singlesDraft = draftLevels[slotKey(p.id, "singles")];
+                  const doublesDraft = draftLevels[slotKey(p.id, "doubles")];
+                  const hasDraft = singlesDraft !== undefined || doublesDraft !== undefined;
                   // Rostered in another season only: not on this roster, so not "unassigned"
                   // here, and there is nothing to remove from this season.
-                  const fromOtherSeason = otherSeasonIds.has(p.id) && !effectiveLevelId(row);
+                  const fromOtherSeason = otherSeasonIds.has(p.id) && effectiveLevelIds(row).length === 0;
                   return (
                     <RosterRowView
                       key={p.id}
                       row={row}
-                      levelId={draftLevelId ?? effectiveLevelId(row)}
+                      singlesLevelId={singlesDraft ?? effectiveSlotLevelId(row, "singles")}
+                      doublesLevelId={doublesDraft ?? effectiveSlotLevelId(row, "doubles")}
+                      matchTypes={seasonMatchTypes}
+                      levelsByType={levelsByType}
                       selected={selectedPlayerIds.includes(p.id)}
                       fromOtherSeason={fromOtherSeason}
                       otherSeasonLabel={fromOtherSeason ? otherSeasonNames(p.id) : ""}
                       saving={
                         savingRowIds.includes(p.id) ||
-                        (draftLevelId !== undefined && removeTarget?.row.player.id !== p.id)
+                        (hasDraft && removeTarget?.row.player.id !== p.id)
                       }
                       savedFlash={savedFlashIds.includes(p.id)}
                       seasonName={adminSeason.name}
-                      adminSeasonLevels={adminSeasonLevels}
                       levelNameById={levelNameById}
                       handlers={rowHandlers}
                     />
@@ -390,7 +410,7 @@ export function RosterPanel({
 type RosterRowHandlers = {
   toggleSelected: (userId: string, checked: boolean) => void;
   openDetail: (row: RosterRow) => void;
-  changeLevel: (row: RosterRow, nextLevelId: string) => void;
+  changeLevel: (row: RosterRow, matchType: DivisionMatchType, nextLevelId: string) => void;
   remove: (row: RosterRow) => void;
 };
 
@@ -401,33 +421,45 @@ type RosterRowHandlers = {
  */
 const RosterRowView = memo(function RosterRowView({
   row,
-  levelId,
+  singlesLevelId,
+  doublesLevelId,
+  matchTypes,
+  levelsByType,
   selected,
   fromOtherSeason,
   otherSeasonLabel,
   saving,
   savedFlash,
   seasonName,
-  adminSeasonLevels,
   levelNameById,
   handlers,
 }: {
   row: RosterRow;
-  /** The draft choice while it settles, else the effective level; "" is unassigned. */
-  levelId: string;
+  /**
+   * The draft choice while it settles, else the effective level, for each match type; ""
+   * is no level of that type.
+   */
+  singlesLevelId: string;
+  doublesLevelId: string;
+  /** The season's match types, in order: one select each. */
+  matchTypes: DivisionMatchType[];
+  levelsByType: Record<DivisionMatchType, DivisionLevel[]>;
   selected: boolean;
   fromOtherSeason: boolean;
   otherSeasonLabel: string;
   saving: boolean;
   savedFlash: boolean;
   seasonName: string;
-  adminSeasonLevels: DivisionLevel[];
   levelNameById: Map<string, string>;
   handlers: RosterRowHandlers;
 }): React.JSX.Element {
   const p = row.player;
   const registered = p.isRegistered !== false;
-  const waitlisted = row.membership?.status === "waitlisted";
+  const waitlisted = row.memberships.some((m) => m.status === "waitlisted");
+  const levelIdFor = (type: DivisionMatchType) => (type === "singles" ? singlesLevelId : doublesLevelId);
+  const assigned = !!(singlesLevelId || doublesLevelId);
+  // A season with both formats shows a select for each; one with a single format shows one.
+  const labelled = matchTypes.length > 1;
   return (
     <div role="row" className={`${css.row} ${selected ? css.rowSelected : ""}`}>
       <div role="cell" className={css.cellCheck}>
@@ -477,34 +509,52 @@ const RosterRowView = memo(function RosterRowView({
         ) : null}
       </div>
       <div role="cell" className={css.cellLevel}>
-        <select
-          style={{
-            ...styles.rowSelect,
-            ...(levelId || fromOtherSeason ? {} : styles.rowSelectUnassigned),
-          }}
-          value={levelId}
-          aria-label={
-            fromOtherSeason
-              ? `Add ${p.displayName} to a ${seasonName} division level`
-              : `Division level for ${p.displayName}`
-          }
-          aria-busy={saving || undefined}
-          onChange={(e) => handlers.changeLevel(row, e.target.value)}
-        >
-          <option value="">
-            {fromOtherSeason ? `Not in ${seasonName}` : "Unassigned"}
-          </option>
-          {adminSeasonLevels.map((level) => (
-            <option key={level.id} value={level.id}>
-              {level.name}
-            </option>
-          ))}
-          {levelId && !adminSeasonLevels.some((l) => l.id === levelId) ? (
-            <option value={levelId}>
-              {levelNameById.get(levelId) ?? "Other level"}
-            </option>
-          ) : null}
-        </select>
+        <div style={styles.rowSelectStack}>
+          {matchTypes.map((type) => {
+            const levelId = levelIdFor(type);
+            const typeLevels = levelsByType[type];
+            const typeLabel = MATCH_TYPE_LABELS[type];
+            return (
+              <select
+                key={type}
+                style={{
+                  ...styles.rowSelect,
+                  ...(assigned || fromOtherSeason ? {} : styles.rowSelectUnassigned),
+                }}
+                value={levelId}
+                aria-label={
+                  fromOtherSeason
+                    ? `Add ${p.displayName} to a ${seasonName} ${labelled ? `${typeLabel.toLowerCase()} ` : ""}division level`
+                    : labelled
+                      ? `${typeLabel} division level for ${p.displayName}`
+                      : `Division level for ${p.displayName}`
+                }
+                aria-busy={saving || undefined}
+                onChange={(e) => handlers.changeLevel(row, type, e.target.value)}
+              >
+                <option value="">
+                  {fromOtherSeason
+                    ? `Not in ${seasonName}`
+                    : labelled
+                      ? assigned
+                        ? `No ${typeLabel.toLowerCase()}`
+                        : `${typeLabel}: unassigned`
+                      : "Unassigned"}
+                </option>
+                {typeLevels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
+                  </option>
+                ))}
+                {levelId && !typeLevels.some((l) => l.id === levelId) ? (
+                  <option value={levelId}>
+                    {levelNameById.get(levelId) ?? "Other level"}
+                  </option>
+                ) : null}
+              </select>
+            );
+          })}
+        </div>
         <span style={styles.savedFlag} aria-hidden="true">
           {saving ? (
             <span className="tl-spinner" />

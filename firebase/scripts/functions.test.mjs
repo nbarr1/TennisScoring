@@ -448,6 +448,31 @@ describe('results recorded without a division level', () => {
     assert.equal(stored.matchType, 'singles');
   });
 
+  it('files the result under the shared singles level when the players also share a doubles level', async () => {
+    await seedPlayers(['p1', 'p2']);
+    await seedLevels({ p1: 'beginner', p2: 'beginner' });
+    const divisionRef = db.collection('divisions').doc(DIVISION);
+    const batch = db.batch();
+    batch.set(divisionRef.collection('levels').doc('int-doubles'), {
+      divisionId: DIVISION,
+      seasonId: SEASON,
+      name: 'Intermediate Doubles',
+      matchType: 'doubles',
+    });
+    for (const userId of ['p1', 'p2']) {
+      batch.set(divisionRef.collection('memberships').doc(`${SEASON}_int-doubles_${userId}`), {
+        divisionId: DIVISION,
+        seasonId: SEASON,
+        divisionLevelId: 'int-doubles',
+        userId,
+        status: 'active',
+      });
+    }
+    await batch.commit();
+    const stored = await recordAsP1();
+    assert.equal(stored.divisionLevelId, 'beginner');
+  });
+
   it('leaves the level blank when the players are in different levels', async () => {
     await seedPlayers(['p1', 'p2']);
     await seedLevels({ p1: 'beginner', p2: 'advanced' });
@@ -484,13 +509,19 @@ describe('division roster callables', () => {
   async function seedRoster() {
     await seedPlayers(['p1', 'p2']);
     const batch = db.batch();
-    for (const [seasonId, levelId] of [[SEASON, 'L1'], [SEASON, 'L2'], ['2027-H1', 'L3']]) {
+    for (const [seasonId, levelId, matchType] of [
+      [SEASON, 'L1', 'singles'],
+      [SEASON, 'L2', 'singles'],
+      ['2027-H1', 'L3', 'singles'],
+      [SEASON, 'D1', 'doubles'],
+      [SEASON, 'D2', 'doubles'],
+    ]) {
       batch.set(db.collection('divisions').doc(DIVISION).collection('levels').doc(levelId), {
         id: levelId,
         divisionId: DIVISION,
         seasonId,
         name: levelId,
-        matchType: 'singles',
+        matchType,
       });
     }
     batch.set(db.collection('channels').doc('chat'), {
@@ -536,6 +567,38 @@ describe('division roster callables', () => {
     assert.deepEqual(await rosteredLevels('p1'), ['L2']);
     const old = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
     assert.equal(old.status, 'removed', 'the earlier membership is archived, not deleted');
+  });
+
+  it('keeps a singles level when the player is added to a doubles level', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'L1');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'D1', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['D1', 'L1']);
+  });
+
+  it('moves between doubles levels without touching the singles level', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'L1', 'waitlisted');
+    await seedMembership('p1', 'D1');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'D2', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['D2', 'L1']);
+    const singles = (await membershipsCol().doc(membershipId(SEASON, 'L1', 'p1')).get()).data();
+    assert.equal(singles.status, 'waitlisted', 'the singles membership keeps its own status');
+  });
+
+  it('moves between singles levels without touching the doubles level', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'L1');
+    await seedMembership('p1', 'D1');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'L2', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['D1', 'L2']);
+  });
+
+  it('retires a membership whose level no longer exists when the player is moved', async () => {
+    await seedRoster();
+    await seedMembership('p1', 'gone');
+    await call('upsertDivisionMembership', { divisionId: DIVISION, seasonId: SEASON, divisionLevelId: 'D1', userId: 'p1' });
+    assert.deepEqual(await rosteredLevels('p1'), ['D1']);
   });
 
   it('archives a waitlisted membership when the player is moved', async () => {
@@ -655,9 +718,9 @@ describe('division roster callables', () => {
 
     it('removes only the named level when one is given', async () => {
       await seedRoster();
-      // Written directly: every callable path would archive one of the two.
+      // A singles and a doubles level, the pair a player can hold in one season.
       await seedMembership('p1', 'L1');
-      await seedMembership('p1', 'L2');
+      await seedMembership('p1', 'D1');
       const result = await call('removeDivisionMembership', {
         divisionId: DIVISION,
         seasonId: SEASON,
@@ -665,7 +728,8 @@ describe('division roster callables', () => {
         divisionLevelId: 'L1',
       });
       assert.deepEqual(result, { removed: 1, detachedFromDivision: false });
-      assert.deepEqual(await rosteredLevels('p1'), ['L2']);
+      assert.deepEqual(await rosteredLevels('p1'), ['D1']);
+      assert.ok((await divisionDoc()).playerIds.includes('p1'), 'the player stays on the roster');
     });
 
     it('reports nothing removed for a player already off the roster', async () => {

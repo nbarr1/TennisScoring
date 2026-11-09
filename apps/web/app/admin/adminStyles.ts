@@ -140,6 +140,14 @@ export const styles = {
     minWidth: 0,
     flex: 1,
   },
+  /** A row's level selects: one, or a singles and a doubles select stacked. */
+  rowSelectStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    flex: 1,
+    minWidth: 0,
+  },
   rowSelectUnassigned: {
     border: `1px solid ${WARN_FG}`,
     background: WARN_BG,

@@ -4,6 +4,7 @@
  */
 import {
   formatSeasonName,
+  type DivisionMatchType,
   type DivisionMembership,
   type Season,
   type MessageReportReason,
@@ -40,8 +41,31 @@ export type AdminTab = "roster" | "divisions" | "tools";
 export type ToolPanel = "scheduler" | "reports" | "playoffs" | null;
 export type FocusTarget = "reports" | "results" | "roster" | "scheduler" | "playoffs" | null;
 
-/** A roster row: the player, plus the season membership that places them in a level (if any). */
-export type RosterRow = { player: User; membership: DivisionMembership | null };
+/**
+ * A roster row: the player, plus the season memberships that place them in levels. A player
+ * holds at most one level per match type in a season (one singles, one doubles), so
+ * `memberships` has at most one entry per match type. `membership` is the one that carries
+ * the row's role and waitlist status: the singles membership when there is one.
+ */
+export type RosterRow = {
+  player: User;
+  membership: DivisionMembership | null;
+  memberships: DivisionMembership[];
+};
+
+/**
+ * One registration slot on the roster: a player's level for one match type. Pending writes
+ * and drafts are keyed by slot, so changing a player's doubles level never touches the
+ * singles one.
+ */
+export function slotKey(userId: string, matchType: DivisionMatchType): string {
+  return `${userId}|${matchType}`;
+}
+
+export const MATCH_TYPE_LABELS: Record<DivisionMatchType, string> = {
+  singles: "Singles",
+  doubles: "Doubles",
+};
 
 export type RosterAlert = { tone: "error" | "info"; message: string; retry?: () => void } | null;
 

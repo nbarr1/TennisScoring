@@ -15,11 +15,19 @@ export type InferredMatchLevel = {
  * when they share none or more than one. `levelsByPlayer` holds each player's
  * level ids for the match's season.
  */
-export function sharedDivisionLevel(levelsByPlayer: string[][]): string | undefined {
+export function sharedDivisionLevel(
+  levelsByPlayer: string[][],
+  matchTypeOf: (levelId: string) => 'singles' | 'doubles' | undefined = () => undefined,
+): string | undefined {
   if (levelsByPlayer.length === 0) return undefined;
   const [first, ...rest] = levelsByPlayer;
   const shared = [...new Set(first)].filter((id) => rest.every((levels) => levels.includes(id)));
-  return shared.length === 1 ? shared[0] : undefined;
+  if (shared.length === 1) return shared[0];
+  // A player can hold one singles and one doubles level in a season, so two
+  // players can share both. The results inferred here are singles results,
+  // which belong in the singles level.
+  const singles = shared.filter((id) => (matchTypeOf(id) ?? 'singles') === 'singles');
+  return singles.length === 1 ? singles[0] : undefined;
 }
 
 function levelMatchType(value: unknown): 'singles' | 'doubles' | undefined {
@@ -56,12 +64,19 @@ export async function inferMatchDivisionLevel(
       .map((doc) => doc.data().divisionLevelId)
       .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
   );
-  const divisionLevelId = sharedDivisionLevel(levelsByPlayer);
+  const candidateIds = [...new Set(levelsByPlayer.flat())];
+  const levelSnaps = await Promise.all(
+    candidateIds.map((id) => divisionRef.collection('levels').doc(id).get()),
+  );
+  const levelById = new Map(levelSnaps.map((snap) => [snap.id, snap.exists ? snap.data() : undefined]));
+  const divisionLevelId = sharedDivisionLevel(levelsByPlayer, (id) =>
+    levelMatchType(levelById.get(id)?.matchType),
+  );
   if (!divisionLevelId) return undefined;
 
-  const levelSnap = await divisionRef.collection('levels').doc(divisionLevelId).get();
-  if (!levelSnap.exists || levelSnap.data()?.seasonId !== seasonId) return undefined;
-  const matchType = levelMatchType(levelSnap.data()?.matchType);
+  const level = levelById.get(divisionLevelId);
+  if (!level || level.seasonId !== seasonId) return undefined;
+  const matchType = levelMatchType(level.matchType);
   return { divisionLevelId, ...(matchType ? { matchType } : {}) };
 }
 
@@ -92,6 +107,7 @@ export async function loadDivisionLevelResolver(
     if (!seasonId || playerIds.length === 0) return undefined;
     const divisionLevelId = sharedDivisionLevel(
       playerIds.map((userId) => levelsBySeasonPlayer.get(`${seasonId}\u0000${userId}`) ?? []),
+      (id) => levelMatchType(levels.get(id)?.matchType),
     );
     const level = divisionLevelId ? levels.get(divisionLevelId) : undefined;
     if (!divisionLevelId || level?.seasonId !== seasonId) return undefined;

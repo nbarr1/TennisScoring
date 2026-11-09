@@ -123,12 +123,24 @@ export default function DashboardPage(): React.JSX.Element {
   // season into one ranked table, which is not a table the league keeps.
   useEffect(() => {
     if (!uid || filterTouched.current.has(selectedSeasonId)) return;
-    const mine = seasonMemberships.find((m) => m.userId === uid && m.seasonId === selectedSeasonId);
-    const level = mine ? divisionLevels.find((l) => l.id === mine.divisionLevelId) : undefined;
+    // A player in both a singles and a doubles level opens on singles; the format toggle
+    // switches to their doubles level.
+    const mine = seasonMemberships.filter((m) => m.userId === uid && m.seasonId === selectedSeasonId);
+    const myLevels = divisionLevels.filter((l) => mine.some((m) => m.divisionLevelId === l.id));
+    const level = myLevels.find((l) => l.matchType !== "doubles") ?? myLevels[0];
     if (!level) return;
     setMatchTypeFilter(level.matchType);
     setSelectedLevelId(level.id);
   }, [uid, selectedSeasonId, seasonMemberships, divisionLevels]);
+  /** The player's own level of a format in the selected season, if they hold one. */
+  function myLevelIdFor(type: DivisionMatchType): string | undefined {
+    return divisionLevels.find(
+      (level) =>
+        level.seasonId === selectedSeasonId &&
+        level.matchType === type &&
+        seasonMemberships.some((m) => m.userId === uid && m.divisionLevelId === level.id),
+    )?.id;
+  }
   // Only levels of the selected format, so picking Doubles cannot leave a
   // singles level selected underneath it.
   const seasonLevels = divisionLevels.filter(
@@ -347,8 +359,10 @@ export default function DashboardPage(): React.JSX.Element {
                     value={matchTypeFilter}
                     onChange={(e) => {
                       filterTouched.current.add(selectedSeasonId);
-                      setMatchTypeFilter(e.target.value as DivisionMatchType);
-                      setSelectedLevelId("all");
+                      const nextType = e.target.value as DivisionMatchType;
+                      setMatchTypeFilter(nextType);
+                      // Land on the player's own level of that format when they have one.
+                      setSelectedLevelId(myLevelIdFor(nextType) ?? "all");
                     }}
                   >
                     <option value="singles">Singles</option>

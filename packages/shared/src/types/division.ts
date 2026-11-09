@@ -125,3 +125,64 @@ export function formatDivisionLevelName(
   const skill = skillLevel[0].toUpperCase() + skillLevel.slice(1);
   return `${skill} ${matchType === 'singles' ? 'Singles' : 'Doubles'}`;
 }
+
+/**
+ * The match type a level plays. Levels saved before match types existed carry
+ * none and read as singles, which is what they were.
+ */
+export function divisionLevelMatchType(
+  level: { matchType?: unknown } | null | undefined,
+): DivisionMatchType {
+  return level?.matchType === 'doubles' ? 'doubles' : 'singles';
+}
+
+/**
+ * A player holds at most one rostered membership per match type in a season,
+ * so they can play one singles level and one doubles level side by side.
+ * Writing a membership retires the player's other membership of the *same*
+ * match type (a move between levels) and leaves the other match type alone.
+ *
+ * Returns the level a player holds for each match type, from that player's
+ * rostered memberships for one season. When legacy data holds two of one
+ * type, the most recently updated wins, so a roster never shows both.
+ */
+export function levelIdsByMatchType(
+  memberships: ReadonlyArray<Pick<DivisionMembership, 'divisionLevelId'> & { updatedAt?: unknown }>,
+  levelById: ReadonlyMap<string, { matchType?: unknown }>,
+): Partial<Record<DivisionMatchType, string>> {
+  const result: Partial<Record<DivisionMatchType, string>> = {};
+  const newest: Partial<Record<DivisionMatchType, number>> = {};
+  memberships.forEach((membership) => {
+    if (!membership.divisionLevelId) return;
+    const type = divisionLevelMatchType(levelById.get(membership.divisionLevelId));
+    const updated = timestampMillisOf(membership.updatedAt);
+    if (result[type] === undefined || updated > (newest[type] ?? 0)) {
+      result[type] = membership.divisionLevelId;
+      newest[type] = updated;
+    }
+  });
+  return result;
+}
+
+/** The match types that have at least one level, singles first. */
+export function matchTypesOfLevels(
+  levels: ReadonlyArray<{ matchType?: unknown }>,
+): DivisionMatchType[] {
+  const present = new Set(levels.map((level) => divisionLevelMatchType(level)));
+  return DIVISION_MATCH_TYPES.filter((type) => present.has(type));
+}
+
+/**
+ * Milliseconds from a stored timestamp: a number, a Firestore `Timestamp`, or
+ * its `{ seconds }` shape. Anything else (including a pending server
+ * timestamp) is 0.
+ */
+function timestampMillisOf(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (value && typeof value === 'object') {
+    const candidate = value as { toMillis?: () => number; seconds?: number };
+    if (typeof candidate.toMillis === 'function') return candidate.toMillis();
+    if (typeof candidate.seconds === 'number') return candidate.seconds * 1000;
+  }
+  return 0;
+}

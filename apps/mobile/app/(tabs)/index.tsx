@@ -551,13 +551,20 @@ export default function RankingsScreen() {
     null,
     ROSTERED,
   );
-  const myLevelFormat = levels.find(
-    (level) =>
-      level.seasonId === selectedSeasonId &&
-      memberships.some(
-        (m) => m.userId === userId && m.divisionLevelId === level.id,
-      ),
-  )?.matchType;
+  // A player in both a singles and a doubles level opens on singles; the
+  // format chips switch to their doubles level.
+  const myLevelFormats = levels
+    .filter(
+      (level) =>
+        level.seasonId === selectedSeasonId &&
+        memberships.some(
+          (m) => m.userId === userId && m.divisionLevelId === level.id,
+        ),
+    )
+    .map((level) => level.matchType);
+  const myLevelFormat = myLevelFormats.includes("singles")
+    ? "singles"
+    : myLevelFormats[0];
   const matchTypeFilter: DivisionMatchType =
     matchTypeChoice ?? myLevelFormat ?? "singles";
   // Standings are ranked per division level, so only levels of this season

@@ -36,9 +36,13 @@ import {
   readableUserDoc,
 } from "@tennis/firebase-client";
 import {
+  DIVISION_MATCH_TYPES,
   currentSeasonForDate,
   defaultSeasonOptions,
+  divisionLevelMatchType,
   formatDivisionLevelName,
+  levelIdsByMatchType,
+  matchTypesOfLevels,
   type Division,
   type DivisionMatchType,
   type DivisionSkillLevel,
@@ -77,6 +81,7 @@ import {
   normalizedName,
   rosterLine,
   seasonNameFromId,
+  slotKey,
   timestampMillis,
   type AdminTab,
   type FocusTarget,
@@ -224,6 +229,16 @@ export default function AdminPage(): React.JSX.Element {
     () => divisionLevels.filter((level) => level.seasonId === adminSeasonId),
     [adminSeasonId, divisionLevels],
   );
+  const levelById = useMemo(
+    () => new Map(divisionLevels.map((level) => [level.id, level] as const)),
+    [divisionLevels],
+  );
+  /** The match types this season has levels for: one roster select each. */
+  const seasonMatchTypes = useMemo(() => matchTypesOfLevels(adminSeasonLevels), [adminSeasonLevels]);
+  const matchTypeOfLevel = useCallback(
+    (levelId: string): DivisionMatchType => divisionLevelMatchType(levelById.get(levelId)),
+    [levelById],
+  );
   // The generator pairs individuals, so it cannot fill a doubles level yet.
   // publishRoundRobinSchedule rejects doubles server-side; this disables the UI
   // so a leader learns that before building a preview.
@@ -286,19 +301,24 @@ export default function AdminPage(): React.JSX.Element {
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
   const [bulkLevelId, setBulkLevelId] = useState("");
   // Level assignments already sent to the server but not yet reflected by the memberships
-  // snapshot. `null` means "pending unassign"; a string is a pending level id.
+  // snapshot, keyed by `slotKey(userId, matchType)`. `null` means "pending unassign"; a
+  // string is a pending level id.
   const [pendingLevels, setPendingLevels] = useState<Record<string, string | null>>({});
   // Rows whose single-row write is still in flight (drives the row spinner).
   const [savingRowIds, setSavingRowIds] = useState<string[]>([]);
   const [savedFlashIds, setSavedFlashIds] = useState<string[]>([]);
   const savedFlashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [rosterAlert, setRosterAlert] = useState<RosterAlert>(null);
-  // What a row's level select shows while its choice settles (see LEVEL_COMMIT_DELAY_MS).
+  // What a row's level select shows while its choice settles (see LEVEL_COMMIT_DELAY_MS),
+  // keyed by slot like `pendingLevels`.
   const [draftLevels, setDraftLevels] = useState<Record<string, string>>({});
   const draftTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // Each pending draft's commit, so a season change can write it now instead of dropping it.
   const draftCommits = useRef<Record<string, (flushing: boolean) => void>>({});
-  const [removeTarget, setRemoveTarget] = useState<{ row: RosterRow; viaSelect: boolean } | null>(null);
+  // `levelId` set: take the player out of that one level and leave their other registration.
+  const [removeTarget, setRemoveTarget] = useState<
+    { row: RosterRow; viaSelect: boolean; levelId?: string } | null
+  >(null);
   // Players created here are prepended locally until the memberships snapshot catches up.
   const [pendingNewPlayers, setPendingNewPlayers] = useState<
     Array<{ userId: string; name: string; email: string; levelId: string }>
@@ -315,7 +335,8 @@ export default function AdminPage(): React.JSX.Element {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState<'player' | 'division_leader'>('player');
   const [editStatus, setEditStatus] = useState<'active' | 'waitlisted'>('active');
-  const [editDivisionLevelId, setEditDivisionLevelId] = useState('');
+  // The detail form's level for each match type; "" is no level of that type.
+  const [editLevelIds, setEditLevelIds] = useState<Partial<Record<DivisionMatchType, string>>>({});
   // What the detail form held when it opened (or was last saved), for the discard guard.
   const [detailBaseline, setDetailBaseline] = useState({
     name: "",
@@ -323,7 +344,7 @@ export default function AdminPage(): React.JSX.Element {
     phone: "",
     role: "player",
     status: "active",
-    levelId: "",
+    levelIds: {} as Partial<Record<DivisionMatchType, string>>,
   });
   const [authDebug, setAuthDebug] = useState<{
     uid: string;
@@ -356,14 +377,14 @@ export default function AdminPage(): React.JSX.Element {
     };
   }, []);
 
-  const clearDraftLevel = useCallback((userId: string) => {
-    clearTimeout(draftTimers.current[userId]);
-    delete draftTimers.current[userId];
-    delete draftCommits.current[userId];
+  const clearDraftLevel = useCallback((key: string) => {
+    clearTimeout(draftTimers.current[key]);
+    delete draftTimers.current[key];
+    delete draftCommits.current[key];
     setDraftLevels((current) => {
-      if (!(userId in current)) return current;
+      if (!(key in current)) return current;
       const next = { ...current };
-      delete next[userId];
+      delete next[key];
       return next;
     });
   }, []);
@@ -390,16 +411,21 @@ export default function AdminPage(): React.JSX.Element {
     setPendingLevels((current) => {
       const entries = Object.entries(current);
       if (entries.length === 0) return current;
-      const settled = entries.filter(([userId, pending]) => {
-        const snapshotLevel = seasonMemberships.find((m) => m.userId === userId)?.divisionLevelId ?? null;
+      const settled = entries.filter(([key, pending]) => {
+        const [userId, matchType] = key.split("|") as [string, DivisionMatchType];
+        const snapshotLevel =
+          levelIdsByMatchType(
+            seasonMemberships.filter((m) => m.userId === userId),
+            levelById,
+          )[matchType] ?? null;
         return (pending ?? null) === snapshotLevel;
       });
       if (settled.length === 0) return current;
       const next = { ...current };
-      settled.forEach(([userId]) => delete next[userId]);
+      settled.forEach(([key]) => delete next[key]);
       return next;
     });
-  }, [seasonMemberships]);
+  }, [levelById, seasonMemberships]);
 
   useEffect(() => {
     if (addPlayerLevelId && adminSeasonLevels.some((level) => level.id === addPlayerLevelId)) return;
@@ -783,21 +809,39 @@ export default function AdminPage(): React.JSX.Element {
 
   const savePlayer = useAsyncAction(
     async () => {
-      if (!division || !editingPlayerId || !editName.trim() || !editDivisionLevelId) return "";
+      const chosenLevelIds = DIVISION_MATCH_TYPES.map((type) => editLevelIds[type]).filter(
+        (id): id is string => !!id,
+      );
+      if (!division || !editingPlayerId || !editName.trim() || chosenLevelIds.length === 0) return "";
       // The status field was filled from a membership the failed snapshot never delivered.
       if (rosterLoadError) throw new Error(ROSTER_UNAVAILABLE_MESSAGE);
       const savedId = editingPlayerId;
-      await upsertDivisionMembership({
-        divisionId: division.id,
-        seasonId: adminSeasonId,
-        divisionLevelId: editDivisionLevelId,
-        userId: savedId,
-        name: editName.trim(),
-        email: editEmail.trim() || undefined,
-        phone: editPhone.trim() || undefined,
-        role: editRole,
-        status: editStatus,
-      });
+      // One write per level the player keeps (each moves within its match type and carries the
+      // name, role, and status), then the removal of any level the form cleared.
+      for (const levelId of chosenLevelIds) {
+        await upsertDivisionMembership({
+          divisionId: division.id,
+          seasonId: adminSeasonId,
+          divisionLevelId: levelId,
+          userId: savedId,
+          name: editName.trim(),
+          email: editEmail.trim() || undefined,
+          phone: editPhone.trim() || undefined,
+          role: editRole,
+          status: editStatus,
+        });
+      }
+      for (const type of DIVISION_MATCH_TYPES) {
+        const cleared = detailBaseline.levelIds[type];
+        if (cleared && !editLevelIds[type]) {
+          await removeDivisionMembership({
+            divisionId: division.id,
+            seasonId: adminSeasonId,
+            userId: savedId,
+            divisionLevelId: cleared,
+          });
+        }
+      }
       setExpandedPlayerId(null);
       setEditingPlayerId(null);
       flashSaved(savedId);
@@ -1106,46 +1150,59 @@ export default function AdminPage(): React.JSX.Element {
     () => new Map(players.map((player) => [player.id, player] as const)),
     [players],
   );
-  // One membership per player, never one row per document. A player holding two live
-  // memberships for a season would otherwise render twice under the same React key and leave
-  // the select-all checkbox permanently indeterminate. The server now archives prior
-  // memberships on every write path, so this keeps legacy data rendering sanely.
-  const membershipByUserId = useMemo(() => {
-    const byUser = new Map<string, DivisionMembership>();
+  // One row per player, never one row per document, holding at most one membership per match
+  // type. A player in a singles and a doubles level is one row with two levels. Two live
+  // memberships of one match type (legacy data; the server archives the older one on every
+  // write path) keep only the newest, so the player never renders twice under one React key.
+  const membershipsByUserId = useMemo(() => {
+    const byUser = new Map<string, DivisionMembership[]>();
     seasonMemberships.forEach((membership) => {
-      const existing = byUser.get(membership.userId);
-      if (!existing || timestampMillis(membership.updatedAt) > timestampMillis(existing.updatedAt)) {
-        byUser.set(membership.userId, membership);
-      }
+      byUser.set(membership.userId, [...(byUser.get(membership.userId) ?? []), membership]);
     });
-    return byUser;
-  }, [seasonMemberships]);
+    const kept = new Map<string, DivisionMembership[]>();
+    byUser.forEach((memberships, userId) => {
+      const bySlot = levelIdsByMatchType(memberships, levelById);
+      const ordered = DIVISION_MATCH_TYPES
+        .map((type) => {
+          const levelId = bySlot[type];
+          const candidates = memberships.filter((m) => m.divisionLevelId === levelId);
+          return candidates.sort((a, b) => timestampMillis(b.updatedAt) - timestampMillis(a.updatedAt))[0];
+        })
+        .filter((m): m is DivisionMembership => !!m);
+      if (ordered.length > 0) kept.set(userId, ordered);
+    });
+    return kept;
+  }, [levelById, seasonMemberships]);
 
   const rosterRows: RosterRow[] = useMemo(() => {
-    const membershipRows: RosterRow[] = [...membershipByUserId.values()].map((membership) => ({
-      membership,
-      player: playerById.get(membership.userId) ?? ({
-        id: membership.userId,
-        displayName: membership.displayNameSnapshot,
-        email: membership.emailSnapshot ?? "",
-        phone: membership.phoneSnapshot,
-        contactPreferences: { allowEmail: true, allowSMS: true, allowInApp: true },
-        divisionId: membership.divisionId,
-        role: membership.role === "division_leader" ? "division_leader" : "player",
-        fcmTokens: [],
-        tipsEnabled: true,
-        createdAt: membership.createdAt,
-        updatedAt: membership.updatedAt,
-      } satisfies User),
-    }));
+    const membershipRows: RosterRow[] = [...membershipsByUserId.entries()].map(([userId, memberships]) => {
+      const membership = memberships[0];
+      return {
+        membership,
+        memberships,
+        player: playerById.get(userId) ?? ({
+          id: userId,
+          displayName: membership.displayNameSnapshot,
+          email: membership.emailSnapshot ?? "",
+          phone: membership.phoneSnapshot,
+          contactPreferences: { allowEmail: true, allowSMS: true, allowInApp: true },
+          divisionId: membership.divisionId,
+          role: membership.role === "division_leader" ? "division_leader" : "player",
+          fcmTokens: [],
+          tipsEnabled: true,
+          createdAt: membership.createdAt,
+          updatedAt: membership.updatedAt,
+        } satisfies User),
+      };
+    });
     // Division players with no membership this season are unassigned only when they hold none
     // in any season; the rest belong to other seasons and are listed under their own filter.
     const legacyRows: RosterRow[] = players
       .filter(
         (player) =>
-          !membershipByUserId.has(player.id) && !(rosteredSeasonsByUserId.get(player.id)?.size),
+          !membershipsByUserId.has(player.id) && !(rosteredSeasonsByUserId.get(player.id)?.size),
       )
-      .map((player) => ({ player, membership: null }));
+      .map((player) => ({ player, membership: null, memberships: [] }));
     const known = new Set([
       ...membershipRows.map((row) => row.player.id),
       ...legacyRows.map((row) => row.player.id),
@@ -1156,6 +1213,7 @@ export default function AdminPage(): React.JSX.Element {
       .filter((entry) => !known.has(entry.userId))
       .map((entry) => ({
         membership: null,
+        memberships: [],
         player: {
           id: entry.userId,
           displayName: entry.name,
@@ -1172,14 +1230,14 @@ export default function AdminPage(): React.JSX.Element {
         } satisfies User,
       }));
     return [...optimisticRows, ...membershipRows, ...legacyRows];
-  }, [division?.id, membershipByUserId, pendingNewPlayers, playerById, players, rosteredSeasonsByUserId]);
+  }, [division?.id, membershipsByUserId, pendingNewPlayers, playerById, players, rosteredSeasonsByUserId]);
 
   /** Division players rostered in another season but not this one, offered for carrying over. */
   const otherSeasonRows: RosterRow[] = useMemo(() => {
     const onRoster = new Set(rosterRows.map((row) => row.player.id));
     return players
       .filter((player) => !onRoster.has(player.id) && rosteredSeasonsByUserId.get(player.id)?.size)
-      .map((player) => ({ player, membership: null }));
+      .map((player) => ({ player, membership: null, memberships: [] }));
   }, [players, rosterRows, rosteredSeasonsByUserId]);
 
   const otherSeasonIds = useMemo(
@@ -1192,32 +1250,48 @@ export default function AdminPage(): React.JSX.Element {
     return [...(rosteredSeasonsByUserId.get(userId) ?? [])].sort().map(seasonNameFromId).join(", ");
   }
 
-  /** The level a row should display: a pending write wins over the snapshot; "" means unassigned. */
-  const effectiveLevelId = useCallback(
-    (row: RosterRow): string => {
-      const pending = pendingLevels[row.player.id];
+  /**
+   * The level a row should display for one match type: a pending write wins over the
+   * snapshot; "" means no level of that type.
+   */
+  const effectiveSlotLevelId = useCallback(
+    (row: RosterRow, matchType: DivisionMatchType): string => {
+      const pending = pendingLevels[slotKey(row.player.id, matchType)];
       if (pending !== undefined) return pending ?? "";
+      const membership = row.memberships.find(
+        (m) => divisionLevelMatchType(levelById.get(m.divisionLevelId)) === matchType,
+      );
+      if (membership) return membership.divisionLevelId;
       const optimisticNew = pendingNewPlayers.find((entry) => entry.userId === row.player.id);
-      if (!row.membership && optimisticNew) return optimisticNew.levelId;
-      return row.membership?.divisionLevelId ?? "";
+      if (row.memberships.length === 0 && optimisticNew && matchTypeOfLevel(optimisticNew.levelId) === matchType) {
+        return optimisticNew.levelId;
+      }
+      return "";
     },
-    [pendingLevels, pendingNewPlayers],
+    [levelById, matchTypeOfLevel, pendingLevels, pendingNewPlayers],
+  );
+
+  /** Every level a row is in this season (after pending writes); empty means unassigned. */
+  const effectiveLevelIds = useCallback(
+    (row: RosterRow): string[] =>
+      DIVISION_MATCH_TYPES.map((type) => effectiveSlotLevelId(row, type)).filter(Boolean),
+    [effectiveSlotLevelId],
   );
 
   const unassignedCount = useMemo(
-    () => rosterRows.filter((row) => !effectiveLevelId(row)).length,
-    [effectiveLevelId, rosterRows],
+    () => rosterRows.filter((row) => effectiveLevelIds(row).length === 0).length,
+    [effectiveLevelIds, rosterRows],
   );
 
   const countByLevelId = useMemo(() => {
     const counts = new Map<string, number>();
     rosterRows.forEach((row) => {
-      const levelId = effectiveLevelId(row);
-      if (!levelId) return;
-      counts.set(levelId, (counts.get(levelId) ?? 0) + 1);
+      effectiveLevelIds(row).forEach((levelId) => {
+        counts.set(levelId, (counts.get(levelId) ?? 0) + 1);
+      });
     });
     return counts;
-  }, [effectiveLevelId, rosterRows]);
+  }, [effectiveLevelIds, rosterRows]);
 
   const visibleRows = useMemo(() => {
     const term = deferredRosterSearch.trim().toLowerCase();
@@ -1230,9 +1304,9 @@ export default function AdminPage(): React.JSX.Element {
       );
     }
     return rosterRows.filter((row) => {
-      const levelId = effectiveLevelId(row);
-      if (rosterFilter === "unassigned" && levelId) return false;
-      if (rosterFilter !== "all" && rosterFilter !== "unassigned" && levelId !== rosterFilter) {
+      const levelIds = effectiveLevelIds(row);
+      if (rosterFilter === "unassigned" && levelIds.length > 0) return false;
+      if (rosterFilter !== "all" && rosterFilter !== "unassigned" && !levelIds.includes(rosterFilter)) {
         return false;
       }
       if (!term) return true;
@@ -1241,7 +1315,7 @@ export default function AdminPage(): React.JSX.Element {
         (row.player.email ?? "").toLowerCase().includes(term)
       );
     });
-  }, [effectiveLevelId, otherSeasonRows, rosterFilter, rosterRows, deferredRosterSearch]);
+  }, [effectiveLevelIds, otherSeasonRows, rosterFilter, rosterRows, deferredRosterSearch]);
 
   const visibleIds = useMemo(() => visibleRows.map((row) => row.player.id), [visibleRows]);
   const selectedVisibleIds = useMemo(
@@ -1261,9 +1335,15 @@ export default function AdminPage(): React.JSX.Element {
   /**
    * The division player an add or import line resolves to, mirroring the server: an email
    * match first, then the same name with no conflicting email. The server reuses that player
-   * and moves them to the chosen level instead of creating a new one, so the forms say so.
+   * instead of creating a new one: it moves them from their level of the same match type as
+   * `targetLevelId`, or adds the level alongside one of the other match type, so the forms say
+   * so. `levelId` is the player's level of that match type, "" when they have none.
    */
-  function findExistingPlayer(name: string, email: string): { player: User; levelId: string } | null {
+  function findExistingPlayer(
+    name: string,
+    email: string,
+    targetLevelId: string,
+  ): { player: User; levelId: string } | null {
     const safeEmail = email.trim().toLowerCase();
     const safeName = normalizedName(name);
     const byEmail = safeEmail
@@ -1280,11 +1360,27 @@ export default function AdminPage(): React.JSX.Element {
     const player = byEmail ?? byName;
     if (!player) return null;
     const row = rosterRows.find((candidate) => candidate.player.id === player.id);
-    return { player, levelId: row ? effectiveLevelId(row) : "" };
+    return {
+      player,
+      levelId: row && targetLevelId ? effectiveSlotLevelId(row, matchTypeOfLevel(targetLevelId)) : "",
+    };
   }
 
   // ---- Roster actions ---------------------------------------------------
-  async function assignLevel(row: RosterRow, nextLevelId: string) {
+  /** The membership a row holds in one match type, if any. */
+  function slotMembership(row: RosterRow, matchType: DivisionMatchType): DivisionMembership | undefined {
+    return row.memberships.find((m) => matchTypeOfLevel(m.divisionLevelId) === matchType);
+  }
+
+  /**
+   * The status a write to one slot keeps: that slot's own, so a player waitlisted for singles
+   * stays waitlisted when moved between singles levels. A new slot starts active.
+   */
+  function slotStatus(row: RosterRow, matchType: DivisionMatchType): "active" | "waitlisted" {
+    return slotMembership(row, matchType)?.status === "waitlisted" ? "waitlisted" : "active";
+  }
+
+  async function assignLevel(row: RosterRow, matchType: DivisionMatchType, nextLevelId: string) {
     if (!division) return;
     if (rosterLoadError) {
       // Without the membership the write cannot keep a waitlisted player waitlisted.
@@ -1292,18 +1388,22 @@ export default function AdminPage(): React.JSX.Element {
       return;
     }
     const userId = row.player.id;
-    const previous = effectiveLevelId(row);
+    const key = slotKey(userId, matchType);
+    const previous = effectiveSlotLevelId(row, matchType);
     if (nextLevelId === previous) return;
     if (!nextLevelId) {
-      // "Unassigned" takes the player off this season's roster, which can also take them off
-      // the division. That is the same write as Remove, so it gets the same confirmation; an
-      // arrow key on a focused select must never remove someone.
-      setRemoveTarget({ row, viaSelect: true });
+      // Clearing a player's only level takes them off this season's roster, which can also
+      // take them off the division. That is the same write as Remove, so it gets the same
+      // confirmation; an arrow key on a focused select must never remove someone. Clearing one
+      // of two levels leaves them on the roster, but is still confirmed for the same reason.
+      const keepsAnother = effectiveLevelIds(row).some((id) => id !== previous);
+      setRemoveTarget({ row, viaSelect: true, ...(keepsAnother ? { levelId: previous } : {}) });
       return;
     }
-    setPendingLevels((current) => ({ ...current, [userId]: nextLevelId }));
+    setPendingLevels((current) => ({ ...current, [key]: nextLevelId }));
     setSavingRowIds((current) => (current.includes(userId) ? current : [...current, userId]));
     setRosterAlert(null);
+    const verb = previous ? "moved to" : "added to";
     try {
       await upsertDivisionMembership({
         divisionId: division.id,
@@ -1314,21 +1414,21 @@ export default function AdminPage(): React.JSX.Element {
         email: row.player.email || undefined,
         phone: row.player.phone || undefined,
         role: row.membership?.role,
-        status: row.membership?.status === "waitlisted" ? "waitlisted" : "active",
+        status: slotStatus(row, matchType),
       });
       flashSaved(userId);
-      announce(`${row.player.displayName} moved to ${levelLabel(nextLevelId)}.`);
+      announce(`${row.player.displayName} ${verb} ${levelLabel(nextLevelId)}.`);
     } catch (e) {
       // Roll the optimistic value back so the select never lies about what was saved.
       setPendingLevels((current) => {
         const next = { ...current };
-        delete next[userId];
+        delete next[key];
         return next;
       });
       setRosterAlert({
         tone: "error",
-        message: `Couldn't move ${row.player.displayName} to ${levelLabel(nextLevelId)}. ${describeError(e, "Try again.")}`,
-        retry: () => void assignLevel(row, nextLevelId),
+        message: `Couldn't ${previous ? "move" : "add"} ${row.player.displayName} to ${levelLabel(nextLevelId)}. ${describeError(e, "Try again.")}`,
+        retry: () => void assignLevel(row, matchType, nextLevelId),
       });
     } finally {
       setSavingRowIds((current) => current.filter((id) => id !== userId));
@@ -1339,66 +1439,85 @@ export default function AdminPage(): React.JSX.Element {
   // reads the latest pending state.
   const assignLevelRef = useRef(assignLevel);
   assignLevelRef.current = assignLevel;
-  const effectiveLevelRef = useRef(effectiveLevelId);
-  effectiveLevelRef.current = effectiveLevelId;
+  const effectiveSlotLevelRef = useRef(effectiveSlotLevelId);
+  effectiveSlotLevelRef.current = effectiveSlotLevelId;
 
-  function onRowLevelChange(row: RosterRow, nextLevelId: string) {
-    const userId = row.player.id;
-    setDraftLevels((current) => ({ ...current, [userId]: nextLevelId }));
-    clearTimeout(draftTimers.current[userId]);
+  function onRowLevelChange(row: RosterRow, matchType: DivisionMatchType, nextLevelId: string) {
+    const key = slotKey(row.player.id, matchType);
+    setDraftLevels((current) => ({ ...current, [key]: nextLevelId }));
+    clearTimeout(draftTimers.current[key]);
     const commit = (flushing: boolean) => {
-      delete draftTimers.current[userId];
-      delete draftCommits.current[userId];
-      if (nextLevelId === effectiveLevelRef.current(row)) {
+      delete draftTimers.current[key];
+      delete draftCommits.current[key];
+      if (nextLevelId === effectiveSlotLevelRef.current(row, matchType)) {
         // Arrowed away and back again: nothing to write.
-        clearDraftLevel(userId);
+        clearDraftLevel(key);
         return;
       }
-      if (!nextLevelId) {
+      if (!nextLevelId && flushing) {
         // The draft keeps showing "Unassigned" until the confirmation is answered. A season
         // change drops it instead, since the confirmation would name the wrong season.
-        if (flushing) clearDraftLevel(userId);
-        else setRemoveTarget({ row, viaSelect: true });
+        clearDraftLevel(key);
         return;
       }
-      clearDraftLevel(userId);
-      void assignLevelRef.current(row, nextLevelId);
+      // assignLevel opens the confirmation for an empty choice, and leaves the draft showing
+      // it until that is answered.
+      if (nextLevelId) clearDraftLevel(key);
+      void assignLevelRef.current(row, matchType, nextLevelId);
     };
-    draftCommits.current[userId] = commit;
-    draftTimers.current[userId] = setTimeout(() => commit(false), LEVEL_COMMIT_DELAY_MS);
+    draftCommits.current[key] = commit;
+    draftTimers.current[key] = setTimeout(() => commit(false), LEVEL_COMMIT_DELAY_MS);
   }
 
   /** Writes every pending row change now, for the season they were made in. */
   function flushDraftLevels() {
-    Object.entries(draftCommits.current).forEach(([userId, commit]) => {
-      clearTimeout(draftTimers.current[userId]);
+    Object.entries(draftCommits.current).forEach(([key, commit]) => {
+      clearTimeout(draftTimers.current[key]);
       commit(true);
     });
   }
 
+  /** Drops every draft a row holds, whichever slot it is in. */
+  function clearRowDrafts(userId: string) {
+    DIVISION_MATCH_TYPES.forEach((type) => clearDraftLevel(slotKey(userId, type)));
+  }
+
   function cancelRemove() {
-    if (removeTarget) clearDraftLevel(removeTarget.row.player.id);
+    if (removeTarget) clearRowDrafts(removeTarget.row.player.id);
     setRemoveTarget(null);
   }
 
   /** Runs inside the remove confirmation; a rejection keeps the dialog open with the error. */
   async function confirmRemoveFromRoster() {
     if (!division || !removeTarget) return;
-    const { row } = removeTarget;
+    const { row, levelId: onlyLevelId } = removeTarget;
     const userId = row.player.id;
-    clearDraftLevel(userId);
+    clearRowDrafts(userId);
     const name = row.player.displayName;
     setRosterAlert(null);
-    setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
-    setSelectedPlayerIds((current) => current.filter((id) => id !== userId));
+    // Removing one of two levels leaves the player on the roster and in the selection.
+    if (!onlyLevelId) {
+      setPendingNewPlayers((current) => current.filter((entry) => entry.userId !== userId));
+      setSelectedPlayerIds((current) => current.filter((id) => id !== userId));
+    }
+    // The slots this removal clears: one, or every slot the row holds.
+    const clearedKeys = onlyLevelId
+      ? [slotKey(userId, matchTypeOfLevel(onlyLevelId))]
+      : DIVISION_MATCH_TYPES.map((type) => slotKey(userId, type));
     // Set the override *before* the await. Writing it afterwards raced the memberships
     // snapshot: if the snapshot landed during the call, the settle effect ran with no entry
     // to clear and the one written next was stranded, masking later remote changes forever.
-    setPendingLevels((current) => ({ ...current, [userId]: null }));
+    setPendingLevels((current) => {
+      const next = { ...current };
+      clearedKeys.forEach((key) => {
+        next[key] = null;
+      });
+      return next;
+    });
     const rollback = () =>
       setPendingLevels((current) => {
         const next = { ...current };
-        delete next[userId];
+        clearedKeys.forEach((key) => delete next[key]);
         return next;
       });
     try {
@@ -1406,8 +1525,16 @@ export default function AdminPage(): React.JSX.Element {
         divisionId: division.id,
         seasonId: adminSeasonId,
         userId,
+        ...(onlyLevelId ? { divisionLevelId: onlyLevelId } : {}),
       });
       setRemoveTarget(null);
+      if (onlyLevelId && removed > 0) {
+        flashSaved(userId);
+        announce(`${name} removed from ${levelLabel(onlyLevelId)}. Their other level is kept.`, {
+          toast: true,
+        });
+        return;
+      }
       if (removed === 0) {
         // Nothing to archive — the player was already off this season's roster. Say so
         // instead of leaving the button looking broken.
@@ -1436,9 +1563,13 @@ export default function AdminPage(): React.JSX.Element {
       if (!division || !bulkLevelId || selectedVisibleIds.length === 0) return 0;
       if (rosterLoadError) throw new Error(ROSTER_UNAVAILABLE_MESSAGE);
       setRosterAlert(null);
+      const bulkType = matchTypeOfLevel(bulkLevelId);
+      const bulkKey = (row: RosterRow) => slotKey(row.player.id, bulkType);
+      // A level of one match type moves players between levels of that type and is added
+      // beside a level of the other type.
       const targets = visibleRows
         .filter((row) => selectedVisibleIds.includes(row.player.id))
-        .filter((row) => effectiveLevelId(row) !== bulkLevelId);
+        .filter((row) => effectiveSlotLevelId(row, bulkType) !== bulkLevelId);
       if (targets.length === 0) {
         // Every selected player is already on that level. Treat it as done.
         setSelectedPlayerIds([]);
@@ -1447,7 +1578,7 @@ export default function AdminPage(): React.JSX.Element {
       setPendingLevels((current) => {
         const next = { ...current };
         targets.forEach((row) => {
-          next[row.player.id] = bulkLevelId;
+          next[bulkKey(row)] = bulkLevelId;
         });
         return next;
       });
@@ -1462,7 +1593,7 @@ export default function AdminPage(): React.JSX.Element {
             email: row.player.email || undefined,
             phone: row.player.phone || undefined,
             role: row.membership?.role,
-            status: row.membership?.status === "waitlisted" ? "waitlisted" : "active",
+            status: slotStatus(row, bulkType),
           }),
         );
         const failures = results.filter(isFailure);
@@ -1475,7 +1606,7 @@ export default function AdminPage(): React.JSX.Element {
           // snapshot it is compared against still holds the player's old level.
           setPendingLevels((current) => {
             const next = { ...current };
-            failures.forEach(({ item }) => delete next[item.player.id]);
+            failures.forEach(({ item }) => delete next[bulkKey(item)]);
             return next;
           });
           setSelectedPlayerIds(failures.map(({ item }) => item.player.id));
@@ -1492,7 +1623,7 @@ export default function AdminPage(): React.JSX.Element {
         if (!(e instanceof PartialWriteError)) {
           setPendingLevels((current) => {
             const next = { ...current };
-            targets.forEach((row) => delete next[row.player.id]);
+            targets.forEach((row) => delete next[bulkKey(row)]);
             return next;
           });
         }
@@ -1546,14 +1677,14 @@ export default function AdminPage(): React.JSX.Element {
   const importEntries = useMemo(() => parseRosterPaste(importText), [importText]);
   const importPreview = importEntries.map((entry) => ({
     entry,
-    existing: findExistingPlayer(entry.name, entry.email),
+    existing: findExistingPlayer(entry.name, entry.email, importLevelId),
   }));
   const importMoves = importPreview.filter(
     ({ existing }) => existing?.levelId && existing.levelId !== importLevelId,
   ).length;
   const addPlayerExisting =
     addPlayerOpen && (addPlayerName.trim() || addPlayerEmail.trim())
-      ? findExistingPlayer(addPlayerName, addPlayerEmail)
+      ? findExistingPlayer(addPlayerName, addPlayerEmail, addPlayerLevelId)
       : null;
 
   const importRoster = useAsyncAction(
@@ -1616,7 +1747,15 @@ export default function AdminPage(): React.JSX.Element {
 
   function openPlayerDetail(row: RosterRow) {
     const p = row.player;
-    const levelId = effectiveLevelId(row) || adminSeasonLevels[0]?.id || "";
+    const levelIds: Partial<Record<DivisionMatchType, string>> = {};
+    seasonMatchTypes.forEach((type) => {
+      const levelId = effectiveSlotLevelId(row, type);
+      if (levelId) levelIds[type] = levelId;
+    });
+    // An unassigned player opens on the season's first level, so Save has something to write.
+    if (Object.keys(levelIds).length === 0 && adminSeasonLevels[0]) {
+      levelIds[matchTypeOfLevel(adminSeasonLevels[0].id)] = adminSeasonLevels[0].id;
+    }
     const role = row.membership?.role === "division_leader" ? "division_leader" : "player";
     const status = row.membership?.status === "waitlisted" ? "waitlisted" : "active";
     setNeedsMergeForUserId(p.id);
@@ -1627,14 +1766,14 @@ export default function AdminPage(): React.JSX.Element {
     setEditPhone(p.phone ?? "");
     setEditRole(role);
     setEditStatus(status);
-    setEditDivisionLevelId(levelId);
+    setEditLevelIds(levelIds);
     setDetailBaseline({
       name: p.displayName ?? "",
       email: p.email ?? "",
       phone: p.phone ?? "",
       role,
       status,
-      levelId,
+      levelIds,
     });
     setEditingPlayerId(p.id);
     setLinkActionMessage(null);
@@ -1711,7 +1850,9 @@ export default function AdminPage(): React.JSX.Element {
       editPhone !== detailBaseline.phone ||
       editRole !== detailBaseline.role ||
       editStatus !== detailBaseline.status ||
-      editDivisionLevelId !== detailBaseline.levelId ||
+      DIVISION_MATCH_TYPES.some(
+        (type) => (editLevelIds[type] ?? "") !== (detailBaseline.levelIds[type] ?? ""),
+      ) ||
       selectedMatchIds.length > 0);
   const disputedCount = reportsAwaitingResolution.filter((m) => m.status === "disputed").length;
   const unansweredCount = reportsAwaitingResolution.length - disputedCount;
@@ -1972,7 +2113,9 @@ export default function AdminPage(): React.JSX.Element {
                 isFiltered={isFiltered}
                 unassignedCount={unassignedCount}
                 countByLevelId={countByLevelId}
-                effectiveLevelId={effectiveLevelId}
+                seasonMatchTypes={seasonMatchTypes}
+                effectiveSlotLevelId={effectiveSlotLevelId}
+                effectiveLevelIds={effectiveLevelIds}
                 draftLevels={draftLevels}
                 savingRowIds={savingRowIds}
                 savedFlashIds={savedFlashIds}
@@ -2188,7 +2331,8 @@ export default function AdminPage(): React.JSX.Element {
         adminSeason={adminSeason}
         adminSeasonLevels={adminSeasonLevels}
         noLevelsYet={noLevelsYet}
-        effectiveLevelId={effectiveLevelId}
+        effectiveLevelIds={effectiveLevelIds}
+        seasonMatchTypes={seasonMatchTypes}
         levelLabel={levelLabel}
         otherSeasonIds={otherSeasonIds}
         otherSeasonNames={otherSeasonNames}
@@ -2197,8 +2341,8 @@ export default function AdminPage(): React.JSX.Element {
         detailRegistered={detailRegistered}
         editName={editName}
         setEditName={setEditName}
-        editDivisionLevelId={editDivisionLevelId}
-        setEditDivisionLevelId={setEditDivisionLevelId}
+        editLevelIds={editLevelIds}
+        setEditLevelIds={setEditLevelIds}
         editRole={editRole}
         setEditRole={setEditRole}
         editStatus={editStatus}
@@ -2227,11 +2371,22 @@ export default function AdminPage(): React.JSX.Element {
         open={removeTarget !== null}
         title={
           removeTarget
-            ? `Remove ${removeTarget.row.player.displayName} from ${adminSeason.name}?`
+            ? removeTarget.levelId
+              ? `Remove ${removeTarget.row.player.displayName} from ${levelLabel(removeTarget.levelId)}?`
+              : `Remove ${removeTarget.row.player.displayName} from ${adminSeason.name}?`
             : ""
         }
         message={
-          removeTarget ? (
+          removeTarget?.levelId ? (
+            <>
+              <p style={styles.confirmPara}>
+                {removeTarget.row.player.displayName} comes out of {levelLabel(removeTarget.levelId)} for{" "}
+                {adminSeason.name}, so they won&rsquo;t be in its new schedules. They stay on the roster in
+                their other level.
+              </p>
+              <p style={styles.confirmPara}>Their match history and standings are kept.</p>
+            </>
+          ) : removeTarget ? (
             <>
               {removeTarget.viaSelect ? (
                 <p style={styles.confirmPara}>
@@ -2249,7 +2404,7 @@ export default function AdminPage(): React.JSX.Element {
             </>
           ) : null
         }
-        confirmLabel="Remove player"
+        confirmLabel={removeTarget?.levelId ? "Remove from level" : "Remove player"}
         pendingLabel="Removing…"
         onConfirm={confirmRemoveFromRoster}
         onCancel={cancelRemove}

@@ -287,12 +287,20 @@ function useCompetitionChoice(
   const seasonLevels = levels.filter(
     (level) => level.seasonId === seasonId && level.active !== false,
   );
+  // A player can hold a singles and a doubles level in one season. Singles is
+  // the default format of every form here, so their singles level wins.
   const ownLevelId = anchorPlayerId
-    ? memberships.find(
-        (m) =>
-          m.userId === anchorPlayerId &&
-          seasonLevels.some((level) => level.id === m.divisionLevelId),
-      )?.divisionLevelId
+    ? [...seasonLevels]
+        .sort(
+          (a, b) =>
+            Number(a.matchType === "doubles") -
+            Number(b.matchType === "doubles"),
+        )
+        .find((level) =>
+          memberships.some(
+            (m) => m.userId === anchorPlayerId && m.divisionLevelId === level.id,
+          ),
+        )?.id
     : undefined;
   const defaultLevelId =
     ownLevelId ?? (seasonLevels.length === 1 ? seasonLevels[0].id : null);
