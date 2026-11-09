@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+- A player can be registered in two division levels in the same season: one singles level and one doubles level (for example, Beginner Singles and Intermediate Doubles for Fall 2026). Writing a membership retires the player's other membership of the *same* match type for that season, which is a move between levels, and leaves the other match type's membership alone. Before this, every write retired every other membership for the season, so adding a player to a doubles level silently took them out of their singles level. `divisionLevelMatchType()`, `levelIdsByMatchType()`, and `matchTypesOfLevels()` in `@tennis/shared` carry the rule for clients.
+- The web admin roster shows a singles select and a doubles select for each player when the season has levels of both kinds, and a single select as before when it has one kind. Level filter chips and counts include both registrations. Choosing "No singles" or "No doubles" takes the player out of that one level (with a confirmation) and keeps them on the roster. The player detail dialog edits both levels, and bulk assign, Add player, and Import roster move players only within the chosen level's match type.
+- The mobile Admin tab lists every level a player holds, the level sheet adds a level of the other format beside the current one, and tapping a checked level takes the player out of it when they hold two.
+
+### Changed
+- Standings on the web dashboard and the mobile Standings screen open on the player's singles level, and switching the format to Doubles opens on their doubles level. Match forms default to the player's singles level.
+- A singles result recorded without a level is filed under the singles level both players share when they also share a doubles level. Before, sharing two levels left the result with no level.
+
+No data migration is needed: until now the server kept at most one rostered membership per player per season, and that is still within the new limit.
+
 ## [1.3.1] — 2026-11-03
 
 ### Added

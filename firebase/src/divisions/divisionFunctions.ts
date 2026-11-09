@@ -3,7 +3,8 @@ import { FieldValue, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { randomInt } from 'node:crypto';
-import { divisionMembershipId, isAdminRole, toCsv } from '@tennis/shared';
+import { divisionLevelMatchType, divisionMembershipId, isAdminRole, toCsv } from '@tennis/shared';
+import type { DivisionMatchType } from '@tennis/shared';
 import { recalculateRankings } from '../matches/matchFunctions';
 import { assertVerifiedEmail } from '../auth/verifiedEmail';
 
@@ -377,25 +378,53 @@ async function assertDivisionLevel(
 const ROSTERED_MEMBERSHIP_STATUSES = ['active', 'waitlisted'] as const;
 
 /**
- * Archives every rostered membership a player holds for a season except `keepMembershipId`.
- * Called by `upsertMembershipDocument` so that *every* write path leaves a player with at
- * most one live membership per season; skipping it is what let a player hold two active
- * rows at once and render twice on the admin roster.
+ * Archives the rostered memberships a player holds for a season in levels of `matchType`,
+ * except `keepMembershipId`. Called by `upsertMembershipDocument` so that *every* write path
+ * leaves a player with at most one live membership per match type per season: one singles
+ * level and one doubles level can sit side by side, but writing a second singles level is a
+ * move. Skipping this pass is what once let a player hold two rows in one table and render
+ * twice on the admin roster.
+ *
+ * A membership whose level no longer exists, or belongs to another season, is retired too:
+ * nothing can show or play it.
  */
 async function archivePriorMemberships(
   db: FirebaseFirestore.Firestore,
-  input: { divisionId: string; seasonId: string; userId: string; keepMembershipId?: string },
+  input: {
+    divisionId: string;
+    seasonId: string;
+    userId: string;
+    matchType: DivisionMatchType;
+    keepMembershipId?: string;
+  },
 ): Promise<number> {
-  const priorMemberships = await db
-    .collection('divisions')
-    .doc(input.divisionId)
+  const divisionRef = db.collection('divisions').doc(input.divisionId);
+  const priorMemberships = await divisionRef
     .collection('memberships')
     .where('userId', '==', input.userId)
     .where('seasonId', '==', input.seasonId)
     .where('status', 'in', [...ROSTERED_MEMBERSHIP_STATUSES])
     .get();
 
-  const targets = priorMemberships.docs.filter((docSnap) => docSnap.id !== input.keepMembershipId);
+  const others = priorMemberships.docs.filter((docSnap) => docSnap.id !== input.keepMembershipId);
+  if (others.length === 0) return 0;
+
+  const levelIds = [
+    ...new Set(
+      others
+        .map((docSnap) => docSnap.data()?.divisionLevelId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  ];
+  const levelSnaps = await Promise.all(levelIds.map((id) => divisionRef.collection('levels').doc(id).get()));
+  const levelById = new Map(levelSnaps.map((snap) => [snap.id, snap.exists ? snap.data() : undefined]));
+
+  const targets = others.filter((docSnap) => {
+    const levelId = docSnap.data()?.divisionLevelId;
+    const level = typeof levelId === 'string' ? levelById.get(levelId) : undefined;
+    if (!level || level.seasonId !== input.seasonId) return true;
+    return divisionLevelMatchType(level) === input.matchType;
+  });
   if (targets.length === 0) return 0;
 
   const batch = db.batch();
@@ -426,14 +455,17 @@ async function upsertMembershipDocument(
     status?: 'active' | 'waitlisted';
   },
 ): Promise<string> {
-  await assertDivisionLevel(db, input.divisionId, input.seasonId, input.divisionLevelId);
+  const level = await assertDivisionLevel(db, input.divisionId, input.seasonId, input.divisionLevelId);
   const membershipId = divisionMembershipId(input.seasonId, input.divisionLevelId, input.userId);
-  // Retire any other live membership this player holds for the season before writing the new
-  // one, so moving between levels can never leave two rostered rows behind.
+  // Retire the player's other live membership of this level's match type before writing the
+  // new one, so moving between singles levels (or between doubles levels) can never leave two
+  // rows in one table. A membership of the other match type stays: a player can be in one
+  // singles level and one doubles level in the same season.
   await archivePriorMemberships(db, {
     divisionId: input.divisionId,
     seasonId: input.seasonId,
     userId: input.userId,
+    matchType: divisionLevelMatchType(level),
     keepMembershipId: membershipId,
   });
   const ref = db
@@ -1555,8 +1587,9 @@ export const upsertDivisionMembership = onCall(callableOptions, async (request) 
     });
   }
 
-  // `upsertMembershipDocument` archives any other live membership for this season itself, so
-  // every write path (placeholder add, backfill, this callable) gets the same guarantee.
+  // `upsertMembershipDocument` archives the player's other live membership of this level's
+  // match type for the season itself, so every write path (placeholder add, backfill, this
+  // callable) gets the same guarantee.
   const membershipId = await upsertMembershipDocument(db, {
     divisionId: safeDivisionId,
     seasonId: safeSeasonId,

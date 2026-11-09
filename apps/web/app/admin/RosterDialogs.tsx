@@ -127,7 +127,7 @@ export function AddPlayerDialog({
               ? `${addPlayerExisting.player.displayName} is already in ${levelLabel(addPlayerLevelId)} for ${adminSeason.name}. Adding them again changes nothing.`
               : addPlayerExisting.levelId
                 ? `${addPlayerExisting.player.displayName} is already in ${levelLabel(addPlayerExisting.levelId)} for ${adminSeason.name}. Adding moves them to ${levelLabel(addPlayerLevelId)} instead of creating a new player.`
-                : `${addPlayerExisting.player.displayName} is already in ${division.name}. Adding puts them on the ${adminSeason.name} roster instead of creating a new player.`}
+                : `${addPlayerExisting.player.displayName} is already in ${division.name}. Adding puts them in ${levelLabel(addPlayerLevelId)} for ${adminSeason.name} instead of creating a new player, and keeps any level they have in the other format.`}
           </InlineAlert>
         ) : null}
         {addPlayer.error ? <InlineAlert tone="error">{addPlayer.error}</InlineAlert> : null}

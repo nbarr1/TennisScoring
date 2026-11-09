@@ -31,6 +31,7 @@ TennisScoring is a functional, deployable pnpm/Turborepo monorepo for league ten
 
 - Create and join divisions using invite codes.
 - Document Spring/Fall seasons and division levels/flights such as Beginner Singles, Beginner Doubles, Intermediate Singles, and Intermediate Doubles.
+- Register a player in one singles level and one doubles level in the same season, such as Beginner Singles and Intermediate Doubles for Fall 2026.
 - Play doubles: propose, score, report, and confirm four-player matches, with standings kept per fixed partnership alongside the singles table.
 - Add players by email, create placeholder division members, update placeholder/player email records, and merge historical placeholder records into real user accounts.
 - Role-aware admin and division-leader flows for managing divisions and records.

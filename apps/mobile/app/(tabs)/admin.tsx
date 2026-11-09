@@ -17,6 +17,7 @@ import {
   updateDivisionPlayerEmail,
   upsertDivisionLevel,
   upsertDivisionMembership,
+  removeDivisionMembership,
   exportDivisionCsv,
   useDivisionLevels,
   useDivisionMemberships,
@@ -58,6 +59,7 @@ import {
 import {
   currentSeasonForDate,
   defaultSeasonOptions,
+  divisionLevelMatchType,
   formatDivisionLevelName,
   formatScoreDisplay,
   type Division,
@@ -688,11 +690,27 @@ export default function AdminScreen() {
 
   // Roster players (not ranking-only history rows) with no active or waitlisted
   // membership in this season. Only meaningful once the season has levels.
+  // A player can hold one singles and one doubles level in a season, so each
+  // player maps to every membership they hold, singles first.
   const membershipByUser = useMemo(() => {
-    const map = new Map<string, (typeof memberships)[number]>();
-    memberships.forEach((m) => map.set(m.userId, m));
+    const typeOf = (levelId: string) =>
+      divisionLevelMatchType(divisionLevels.find((l) => l.id === levelId));
+    const map = new Map<string, (typeof memberships)[number][]>();
+    memberships.forEach((m) =>
+      map.set(m.userId, [...(map.get(m.userId) ?? []), m]),
+    );
+    map.forEach((list) =>
+      list.sort(
+        (a, b) =>
+          Number(typeOf(a.divisionLevelId) === "doubles") -
+          Number(typeOf(b.divisionLevelId) === "doubles"),
+      ),
+    );
     return map;
-  }, [memberships]);
+  }, [memberships, divisionLevels]);
+  function levelTypeOf(levelId: string): DivisionMatchType {
+    return divisionLevelMatchType(divisionLevels.find((l) => l.id === levelId));
+  }
   const levelNameById = useMemo(() => {
     const map = new Map<string, string>();
     divisionLevels.forEach((l) => map.set(l.id, l.name));
@@ -718,7 +736,12 @@ export default function AdminScreen() {
           "Levels couldn't be loaded, so this change was not saved. Try again once they load.",
         );
       }
-      const membership = membershipByUser.get(player.id);
+      const held = membershipByUser.get(player.id) ?? [];
+      // Picking a level moves the player out of their other level of the same
+      // format and keeps a level of the other format, as the server does.
+      const sameType = held.find(
+        (m) => levelTypeOf(m.divisionLevelId) === divisionLevelMatchType(level),
+      );
       await upsertDivisionMembership({
         divisionId: division.id,
         seasonId,
@@ -727,10 +750,12 @@ export default function AdminScreen() {
         name: player.displayName,
         email: player.email || undefined,
         phone: player.phone || undefined,
-        role: membership?.role,
-        status: membership?.status === "waitlisted" ? "waitlisted" : "active",
+        role: held[0]?.role,
+        status: sameType?.status === "waitlisted" ? "waitlisted" : "active",
       });
-      return `${player.displayName} moved to ${level.name}.`;
+      return sameType
+        ? `${player.displayName} moved to ${level.name}.`
+        : `${player.displayName} added to ${level.name}.`;
     },
     {
       errorMessage:
@@ -742,11 +767,49 @@ export default function AdminScreen() {
       },
     },
   );
-  const pickerMembership = levelPickerFor
-    ? membershipByUser.get(levelPickerFor.id)
-    : undefined;
+  // Taking a player out of one of their two levels. Their only level is not
+  // removed here: that takes them off the season, which the web roster handles.
+  const removeLevel = useAsyncAction(
+    async (player: User, level: DivisionLevel) => {
+      if (!division) throw new Error("Division not loaded.");
+      if (membershipsUnavailable) {
+        throw new Error(
+          "Levels couldn't be loaded, so this change was not saved. Try again once they load.",
+        );
+      }
+      await removeDivisionMembership({
+        divisionId: division.id,
+        seasonId,
+        userId: player.id,
+        divisionLevelId: level.id,
+      });
+      return `${player.displayName} removed from ${level.name}.`;
+    },
+    {
+      errorMessage:
+        "Couldn't remove the level. Check your connection and try again.",
+      onSuccess: (message) => {
+        setLevelPickerFor(null);
+        setLevelAssignNotice(message);
+        announce(message);
+      },
+    },
+  );
+  async function confirmRemoveLevel(player: User, level: DivisionLevel) {
+    const ok = await confirmDestructive({
+      title: `Remove ${player.displayName} from ${level.name}?`,
+      message: `They stay on the ${selectedSeason.name} roster in their other level. Their match history and standings are kept.`,
+      confirmLabel: "Remove from level",
+    });
+    if (ok) void removeLevel.run(player, level);
+  }
+  const pickerMemberships = levelPickerFor
+    ? (membershipByUser.get(levelPickerFor.id) ?? [])
+    : [];
+  const pickerBusy = assignLevel.pending || removeLevel.pending;
   function openLevelPicker(player: User) {
     assignLevel.reset();
+    removeLevel.reset();
     setLevelPickerFor(player);
   }
 
@@ -1060,11 +1123,18 @@ export default function AdminScreen() {
           <View>
             {seasonPlayers.map((p, i) => {
               const isLeader = division.leaderIds.includes(p.id);
-              const membership = membershipByUser.get(p.id);
+              const held = membershipByUser.get(p.id) ?? [];
+              const membership = held[0];
               const onRoster = division.playerIds.includes(p.id);
-              const levelLabel = membership
-                ? `${levelNameById.get(membership.divisionLevelId) ?? "Division level"}${membership.status === "waitlisted" ? " · Waitlisted" : ""}`
-                : null;
+              const levelLabel =
+                held.length > 0
+                  ? held
+                      .map(
+                        (m) =>
+                          `${levelNameById.get(m.divisionLevelId) ?? "Division level"}${m.status === "waitlisted" ? " · Waitlisted" : ""}`,
+                      )
+                      .join(", ")
+                  : null;
               return (
                 <View
                   key={p.id}
@@ -1099,8 +1169,8 @@ export default function AdminScreen() {
                     assignableLevels.length > 0 &&
                     !membershipsUnavailable ? (
                       <Button
-                        label={membership ? "Change level" : "Assign level"}
-                        accessibilityLabel={`${membership ? "Change" : "Assign"} ${selectedSeason.name} level for ${p.displayName}`}
+                        label={membership ? "Change levels" : "Assign level"}
+                        accessibilityLabel={`${membership ? "Change" : "Assign"} ${selectedSeason.name} levels for ${p.displayName}`}
                         variant="quiet"
                         size="compact"
                         style={styles.levelButton}
@@ -1646,38 +1716,53 @@ export default function AdminScreen() {
       <BottomSheetModal
         visible={!!levelPickerFor}
         onRequestClose={() => {
-          if (!assignLevel.pending) setLevelPickerFor(null);
+          if (!pickerBusy) setLevelPickerFor(null);
         }}
         backdropLabel="Close level choices"
         cardStyle={styles.levelSheet}
       >
         <Text style={styles.sectionTitle} accessibilityRole="header">
-          {`${selectedSeason.name} level for ${levelPickerFor?.displayName ?? "player"}`}
+          {`${selectedSeason.name} levels for ${levelPickerFor?.displayName ?? "player"}`}
         </Text>
-        {pickerMembership?.status === "waitlisted" ? (
-          <Text style={styles.hint}>They stay on the waitlist.</Text>
+        <Text style={styles.hint}>
+          A player can be in one singles and one doubles level. Picking a level
+          moves them from their other level of the same format.
+          {pickerMemberships.length > 1
+            ? " Tap a checked level to take them out of it."
+            : ""}
+        </Text>
+        {pickerMemberships.some((m) => m.status === "waitlisted") ? (
+          <Text style={styles.hint}>Waitlisted players stay on the waitlist.</Text>
         ) : null}
-        <View accessibilityRole="radiogroup">
+        <View>
           {assignableLevels.map((level) => {
-            const current =
-              pickerMembership?.divisionLevelId === level.id;
+            const current = pickerMemberships.some(
+              (m) => m.divisionLevelId === level.id,
+            );
+            // Only one of two levels can be removed from here.
+            const removable = current && pickerMemberships.length > 1;
             return (
               <Pressable
                 key={level.id}
-                accessibilityRole="radio"
-                accessibilityLabel={level.name}
+                accessibilityRole="checkbox"
+                accessibilityLabel={`${level.name}, ${level.matchType === "doubles" ? "doubles" : "singles"}`}
+                accessibilityHint={
+                  removable ? "Removes the player from this level" : undefined
+                }
                 accessibilityState={{
                   checked: current,
-                  disabled: assignLevel.pending,
+                  disabled: pickerBusy || (current && !removable),
                 }}
-                disabled={assignLevel.pending || current}
+                disabled={pickerBusy || (current && !removable)}
                 android_ripple={{ color: colors.ripple }}
                 style={({ pressed }) => [
                   styles.levelOption,
                   SHOWS_PRESSED_FILL && pressed && styles.levelOptionPressed,
                 ]}
                 onPress={() => {
-                  if (levelPickerFor) void assignLevel.run(levelPickerFor, level);
+                  if (!levelPickerFor) return;
+                  if (removable) void confirmRemoveLevel(levelPickerFor, level);
+                  else void assignLevel.run(levelPickerFor, level);
                 }}
               >
                 <Text style={styles.levelOptionText}>{level.name}</Text>
@@ -1692,17 +1777,20 @@ export default function AdminScreen() {
             );
           })}
         </View>
-        {assignLevel.pending ? (
+        {pickerBusy ? (
           <LoadingState inline showLabel label="Saving level" />
         ) : null}
-        {assignLevel.error ? (
-          <InlineAlert tone="error" message={assignLevel.error} />
+        {assignLevel.error || removeLevel.error ? (
+          <InlineAlert
+            tone="error"
+            message={assignLevel.error ?? removeLevel.error ?? ""}
+          />
         ) : null}
         <Button
           label="Cancel"
           accessibilityLabel="Cancel level change"
           variant="quiet"
-          disabled={assignLevel.pending}
+          disabled={pickerBusy}
           onPress={() => setLevelPickerFor(null)}
         />
       </BottomSheetModal>

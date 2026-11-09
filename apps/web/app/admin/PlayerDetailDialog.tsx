@@ -1,12 +1,18 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import type { DivisionLevel, Match } from "@tennis/shared";
+import type { DivisionLevel, DivisionMatchType, Match } from "@tennis/shared";
 import { IconRefresh } from "@tabler/icons-react";
 import { Button, Dialog, InlineAlert, LoadingBlock } from "../shared/ui";
 import type { AsyncAction } from "../shared/ui";
 import { CheckboxRow, DialogCancelButton, Field, plural } from "./AdminParts";
-import { formatShortDate, playerStatusLabel, type AdminSeason, type RosterRow } from "./adminModel";
+import {
+  MATCH_TYPE_LABELS,
+  formatShortDate,
+  playerStatusLabel,
+  type AdminSeason,
+  type RosterRow,
+} from "./adminModel";
 import { styles } from "./adminStyles";
 
 type LinkActionMessage = { targetUserId: string; message: string; kind: "link" | "contact" } | null;
@@ -21,7 +27,9 @@ export type PlayerDetailDialogProps = {
   adminSeason: AdminSeason;
   adminSeasonLevels: DivisionLevel[];
   noLevelsYet: boolean;
-  effectiveLevelId: (row: RosterRow) => string;
+  effectiveLevelIds: (row: RosterRow) => string[];
+  /** The match types the season has levels for; the form has a level field for each. */
+  seasonMatchTypes: DivisionMatchType[];
   levelLabel: (levelId: string) => string;
   otherSeasonIds: Set<string>;
   otherSeasonNames: (userId: string) => string;
@@ -30,8 +38,8 @@ export type PlayerDetailDialogProps = {
   detailRegistered: boolean;
   editName: string;
   setEditName: (value: string) => void;
-  editDivisionLevelId: string;
-  setEditDivisionLevelId: (value: string) => void;
+  editLevelIds: Partial<Record<DivisionMatchType, string>>;
+  setEditLevelIds: Dispatch<SetStateAction<Partial<Record<DivisionMatchType, string>>>>;
   editRole: "player" | "division_leader";
   setEditRole: (value: "player" | "division_leader") => void;
   editStatus: "active" | "waitlisted";
@@ -62,7 +70,8 @@ export function PlayerDetailDialog({
   adminSeason,
   adminSeasonLevels,
   noLevelsYet,
-  effectiveLevelId,
+  effectiveLevelIds,
+  seasonMatchTypes,
   levelLabel,
   otherSeasonIds,
   otherSeasonNames,
@@ -71,8 +80,8 @@ export function PlayerDetailDialog({
   detailRegistered,
   editName,
   setEditName,
-  editDivisionLevelId,
-  setEditDivisionLevelId,
+  editLevelIds,
+  setEditLevelIds,
   editRole,
   setEditRole,
   editStatus,
@@ -104,8 +113,8 @@ export function PlayerDetailDialog({
       description={
         detailRow
           ? `${playerStatusLabel(detailRow.player)}${detailRow.membership?.status === "waitlisted" ? " · Waitlisted" : ""} · ${
-              effectiveLevelId(detailRow)
-                ? `${levelLabel(effectiveLevelId(detailRow))} in ${adminSeason.name}`
+              effectiveLevelIds(detailRow).length > 0
+                ? `${effectiveLevelIds(detailRow).map(levelLabel).join(" and ")} in ${adminSeason.name}`
                 : otherSeasonIds.has(detailRow.player.id)
                   ? `Not in ${adminSeason.name} (in ${otherSeasonNames(detailRow.player.id)}). Save to add them.`
                   : `Unassigned in ${adminSeason.name}`
@@ -145,20 +154,37 @@ export function PlayerDetailDialog({
                   required
                 />
               </Field>
-              <Field id="detail-level" label="Division level">
-                <select
-                  id="detail-level"
-                  style={styles.input}
-                  value={editDivisionLevelId}
-                  onChange={(e) => setEditDivisionLevelId(e.target.value)}
-                >
-                  {adminSeasonLevels.map((level) => (
-                    <option key={level.id} value={level.id}>
-                      {level.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              {seasonMatchTypes.map((type) => {
+                const typeLevels = adminSeasonLevels.filter(
+                  (level) => (level.matchType ?? "singles") === type,
+                );
+                const id = `detail-level-${type}`;
+                const onlyType = seasonMatchTypes.length === 1;
+                return (
+                  <Field
+                    key={type}
+                    id={id}
+                    label={onlyType ? "Division level" : `${MATCH_TYPE_LABELS[type]} level`}
+                  >
+                    <select
+                      id={id}
+                      style={styles.input}
+                      value={editLevelIds[type] ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setEditLevelIds((current) => ({ ...current, [type]: value || undefined }));
+                      }}
+                    >
+                      {onlyType ? null : <option value="">No {MATCH_TYPE_LABELS[type].toLowerCase()} level</option>}
+                      {typeLevels.map((level) => (
+                        <option key={level.id} value={level.id}>
+                          {level.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                );
+              })}
               <Field
                 id="detail-role"
                 label="Role"
@@ -228,7 +254,11 @@ export function PlayerDetailDialog({
                 form="detail-form"
                 pending={savePlayer.pending}
                 pendingLabel="Saving…"
-                disabled={(detailBusy && !savePlayer.pending) || !editName.trim() || !editDivisionLevelId}
+                disabled={
+                  (detailBusy && !savePlayer.pending) ||
+                  !editName.trim() ||
+                  !seasonMatchTypes.some((type) => editLevelIds[type])
+                }
               >
                 Save player
               </Button>

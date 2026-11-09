@@ -973,11 +973,14 @@ function useCompetition(divisionId: string, levels: DivisionLevel[], subjectId: 
   const seasonLevels = levels
     .filter((level) => level.seasonId === seasonId)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  // A player can hold a singles and a doubles level in one season. Singles is the default
+  // format of every form here, so their singles level wins.
   const ownLevelId = subjectId
-    ? memberships.find(
-        (membership) =>
-          membership.userId === subjectId && seasonLevels.some((level) => level.id === membership.divisionLevelId),
-      )?.divisionLevelId
+    ? [...seasonLevels]
+        .sort((a, b) => Number(a.matchType === "doubles") - Number(b.matchType === "doubles"))
+        .find((level) =>
+          memberships.some((membership) => membership.userId === subjectId && membership.divisionLevelId === level.id),
+        )?.id
     : undefined;
   const levelId = levelChoice ?? ownLevelId ?? "";
   const level = seasonLevels.find((l) => l.id === levelId);
