@@ -24,7 +24,7 @@
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.6",
+    "@babel/core": "^7.29.13",
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tennis/shared": "workspace:*",
     "@types/node": "^26.2.0",
