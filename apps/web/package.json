@@ -31,7 +31,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.6",
+    "@babel/core": "^7.29.13",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^26.2.0",
     "@types/react": "19.2.18",
